@@ -1,0 +1,12 @@
+# Personal data: your trips, imported place lists and lookup caches stay on your machine.
+saves/
+lists/
+cache/
+*.csv
+
+# Old versions and local clutter
+backup-v1/
+node_modules/
+.env
+.DS_Store
+Thumbs.db

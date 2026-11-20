@@ -1,0 +1,2098 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Shippori+Mincho:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f3ee;
+    --panel: #fffdf9;
+    --ink: #1f1c19;
+    --muted: #6f675f;
+    --line: #e4ddd2;
+    --accent: #bc002d;
+    --accent-soft: #fbe8ea;
+    --ok: #2f7d4f;
+    --ok-soft: #e3f2e8;
+    --skip: #8a8079;
+    --skip-soft: #ece8e3;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.05);
+    --track-0: #2b6cb0; --track-1: #b7791f; --track-2: #7b4fc9; --track-3: #2f7d74;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151311; --panel: #1e1b18; --ink: #ede8e1; --muted: #a39a90; --line: #332e29;
+      --accent: #ff4d6a; --accent-soft: #3a1d22; --ok: #6cc890; --ok-soft: #1b3326;
+      --skip: #8a8079; --skip-soft: #2a2622; --shadow: none;
+      --track-0: #7fb3ff; --track-1: #f0b75a; --track-2: #b9a0ff; --track-3: #6fd1c4;
+    }
+  }
+  :root { color-scheme: light dark; }
+  [hidden] { display: none !important; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.5 Inter, system-ui, sans-serif; }
+
+  header { padding: 18px 24px 6px; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .brand { font-family: "Shippori Mincho", serif; font-size: 22px; font-weight: 700; white-space: nowrap; }
+  .brand span { color: var(--accent); }
+  .trip-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; border-left: 1px solid var(--line); padding-left: 18px; min-width: 0; }
+  .trip-title h1 { font-family: "Shippori Mincho", serif; font-size: 26px; margin: 0; line-height: 1.2; }
+  .trip-title p { margin: 0; color: var(--muted); }
+  .countdown { font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+
+  main {
+    display: grid; gap: 20px; padding: 12px 24px 40px; align-items: start;
+    grid-template-columns: minmax(340px, 400px) minmax(0, 1fr);
+    grid-template-areas: "settings map" "settings output";
+    grid-template-rows: auto minmax(0, 1fr); /* the tall settings column mustn't stretch the map row */
+  }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 18px; min-width: 0; }
+  .settings { grid-area: settings; padding-bottom: 0; }
+  #output { grid-area: output; }
+
+  /* Desktop: the page itself never scrolls. The settings and itinerary columns scroll on their own; the map just fills its slot.
+     Scoped to body.app because the phone export reuses this stylesheet and should scroll normally. */
+  @media (min-width: 901px) {
+    body.app { height: 100vh; height: 100dvh; overflow: hidden; display: flex; flex-direction: column; }
+    body.app header { flex: none; }
+    body.app main { flex: 1; min-height: 0; padding-bottom: 20px; align-items: stretch; }
+    body.app .settings, body.app #output { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+    body.app #map { height: min(420px, 42vh); }
+  }
+  @media (min-width: 1500px) {
+    main { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "settings output map"; grid-template-rows: minmax(0, 1fr); }
+    body.app .map-panel { display: flex; flex-direction: column; }
+    body.app .map-wrap { flex: 1; min-height: 0; }
+    body.app #map { height: 100%; }
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; grid-template-areas: "map" "settings" "output"; grid-template-rows: auto; padding: 12px 16px 40px; }
+    header { padding: 16px 16px 6px; }
+    .trip-title { border-left: 0; padding-left: 0; }
+  }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 20px 0 10px; font-weight: 600; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  h2:first-child { margin-top: 0; }
+  h2 small { text-transform: none; letter-spacing: 0; font-weight: 500; }
+  label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 500; }
+  input, select, textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 10px;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; min-height: 60px; }
+  .row { display: grid; gap: 10px; grid-template-columns: repeat(var(--cols, 2), 1fr); margin-bottom: 10px; }
+  .hint { font-size: 12px; color: var(--muted); }
+
+  .stay { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 10px; position: relative; }
+  .stay .row { margin-bottom: 8px; }
+  .stay .row:last-child { margin-bottom: 0; }
+  .stay-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 600; gap: 8px; }
+  .stay-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; margin-right: 6px; }
+  .stay-dates { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .stay-leg { display: flex; align-items: center; gap: 8px; margin: -4px 0 6px 14px; padding-left: 14px; border-left: 2px dashed var(--line); min-height: 34px; font-size: 12px; color: var(--muted); }
+  .stay-leg .leg-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stay-leg .leg-line { display: none; }
+  .stay-leg select { width: auto; padding: 3px 6px; font-size: 12px; }
+  .day-trips { margin-top: 6px; }
+  .day-trip { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .day-trip .dt-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .day-trip input { flex: 1; min-width: 0; padding: 4px 6px; font-size: 12px; }
+  .day-trip select { width: auto; max-width: 150px; padding: 3px 4px; font-size: 12px; }
+  .day-trips .muted { color: var(--muted); font-weight: 400; }
+  .leg-tip { line-height: 1.45; }
+  .far-warn { font-size: 11.5px; color: var(--warn, #e0a030); margin-top: 3px; }
+  .stay-geo { font-size: 11px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .icon-btn { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 6px; font-size: 16px; }
+  .icon-btn:hover { background: var(--skip-soft); color: var(--accent); }
+
+  button { font: inherit; }
+  button.secondary { width: 100%; background: none; border: 1px dashed var(--line); color: var(--muted); padding: 8px; border-radius: 8px; cursor: pointer; }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .btn { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.solid { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn.solid:hover { color: #fff; opacity: .9; }
+  .link-btn { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font-weight: 600; font-size: 12px; }
+  .link-btn:hover { text-decoration: underline; }
+  .btn:disabled { opacity: .6; cursor: progress; }
+  .generate-bar { position: sticky; bottom: 0; background: linear-gradient(transparent, var(--panel) 30%); padding: 18px 0 18px; margin-top: 8px; }
+  button.primary {
+    width: 100%; background: var(--accent); color: #fff; border: 0; padding: 12px; border-radius: 10px;
+    font: 600 15px Inter, sans-serif; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .6; cursor: progress; }
+
+  .inline { display: flex; gap: 6px; }
+  .inline > select, .inline > input { flex: 1; min-width: 0; }
+  details.import { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; }
+  details.import summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details.import[open] summary { margin-bottom: 8px; }
+  details.import .inline { margin-bottom: 8px; }
+  .file-btn { position: relative; overflow: hidden; display: inline-block; }
+  .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+  .places-tools { display: flex; gap: 8px; margin: 8px 0; }
+  .places-tools input { flex: 1; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 260px; overflow: auto; padding: 2px; }
+  .chip {
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px;
+    padding: 4px 10px; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .chip.must { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); font-weight: 600; }
+  .chip.must::before { content: "★ "; }
+  .chip.skip { background: var(--skip-soft); color: var(--skip); text-decoration: line-through; }
+  .chip.flash { animation: flash 1.2s ease-out; }
+  @keyframes flash { 0% { box-shadow: 0 0 0 4px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .chip .who {
+    display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px;
+    border: 1px solid currentColor; opacity: .55; font-variant-numeric: tabular-nums;
+  }
+  .chip .who:hover { opacity: 1; }
+  .chip .who.part { opacity: 1; background: var(--ok); color: var(--panel); border-color: var(--ok); }
+  .counts { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* Map */
+  .map-panel { grid-area: map; padding: 0; overflow: hidden; }
+  .map-bar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .day-chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; padding-bottom: 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  .day-chip { flex: none; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+  .day-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .day-chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  .map-toggles { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
+  .map-toggles label { display: inline-flex; align-items: center; gap: 4px; margin: 0; cursor: pointer; }
+  .map-toggles input { width: auto; margin: 0; accent-color: var(--accent); }
+  #map { height: 420px; background: var(--bg); }
+  @media (prefers-color-scheme: dark) { #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); } }
+  .map-status { position: absolute; left: 10px; bottom: 10px; z-index: 500; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; pointer-events: none; }
+  .map-wrap { position: relative; }
+  .map-search { position: absolute; top: 10px; left: 54px; right: 10px; max-width: 380px; z-index: 800; cursor: default; }
+  .map-search input { background: var(--panel); box-shadow: var(--shadow); padding: 7px 10px; }
+  .map-search ul { list-style: none; margin: 6px 0 0; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.2); max-height: 300px; overflow: auto; }
+  .map-search li { padding: 7px 9px; border-radius: 7px; cursor: pointer; }
+  .map-search li:hover, .map-search li.active { background: var(--bg); }
+  .map-search li b { display: block; font-weight: 600; }
+  .map-search li span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .map-search li.muted { color: var(--muted); cursor: default; }
+  .map-search li.muted:hover { background: none; }
+  .leaflet-container { font: 13px/1.4 Inter, system-ui, sans-serif; }
+  .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .leaflet-popup-content { margin: 10px 12px; }
+  .leaflet-popup-content b { display: block; margin-bottom: 2px; }
+  .leaflet-popup-content .pop-meta { color: var(--muted); font-size: 12px; }
+  .leaflet-popup-content .pop-actions { display: flex; gap: 6px; margin-top: 8px; }
+  .leaflet-popup-content .pop-actions button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
+  .leaflet-popup-content .pop-actions button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .leaflet-container { cursor: crosshair; }
+  .leaflet-interactive, .leaflet-marker-icon { cursor: pointer; }
+  .add-form { display: grid; gap: 6px; }
+  .add-form b { margin: 0; }
+  .add-form input, .add-form select { padding: 6px 8px; font-size: 13px; }
+  .add-form .add-row { display: grid; grid-template-columns: 1fr 96px; gap: 6px; }
+  .add-form .pop-meta:empty { display: none; }
+  .name-options { display: flex; flex-wrap: wrap; gap: 4px; }
+  .name-options:empty { display: none; }
+  .name-options button { border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 2px 9px; font-size: 12px; cursor: pointer; }
+  .name-options button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+  /* Reserve the looked-up address's space up front so the popup doesn't grow past the map edge. */
+  .add-form .pop-meta.lookup { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8em; }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 2000; background: var(--ink); color: var(--panel); border-radius: 999px; padding: 8px 16px; display: flex; gap: 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.25); max-width: calc(100vw - 32px); }
+  .toast button { background: none; border: 0; color: var(--accent); font-weight: 700; cursor: pointer; padding: 0; }
+  .leaflet-tooltip { background: var(--panel); color: var(--ink); border-color: var(--line); box-shadow: var(--shadow); font-weight: 600; }
+  .leaflet-tooltip-right::before { border-right-color: var(--line); }
+  .leaflet-tooltip-left::before { border-left-color: var(--line); }
+  .stay-pin { width: 30px; height: 30px; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); background: var(--accent); border: 3px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,.35); display: grid; place-items: center; }
+  .stay-pin b { transform: rotate(45deg); color: #fff; font-size: 12px; }
+  .num-pin { width: 22px; height: 22px; border-radius: 50%; background: var(--c); color: #fff; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.35); display: grid; place-items: center; font: 700 11px Inter, sans-serif; transition: transform .15s; }
+  .num-pin.hot { transform: scale(1.5); z-index: 1000; }
+  /* Couldn't be looked up: placed at the model's own estimate, which may be off. */
+  .num-pin.approx { border-style: dashed; opacity: .6; }
+
+  /* Itinerary */
+  .empty { text-align: center; color: var(--muted); padding: 60px 20px; }
+  .empty .sun { width: 64px; height: 64px; border-radius: 50%; background: var(--accent); margin: 0 auto 16px; opacity: .9; }
+  .loading .sun { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(.85); opacity: .5; } }
+  .loading small { display: block; margin-top: 6px; min-height: 1.5em; }
+  .error { background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 12px 14px; white-space: pre-wrap; margin-bottom: 16px; }
+
+  .gen-tokens { font-variant-numeric: tabular-nums; min-height: 1.5em; }
+  .gen-bar { height: 4px; width: 220px; max-width: 80%; margin: 12px auto 0; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .gen-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .4s; }
+  .thoughts { margin: 12px 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+  .thoughts summary { cursor: pointer; padding: 8px 12px; font-size: 13px; font-weight: 600; color: var(--muted); list-style: none; display: flex; gap: 8px; align-items: baseline; }
+  .thoughts summary::-webkit-details-marker { display: none; }
+  .thoughts summary::before { content: "▸"; display: inline-block; transition: transform .15s; }
+  .thoughts[open] summary::before { transform: rotate(90deg); }
+  .thoughts summary .hint { font-weight: 400; }
+  .thoughts-body { padding: 0 14px 10px; font-size: 13px; max-height: 340px; overflow: auto; }
+  .thoughts-body:empty { display: none; }
+  .thoughts-body p { margin: 0 0 8px; }
+  .thoughts-body ul { margin: 0 0 8px; padding-left: 18px; }
+  .prompt-part { margin-bottom: 14px; }
+  .prompt-part b { display: block; font-size: 12px; }
+  .prompt-part pre { white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, Consolas, monospace; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; max-height: 420px; overflow: auto; }
+  .lookups { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+  .lookups b { display: block; color: var(--ink); margin-bottom: 4px; }
+  .lookups ul { list-style: none; padding: 0; margin: 0; columns: 2 260px; }
+  .lookups li { margin-bottom: 2px; break-inside: avoid; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lookups a, .sources a { color: inherit; }
+  .events { margin: 14px 0 4px; }
+  .events h2 { margin-top: 0; }
+  .events ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .events li { display: grid; grid-template-columns: 110px 1fr; gap: 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .events .ev-date { color: var(--accent); font-weight: 600; font-size: 12px; }
+  .sources li { font-size: 12px; word-break: break-all; }
+  .raw-thinking { white-space: pre-wrap; color: var(--muted); font-size: 12px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 12px; }
+  .raw-thinking b { display: block; color: var(--ink); margin-bottom: 4px; }
+  label .link-btn { margin-left: 6px; font-weight: 500; }
+  label.check { display: flex; gap: 8px; align-items: baseline; font-size: 13px; color: var(--ink); margin: 0 0 12px; cursor: pointer; }
+  label.check input { width: auto; margin: 0; accent-color: var(--accent); }
+  label.check.off { opacity: .5; }
+  .stale { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; font-weight: 500; }
+  .summary h3 { font-family: "Shippori Mincho", serif; font-size: 22px; margin: 0 0 6px; }
+  .summary p { margin: 0 0 12px; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .stat b { display: block; font-size: 18px; }
+  .stat span { font-size: 12px; color: var(--muted); }
+  .bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin: 14px 0 4px; position: relative; }
+  .bars .budget-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); opacity: .6; pointer-events: none; }
+  .bars button { flex: 1; min-width: 4px; border: 0; padding: 0; border-radius: 3px 3px 0 0; background: var(--c); opacity: .8; cursor: pointer; }
+  .bars button:hover { opacity: 1; }
+  .bars button.over { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .toolbar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .toolbar button { background: none; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; color: var(--ink); }
+  .toolbar button:hover { border-color: var(--accent); color: var(--accent); }
+  .refine { margin-top: 14px; display: flex; gap: 8px; align-items: flex-end; }
+  .refine textarea { min-height: 40px; height: 40px; }
+
+  .city-band { margin: 26px 0 10px; display: flex; align-items: center; gap: 10px; font-family: "Shippori Mincho", serif; font-size: 20px; }
+  .city-band::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .day { margin-bottom: 14px; padding: 10px 12px; margin-left: -12px; margin-right: -12px; border-radius: 12px; border: 1px solid transparent; transition: background .2s, border-color .2s; }
+  .day.selected { background: color-mix(in srgb, var(--c) 6%, var(--panel)); border-color: color-mix(in srgb, var(--c) 35%, var(--line)); }
+  .day-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; margin-bottom: 10px; flex-wrap: wrap; cursor: pointer; }
+  .day-head h4 { margin: 0; font-size: 16px; }
+  .day-head .date::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 1px; }
+  .day-head .date { color: var(--muted); font-size: 12px; font-weight: 500; display: block; text-transform: uppercase; letter-spacing: .05em; }
+  .day-head .right { display: flex; gap: 6px; align-items: center; }
+  .weather { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .budget-pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 600; white-space: nowrap; }
+  .budget-pill.over { background: var(--accent-soft); color: var(--accent); }
+  .items { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); margin-left: 6px; }
+  .item { position: relative; padding: 0 0 12px 18px; }
+  .item::before { content: ""; position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); }
+  .item.listed::before { border-color: var(--accent); background: var(--accent); }
+  .item-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .item time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 40px; }
+  .item .n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 10px; font-weight: 700; align-self: center; }
+  .item .name { font-weight: 600; }
+  .item .name a { color: inherit; text-decoration-color: var(--line); }
+  .item .name a:hover { color: var(--accent); }
+  .item .cost { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .item .del { border: 0; background: none; color: var(--muted); cursor: pointer; padding: 0 4px; border-radius: 6px; font-size: 12px; visibility: hidden; }
+  .item:hover .del { visibility: visible; }
+  .item .del:hover { color: var(--accent); background: var(--accent-soft); }
+  @media (hover: none) { .item .del { visibility: visible; } }
+  .item.flash { animation: itemflash 1.6s ease-out; border-radius: 8px; }
+  @keyframes itemflash { 0%, 40% { background: color-mix(in srgb, var(--c) 18%, transparent); } 100% { background: transparent; } }
+  .item .desc { color: var(--ink); opacity: .85; margin-top: 2px; }
+  .item .transport { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .item .transport::before { content: "↳ "; }
+  .item .dir { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+  .item .dir:hover { text-decoration: underline; }
+  .item .leg { color: var(--muted); font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
+  .item .leg:empty { display: none; }
+  .item .leg::before { content: "⇢ "; }
+  /* Split: the group forks into parallel tracks, then rejoins */
+  .fork { position: relative; padding: 2px 0 14px 18px; }
+  .fork::before { content: "⑂"; position: absolute; left: -9px; top: -2px; width: 16px; text-align: center; background: var(--panel); color: var(--muted); font-size: 14px; line-height: 20px; }
+  .fork-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
+  .tracks { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .track { --t: var(--track-0); border: 1px solid color-mix(in srgb, var(--t) 35%, var(--line)); border-top: 3px solid var(--t); border-radius: 10px; padding: 8px 10px 0; background: color-mix(in srgb, var(--t) 6%, var(--panel)); }
+  .track.t1 { --t: var(--track-1); } .track.t2 { --t: var(--track-2); } .track.t3 { --t: var(--track-3); }
+  .track-head { font-size: 12px; font-weight: 700; color: var(--t); margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
+  .track-head span { font-weight: 500; color: var(--muted); }
+  .track .items { border-left-color: color-mix(in srgb, var(--t) 40%, var(--line)); }
+  .track .item.listed::before { border-color: var(--t); background: var(--t); }
+  .split-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--skip-soft); color: var(--muted); font-weight: 600; margin-left: 6px; vertical-align: middle; }
+  .day-notes { font-size: 13px; color: var(--muted); background: var(--bg); border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
+  .extras { margin-top: 24px; display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .extras ul { margin: 0; padding-left: 18px; }
+  .extras li { margin-bottom: 6px; }
+  .extras .reason { color: var(--muted); font-size: 12px; }
+
+  @media print {
+    body.app { height: auto; overflow: visible; display: block; }
+    body.app #output { overflow: visible; }
+    header, .settings, .toolbar, .refine, .map-panel, .bars, .stale, .thoughts { display: none; }
+    main { display: block; padding: 0; }
+    .panel { box-shadow: none; border: 0; }
+    .day { break-inside: avoid; }
+  }
+</style>
+</head>
+<body class="app">
+<header>
+  <div class="brand"><span>●</span> Trip Planner</div>
+  <div class="trip-title" id="tripTitle"></div>
+</header>
+
+<main>
+  <section class="panel settings">
+    <h2>Saved trips <small><button class="link-btn" id="newTrip" title="Start a new, empty trip">+ New trip</button></small></h2>
+    <div class="inline">
+      <select id="saveList"><option value="">— Saved trips —</option></select>
+      <button class="btn" id="loadSave" title="Load the selected trip">Load</button>
+      <button class="btn solid" id="saveBtn" title="Save current inputs">Save</button>
+      <button class="btn" id="delSave" title="Delete the selected trip">✕</button>
+    </div>
+    <div class="counts" id="saveStatus"></div>
+
+    <h2>Stays</h2>
+    <div id="stays"></div>
+    <button class="secondary" id="addStay">+ Add stay</button>
+
+    <h2>Places <small id="listMeta"></small></h2>
+    <div class="inline">
+      <select id="listSelect"><option value="">No place list</option></select>
+      <button class="btn" id="syncList" title="Re-import this list from its source">⟳ Sync</button>
+      <button class="btn" id="delList" title="Remove this list">✕</button>
+    </div>
+    <details class="import">
+      <summary>+ Import places</summary>
+      <label for="gmUrl">Google Maps list link</label>
+      <div class="inline">
+        <input id="gmUrl" placeholder="https://maps.app.goo.gl/…">
+        <button class="btn solid" id="gmImport">Import</button>
+      </div>
+      <div class="hint">In Google Maps: Saved → open the list → Share → "Anyone with the link". The list re-syncs automatically when it's older than an hour.</div>
+      <div class="hint" style="margin-top:8px">Or upload a CSV (e.g. from Google Takeout → Saved):
+        <span class="btn file-btn">Choose CSV<input type="file" id="csvFile" accept=".csv,text/csv"></span></div>
+      <div class="counts" id="importStatus"></div>
+    </details>
+    <div class="legend">Click a place (here or on the map) once for ★ must-see, again to skip, again to reset. On a must-see, click 👥 to set how many of you want to go; Claude can split the group.</div>
+    <div class="places-tools"><input id="placeFilter" placeholder="Filter places…"></div>
+    <div class="chips" id="chips"></div>
+    <div class="counts" id="counts"></div>
+
+    <h2>Budget &amp; style</h2>
+    <div class="row" style="--cols:3">
+      <div><label for="dailyBudget">Daily budget</label><input id="dailyBudget" type="number" min="0" step="10"></div>
+      <div><label for="currency">Currency</label>
+        <select id="currency"></select></div>
+      <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
+    </div>
+    <div class="row">
+      <div><label for="pace">Pace</label>
+        <select id="pace">
+          <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>
+          <option value="balanced (3-5 stops per day)">Balanced</option>
+          <option value="packed (as much as possible, early starts)">Packed</option>
+        </select></div>
+      <div><label for="model">Model <button class="link-btn" id="refreshModels" title="Look for local model servers again">⟳ detect</button></label>
+        <select id="model">
+          <option value="default">CLI default</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="haiku">Haiku (fast)</option>
+        </select></div>
+    </div>
+    <div class="hint" id="modelHint" style="margin:-4px 0 6px"></div>
+    <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
+    <div class="row" style="--cols:1">
+      <div><label for="interests">Interests</label><textarea id="interests" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
+      <div><label for="notes">Anything else</label><textarea id="notes" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
+    </div>
+
+    <div class="generate-bar"><button class="primary" id="generate">Generate itinerary</button></div>
+  </section>
+
+  <section class="panel map-panel">
+    <div class="map-bar">
+      <div class="day-chips" id="dayChips"></div>
+      <div class="map-toggles">
+        <label><input type="checkbox" id="showPlaces" checked> Places</label>
+        <label><input type="checkbox" id="showRoutes" checked> Routes</label>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <form class="map-search" id="mapSearch" autocomplete="off">
+        <div class="inline"><input id="mapSearchQ" type="search" placeholder="Add a place by name…"><button class="btn solid">Search</button></div>
+        <ul id="mapResults" hidden></ul>
+      </form>
+      <div class="map-status" id="mapStatus" hidden></div>
+    </div>
+  </section>
+
+  <section class="panel" id="output">
+    <div class="empty"><div class="sun"></div>Your itinerary will appear here.</div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const STORE_KEY = "trip-planner-v2";
+// When opened straight from disk, talk to the local server instead.
+const API = location.protocol === "file:" ? "http://localhost:5173" : "";
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const api = async (url, opts = {}) => {
+  const res = await fetch(API + url, { ...opts, headers: { "Content-Type": "application/json", ...opts.headers } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+};
+const DAY_COLORS = ["#e4572e", "#2b8a3e", "#1c7ed6", "#ae3ec9", "#f59f00", "#0ca678", "#d6336c", "#4263eb", "#a9743b", "#1098ad"];
+const dayColor = (i) => DAY_COLORS[i % DAY_COLORS.length];
+const CURRENCIES = ["EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "KRW", "CNY", "HKD", "TWD", "SGD", "THB", "VND", "IDR", "MYR", "PHP", "INR", "AED", "TRY", "MXN", "BRL", "ZAR"];
+$("#currency").innerHTML = CURRENCIES.map((c) => `<option>${c}</option>`).join("");
+
+let listPlaces = [];  // places of the selected list
+let places = [];      // listPlaces plus places picked on the map (state.customPlaces)
+let lists = [];       // list summaries from the server
+let geo = {};         // geocode results by "query|cc"
+let weather = {};     // date -> { code, max, min }
+let selectedDay = null;
+const blankTrip = () => ({
+  stays: [{ city: "", start: "", nights: 3, hotel: "" }],
+  dailyBudget: 150, currency: "EUR", travelers: 1, pace: "balanced (3-5 stops per day)",
+  model: "default", interests: "", notes: "", list: "", listChosen: false, marks: {}, who: {}, customPlaces: [], itinerary: null, meta: null,
+});
+let state = load() || blankTrip();
+state.who ||= {};
+state.marks ||= {};
+state.customPlaces ||= [];
+
+function setListPlaces(list) {
+  listPlaces = list;
+  places = [...listPlaces, ...state.customPlaces];
+}
+
+function load() {
+  for (const key of [STORE_KEY, "japan-planner-v1"]) {
+    try { const s = JSON.parse(localStorage.getItem(key)); if (s) return s; } catch {}
+  }
+  return null;
+}
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch {} }
+
+// ---- dates ----
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + Number(n || 0)); return d.toISOString().slice(0, 10); };
+const fmtDate = (iso) => iso ? new Date(iso + "T00:00:00Z").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : "";
+const fmtShort = (iso) => iso ? new Date(iso + "T00:00:00Z").toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" }) : "";
+const todayIso = () => new Date().toLocaleDateString("sv");
+const daysBetween = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 864e5);
+
+// Each stay after the first starts where the previous one ends, unless the user overrides it.
+function chainDates() {
+  for (let i = 1; i < state.stays.length; i++) {
+    const prev = state.stays[i - 1];
+    if (prev.start && !state.stays[i].manualStart) state.stays[i].start = addDays(prev.start, prev.nights);
+  }
+}
+
+// ---- geocoding (server-side Nominatim with a disk cache; results trickle in at ~1/s) ----
+// Must match the server's key: the "near" point (rounded to ~10 km) is only part of it when given.
+const geoKey = (q, cc, near) => `${String(q).trim().toLowerCase()}|${cc || ""}${near ? `|${(+near[0]).toFixed(1)},${(+near[1]).toFixed(1)}` : ""}`;
+let geoWanted = new Map(), geoTimer;
+
+function geocode(queries) {
+  for (const x of queries) if (x.q && !(geoKey(x.q, x.cc, x.near) in geo)) geoWanted.set(geoKey(x.q, x.cc, x.near), x);
+  clearTimeout(geoTimer);
+  geoTimer = setTimeout(pollGeo, 300);
+}
+async function pollGeo() {
+  if (!geoWanted.size) return setMapStatus("");
+  try {
+    const { results, pending } = await api("/api/geocode", { method: "POST", body: JSON.stringify({ queries: [...geoWanted.values()] }) });
+    Object.assign(geo, results);
+    for (const k of Object.keys(results)) geoWanted.delete(k);
+    setMapStatus(pending ? `Locating ${pending} place${pending > 1 ? "s" : ""}…` : "");
+    onGeo();
+    if (pending) geoTimer = setTimeout(pollGeo, 2500);
+  } catch { setMapStatus("Can't reach the server for geocoding"); }
+}
+// New coordinates arrived: redraw, and once the stays' countries are known, look up hotels,
+// place names and older itineraries inside those countries.
+let geoRender, lastCountries = "";
+function onGeo() {
+  clearTimeout(geoRender);
+  geoRender = setTimeout(() => {
+    renderStays(); renderTripTitle(); drawMap(); renderChips();
+    geocodeStays();
+    const cc = countryCodes();
+    if (cc && cc !== lastCountries) { lastCountries = cc; geocodePlaces(); loadWeather(); }
+    geocodeItems(); // asks only for stops not looked up yet, e.g. once their day's town is known
+    warmNearby();
+  }, 300);
+}
+
+// A stay's position: the hotel if it can be found near the city, else the city.
+function stayLoc(s) {
+  const city = s.city && geo[geoKey(s.city)];
+  const hotel = s.hotel && geo[geoKey(`${s.hotel}, ${s.city}`, city?.cc)];
+  if (hotel && (!city || distKm(hotel, city) < 60)) return { ...hotel, country: hotel.country || city?.country, cc: hotel.cc || city?.cc };
+  return city || null;
+}
+function distKm(a, b) {
+  const r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos((a.lat + b.lat) * r / 2), y = (b.lat - a.lat) * r;
+  return Math.sqrt(x * x + y * y) * 6371;
+}
+const tripCountries = () => [...new Map(state.stays.map(stayLoc).filter((l) => l?.cc).map((l) => [l.cc, l.country])).entries()];
+const countryCodes = () => tripCountries().map(([cc]) => cc).join(",");
+
+// Once the stays are located, have the server fetch the real places around them in the background
+// (that can take half a minute per town), so clicking Generate doesn't have to wait for it.
+let warmedFor = "";
+function warmNearby() {
+  const stays = state.stays.filter((s) => s.city).map((s) => ({ city: s.city, cc: stayLoc(s)?.cc }));
+  if (!stays.length || stays.some((s) => !s.cc)) return;
+  const sig = JSON.stringify(stays);
+  if (sig === warmedFor) return;
+  warmedFor = sig;
+  api("/api/nearby/warm", { method: "POST", body: JSON.stringify({ stays }) }).catch(() => {});
+}
+
+function geocodeStays() {
+  const qs = [];
+  for (const s of state.stays) {
+    if (!s.city) continue;
+    qs.push({ q: s.city, first: true });
+    const cc = geo[geoKey(s.city)]?.cc;
+    if (s.hotel && geoKey(s.city) in geo) qs.push({ q: `${s.hotel}, ${s.city}`, cc, first: true });
+    for (const t of s.dayTrips || []) if (t.place) qs.push({ q: t.place, first: true });
+  }
+  geocode(qs);
+}
+const placeQuery = (p) => ({ q: p.address || p.title, cc: countryCodes() });
+function placeLoc(p) {
+  if (p.lat != null) return p;
+  const g = geo[geoKey(placeQuery(p).q, placeQuery(p).cc)];
+  return g || null;
+}
+function geocodePlaces() {
+  // Wait until we know the countries, so place names are searched in the right place.
+  if (!countryCodes()) return;
+  geocode(places.filter((p) => p.lat == null).map(placeQuery));
+}
+
+// ---- trip title ----
+function renderTripTitle() {
+  const stays = state.stays.filter((s) => s.city);
+  const it = state.itinerary;
+  const countries = tripCountries().map(([, name]) => name);
+  const name = it?.destination || countries.join(" & ") || stays.map((s) => s.city).join(" → ") || "Plan a trip";
+  const first = state.stays[0]?.start, last = state.stays.at(-1);
+  const end = first && last?.start ? addDays(last.start, last.nights) : "";
+  const nights = state.stays.reduce((n, s) => n + (+s.nights || 0), 0);
+  const bits = [];
+  if (first && end) bits.push(`${fmtShort(first)} – ${fmtShort(end)}`);
+  if (nights) bits.push(`${nights} nights`);
+  if (stays.length > 1) bits.push(stays.map((s) => s.city).join(" → "));
+  bits.push(`${state.travelers} traveler${state.travelers > 1 ? "s" : ""}`);
+  let cd = "";
+  if (first && end) {
+    const t = todayIso(), until = daysBetween(t, first), since = daysBetween(t, end);
+    cd = until > 0 ? `in ${until} day${until > 1 ? "s" : ""}` : since >= 0 ? `day ${daysBetween(first, t) + 1} of ${daysBetween(first, end) + 1}` : "done";
+  }
+  $("#tripTitle").innerHTML = `<h1>${esc(name)}</h1><p>${esc(bits.join(" · "))}</p>${cd ? `<span class="countdown">${esc(cd)}</span>` : ""}`;
+  document.title = name === "Plan a trip" ? "Trip Planner" : `${name} · Trip Planner`;
+}
+
+// ---- stays UI ----
+function renderStays() {
+  chainDates();
+  const ae = document.activeElement;
+  const focused = ae?.closest?.(".stay") && (ae.dataset.k || ae.dataset.dt) && ae.tagName === "INPUT";
+  if (focused) return; // don't rebuild under the user's cursor; it re-renders on change
+  $("#stays").innerHTML = state.stays.map((s, i) => {
+    const loc = stayLoc(s);
+    const geoLine = !s.city ? "" : loc ? `📍 ${esc(loc.label)}` : geoKey(s.city) in geo ? "📍 Not found — try a bigger nearby town" : "📍 Locating…";
+    return `${i ? legHtml(i) : ""}
+    <div class="stay" data-i="${i}">
+      <div class="stay-head">
+        <span><span class="stay-num">${i + 1}</span><span class="stay-dates">${s.start ? `${fmtDate(s.start)} → ${fmtDate(addDays(s.start, s.nights))}` : "Set an arrival date"}</span></span>
+        <span>
+          ${i > 0 ? `<button class="icon-btn" data-act="up" title="Move up">↑</button>` : ""}
+          ${state.stays.length > 1 ? `<button class="icon-btn" data-act="del" title="Remove">✕</button>` : ""}
+        </span>
+      </div>
+      <div class="row">
+        <div><label>City / area</label><input data-k="city" value="${esc(s.city)}" placeholder="e.g. Lisbon"></div>
+        <div><label>Hotel (optional)</label><input data-k="hotel" value="${esc(s.hotel)}" placeholder="Hotel or address"></div>
+      </div>
+      <div class="row">
+        <div><label>Arrival</label><input type="date" data-k="start" value="${esc(s.start)}"></div>
+        <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
+      </div>
+      ${geoLine ? `<div class="stay-geo" title="${esc(loc?.label || "")}">${geoLine}</div>` : ""}
+      <div class="day-trips">
+        ${(s.dayTrips || []).map((t, ti) => `
+          <div class="day-trip" data-ti="${ti}">
+            <span class="dt-label">Day trip</span>
+            <input data-dt="place" value="${esc(t.place)}" placeholder="e.g. Venice">
+            <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode)}</select>
+            <button class="icon-btn" data-act="deltrip" title="Remove day trip">✕</button>
+          </div>`).join("")}
+        <button class="link-btn" data-act="addtrip">＋ Day trip${s.nights < 2 ? " <span class=\"muted\">(needs a full day, so 2+ nights)</span>" : ""}</button>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+// How you travel between stays and on day trips. "" lets the planner choose.
+const TRAVEL_MODES = [["", "Planner decides"], ["car", "🚗 Car"], ["train", "🚆 Train"], ["bus", "🚌 Bus"], ["flight", "✈️ Flight"], ["ferry", "⛴ Ferry"], ["bike", "🚲 Bike"]];
+const modeName = (m) => (m ? (TRAVEL_MODES.find(([k]) => k === m)?.[1] || "").replace(/^\S+\s/, "").toLowerCase() : "");
+const modeIcon = (m) => (m ? (TRAVEL_MODES.find(([k]) => k === m)?.[1] || "").split(" ")[0] : "");
+function modeOptions(sel, suffix = "") {
+  return TRAVEL_MODES.map(([k, label]) => `<option value="${k}"${(sel || "") === k ? " selected" : ""}>${label}${k && suffix ? ` (${suffix})` : ""}</option>`).join("");
+}
+// The connector between two stay cards: "Padua → Milan  [🚗 Car]".
+function legHtml(i) {
+  const a = state.stays[i - 1], b = state.stays[i];
+  return `<div class="stay-leg" data-i="${i}">
+    <span class="leg-line"></span>
+    <span class="leg-text">${esc(a.city || `Stay ${i}`)} → ${esc(b.city || `Stay ${i + 1}`)}</span>
+    <select data-k="travel" title="How you get from ${esc(a.city || "the previous stay")} to ${esc(b.city || "this stay")}">${modeOptions(b.travel)}</select>
+  </div>`;
+}
+
+$("#stays").addEventListener("change", (e) => {
+  const box = e.target.closest(".stay, .stay-leg"); if (!box) return;
+  const i = +box.dataset.i, k = e.target.dataset.k, dt = e.target.dataset.dt;
+  if (dt) {
+    const t = state.stays[i].dayTrips[+e.target.closest(".day-trip").dataset.ti];
+    t[dt] = e.target.value.trim();
+    if (dt === "place" && t.place) geocodeStays();
+    e.target.blur();
+    save(); renderStays(); drawMap(); renderItinerary();
+    return;
+  }
+  if (!k) return;
+  state.stays[i][k] = k === "nights" ? Math.max(0, +e.target.value) : e.target.value;
+  if (k === "start" && i > 0) state.stays[i].manualStart = true;
+  e.target.blur();
+  save(); renderStays(); renderTripTitle(); renderItinerary(); geocodeStays(); drawMap({ fit: true });
+});
+$("#stays").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-act]"); if (!btn) return;
+  const act = btn.dataset.act;
+  const i = +btn.closest(".stay").dataset.i;
+  if (act === "addtrip") {
+    (state.stays[i].dayTrips ||= []).push({ place: "", mode: "" });
+    save(); renderStays();
+    [...document.querySelectorAll(`.stay[data-i="${i}"] .day-trip input`)].at(-1)?.focus();
+    return;
+  }
+  if (act === "deltrip") {
+    state.stays[i].dayTrips.splice(+btn.closest(".day-trip").dataset.ti, 1);
+    save(); renderStays(); drawMap(); renderItinerary();
+    return;
+  }
+  if (act === "del") state.stays.splice(i, 1);
+  if (act === "up") [state.stays[i - 1], state.stays[i]] = [state.stays[i], state.stays[i - 1]];
+  save(); renderStays(); renderTripTitle(); drawMap({ fit: true });
+});
+$("#addStay").onclick = () => { state.stays.push({ city: "", start: "", nights: 2, hotel: "" }); save(); renderStays(); };
+
+// ---- simple fields ----
+const FIELDS = ["dailyBudget", "currency", "travelers", "pace", "model", "interests", "notes"];
+for (const f of FIELDS) {
+  const el = $("#" + f);
+  el.value = state[f];
+  el.addEventListener("input", () => {
+    state[f] = el.type === "number" ? +el.value : el.value; save();
+    if (f === "travelers") { renderChips(); renderTripTitle(); }
+  });
+}
+
+// ---- place lists ----
+const listMeta = () => lists.find((l) => l.name === state.list);
+const ago = (iso) => {
+  const m = Math.round((Date.now() - new Date(iso)) / 60000);
+  return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+};
+
+async function refreshLists() {
+  try { lists = await api("/api/lists"); }
+  catch { $("#counts").textContent = `Can't reach the server. Start it with "python start.py" and open http://localhost:5173`; return; }
+  // Older saves were Japan-only and had no list; use the first one.
+  if (!state.list && !state.listChosen && lists.length) state.list = lists[0].name;
+  if (state.list && !listMeta()) state.list = lists[0]?.name || "";
+  $("#listSelect").innerHTML = `<option value="">No place list</option>` +
+    lists.map((l) => `<option value="${esc(l.name)}">${esc(l.name)} (${l.count})</option>`).join("");
+  $("#listSelect").value = state.list;
+}
+
+async function loadList({ autoSync = true } = {}) {
+  const meta = listMeta();
+  renderListMeta();
+  if (!meta) { setListPlaces([]); renderChips(); drawMap({ fit: true }); return; }
+  try {
+    let list = await api("/api/lists/" + encodeURIComponent(meta.name));
+    setListPlaces(list.places);
+    renderChips(); renderItinerary(); drawMap({ fit: true }); geocodePlaces();
+    // Google lists re-sync quietly when they're more than an hour old.
+    if (autoSync && list.source?.type === "google" && Date.now() - new Date(list.syncedAt) > 3600e3) syncList(true);
+  } catch (e) { $("#counts").textContent = e.message; }
+}
+
+function renderListMeta() {
+  const m = listMeta();
+  $("#syncList").hidden = !m || !["google", "csv"].includes(m.source?.type);
+  $("#delList").hidden = !m;
+  $("#listMeta").textContent = !m ? "" : m.source?.type === "google" ? `Google Maps · synced ${ago(m.syncedAt)}` : m.source?.type === "csv" ? "CSV file" : "Uploaded CSV";
+}
+
+async function syncList(quiet) {
+  const m = listMeta(); if (!m) return;
+  if (!quiet) $("#listMeta").textContent = "Syncing…";
+  try {
+    const list = await api(`/api/lists/${encodeURIComponent(m.name)}/sync`, { method: "POST" });
+    const before = places.length;
+    setListPlaces(list.places);
+    await refreshLists();
+    renderListMeta(); renderChips(); drawMap(); geocodePlaces();
+    if (!quiet || before !== places.length) $("#importStatus").textContent = `Synced "${m.name}": ${places.length} places.`;
+  } catch (e) { $("#listMeta").textContent = `Sync failed: ${e.message}`; }
+}
+
+$("#listSelect").onchange = () => { state.list = $("#listSelect").value; state.listChosen = true; save(); loadList(); };
+$("#syncList").onclick = () => syncList(false);
+$("#delList").onclick = async () => {
+  const m = listMeta();
+  if (!m || !confirm(`Remove the place list "${m.name}"?${m.source?.type === "csv" ? "\n(The CSV file stays; it is re-added on next server start.)" : ""}`)) return;
+  await api("/api/lists/" + encodeURIComponent(m.name), { method: "DELETE" });
+  state.list = ""; save(); await refreshLists(); loadList();
+};
+$("#gmImport").onclick = async () => {
+  const url = $("#gmUrl").value.trim();
+  if (!url) return;
+  const btn = $("#gmImport");
+  btn.disabled = true; $("#importStatus").textContent = "Importing from Google Maps…";
+  try {
+    const list = await api("/api/lists/import", { method: "POST", body: JSON.stringify({ url }) });
+    state.list = list.name; state.listChosen = true; save();
+    await refreshLists(); await loadList({ autoSync: false });
+    $("#importStatus").textContent = `Imported "${list.name}" — ${list.places.length} places.`;
+    $("#gmUrl").value = "";
+  } catch (e) { $("#importStatus").textContent = e.message; }
+  finally { btn.disabled = false; }
+};
+$("#csvFile").onchange = async (e) => {
+  const file = e.target.files[0]; if (!file) return;
+  const name = prompt("Name for this place list:", file.name.replace(/\.csv$/i, ""));
+  e.target.value = "";
+  if (!name) return;
+  try {
+    const list = await api("/api/lists/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify({ csv: await file.text() }) });
+    state.list = list.name; state.listChosen = true; save();
+    await refreshLists(); await loadList();
+    $("#importStatus").textContent = `Imported "${list.name}" — ${list.places.length} places.`;
+  } catch (err) { $("#importStatus").textContent = err.message; }
+};
+
+// ---- places ----
+const groupSize = () => Math.max(1, +state.travelers || 1);
+// How many travelers want a must-see place (defaults to everyone).
+const whoFor = (t) => Math.min(state.who[t] || groupSize(), groupSize());
+
+function renderChips() {
+  const q = $("#placeFilter").value.toLowerCase();
+  const n = groupSize();
+  $("#chips").innerHTML = places
+    .filter((p) => !q || p.title.toLowerCase().includes(q) || (p.note || "").toLowerCase().includes(q))
+    .map((p) => {
+      const mark = state.marks[p.title] || "", w = whoFor(p.title);
+      const badge = mark === "must" && n > 1
+        ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">👥 ${w}/${n}</span>` : "";
+      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${esc(p.title)}${badge}</span>`;
+    })
+    .join("");
+  const mustTitles = Object.keys(state.marks).filter((t) => state.marks[t] === "must");
+  const partial = mustTitles.filter((t) => whoFor(t) < n).length;
+  const skip = Object.values(state.marks).filter((v) => v === "skip").length;
+  const located = places.filter(placeLoc).length;
+  $("#counts").textContent = places.length
+    ? `${places.length} places (${located} on the map) · ${mustTitles.length} must-see${partial ? ` (${partial} for part of the group)` : ""} · ${skip} skipped`
+    : "No places yet. Import a Google Maps list or a CSV, or let Claude pick everything.";
+}
+function cycleMark(t) {
+  const next = { undefined: "must", must: "skip", skip: undefined }[state.marks[t]];
+  if (next) state.marks[t] = next; else delete state.marks[t];
+  save(); renderChips(); drawMap();
+}
+$("#chips").addEventListener("click", (e) => {
+  const w = e.target.dataset.who;
+  if (w != null) {
+    // Cycle all → all-1 → … → 1 → all.
+    const next = whoFor(w) - 1;
+    if (next >= 1) state.who[w] = next; else delete state.who[w];
+    save(); renderChips(); return;
+  }
+  const t = e.target.closest(".chip")?.dataset.t; if (t == null) return;
+  cycleMark(t);
+});
+$("#chips").addEventListener("mouseover", (e) => {
+  const t = e.target.closest(".chip")?.dataset.t;
+  if (t != null) placeMarkers.get(t)?.openTooltip();
+});
+$("#placeFilter").addEventListener("input", renderChips);
+
+// ---- map ----
+let map, layers = {}, placeMarkers = new Map(), itemMarkers = new Map(), userMoved = false;
+
+function initMap() {
+  if (!window.L) { $("#map").innerHTML = `<div class="empty">The map needs an internet connection.</div>`; return; }
+  map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  }).addTo(map);
+  // Keep auto-fitting to new pins until the user moves the map themselves.
+  for (const ev of ["pointerdown", "wheel"]) $("#map").addEventListener(ev, () => { userMoved = true; }, { passive: true });
+  for (const k of ["places", "stays", "routes", "items"]) layers[k] = L.layerGroup().addTo(map);
+  // Clicking empty map adds that spot; a click that merely closes an open popup doesn't.
+  let popupClosedAt = 0;
+  map.on("popupclose", () => { popupClosedAt = Date.now(); });
+  map.on("click", (e) => {
+    if (!$("#mapResults").hidden) { $("#mapResults").hidden = true; return; }
+    if (Date.now() - popupClosedAt > 300) openAddPopup(e.latlng);
+  });
+  L.DomEvent.disableClickPropagation($("#mapSearch"));
+  L.DomEvent.disableScrollPropagation($("#mapSearch"));
+  map.on("popupopen", (e) => {
+    const el = e.popup.getElement();
+    el.querySelectorAll("[data-add-place]").forEach((b) => b.onclick = () => {
+      const p = places.find((x) => x.title === b.dataset.addPlace), loc = p && placeLoc(p);
+      if (loc) openAddPopup(L.latLng(loc.lat, loc.lng), { name: p.title, fromList: true });
+    });
+    el.querySelectorAll("[data-remove-custom]").forEach((b) => b.onclick = () => {
+      const t = b.dataset.removeCustom;
+      state.customPlaces = state.customPlaces.filter((p) => p.title !== t);
+      delete state.marks[t]; delete state.who[t];
+      setListPlaces(listPlaces); save(); renderChips(); map.closePopup(); drawMap();
+    });
+    el.querySelectorAll("[data-rename-custom]").forEach((b) => b.onclick = () => {
+      const t = b.dataset.renameCustom, p = state.customPlaces.find((x) => x.title === t);
+      const name = p && prompt("New name for this place:", t)?.trim();
+      if (!name || name === t || places.some((x) => x.title === name)) return;
+      p.title = name;
+      // Marks and group sizes are keyed by name, so move them along.
+      if (t in state.marks) { state.marks[name] = state.marks[t]; delete state.marks[t]; }
+      if (t in state.who) { state.who[name] = state.who[t]; delete state.who[t]; }
+      setListPlaces(listPlaces); save(); renderChips(); map.closePopup(); drawMap();
+    });
+    el.querySelectorAll("[data-mark]").forEach((b) => b.onclick = () => {
+      const t = b.dataset.mark;
+      state.marks[t] = b.dataset.v || undefined;
+      if (!b.dataset.v) delete state.marks[t];
+      save(); renderChips(); map.closePopup(); drawMap();
+      const chip = [...document.querySelectorAll(".chip")].find((c) => c.dataset.t === t);
+      if (chip) { chip.scrollIntoView({ block: "nearest" }); chip.classList.add("flash"); }
+    });
+  });
+  $("#showPlaces").onchange = () => drawMap();
+  $("#showRoutes").onchange = () => drawMap();
+}
+
+function setMapStatus(msg) { $("#mapStatus").hidden = !msg; $("#mapStatus").textContent = msg; }
+
+// Where an itinerary stop is. Models' own coordinates are guesses (local models' especially can be kilometres off),
+// so a real lookup of the stop's name around that day's town wins; the model's guess is only a marked fallback.
+const byTitleMap = () => new Map(places.map((p) => [p.title, p]));
+const daySegments = (d) => String(d.city || "").split(/\s*(?:\/|,|→|->|–|&|\band\b)\s*/i).map((s) => s.trim()).filter(Boolean);
+// The towns a day names ("Kyoto / Nara"), once located.
+const dayTowns = (d) => daySegments(d).map((seg) => geo[geoKey(seg, countryCodes())]).filter(Boolean);
+// The point a day's stops are searched around: the day's own town (e.g. Venice on a day trip), else where you sleep that night.
+function dayHome(d) {
+  const town = dayTowns(d)[0];
+  if (town) return town;
+  const stay = state.stays.find((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, s.nights));
+  return stay ? stayLoc(stay) : null;
+}
+// Does a lookup result really have the stop's name? Fuzzy search happily turns an invented "Gasthaus zur Linde"
+// into some other inn in town, so require a distinctive word of the name (not "Gasthaus", "Café" or the town).
+const GENERIC_WORDS = new Set("gasthaus gasthof restaurant ristorante trattoria osteria cafe caffe bakery baeckerei backerei hotel pension bar pub bistro kirche church chiesa park street strasse town walk trail tour old altstadt centre center city market markt house haus lunch dinner".split(" "));
+const words = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss").replace(/ä/g, "a").split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+function sameName(query, hit, d) {
+  const towns = new Set(daySegments(d).flatMap(words));
+  const key = words(query.split(",")[0]).filter((w) => !GENERIC_WORDS.has(w) && !towns.has(w));
+  const found = new Set(words(hit.name || String(hit.label || "").split(",")[0]));
+  return key.some((w) => found.has(w));
+}
+// Stops like "Lunch", "To Shinjuku", "Arrival" or "Airport → hotel" aren't places a geocoder can find.
+const GENERIC_STOP = /^(to |back |lunch|dinner|breakfast|brunch|snack|check[- ]?(in|out)|free time|rest)|→|\b(arrival|departure|transfer)\b/i;
+function itemQuery(x, d) {
+  const name = String(x.place).replace(/\s*\([^)]*\)/g, "").replace(/^(lunch|dinner|breakfast|brunch|coffee|drinks)\s*(at|:|-)\s*/i, "").trim();
+  if (!name || GENERIC_STOP.test(name)) return null;
+  const town = daySegments(d)[0];
+  return town && !name.toLowerCase().includes(town.toLowerCase()) ? `${name}, ${town}` : name;
+}
+const nearOf = (home) => [home.lat, home.lng];
+// Real places (from OpenStreetMap) the model was given for this itinerary, by normalized name.
+const normName = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s*\([^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+let poiIndex = new Map(), poiIndexOf = null;
+// Several stays can have a place of the same name; with a day given, the one nearest that day wins.
+function poiFor(name, day) {
+  const pois = state.meta?.pois;
+  if (pois !== poiIndexOf) {
+    poiIndexOf = pois; poiIndex = new Map();
+    for (const p of pois || []) { const k = normName(p.name); if (!poiIndex.has(k)) poiIndex.set(k, []); poiIndex.get(k).push(p); }
+  }
+  const hits = poiIndex.get(normName(name));
+  if (!hits) return null;
+  const refs = day ? dayRefs(day) : [];
+  if (!refs.length) return hits[0];
+  const dist = (p) => Math.min(...refs.map((r) => distKm(p, r)));
+  return hits.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+}
+// Where a day happens: the towns it names plus where you sleep that night.
+function dayRefs(d) {
+  const stay = state.stays.find((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, s.nights));
+  return [...dayTowns(d), stay && stayLoc(stay)].filter(Boolean);
+}
+// A known place that is nowhere near the day (e.g. a Padua café the model put on a Munich day) is a mix-up:
+// pin it in the day's town as approximate and say where the real one is, instead of drawing an 850 km leg.
+const FAR_KM = 80;
+function farFromDay(loc, d) {
+  const refs = dayRefs(d);
+  return refs.length > 0 && refs.every((r) => distKm(loc, r) > FAR_KM) ? refs[0] : null;
+}
+function itemLoc(x, day, byTitle) {
+  const p = byTitle.get(x.place);
+  const known = p && placeLoc(p) ? { loc: placeLoc(p), where: p.address || "" } : null;
+  const poi = !known && poiFor(x.place, day);
+  const hit = known || (poi && { loc: { lat: poi.lat, lng: poi.lng }, where: poi.city || "" });
+  if (hit) {
+    const ref = farFromDay(hit.loc, day);
+    if (!ref) return hit.loc;
+    // Maybe there really is one of that name near the day too.
+    const q = itemQuery(x, day), home = dayHome(day);
+    const g = q && home && geo[geoKey(q, countryCodes(), nearOf(home))];
+    if (g && distKm(g, home) < 60 && sameName(q, g, day)) return g;
+    return { lat: ref.lat, lng: ref.lng, approx: true, elsewhere: hit.where || `${hit.loc.lat.toFixed(3)}, ${hit.loc.lng.toFixed(3)}` };
+  }
+  const home = dayHome(day), q = itemQuery(x, day), towns = dayTowns(day);
+  const g = q && home && geo[geoKey(q, countryCodes(), nearOf(home))];
+  let fuzzy = null;
+  if (g && distKm(g, home) < 60) {
+    if (sameName(q, g, day)) return g; // found the place itself
+    fuzzy = g;                          // something else with a similar name
+  }
+  const model = typeof x.lat === "number" && typeof x.lng === "number" ? { lat: x.lat, lng: x.lng } : null;
+  // Check guesses against the towns the day names, or (until those are located) where you sleep that night.
+  const refs = towns.length ? towns : home ? [home] : [];
+  const inTown = (l) => !refs.length || refs.some((t) => distKm(l, t) < 8);
+  if (model && inTown(model)) return { ...model, approx: true };
+  if (fuzzy && inTown(fuzzy)) return { ...fuzzy, approx: true };
+  // The model's guess is far from every town the day names (e.g. a whole day shifted 15 km): put it in the day's town.
+  if (model && refs.length) return { lat: refs[0].lat, lng: refs[0].lng, approx: true };
+  if (model) return { ...model, approx: true };
+  return fuzzy ? { ...fuzzy, approx: true } : null;
+}
+function geocodeItems() {
+  const it = state.itinerary; if (!it || !countryCodes()) return;
+  const byTitle = byTitleMap(), qs = [];
+  for (const d of it.days) {
+    // First the day's towns (cheap, shared between days), then its stops around them.
+    for (const seg of daySegments(d)) qs.push({ q: seg, cc: countryCodes(), first: true });
+    const home = dayHome(d);
+    if (!home) continue;
+    for (const x of d.items) {
+      const q = itemQuery(x, d);
+      const loc = itemLoc(x, d, byTitle);
+      if (q && (loc?.elsewhere || (!poiFor(x.place, d) && !(byTitle.get(x.place) && placeLoc(byTitle.get(x.place)))))) qs.push({ q, cc: countryCodes(), near: nearOf(home), first: true });
+    }
+  }
+  geocode(qs);
+}
+
+function drawMap({ fit = false } = {}) {
+  if (!map) return;
+  for (const k of ["places", "stays", "routes", "items"]) layers[k].clearLayers();
+  placeMarkers.clear(); itemMarkers.clear();
+  const bounds = [];
+  const it = state.itinerary, byTitle = byTitleMap();
+  const css = getComputedStyle(document.documentElement);
+  const c = (v) => css.getPropertyValue(v).trim();
+
+  // Stays: numbered pins joined by the travel route.
+  const stayPts = [];
+  state.stays.forEach((s, i) => {
+    const loc = stayLoc(s); if (!loc) return;
+    stayPts.push([loc.lat, loc.lng]);
+    const end = s.start ? addDays(s.start, s.nights) : "";
+    L.marker([loc.lat, loc.lng], {
+      icon: L.divIcon({ className: "", html: `<div class="stay-pin"><b>${i + 1}</b></div>`, iconSize: [30, 30], iconAnchor: [15, 30] }),
+      zIndexOffset: 1000,
+    }).bindTooltip(esc(s.city), { direction: "right", offset: [12, -16], permanent: selectedDay == null })
+      .bindPopup(`<b>${esc(s.city)}</b><div class="pop-meta">${s.start ? `${fmtDate(s.start)} → ${fmtDate(end)} · ` : ""}${s.nights} night${s.nights == 1 ? "" : "s"}</div>${s.hotel ? `<div>🛏 ${esc(s.hotel)}</div>` : ""}`)
+      .addTo(layers.stays);
+  });
+  // Stay to stay, and out to each day trip: driven legs follow the road, the rest are dashed straight lines.
+  const stayLegs = [];
+  state.stays.forEach((s, i) => {
+    const here = stayLoc(s); if (!here) return;
+    const prev = i && stayLoc(state.stays[i - 1]);
+    if (prev) stayLegs.push({ from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}` });
+    for (const t of s.dayTrips || []) {
+      const g = t.place && geo[geoKey(t.place)];
+      if (g) stayLegs.push({ from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ⇄ ${t.place}`, trip: true, place: t.place });
+    }
+  });
+  const driven = [];
+  for (const l of stayLegs) {
+    const r = l.mode === "car" || l.mode === "bus" ? routes[routeKey("car", l.from, l.to)] : null;
+    if (l.mode === "car" || l.mode === "bus") driven.push({ mode: "car", from: l.from, to: l.to });
+    const tip = `${modeIcon(l.mode) || "↔"} ${esc(l.label)}${l.mode ? ` · ${modeName(l.mode)}` : ""}${r ? ` · ${fmtDist(r.d)}, ${fmtDur(r.t)}` : ""}`;
+    const vis = L.polyline(r ? r.c : [l.from, l.to], {
+      color: c("--accent"), weight: r ? 3 : l.trip ? 1.5 : 2, opacity: l.trip ? .55 : .75, interactive: false,
+      dashArray: r ? null : l.mode === "flight" ? "2 8" : "6 6",
+    }).addTo(layers.stays);
+    hoverBand(r ? r.c : [l.from, l.to], tip, vis).addTo(layers.stays);
+    if (l.trip) L.circleMarker(l.to, { radius: 5, color: c("--accent"), weight: 2, fillColor: "#fff", fillOpacity: 1 })
+      .bindTooltip(`${modeIcon(l.mode) || "📍"} Day trip: ${esc(l.place)}`, { direction: "top" }).addTo(layers.stays);
+  }
+  if (driven.length) requestRoutes(driven);
+  if (selectedDay == null) bounds.push(...stayPts);
+
+  // Saved places: small dots, must-sees highlighted. Click for must/skip.
+  if ($("#showPlaces").checked) {
+    const scheduled = new Set(it ? it.days.flatMap((d) => d.items.map((x) => x.place)) : []);
+    for (const p of places) {
+      const loc = placeLoc(p); if (!loc) continue;
+      const mark = state.marks[p.title];
+      if (it && scheduled.has(p.title)) continue; // drawn as an itinerary stop instead
+      const color = mark === "must" ? c("--ok") : mark === "skip" ? c("--skip") : c("--muted");
+      const m = L.circleMarker([loc.lat, loc.lng], {
+        radius: mark === "must" ? 7 : 5, color: "#fff", weight: 1.5, fillColor: color,
+        fillOpacity: mark === "skip" ? .35 : .9, opacity: mark === "skip" ? .4 : 1,
+      }).bindTooltip(esc(p.title), { direction: "top", offset: [0, -6] })
+        .bindPopup(`<b>${esc(p.title)}</b>${p.note ? `<div>${esc(p.note)}</div>` : ""}${p.address ? `<div class="pop-meta">${esc(p.address)}</div>` : ""}
+          <div class="pop-actions">
+            <button data-mark="${esc(p.title)}" data-v="must" class="${mark === "must" ? "on" : ""}">★ Must-see</button>
+            <button data-mark="${esc(p.title)}" data-v="skip" class="${mark === "skip" ? "on" : ""}">Skip</button>
+            ${mark && !p.custom ? `<button data-mark="${esc(p.title)}" data-v="">Reset</button>` : ""}
+            ${p.custom ? `<button data-rename-custom="${esc(p.title)}">Rename</button><button data-remove-custom="${esc(p.title)}">Remove</button>` : ""}
+            ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener" style="margin-left:auto">Maps ↗</a>` : ""}
+          </div>
+          ${it ? `<div class="pop-actions"><button data-add-place="${esc(p.title)}">＋ Add to a day</button></div>` : ""}`)
+        .addTo(layers.places);
+      placeMarkers.set(p.title, m);
+      if (!it && selectedDay == null && stayPts.length === 0) bounds.push([loc.lat, loc.lng]);
+    }
+  }
+
+  // Itinerary: numbered stops per day, joined in order (each split group gets its own line).
+  if (it) {
+    it.days.forEach((d, di) => {
+      if (selectedDay != null && selectedDay !== di) return;
+      const color = dayColor(di);
+      const pts = d.items.map((x, xi) => ({ x, xi, loc: itemLoc(x, d, byTitle) }));
+      pts.forEach(({ x, xi, loc }) => {
+        if (!loc) return;
+        const m = L.marker([loc.lat, loc.lng], {
+          icon: L.divIcon({ className: "", html: `<div class="num-pin${loc.approx ? " approx" : ""}" style="--c:${color}">${xi + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
+        }).bindTooltip(`${esc(x.time)} ${esc(x.place)}${loc.elsewhere ? ` · ⚠ the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : ""}`, { direction: "top", offset: [0, -10] })
+          .bindPopup(`<b>${esc(x.place)}</b><div class="pop-meta">${esc(fmtDate(d.date))} · ${esc(x.time)}${splitGroup(x) ? ` · ${esc(x.group)}` : ""}</div><div>${esc(x.description)}</div>`)
+          .on("click", () => highlightItem(di, xi))
+          .addTo(layers.items);
+        itemMarkers.set(`${di}-${xi}`, m);
+        bounds.push([loc.lat, loc.lng]);
+      });
+      if ($("#showRoutes").checked) {
+        for (const leg of dayLegs(d, byTitle)) {
+          const r = leg.mode === "straight" ? null : routes[routeKey(leg.mode, leg.from, leg.to)];
+          const line = r ? r.c : [leg.from, leg.to];
+          // Walking: dotted along paths; road: solid; train/tram/ferry/flight (or no route found): long dashes, straight.
+          const style = r && leg.mode === "foot" ? { weight: 4, dashArray: "1 7" }
+            : r ? { weight: 4 }
+            : leg.mode === "straight" || r === null ? { weight: 3, dashArray: "8 8" }
+            : { weight: 2, dashArray: "2 6", opacity: .4 }; // still being routed
+          const vis = L.polyline(line, { color, opacity: .8, lineCap: "round", interactive: false, ...style }).addTo(layers.routes);
+          hoverBand(line, legTip(d, leg, r), vis).on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
+        }
+      }
+    });
+    requestRoutes(it.days.flatMap((d) => dayLegs(d, byTitle)).filter((l) => l.mode !== "straight"));
+  }
+
+  if ((fit || !userMoved) && bounds.length) {
+    if (fit) userMoved = false;
+    // Extra top padding keeps pins out from under the search box.
+    map.flyToBounds(L.latLngBounds(bounds), { maxZoom: 14, duration: .6, paddingTopLeft: [30, 70], paddingBottomRight: [30, 30] });
+  }
+  renderDayChips();
+}
+
+// ---- routes between stops (real streets and roads, via the server) ----
+let routes = {};                 // route key -> { d: metres, t: seconds, c: [[lat, lng], …] }, or null if there is none
+let routeWanted = new Map(), routeTimer, routeRedraw;
+const routeKey = (mode, a, b) => `${mode}:${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}`;
+
+// How a leg is travelled, from the stop's transport text ("Walk, 5 min", "Bus 710", "Railjet to Munich"), else by distance.
+// Public transport on rails or water can't be routed with free services, so those legs stay straight lines.
+const RAIL = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|u-?bahn|metro|subway|tram|vaporetto|ferry|boat|ship|flight|fly|plane|cable car|funicular|gondola)\b/i;
+const ROAD = /\b(bus|coach|taxi|uber|car|drive|driving|shuttle|transfer)\b/i;
+const FOOT = /\b(walk|walking|on foot|stroll|hike|zu fu)/i;
+function legMode(x, a, b) {
+  const t = String(x.transport || ""), km = distKm({ lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] });
+  if (km < 0.03) return null;
+  const m = chosenMode(x);
+  if (m === "car" || m === "bus") return "car";
+  if (m && m !== "bike") return "straight";
+  if (RAIL.test(t) && km > 2) return "straight";
+  if (FOOT.test(t) && km < 15) return "foot";
+  if (ROAD.test(t)) return "car";
+  return km < 1.5 ? "foot" : km < 80 ? "car" : "straight";
+}
+
+// A stop's subgroup while the travelers are split up, or "" when everyone is together. Some models label shared
+// stops "All" or give a group with everyone in it; that isn't a split.
+const splitGroup = (x) => {
+  const g = String(x.group || "").trim();
+  if (!g || /^(all|everyone|everybody|together|whole group|both|group)$/i.test(g)) return "";
+  if (x.people && x.people >= (state.travelers || 1) && (state.travelers || 1) > 1) return "";
+  return g;
+};
+
+// The legs of a day: from each stop to the next one with a location (each split group follows its own path).
+function dayLegs(d, byTitle) {
+  const pts = d.items.map((x, xi) => ({ x, xi, loc: itemLoc(x, d, byTitle) })).filter((p) => p.loc);
+  const groups = [...new Set(d.items.map(splitGroup).filter(Boolean))];
+  const paths = groups.length ? groups.map((g) => pts.filter((p) => !splitGroup(p.x) || p.x.group === g)) : [pts];
+  const legs = new Map();
+  for (const path of paths) {
+    for (let i = 1; i < path.length; i++) {
+      const from = [path[i - 1].loc.lat, path[i - 1].loc.lng], to = [path[i].loc.lat, path[i].loc.lng];
+      const mode = legMode(path[i].x, from, to);
+      if (mode) legs.set(`${path[i].xi}`, { xi: path[i].xi, fromXi: path[i - 1].xi, mode, from, to });
+    }
+  }
+  return [...legs.values()];
+}
+
+function requestRoutes(legs) {
+  for (const l of legs) { const k = routeKey(l.mode, l.from, l.to); if (!(k in routes)) routeWanted.set(k, l); }
+  if (routeWanted.size && !routeTimer) routeTimer = setTimeout(pollRoutes, 300);
+}
+async function pollRoutes() {
+  routeTimer = null;
+  if (!routeWanted.size) return;
+  try {
+    const { routes: got, pending } = await api("/api/routes", { method: "POST", body: JSON.stringify({ legs: [...routeWanted.values()] }) });
+    Object.assign(routes, got);
+    for (const k of Object.keys(got)) routeWanted.delete(k);
+    if (Object.keys(got).length) { clearTimeout(routeRedraw); routeRedraw = setTimeout(() => { drawMap(); updateLegInfo(); }, 200); }
+    if (pending) { setMapStatus(`Routing ${pending} leg${pending > 1 ? "s" : ""}…`); routeTimer = setTimeout(pollRoutes, 2500); }
+    else setMapStatus("");
+  } catch { routeTimer = setTimeout(pollRoutes, 5000); }
+}
+
+// A wide, invisible line over a route so thin or dotted lines are easy to hover; the visible line thickens meanwhile.
+function hoverBand(line, tip, vis) {
+  const w = vis.options.weight, o = vis.options.opacity;
+  return L.polyline(line, { weight: 16, opacity: 0, lineCap: "round" })
+    .bindTooltip(tip, { sticky: true, className: "leg-tip" })
+    .on("mouseover", () => vis.setStyle({ weight: w + 3, opacity: 1 }))
+    .on("mouseout", () => vis.setStyle({ weight: w, opacity: o }));
+}
+// Hover text for a day's leg: which day, from where to where, how, and how far.
+function legTip(d, leg, r) {
+  const a = d.items[leg.fromXi], b = d.items[leg.xi];
+  const how = { foot: "🚶 walk", car: "🚗 by road", straight: /flight|fly|plane/i.test(b.transport || "") ? "✈️ flight" : /ferry|boat|ship|vaporetto/i.test(b.transport || "") ? "⛴ boat" : "🚆 rail / transit" }[leg.mode];
+  const crow = distKm({ lat: leg.from[0], lng: leg.from[1] }, { lat: leg.to[0], lng: leg.to[1] }) * 1000;
+  const dist = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)}` : `${fmtDist(crow)} straight line`;
+  const g = splitGroup(b);
+  return `<b>${esc(fmtDate(d.date))}</b>${g ? ` · ${esc(g)}` : ""}<br>${leg.fromXi + 1}. ${esc(a.place)} → ${leg.xi + 1}. ${esc(b.place)}<br>` +
+    `<span class="pop-meta">${how} · ${dist}${b.transport ? `<br>${esc(b.transport)}` : ""}</span>`;
+}
+
+// Fills each stop's "1.2 km · 15 min walk" line from the routed leg that leads to it.
+const fmtDist = (m) => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(m < 10000 ? 1 : 0)} km`);
+const fmtDur = (s) => { const m = Math.max(1, Math.round(s / 60)); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? `${m % 60} min` : ""}`.trim(); };
+function updateLegInfo() {
+  const it = state.itinerary; if (!it) return;
+  const byTitle = byTitleMap();
+  it.days.forEach((d, di) => {
+    d.items.forEach((x, xi) => {
+      const el = document.querySelector(`[data-far="${di}-${xi}"]`); if (!el) return;
+      const loc = itemLoc(x, d, byTitle);
+      el.hidden = !loc?.elsewhere;
+      if (loc?.elsewhere) el.textContent = `⚠ The only "${cleanStop(x.place)}" known is far away (${loc.elsewhere}), not near ${daySegments(d)[0] || "this day's town"}. Probably a mix-up by the AI; pinned in town for now.`;
+    });
+    for (const leg of dayLegs(d, byTitle)) {
+      const el = document.querySelector(`[data-leg="${di}-${leg.xi}"]`);
+      if (!el) continue;
+      const r = leg.mode === "straight" ? null : routes[routeKey(leg.mode, leg.from, leg.to)];
+      const crow = distKm({ lat: leg.from[0], lng: leg.from[1] }, { lat: leg.to[0], lng: leg.to[1] }) * 1000;
+      el.textContent = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)} ${leg.mode === "foot" ? "walk" : "by road"}`
+        : leg.mode === "straight" || r === null ? `${fmtDist(crow)} as the crow flies` : "";
+    }
+  });
+}
+
+// ---- Google Maps directions for each leg ----
+// Opens directions from the previous stop (or the hotel, for the day's first stop) to this one, in the mode the
+// transport text describes. Transfers named "Salzburg → Hallstatt" use the two names as start and end.
+const TRANSIT = /\b(bus|buses|coach|train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|u-?bahn|metro|subway|tram|vaporetto|ferry|boat|funicular|cable car|line \d+)\b/i;
+const DRIVE = /\b(taxi|uber|car|drive|driving|rental)\b/i;
+const BIKE = /\b(bike|bicycle|cycle|cycling)\b/i;
+// The mode the travelers picked for a transfer ("Padua → Milan") or a day trip ("Milan → Rome", "Rome → Milan").
+const normCity = (s) => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().split(",")[0].trim();
+const sameCity = (a, b) => { a = normCity(a); b = normCity(b); return !!a && !!b && (a === b || a.includes(b) || b.includes(a)); };
+function chosenMode(x) {
+  const ends = cleanStop(x.place).split(ARROW).filter(Boolean);
+  if (ends.length !== 2) return "";
+  const [a, b] = ends;
+  for (let i = 1; i < state.stays.length; i++) {
+    const s = state.stays[i];
+    if (s.travel && sameCity(a, state.stays[i - 1].city) && sameCity(b, s.city)) return s.travel;
+  }
+  for (const s of state.stays) for (const t of s.dayTrips || []) {
+    if (t.mode && t.place && ((sameCity(a, s.city) && sameCity(b, t.place)) || (sameCity(a, t.place) && sameCity(b, s.city)))) return t.mode;
+  }
+  return "";
+}
+function travelMode(x, km) {
+  const m = chosenMode(x);
+  if (m) return m === "car" ? "driving" : m === "bike" ? "bicycling" : "transit";
+  const t = `${x.transport || ""} ${x.place || ""}`;
+  if (TRANSIT.test(t)) return "transit"; // "Bus 260 or taxi" -> transit
+  if (DRIVE.test(t)) return "driving";
+  if (BIKE.test(t)) return "bicycling";
+  if (FOOT.test(t)) return "walking";
+  return km != null && km < 1.5 ? "walking" : "transit";
+}
+const ARROW = /\s*(?:→|->|⇒|–>)\s*/;
+const cleanStop = (s) => String(s).replace(/\s*\([^)]*\)/g, "").trim();
+function stopRef(x, d, byTitle) {
+  // A transfer ("Salzburg → Hallstatt") ends where it arrives.
+  const ends = cleanStop(x.place).split(ARROW).filter(Boolean);
+  if (ends.length === 2) return { text: ends[1], loc: null };
+  const loc = itemLoc(x, d, byTitle);
+  if (loc && !loc.approx) return { text: `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`, loc };
+  const town = daySegments(d)[0];
+  const name = cleanStop(x.place);
+  return { text: town && !name.toLowerCase().includes(town.toLowerCase()) ? `${name}, ${town}` : name, loc };
+}
+// The stop before this one on the same path (a split group continues from its own previous stop).
+function prevStop(d, xi) {
+  const g = splitGroup(d.items[xi]);
+  for (let i = xi - 1; i >= 0; i--) { const pg = splitGroup(d.items[i]); if (!pg || pg === g || !g) return d.items[i]; }
+  return null;
+}
+function directionsUrl(di, xi) {
+  const d = state.itinerary?.days[di], x = d?.items[xi];
+  if (!x) return null;
+  const byTitle = byTitleMap();
+  let from, to, km = null;
+  const ends = cleanStop(x.place).split(ARROW).filter(Boolean);
+  if (ends.length === 2) [from, to] = ends;
+  else {
+    const b = stopRef(x, d, byTitle), prev = prevStop(d, xi);
+    let a;
+    if (prev) a = stopRef(prev, d, byTitle);
+    else {
+      const stay = state.stays.find((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, s.nights));
+      if (stay) a = { text: stay.hotel ? `${stay.hotel}, ${stay.city}` : stay.city, loc: stayLoc(stay) };
+    }
+    if (!a) return null;
+    from = a.text; to = b.text;
+    // From the town to "<town> accommodation" on the first stop of a day isn't a route worth opening.
+    if (!prev && to.toLowerCase().includes(from.toLowerCase().split(",")[0])) return null;
+    if (a.loc && b.loc) km = distKm(a.loc, b.loc);
+  }
+  if (from === to) return null;
+  const p = new URLSearchParams({ api: "1", origin: from, destination: to, travelmode: travelMode(x, km) });
+  return `https://www.google.com/maps/dir/?${p}`;
+}
+// Links are filled in when clicked, so they use the latest locations.
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-dir]"); if (!a) return;
+  const [di, xi] = a.dataset.dir.split("-").map(Number);
+  const url = directionsUrl(di, xi);
+  if (url) a.href = url; else e.preventDefault();
+}, true);
+
+// ---- add from the map ----
+const toMin = (t) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
+const fromMin = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+
+// The day whose stops (or stay city) are closest to a point.
+function nearestDay(latlng) {
+  const it = state.itinerary, byTitle = byTitleMap(), pt = { lat: latlng.lat, lng: latlng.lng };
+  let best = 0, bestD = Infinity;
+  it.days.forEach((d, i) => {
+    const stay = state.stays.find((s) => s.city === d.city);
+    const locs = [...d.items.map((x) => itemLoc(x, d, byTitle)), stay && stayLoc(stay)].filter(Boolean);
+    for (const l of locs) { const dist = distKm(pt, l); if (dist < bestD) { bestD = dist; best = i; } }
+  });
+  return best;
+}
+// Right after the day's stop nearest to the new spot (before the stop after it); else an hour after the last stop.
+function defaultTime(di, latlng) {
+  const d = state.itinerary.days[di], byTitle = byTitleMap();
+  const timed = d.items.map((x) => ({ t: toMin(x.time), loc: itemLoc(x, d, byTitle) })).filter((s) => s.t != null);
+  if (!timed.length) return "12:00";
+  const located = latlng ? timed.filter((s) => s.loc) : [];
+  if (located.length) {
+    const pt = { lat: latlng.lat, lng: latlng.lng };
+    const near = located.reduce((a, b) => (distKm(pt, b.loc) < distKm(pt, a.loc) ? b : a));
+    const next = Math.min(...timed.map((s) => s.t).filter((t) => t > near.t), Infinity);
+    return fromMin(Math.min(near.t + 45, next === Infinity ? 23 * 60 : Math.round((near.t + next) / 2)));
+  }
+  return fromMin(Math.min(Math.max(...timed.map((s) => s.t)) + 60, 23 * 60));
+}
+
+function openAddPopup(latlng, preset = {}) {
+  const it = state.itinerary;
+  const di = it ? selectedDay ?? nearestDay(latlng) : 0;
+  // Top padding keeps the form clear of the search box.
+  const popup = L.popup({ minWidth: 250, autoPanPaddingTopLeft: [10, 64] }).setLatLng(latlng).setContent(`
+    <form class="add-form">
+      <b>${it ? "Add to the itinerary" : "Add as a must-see place"}</b>
+      <div class="pop-meta ${preset.name ? "" : "lookup"}" data-label>${preset.name ? esc(preset.label || "") : "Looking up this spot…"}</div>
+      <input name="placeName" required placeholder="Name" value="${esc(preset.name || "")}">
+      <div class="name-options" data-options></div>
+      ${it ? `<div class="add-row">
+        <select name="day">${it.days.map((d, i) => `<option value="${i}" ${i === di ? "selected" : ""}>${esc(fmtDate(d.date) || `Day ${i + 1}`)} · ${esc(d.city)}</option>`).join("")}</select>
+        <input name="time" type="time" value="${defaultTime(di, latlng)}">
+      </div>` : ""}
+      <input name="desc" placeholder="Note (optional)">
+      <div class="pop-actions"><button type="submit" class="on">${it ? "＋ Add" : "★ Add must-see"}</button></div>
+    </form>`).openOn(map);
+  const el = popup.getElement(), form = el.querySelector("form");
+  if (it) form.day.onchange = () => { form.time.value = defaultTime(+form.day.value, latlng); };
+  let address = preset.label || "";
+  if (!preset.name) {
+    api(`/api/reverse?lat=${latlng.lat}&lng=${latlng.lng}`).then((r) => {
+      el.querySelector("[data-label]").textContent = r.label || "";
+      address = r.short || r.label || "";
+      // Name the spot at the level you're looking at: zoomed out on a region you mean the town, not the shop under the cursor.
+      const z = map.getZoom(), want = z >= 16 ? "place" : z >= 13 ? "area" : "town";
+      const options = r.options || [];
+      const pick = options.find((o) => o.level === want) || (want === "area" && options.find((o) => o.level === "town")) || options[0];
+      if (!form.placeName.value) form.placeName.value = pick?.name || r.name || "";
+      if (options.length > 1) {
+        el.querySelector("[data-options]").innerHTML = options.map((o) =>
+          `<button type="button" class="${o.name === form.placeName.value ? "on" : ""}" data-name="${esc(o.name)}" title="${o.level}">${esc(o.name)}</button>`).join("");
+      }
+    }).catch(() => { el.querySelector("[data-label]").textContent = ""; });
+  }
+  el.querySelector("[data-options]").onclick = (e) => {
+    const b = e.target.closest("[data-name]"); if (!b) return;
+    form.placeName.value = b.dataset.name;
+    el.querySelectorAll("[data-name]").forEach((x) => x.classList.toggle("on", x === b));
+  };
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const name = form.placeName.value.trim(); if (!name) return;
+    const pos = { lat: +latlng.lat.toFixed(5), lng: +latlng.lng.toFixed(5) };
+    map.closePopup();
+    if (it) addStop(+form.day.value, { time: form.time.value || defaultTime(+form.day.value), place: name, description: form.desc.value.trim(), fromList: !!preset.fromList, ...pos });
+    else addCustomPlace({ title: name, note: form.desc.value.trim(), address, ...pos });
+  };
+  setTimeout(() => form.placeName.focus(), 50);
+}
+
+// Search by name (biased to the current map view), pick a result, then the same add form opens there.
+let searchResults = [];
+$("#mapSearch").onsubmit = async (e) => {
+  e.preventDefault();
+  const q = $("#mapSearchQ").value.trim(), ul = $("#mapResults");
+  if (!q || !map) return;
+  const c = map.getCenter();
+  ul.hidden = false;
+  ul.innerHTML = `<li class="muted">Searching…</li>`;
+  try {
+    searchResults = await api(`/api/search?${new URLSearchParams({ q, lat: c.lat.toFixed(4), lng: c.lng.toFixed(4), cc: countryCodes() })}`);
+    ul.innerHTML = searchResults.length
+      ? searchResults.map((r, i) => `<li data-r="${i}"><b>${esc(r.name)}</b><span>${esc(r.label)}</span></li>`).join("")
+      : `<li class="muted">Nothing found. Try a shorter name, or click the spot on the map.</li>`;
+  } catch (err) { ul.innerHTML = `<li class="muted">${esc(err.message)}</li>`; }
+};
+$("#mapResults").onclick = (e) => {
+  const r = searchResults[e.target.closest("[data-r]")?.dataset.r]; if (!r) return;
+  $("#mapResults").hidden = true;
+  const at = L.latLng(r.lat, r.lng);
+  userMoved = true;
+  map.closePopup();
+  const open = () => openAddPopup(at, { name: r.name, label: r.label, fromList: places.some((p) => p.title === r.name) });
+  if (map.getCenter().distanceTo(at) < 5 && map.getZoom() >= 16) return open();
+  map.flyTo(at, Math.max(map.getZoom(), 16), { duration: .8 });
+  map.once("moveend", open);
+};
+$("#mapSearchQ").addEventListener("keydown", (e) => { if (e.key === "Escape") $("#mapResults").hidden = true; });
+
+function addStop(di, item) {
+  const items = state.itinerary.days[di].items, t = toMin(item.time);
+  let at = items.findIndex((x) => toMin(x.time) != null && toMin(x.time) > t);
+  if (at < 0) at = items.length;
+  items.splice(at, 0, item);
+  save();
+  selectedDay = di;
+  renderItinerary(); drawMap({ fit: true });
+  const el = document.querySelector(`.item[data-k="${di}-${at}"]`);
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  el?.classList.add("flash");
+  toast(`Added “${item.place}” to ${fmtDate(state.itinerary.days[di].date)}`);
+}
+
+function addCustomPlace(p) {
+  if (places.some((x) => x.title === p.title)) p.title += " (map)";
+  state.customPlaces.push({ ...p, custom: true, url: `https://www.google.com/maps/search/?api=1&query=${p.lat},${p.lng}` });
+  state.marks[p.title] = "must";
+  setListPlaces(listPlaces); save(); renderChips(); drawMap();
+  toast(`Added “${p.title}” as a must-see; Claude will fit it in when you generate`);
+}
+
+function removeStop(di, xi) {
+  const day = state.itinerary.days[di];
+  const [removed] = day.items.splice(xi, 1);
+  save(); renderItinerary(); drawMap();
+  toast(`Removed “${removed.place}”`, () => {
+    day.items.splice(xi, 0, removed);
+    save(); renderItinerary(); drawMap();
+  });
+}
+
+let toastTimer;
+function toast(msg, undo) {
+  const el = $("#toast");
+  el.innerHTML = `<span>${esc(msg)}</span>${undo ? `<button>Undo</button>` : ""}`;
+  el.hidden = false;
+  if (undo) el.querySelector("button").onclick = () => { el.hidden = true; undo(); };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, undo ? 8000 : 4000);
+}
+
+function renderDayChips() {
+  const it = state.itinerary;
+  $("#dayChips").innerHTML = !it ? `<span class="hint">Stays and saved places — generate an itinerary to see each day's route.</span>` :
+    `<button class="day-chip ${selectedDay == null ? "on" : ""}" data-day="">All days</button>` +
+    it.days.map((d, i) => `<button class="day-chip ${selectedDay === i ? "on" : ""}" data-day="${i}" style="--c:${dayColor(i)}" title="${esc(d.title)}"><i></i>${esc(fmtShort(d.date) || `Day ${i + 1}`)}</button>`).join("");
+}
+$("#dayChips").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-day]"); if (!b) return;
+  selectDay(b.dataset.day === "" ? null : +b.dataset.day, { scroll: true });
+});
+
+function selectDay(i, { scroll = false } = {}) {
+  selectedDay = selectedDay === i ? null : i;
+  document.querySelectorAll(".day").forEach((el) => el.classList.toggle("selected", +el.dataset.i === selectedDay));
+  drawMap({ fit: true });
+  if (scroll && selectedDay != null) document.querySelector(`.day[data-i="${selectedDay}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  $(`.day-chip.on`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+function highlightItem(di, xi) {
+  const el = document.querySelector(`.item[data-k="${di}-${xi}"]`);
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+// Hovering a stop in the itinerary pops its pin on the map.
+$("#output").addEventListener("mouseover", (e) => {
+  const k = e.target.closest(".item")?.dataset.k;
+  document.querySelectorAll(".num-pin.hot").forEach((p) => p.classList.remove("hot"));
+  const m = k && itemMarkers.get(k);
+  if (m) { m.getElement()?.querySelector(".num-pin")?.classList.add("hot"); m.openTooltip(); }
+});
+
+// ---- weather (Open-Meteo forecast, only for days in the next ~2 weeks) ----
+const WMO = [[0, "☀️"], [2, "🌤️"], [3, "☁️"], [48, "🌫️"], [57, "🌦️"], [67, "🌧️"], [77, "🌨️"], [82, "🌧️"], [86, "🌨️"], [99, "⛈️"]];
+const wmoIcon = (code) => (WMO.find(([max]) => code <= max) || WMO.at(-1))[1];
+async function loadWeather() {
+  const it = state.itinerary; if (!it) return;
+  const t = todayIso(), horizon = addDays(t, 15), byTitle = byTitleMap();
+  const days = it.days.filter((d) => d.date >= t && d.date <= horizon && !weather[d.date]);
+  const byCity = new Map();
+  for (const d of days) {
+    const stay = state.stays.find((s) => s.city === d.city);
+    const loc = (stay && stayLoc(stay)) || d.items.map((x) => itemLoc(x, d, byTitle)).find(Boolean);
+    if (!loc) continue;
+    const key = `${loc.lat.toFixed(2)},${loc.lng.toFixed(2)}`;
+    if (!byCity.has(key)) byCity.set(key, { loc, dates: [] });
+    byCity.get(key).dates.push(d.date);
+  }
+  for (const { loc, dates } of byCity.values()) {
+    try {
+      const u = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lng}&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=auto&start_date=${dates[0]}&end_date=${dates.at(-1)}`;
+      const { daily } = await (await fetch(u)).json();
+      daily.time.forEach((date, i) => { if (dates.includes(date)) weather[date] = { code: daily.weather_code[i], max: daily.temperature_2m_max[i], min: daily.temperature_2m_min[i] }; });
+    } catch {}
+  }
+  if (byCity.size) renderItinerary();
+}
+
+// ---- generate / revise ----
+// Claude's planning notes are light Markdown: paragraphs, "- " bullets, **bold**, # headings.
+function mdLite(text) {
+  const inline = (s) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  return String(text || "").trim().split(/\n\s*\n/).map((block) => {
+    // Some models put several bullets on one line ("- a - b - c"); give each its own line.
+    const lines = block.split("\n").flatMap((l) => (/^\s*- /.test(l) ? l.split(/\s+-\s+(?=\S)/).map((p, i) => (i ? `- ${p}` : p)) : [l]));
+    if (lines.every((l) => /^\s*[-*•] /.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*•] /, ""))}</li>`).join("")}</ul>`;
+    if (/^#{1,6} /.test(lines[0]) && lines.length === 1) return `<p><b>${inline(lines[0].replace(/^#+ /, ""))}</b></p>`;
+    return `<p>${lines.map(inline).join("<br>")}</p>`;
+  }).join("");
+}
+// Planning notes, plus the model's raw thinking when a local model shares it (Claude Code doesn't).
+// Also lists what was looked up online during research.
+const thoughtsBody = (notes, thinking, lookups = []) =>
+  (thinking ? `<div class="raw-thinking"><b>Thinking</b>${esc(thinking)}</div>` : "") +
+  (lookups.length ? `<div class="lookups"><b>Looked up online (${lookups.length})</b><ul>${lookups.map((l) => `<li>${l.url
+    ? `📄 <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 70))}</a>`
+    : `🔍 ${esc(l.query)}`}</li>`).join("")}</ul></div>` : "") +
+  mdLite(notes);
+const thoughtsHtml = (notes, { thinking = "", lookups = [], open = false, live = false } = {}) => `
+  <details class="thoughts" ${open ? "open" : ""}>
+    <summary>Reasoning${lookups.length ? ` · ${lookups.length} lookups` : ""}${live ? ` <span class="hint" data-thoughts-hint>appears as the model writes it</span>` : ""}</summary>
+    <div class="thoughts-body" data-thoughts-body>${thoughtsBody(notes, thinking, lookups)}</div>
+  </details>`;
+
+// Everything handed to the model: the prompt(s), plus every search result and page it was given while researching.
+const promptSize = (parts) => parts.reduce((n, p) => n + p.text.length, 0);
+const promptSummary = (parts) => `Prompt sent to the model · ${parts.length > 1 ? `${parts.length} parts · ` : ""}${promptSize(parts).toLocaleString()} characters`;
+const promptBody = (parts) => parts.map((p) => `
+  <div class="prompt-part">
+    <b>${esc(p.label)}</b>${p.info ? `<div class="hint">${esc(p.info)}</div>` : ""}
+    <pre>${esc(p.text)}</pre>
+  </div>`).join("");
+const promptHtml = (parts) => `
+  <details class="thoughts prompt-panel">
+    <summary data-prompt-summary>${promptSummary(parts)}</summary>
+    <div class="thoughts-body" data-prompt-body>${promptBody(parts)}</div>
+  </details>`;
+
+// ---- models: Claude Code plus any local model servers that are running ----
+let localModels = [];
+const isLocal = (id) => String(id).startsWith("local|");
+function modelLabel(id) {
+  if (!isLocal(id)) return "Claude";
+  const m = localModels.find((x) => x.id === id);
+  return m ? m.name : id.split("|")[3];
+}
+async function refreshModels() {
+  const sel = $("#model");
+  try {
+    const { local } = await api("/api/models");
+    localModels = local;
+  } catch { localModels = []; }
+  const groups = {};
+  for (const m of localModels) (groups[m.server] ||= []).push(m);
+  const gb = (n) => (n ? ` · ${(n / 1e9).toFixed(1)} GB` : "");
+  let html = `<optgroup label="Claude (via Claude Code)">
+      <option value="default">Claude · CLI default</option><option value="opus">Claude Opus</option>
+      <option value="sonnet">Claude Sonnet</option><option value="haiku">Claude Haiku (fast)</option></optgroup>`;
+  for (const [server, ms] of Object.entries(groups)) {
+    html += `<optgroup label="Local · ${esc(server)}">${ms.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}${gb(m.size)}</option>`).join("")}</optgroup>`;
+  }
+  // Keep a saved local choice visible even while its server is off.
+  if (isLocal(state.model) && !localModels.some((m) => m.id === state.model)) {
+    html += `<optgroup label="Not running"><option value="${esc(state.model)}">${esc(modelLabel(state.model))} (offline)</option></optgroup>`;
+  }
+  sel.innerHTML = html;
+  sel.value = state.model;
+  if (sel.value !== state.model) sel.value = "default";
+  syncResearch();
+  $("#modelHint").textContent = localModels.length
+    ? `${localModels.length} local model${localModels.length > 1 ? "s" : ""} found. Local models are free but weaker at long plans than Claude.`
+    : "No local model server running (Ollama, LM Studio, llama.cpp, Jan, vLLM, KoboldCpp, text-generation-webui, GPT4All).";
+}
+$("#refreshModels").onclick = refreshModels;
+$("#model").addEventListener("focus", refreshModels, { once: true });
+
+// Web research is on by default. Claude browses itself; for local models the planner runs the searches
+// for them (they need tool support, otherwise they plan without it).
+function syncResearch() {
+  $("#research").checked = state.research !== false;
+  $("#researchHint").textContent = isLocal(state.model)
+    ? ": the model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
+    : ": Claude checks opening hours, prices and events on the web (slower, more accurate)";
+}
+$("#research").onchange = () => { state.research = $("#research").checked; save(); };
+$("#model").addEventListener("change", syncResearch);
+
+let timer, genAbort;
+async function runGeneration(revise) {
+  const btn = $("#generate");
+  const trip = {
+    ...Object.fromEntries(FIELDS.map((f) => [f, state[f]])),
+    list: state.list,
+    extraPlaces: state.customPlaces.map(({ title, note, address, lat, lng }) => ({ title, note, address, lat, lng, picked: true })),
+    stays: state.stays.map((s) => ({ city: s.city, start: s.start, nights: s.nights, hotel: s.hotel, country: stayLoc(s)?.country, cc: stayLoc(s)?.cc,
+      travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "" })) })),
+    research: state.research !== false,
+    mustSee: Object.keys(state.marks).filter((t) => state.marks[t] === "must"),
+    mustSeeWho: Object.fromEntries(Object.keys(state.marks)
+      .filter((t) => state.marks[t] === "must" && whoFor(t) < groupSize()).map((t) => [t, whoFor(t)])),
+    skip: Object.keys(state.marks).filter((t) => state.marks[t] === "skip"),
+    revise,
+  };
+  btn.disabled = true;
+  const expectedDays = revise ? revise.itinerary.days.length
+    : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1;
+
+  // Built once and then updated in place, so an opened reasoning panel stays open.
+  $("#output").innerHTML = `
+    <div class="empty loading">
+      <div class="sun"></div>
+      ${esc(modelLabel(state.model))} is ${revise ? "revising" : "planning"} your trip… <span data-gen-time>0s</span>
+      <small data-gen-status>${isLocal(state.model) ? "Loading the model…" : "Starting…"}</small>
+      <small data-gen-tokens class="gen-tokens"></small>
+      <div class="gen-bar"><i data-gen-bar></i></div>
+      <small>${isLocal(state.model) ? "Local models can take several minutes, depending on your hardware." : "This usually takes 1–3 minutes."}</small>
+      <button class="btn" data-gen-cancel style="margin-top:14px">Cancel</button>
+    </div>
+    ${thoughtsHtml("", { live: true })}
+    ${promptHtml([])}`;
+  const out = $("#output"), el = (k) => out.querySelector(`[data-${k}]`);
+  const t0 = Date.now();
+  timer = setInterval(() => { el("gen-time").textContent = `${Math.round((Date.now() - t0) / 1000)}s`; showTokens(); }, 1000);
+  genAbort = new AbortController();
+  el("gen-cancel").onclick = () => genAbort.abort();
+
+  let notes = "", thinking = "", lookups = [], promptParts = [], pois = [], notesFrame = 0;
+  // Live output-token count. The speed is measured over the last few seconds only, so pauses (web searches,
+  // page reads, reading the prompt) don't drag it down; during a pause it says "waiting" instead.
+  let tokens = 0, tokEstimated = false, finalRate = 0, samples = [];
+  const showTokens = () => {
+    if (!tokens) return;
+    const now = Date.now();
+    samples = samples.filter((s) => now - s.t < 5000);
+    const last = samples.at(-1), first = samples[0];
+    let speed = "";
+    if (finalRate) speed = ` · ${Math.round(finalRate)} tok/s`;
+    else if (!last || now - last.t > 2000) speed = " · waiting…";
+    else if (last.t - first.t > 800) speed = ` · ${Math.round((last.n - first.n) / ((last.t - first.t) / 1000))} tok/s`;
+    el("gen-tokens").textContent = `${tokEstimated ? "~" : ""}${tokens.toLocaleString()} tokens${speed}`;
+  };
+  const status = (s) => { el("gen-status").textContent = s; };
+  // Re-render the panel at most once per frame. It follows the newest line only while you're at the bottom;
+  // scroll up to read and it stays put.
+  const renderNotes = () => {
+    el("thoughts-hint").textContent = "";
+    notesFrame ||= requestAnimationFrame(() => {
+      notesFrame = 0;
+      const body = el("thoughts-body");
+      const atBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 40;
+      const top = body.scrollTop;
+      body.innerHTML = thoughtsBody(notes, thinking, lookups);
+      body.scrollTop = atBottom ? body.scrollHeight : top;
+    });
+  };
+  const onEvent = (ev) => {
+    if (ev.type === "thinking") status(`Thinking… ~${ev.tokens >= 1000 ? (ev.tokens / 1000).toFixed(1) + "k" : ev.tokens} tokens`);
+    // Claude streams its notes piece by piece; local models stream real thinking, then the notes field as it grows.
+    if (ev.type === "text") { notes += ev.text; status("Writing planning notes…"); renderNotes(); }
+    if (ev.type === "notes") { notes = ev.text; status("Writing planning notes…"); renderNotes(); }
+    if (ev.type === "thought") { thinking += ev.text; status(`Thinking… ${thinking.length.toLocaleString()} characters`); renderNotes(); }
+    if (ev.type === "status") status(ev.text);
+    if (ev.type === "pois") pois = ev.places;
+    if (ev.type === "prompt") {
+      promptParts.push({ label: ev.label, info: ev.info, text: ev.text });
+      el("prompt-summary").textContent = promptSummary(promptParts);
+      // Append rather than re-render, so an open panel keeps its scroll position.
+      el("prompt-body").insertAdjacentHTML("beforeend", promptBody([promptParts.at(-1)]));
+    }
+    if (ev.type === "tokens") {
+      tokens = ev.count; tokEstimated = ev.estimated; finalRate = ev.perSec || 0;
+      samples.push({ t: Date.now(), n: ev.count });
+      showTokens();
+    }
+    if (ev.type === "search") { lookups.push({ query: ev.query }); status(`Searching: ${ev.query}`); renderNotes(); }
+    if (ev.type === "fetch") { lookups.push({ url: ev.url }); status(`Reading ${ev.url.replace(/^https?:\/\/(www\.)?/, "").split("/")[0]}…`); renderNotes(); }
+    if (ev.type === "progress") {
+      status(`Writing day ${ev.days} of ${expectedDays}…`);
+      el("gen-bar").style.width = `${Math.min(100, (ev.days / expectedDays) * 100)}%`;
+    }
+  };
+
+  try {
+    const res = await fetch(API + "/api/itinerary", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(trip), signal: genAbort.signal,
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    // The server streams one JSON object per line.
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buf = "", data = null;
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += value;
+      let i;
+      while ((i = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, i).trim(); buf = buf.slice(i + 1);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.type === "error") throw new Error(ev.error);
+        if (ev.type === "done") data = ev; else onEvent(ev);
+      }
+    }
+    if (!data) throw new Error("The server stopped before Claude finished.");
+    state.itinerary = data.itinerary;
+    state.meta = {
+      costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, lookups, prompt: promptParts, pois, tokens: data.tokens, perSec: data.perSec,
+      engine: data.engine, local: isLocal(trip.model), budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(),
+    };
+    selectedDay = null; weather = {};
+    save();
+    renderItinerary(); renderTripTitle(); drawMap({ fit: true }); geocodeItems(); loadWeather();
+  } catch (err) {
+    renderItinerary(err.name === "AbortError" ? "Cancelled." : err.message);
+  } finally {
+    clearInterval(timer); btn.disabled = false; genAbort = null;
+  }
+}
+$("#generate").onclick = () => runGeneration();
+
+// ---- itinerary ----
+function money(n, cur) {
+  if (n == null || isNaN(n)) return "";
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: ["JPY", "KRW", "VND", "IDR", "HUF"].includes(cur) ? 0 : 2 }).format(n); }
+  catch { return `${Math.round(n)} ${cur}`; }
+}
+const mapsLink = (x, d, byTitle) => byTitle.get(x.place)?.url ||
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${d.city}`)}`;
+
+function renderItinerary(error) {
+  const it = state.itinerary, meta = state.meta || {};
+  const out = $("#output");
+  if (!it) {
+    out.innerHTML = (error ? `<div class="error">${esc(error)}</div>` : "") + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.</div>`;
+    renderDayChips();
+    return;
+  }
+  const cur = meta.currency || state.currency;
+  const budget = meta.budget || state.dailyBudget;
+  const byTitle = byTitleMap();
+  const listedCount = new Set(it.days.flatMap((d) => d.items.filter((x) => x.fromList || byTitle.has(x.place)).map((x) => x.place))).size;
+  const maxCost = Math.max(budget, ...it.days.map((d) => d.estimatedCost || 0)) || 1;
+
+  let html = error ? `<div class="error">${esc(error)}</div>` : "";
+  // Warn when the stays have changed since this itinerary was made (e.g. a new trip typed over an old one).
+  const stayCities = new Set(state.stays.map((s) => s.city.trim().toLowerCase()).filter(Boolean));
+  const stale = (state.stays[0]?.start && it.days[0]?.date !== state.stays[0].start) ||
+    (stayCities.size && !it.days.some((d) => stayCities.has(String(d.city).trim().toLowerCase())));
+  if (stale) html += `<div class="stale">This itinerary doesn't match your current stays.
+    <span><button class="btn" data-stale="clear">Clear it</button> <button class="btn solid" data-stale="gen">Generate new</button></span></div>`;
+  html += `<div class="summary">
+    <h3>${it.days.length} days${it.destination ? ` in ${esc(it.destination)}` : ""}</h3>
+    <p>${esc(it.summary)}</p>
+    ${meta.reasoning || meta.thinking || meta.lookups?.length ? thoughtsHtml(meta.reasoning, { thinking: meta.thinking, lookups: meta.lookups || [] }) : ""}
+    ${meta.prompt?.length ? promptHtml(meta.prompt) : ""}
+    ${it.holidaysAndEvents?.length ? `<div class="events"><h2>Holidays &amp; events</h2><ul>${it.holidaysAndEvents.map((h) => {
+      const [a, b] = String(h.date || "").split("..");
+      const when = b ? `${fmtShort(a)} – ${fmtShort(b)}` : fmtDate(a) || h.date;
+      return `<li><span class="ev-date">${esc(when)}</span><div><b>${esc(h.name)}</b>${h.where ? ` <span class="hint">· ${esc(h.where)}</span>` : ""}<div>${esc(h.impact)}</div></div></li>`;
+    }).join("")}</ul></div>` : ""}
+    <div class="stats">
+      <div class="stat"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total</span></div>
+      <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day (budget ${money(budget, cur)})</span></div>
+      <div class="stat"><b>${listedCount}</b><span>saved places used</span></div>
+      ${it.localCurrency && it.localCurrency !== cur ? `<div class="stat"><b>${esc(it.localCurrency)}</b><span>local currency</span></div>` : ""}
+    </div>
+    <div class="bars" title="Daily cost vs budget">
+      <div class="budget-line" style="bottom:${(budget / maxCost) * 100}%"></div>
+      ${it.days.map((d, i) => `<button style="--c:${dayColor(i)};height:${Math.max(4, (d.estimatedCost / maxCost) * 100)}%" class="${d.estimatedCost > budget ? "over" : ""}" data-bar="${i}" title="${esc(fmtDate(d.date))}: ${esc(money(d.estimatedCost, cur))}"></button>`).join("")}
+    </div>
+    <div class="toolbar">
+      <button id="dlPhone" title="One self-contained file that works offline on your phone">📱 Download for phone</button>
+      <button onclick="window.print()">Print / PDF</button>
+      <button id="dlJson">Download JSON</button>
+      <button id="clearIt">Clear itinerary</button>
+    </div>
+    <div class="refine">
+      <textarea id="refineText" placeholder="Ask for changes, e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”"></textarea>
+      <button class="btn solid" id="refineBtn">Revise</button>
+    </div>
+  </div>`;
+
+  // xi is the item's index within its day; it matches the numbered pin on the map.
+  let di = 0;
+  const itemHtml = (x, xi) => {
+    const d = it.days[di];
+    return `
+    <li class="item ${x.fromList || byTitle.has(x.place) ? "listed" : ""}" data-k="${di}-${xi}">
+      <div class="item-top">
+        <time>${esc(x.time)}</time>
+        <span class="n">${xi + 1}</span>
+        <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a></span>
+        ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
+        <button class="del" data-del="${di}-${xi}" title="Remove this stop">✕</button>
+      </div>
+      ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
+      ${(() => {
+        const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route ↗</a>` : "";
+        return x.transport || dir ? `<div class="transport">${esc(x.transport || "")}${x.transport && dir ? " · " : ""}${dir}</div>` : "";
+      })()}
+      <div class="leg" data-leg="${di}-${xi}"></div>
+      <div class="far-warn" data-far="${di}-${xi}" hidden></div>
+    </li>`;
+  };
+
+  // Consecutive items with a group label form one fork: a column per subgroup, side by side.
+  const trackColor = {};
+  const forkHtml = (run) => {
+    const tracks = new Map();
+    for (const r of run) {
+      if (!tracks.has(r.x.group)) tracks.set(r.x.group, []);
+      tracks.get(r.x.group).push(r);
+    }
+    const cols = [...tracks].map(([label, rs]) => {
+      trackColor[label] ??= Object.keys(trackColor).length % 4;
+      const people = rs.find((r) => r.x.people)?.x.people;
+      return `<div class="track t${trackColor[label]}">
+        <div class="track-head">${esc(label)}${people ? `<span>👥 ${people}</span>` : ""}</div>
+        <ul class="items">${rs.map((r) => itemHtml(r.x, r.i)).join("")}</ul>
+      </div>`;
+    });
+    return `<li class="fork"><div class="fork-label">Group splits up</div><div class="tracks">${cols.join("")}</div></li>`;
+  };
+  const dayItemsHtml = (items) => {
+    let out = "", run = [];
+    const flush = () => { if (run.length) out += forkHtml(run); run = []; };
+    items.forEach((x, i) => {
+      if (splitGroup(x)) run.push({ x, i });
+      else { flush(); out += itemHtml(x, i); }
+    });
+    flush();
+    return out;
+  };
+
+  let lastCity = null;
+  it.days.forEach((d, i) => {
+    di = i;
+    if (d.city !== lastCity) { html += `<div class="city-band">${esc(d.city)}</div>`; lastCity = d.city; }
+    const over = d.estimatedCost > budget;
+    const split = d.items.some(splitGroup);
+    const w = weather[d.date];
+    html += `<div class="day ${selectedDay === i ? "selected" : ""}" id="day-${i}" data-i="${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">
+      <div class="day-head" data-sel="${i}" title="Show this day on the map">
+        <h4><span class="date">${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${split ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
+        <span class="right">
+          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)} ${Math.round(w.max)}° / ${Math.round(w.min)}°</span>` : ""}
+          <span class="budget-pill ${over ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
+        </span>
+      </div>
+      <ul class="items">${dayItemsHtml(d.items)}</ul>
+      ${d.notes ? `<div class="day-notes">${esc(d.notes)}</div>` : ""}
+    </div>`;
+  });
+
+  if (it.tips?.length || it.unused?.length || it.sources?.length) {
+    html += `<div class="extras">`;
+    if (it.tips?.length) html += `<div><h2>Tips</h2><ul>${it.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>`;
+    if (it.unused?.length) html += `<div><h2>Didn't fit</h2><ul>${it.unused.map((u) => `<li>${esc(u.place)} <div class="reason">${esc(u.reason)}</div></li>`).join("")}</ul></div>`;
+    if (it.sources?.length) html += `<div><h2>Sources</h2><ul class="sources">${it.sources.filter((s) => /^https?:\/\//.test(s)).map((s) =>
+      `<li><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s.replace(/^https?:\/\/(www\.)?/, "").slice(0, 80))}</a></li>`).join("")}</ul></div>`;
+    html += `</div>`;
+  }
+  const tokenStats = meta.tokens ? ` · ${meta.tokens.toLocaleString()} tokens${meta.perSec ? ` at ${Math.round(meta.perSec)} tok/s` : ""}` : "";
+  if (meta.durationMs) html += `<p class="counts gen-meta" style="margin-top:20px">Generated in ${Math.round(meta.durationMs / 1000)}s${tokenStats} ${meta.local
+    ? `by ${esc(meta.engine)}, running on this computer (free)`
+    : `${meta.engine ? `by ${esc(meta.engine)}` : "via Claude Code"} (counts toward your Claude plan usage, no API charges)`}</p>`;
+
+  out.innerHTML = html;
+  $("#dlJson").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(it, null, 2)], { type: "application/json" }));
+    a.download = "itinerary.json"; a.click();
+  };
+  $("#dlPhone").onclick = downloadForPhone;
+  const clearIt = () => { state.itinerary = null; state.meta = null; selectedDay = null; save(); renderItinerary(); renderTripTitle(); drawMap({ fit: true }); };
+  $("#clearIt").onclick = () => { if (confirm("Clear this itinerary?")) clearIt(); };
+  out.querySelector('[data-stale="clear"]')?.addEventListener("click", clearIt);
+  out.querySelector('[data-stale="gen"]')?.addEventListener("click", () => runGeneration());
+  $("#refineBtn").onclick = () => {
+    const request = $("#refineText").value.trim();
+    if (request) runGeneration({ itinerary: state.itinerary, request });
+  };
+  out.querySelectorAll("[data-sel]").forEach((el) => el.onclick = (e) => { if (!e.target.closest("a")) selectDay(+el.dataset.sel); });
+  out.querySelectorAll("[data-bar]").forEach((el) => el.onclick = () => selectDay(+el.dataset.bar, { scroll: true }));
+  out.querySelectorAll("[data-del]").forEach((el) => el.onclick = () => { const [d, x] = el.dataset.del.split("-"); removeStop(+d, +x); });
+  updateLegInfo();
+}
+
+// ---- offline copy for the phone ----
+// A single self-contained HTML file (inline CSS, no server needed) built from the rendered itinerary.
+// The map loads from the internet when there is a connection and is simply left out offline.
+function offlineHtml() {
+  const it = state.itinerary, byTitle = byTitleMap();
+  const content = $("#output").cloneNode(true);
+  content.querySelectorAll(".toolbar, .refine, .bars, .error, .gen-meta, .del, .thoughts, .stale").forEach((el) => el.remove());
+  // The export has no script to fill directions links on click, so fill them in now.
+  content.querySelectorAll("a[data-dir]").forEach((a) => {
+    const [di, xi] = a.dataset.dir.split("-").map(Number), url = directionsUrl(di, xi);
+    if (url) a.href = url; else a.remove();
+  });
+  content.querySelectorAll(".day.selected").forEach((el) => el.classList.remove("selected"));
+  const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n");
+  const title = it.destination || tripCountries().map(([, n]) => n).join(" & ") || "Trip";
+  const nav = it.days.map((d, i) => `<a href="#day-${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">${esc(fmtDate(d.date) || d.date)}</a>`).join("");
+  const mapData = {
+    stays: state.stays.map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => [l.lat, l.lng, s.city]),
+    days: it.days.map((d, i) => ({
+      c: dayColor(i),
+      pts: d.items.map((x, xi) => { const l = itemLoc(x, d, byTitle); return l && [l.lat, l.lng, `${xi + 1}`, `${x.time} ${x.place}`]; }).filter(Boolean),
+      // Each leg along its route where one is known (rounded to keep the file small); dashed straight lines otherwise.
+      lines: dayLegs(d, byTitle).map((leg) => {
+        const r = leg.mode === "straight" ? null : routes[routeKey(leg.mode, leg.from, leg.to)];
+        return r ? { c: r.c.map(([a, b]) => [+a.toFixed(4), +b.toFixed(4)]), foot: leg.mode === "foot" } : { c: [leg.from, leg.to], dash: true };
+      }),
+    })),
+  };
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} itinerary</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Shippori+Mincho:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"><\/script>
+<style>
+${css}
+  main.offline { display: block; max-width: 760px; margin: 0 auto; padding: 12px 12px 40px; }
+  .offline .panel { padding: 14px; }
+  .daynav { position: sticky; top: 0; z-index: 1001; display: flex; gap: 6px; overflow-x: auto; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  .daynav a { flex: none; font-size: 12px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--ink); background: var(--panel); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .daynav a::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
+  .daynav a.today { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .day { scroll-margin-top: 52px; }
+  .day-head { cursor: default; }
+  #map { height: 300px; border-radius: 14px; margin-bottom: 12px; border: 1px solid var(--line); }
+  @media print { .daynav, #map { display: none; } }
+</style>
+</head>
+<body>
+<nav class="daynav">${nav}</nav>
+<main class="offline"><div id="map" hidden></div><section class="panel">${content.innerHTML}</section></main>
+<script>
+  // During the trip, jump straight to today.
+  const today = new Date().toLocaleDateString("sv");
+  document.querySelectorAll('[data-date="' + today + '"]').forEach((el) => el.classList.add("today"));
+  const day = document.querySelector('.day[data-date="' + today + '"]');
+  if (day && !location.hash) day.scrollIntoView();
+  const DATA = ${JSON.stringify(mapData).replace(/</g, "\\u003c")};
+  if (window.L) {
+    const el = document.getElementById("map"); el.hidden = false;
+    const map = L.map(el);
+    // Not OpenStreetMap's tiles: a downloaded file sends no Referer, and OSM blocks such requests. Esri's don't need one.
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", { maxZoom: 19, attribution: "Tiles &copy; Esri &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors" }).addTo(map);
+    const all = [];
+    // Same look as the planner: each day's route and numbered stops, plus the dashed route between stays on top.
+    DATA.days.forEach((d) => {
+      (d.lines || []).forEach((l) => L.polyline(l.c, { color: d.c, weight: l.dash ? 3 : 4, opacity: .8, lineCap: "round", dashArray: l.dash ? "8 8" : l.foot ? "1 7" : null }).addTo(map));
+      d.pts.forEach((p) => {
+        all.push([p[0], p[1]]);
+        L.marker([p[0], p[1]], { icon: L.divIcon({ className: "", html: '<div class="num-pin" style="--c:' + d.c + '">' + p[2] + "</div>", iconSize: [22, 22], iconAnchor: [11, 11] }) }).bindTooltip(p[3]).addTo(map);
+      });
+    });
+    if (DATA.stays.length > 1) L.polyline(DATA.stays.map((s) => [s[0], s[1]]), { color: "#bc002d", weight: 2.5, dashArray: "6 6", opacity: .85 }).addTo(map);
+    DATA.stays.forEach(([lat, lng, city], i) => {
+      all.push([lat, lng]);
+      L.marker([lat, lng], { zIndexOffset: 1000, icon: L.divIcon({ className: "", html: '<div class="stay-pin"><b>' + (i + 1) + "</b></div>", iconSize: [30, 30], iconAnchor: [15, 30] }) })
+        .bindTooltip(city, { direction: "right", offset: [12, -16], permanent: true }).addTo(map);
+    });
+    if (all.length) map.fitBounds(L.latLngBounds(all).pad(.1)); else el.hidden = true;
+  }
+<\/script>
+</body>
+</html>`;
+}
+
+async function downloadForPhone() {
+  const base = (state.itinerary.destination || state.stays.map((s) => s.city).filter(Boolean).join("-") || "trip").replace(/[^\p{L}\p{N}-]+/gu, "-");
+  const name = base + "-itinerary.html";
+  const file = new File([offlineHtml()], name, { type: "text/html" });
+  // Use the system share sheet where the browser allows sharing HTML files; otherwise download.
+  if (navigator.canShare?.({ files: [file] })) {
+    try { return await navigator.share({ files: [file], title: "Itinerary" }); }
+    catch (e) { if (e.name === "AbortError") return; }
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(file);
+  a.download = name; a.click();
+}
+
+// ---- saved trips (stored as files in saves/ by the server) ----
+const saveStatus = (msg) => { $("#saveStatus").textContent = msg; };
+
+async function refreshSaves(select) {
+  try {
+    const list = await api("/api/saves");
+    $("#saveList").innerHTML = `<option value="">— Saved trips —</option>` +
+      list.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${new Date(s.savedAt).toLocaleDateString()}</option>`).join("");
+    if (select) $("#saveList").value = select;
+  } catch { saveStatus("Could not reach the server to list saves."); }
+}
+
+async function applyState(next) {
+  // Start from a blank trip so nothing (like an old itinerary) leaks in from what was open before.
+  state = { ...blankTrip(), ...next };
+  setListPlaces(listPlaces);
+  for (const f of FIELDS) $("#" + f).value = state[f];
+  syncResearch();
+  selectedDay = null; weather = {}; userMoved = false;
+  save(); await refreshLists(); renderStays(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList();
+  geocodeItems(); loadWeather();
+}
+
+$("#saveBtn").onclick = async () => {
+  const suggested = $("#saveList").value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
+  const name = prompt("Save current inputs as:", suggested);
+  if (!name) return;
+  try {
+    const data = await api("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
+    await refreshSaves(data.name);
+    saveStatus(`Saved "${data.name}" (includes the current itinerary, if any).`);
+  } catch (e) { saveStatus(e.message); }
+};
+
+$("#loadSave").onclick = async () => {
+  const name = $("#saveList").value;
+  if (!name) return saveStatus("Pick a saved trip first.");
+  try {
+    await applyState(await api("/api/saves/" + encodeURIComponent(name)));
+    saveStatus(`Loaded "${name}".`);
+  } catch (e) { saveStatus(e.message); }
+};
+
+$("#newTrip").onclick = async () => {
+  if (!confirm("Start a new, empty trip? Save the current one first if you want to keep it.")) return;
+  $("#saveList").value = "";
+  await applyState({ listChosen: true }); // start without a place list rather than defaulting to the first one
+  saveStatus("Started a new trip.");
+};
+
+$("#delSave").onclick = async () => {
+  const name = $("#saveList").value;
+  if (!name || !confirm(`Delete saved trip "${name}"?`)) return;
+  await api("/api/saves/" + encodeURIComponent(name), { method: "DELETE" });
+  await refreshSaves();
+  saveStatus(`Deleted "${name}".`);
+};
+
+// ---- init ----
+(async () => {
+  initMap();
+  refreshModels();
+  renderStays(); renderTripTitle(); renderItinerary();
+  refreshSaves();
+  geocodeStays();
+  await refreshLists();
+  await loadList();
+  loadWeather();
+})();
+</script>
+</body>
+</html>
