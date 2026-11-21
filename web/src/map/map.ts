@@ -14,30 +14,29 @@ export const layers = {
 export const placeMarkers = new Map<string, L.CircleMarker>();
 export const itemMarkers = new Map<string, L.Marker>();
 
-/** Map styles: OpenStreetMap labels places in the local language and script; Esri's street map adds English or
- *  romanized names (大阪市 Osaka-Shi), much like Google Maps. */
-const TILES = {
-  local: () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  }),
-  english: () => L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
-    maxZoom: 19, attribution: 'Tiles &copy; <a href="https://www.esri.com">Esri</a> &mdash; Esri, HERE, Garmin, OpenStreetMap contributors and the GIS community',
-  }),
-};
-type Labels = keyof typeof TILES;
+/** The map's place names: OpenStreetMap's own map, labelled in the local language and script, or OpenFreeMap's map
+ *  with English names (loaded only when picked). */
+type Labels = "local" | "english";
 const LABELS_KEY = "trip-planner-map-labels";
-let tiles: L.TileLayer | null = null;
+let base: L.Layer | null = null, wanted: Labels = "local";
 
-function setLabels(labels: Labels) {
+async function setLabels(labels: Labels) {
   if (!map) return;
-  tiles?.remove();
-  tiles = TILES[labels]().addTo(map);
+  wanted = labels;
   localStorage.setItem(LABELS_KEY, labels);
+  const next = labels === "english"
+    ? (await import("./english-map")).englishLayer()
+    : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    });
+  if (wanted !== labels) return; // picked something else while loading
+  base?.remove();
+  base = next.addTo(map);
 }
 
 export function initMap() {
   map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
-  const saved = localStorage.getItem(LABELS_KEY) === "english" ? "english" : "local";
+  const saved: Labels = ["latin", "english"].includes(localStorage.getItem(LABELS_KEY) || "") ? "english" : "local";
   setLabels(saved);
   const pick = $<HTMLSelectElement>("#mapLabels");
   pick.value = saved;

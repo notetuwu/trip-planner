@@ -64,30 +64,49 @@ export function openInBrowser(url: string) {
 }
 
 // Windows only lets the program you're using bring a window to the front; the planner's server runs in the background,
-// so the browser would open the link in a tab but stay behind. A short hidden PowerShell step brings its window up
-// (restoring it if minimized); the Alt key tap is the usual way to be allowed to do that.
+// so the browser would open the link in a tab but stay behind. A short hidden PowerShell step brings its window up:
+// it joins the input of the window that has focus now (the planner's), which Windows allows, then hands focus to the
+// browser's window (restoring it if minimized). The result goes to the log, to see why if it doesn't work somewhere.
 const FRONT_SCRIPT = `
 $ErrorActionPreference = 'SilentlyContinue'
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 400
 Add-Type -Namespace TP -Name W -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
 [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
 [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, IntPtr pid);
+[DllImport("user32.dll")] public static extern bool AttachThreadInput(uint a, uint b, bool attach);
+[DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
 [DllImport("user32.dll")] public static extern void keybd_event(byte v, byte s, uint f, UIntPtr e);
 '@
-$p = Get-Process -Name $env:TP_BROWSER | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-if ($p) {
-  $h = $p.MainWindowHandle
-  if ([TP.W]::IsIconic($h)) { [void][TP.W]::ShowWindow($h, 9) }
-  [TP.W]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [TP.W]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
-  [void][TP.W]::SetForegroundWindow($h)
-}`;
+$p = Get-Process -Name $env:TP_BROWSER | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object StartTime | Select-Object -First 1
+if (-not $p) { "no window for $env:TP_BROWSER"; exit }
+$h = $p.MainWindowHandle
+if ([TP.W]::IsIconic($h)) { [void][TP.W]::ShowWindow($h, 9) }
+$fg = [TP.W]::GetForegroundWindow()
+$me = [TP.W]::GetCurrentThreadId()
+$fgThread = [TP.W]::GetWindowThreadProcessId($fg, [IntPtr]::Zero)
+$target = [TP.W]::GetWindowThreadProcessId($h, [IntPtr]::Zero)
+$a = [TP.W]::AttachThreadInput($me, $fgThread, $true)
+$b = [TP.W]::AttachThreadInput($target, $fgThread, $true)
+[TP.W]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [TP.W]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+[void][TP.W]::BringWindowToTop($h)
+$ok = [TP.W]::SetForegroundWindow($h)
+[void][TP.W]::AttachThreadInput($target, $fgThread, $false)
+[void][TP.W]::AttachThreadInput($me, $fgThread, $false)
+Start-Sleep -Milliseconds 200
+"attached=$a/$b set=$ok front=$([TP.W]::GetForegroundWindow() -eq $h)"`;
 
 export function bringToFront(processName: string) {
   if (process.platform !== "win32" || !/^[\w .-]+$/.test(processName)) return;
   const encoded = Buffer.from(FRONT_SCRIPT, "utf16le").toString("base64");
-  spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
-    { stdio: "ignore", detached: true, windowsHide: true, env: { ...process.env, TP_BROWSER: processName } }).unref();
+  const ps = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
+    { stdio: ["ignore", "pipe", "ignore"], windowsHide: true, env: { ...process.env, TP_BROWSER: processName } });
+  let out = "";
+  ps.stdout.on("data", (d) => { out += d; });
+  ps.on("close", () => { if (!/front=True/.test(out)) console.log(`Couldn't bring ${processName} to the front: ${out.trim() || "no answer"}`); });
 }
 
 let browserCommand: Promise<string | null> | null = null;
