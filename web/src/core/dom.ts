@@ -38,3 +38,14 @@ export function downloadFile(file: Blob, name: string) {
   a.download = name;
   a.click();
 }
+
+/** Clicking the dimmed area around a modal closes it (only a click that also started there, not a text selection dragged out). */
+export function closeOnBackdrop(d: HTMLDialogElement) {
+  const outside = (e: MouseEvent) => {
+    const r = d.getBoundingClientRect();
+    return e.target === d && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom);
+  };
+  let downOutside = false;
+  d.addEventListener("mousedown", (e) => { downOutside = outside(e); });
+  d.addEventListener("click", (e) => { if (downOutside && outside(e)) d.close(); downOutside = false; });
+}

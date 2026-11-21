@@ -54,7 +54,7 @@ async function townAt([lat, lng]: LatLng) {
   } catch { return null; }
 }
 
-export async function suggestStops(req: StopsRequest, report: Report = () => {}): Promise<StopsResult> {
+export async function suggestStops(req: StopsRequest, report: Report = () => {}, signal?: AbortSignal): Promise<StopsResult> {
   report({ type: "status", text: `Finding the road from ${req.from.city} to ${req.to.city}…` });
   const from: LatLng = [req.from.lat, req.from.lng], to: LatLng = [req.to.lat, req.to.lng];
   const route = await waitForRoute("car", from, to, 45000);
@@ -87,7 +87,7 @@ Reply with only JSON: {"stops": [{"city": "...", "country": "...", "nights": 1, 
 
   try {
     report({ type: "status", text: `Choosing towns for ${towns.length} night${towns.length > 1 ? "s" : ""} on the way…` });
-    const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n })));
+    const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n }), { signal }));
     const stops = (Array.isArray(parsed?.stops) ? parsed.stops : [])
       .filter((s: any) => s && typeof s.city === "string" && s.city.trim() && !sameTown(s.city, req.from.city) && !sameTown(s.city, req.to.city))
       .slice(0, 40)

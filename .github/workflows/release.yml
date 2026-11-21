@@ -73,3 +73,9 @@ jobs:
         with:
           files: dist/*
           body_path: notes.md
+      # Release pages made before the notes were written automatically get theirs now (only those without "What's new").
+      - name: Fill in older release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/backfill-release-notes.sh

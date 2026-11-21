@@ -46,7 +46,7 @@ const STUBS = `(() => {
     if (up && url.endsWith("/api/update")) return json(up.info);
     if (up && url.includes("/api/health")) return json({ app: "trip-planner", version: up.statuses.length > 1 ? up.info.current : up.info.latest });
     // Streamed helpers: a status line, a token count, then the result (like the real server).
-    const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "done", result }]
+    const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "reasoning", text: "Lakes first, then the loop home." }, { type: "done", result }]
       .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
@@ -164,21 +164,25 @@ test("after an update downloads and the app restarts at once, the page reloads i
 test("plan a route: describe the trip, see the stays and leg times, use them, Undo", async () => {
   await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
   await page.eval(`window.__e2e.route = { title: "Lakes and old towns", summary: "A loop.", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 4,
-    stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "Duomo" }, { city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "Lake" }],
+    stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "Duomo" }, { city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "Lake", dayTrips: [{ place: "Vaduz", why: "Liechtenstein" }] }],
     legs: [{ from: "Padua", to: "Milano", km: 245, hours: 2.6, tooLong: false }, { from: "Milano", to: "Lucerne", km: 230, hours: 2.9, tooLong: false },
       { from: "Lucerne", to: "Padua", km: 480, hours: 5.4, tooLong: true }] }`);
   await page.eval(`document.querySelector("#planRoute").click()`);
   assert.equal(await page.eval(`document.querySelector("#rpStart").value`), "Padua", "starts from the first stay");
   await page.eval(`(() => { document.querySelector("#rpDays").value = "5"; document.querySelector("#rpWhat").value = "lakes and old towns";
     document.querySelector("#rpStays").value = "cosy B&Bs"; document.querySelector("#rpGo").click(); })()`);
-  await page.waitFor(`!!document.querySelector("#routeResult [data-use]")`);
+  await page.waitFor(`!document.querySelector("#rpUse").hidden`);
   const asked = await page.eval(`window.__e2e.routeAsked`);
   assert.equal(asked.days, 5);
   assert.equal(asked.description, "lakes and old towns");
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /longer than your daily limit/);
-  await page.eval(`document.querySelector("#routeResult [data-use]").click()`);
+  assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /Day trip: Vaduz/);
+  assert.equal(await page.eval(`document.querySelector("#rpThink").textContent`), "Lakes first, then the loop home.", "shows the reasoning");
+  assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
+  await page.eval(`document.querySelector("#rpUse").click()`);
   const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights])`);
   assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
+  assert.deepEqual(await page.eval(`planner.state().stays[2].dayTrips`), [{ place: "Vaduz", mode: "car" }]);
   assert.match(await page.eval(`planner.state().notes`), /Stays: cosy B&Bs/);
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");

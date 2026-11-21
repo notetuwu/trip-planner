@@ -125,9 +125,21 @@ details.import .inline { margin-bottom: 8px; }
 .stops-form .btn { height: 28px; font-size: 12px; padding: 0 10px; }
 .stops-form .hint { flex-basis: 100%; }
 .far-warn.note { color: var(--muted); }
-.route-dialog { width: min(680px, 95vw); }
+.route-dialog { width: min(1080px, 96vw); padding: 0; }
+.route-dialog[open] { display: flex; flex-direction: column; max-height: 90vh; }
+.route-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 36%); min-height: 0; flex: 1 1 auto; }
+.route-body { overflow: auto; padding: 18px 20px 8px; }
+.route-think { overflow: auto; padding: 18px 18px 8px; border-left: 1px solid var(--line); }
+.route-think h3 { margin: 0 0 8px; font-size: 14px; }
+#rpThink { white-space: pre-wrap; font-size: 12.5px; line-height: 1.5; }
+@media (max-width: 760px) {
+  .route-main { grid-template-columns: 1fr; overflow: auto; }
+  .route-body, .route-think { overflow: visible; }
+  .route-think { border-left: 0; border-top: 1px solid var(--line); }
+}
+.route-foot { display: flex; gap: 10px; align-items: center; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--line); }
+.route-foot #rpLive { margin-right: auto; }
 .route-form .row { margin-bottom: 10px; }
-.route-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
 .route-result { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
 .route-result h3 { margin: 0 0 4px; font-size: 16px; }
 .route-stops { list-style: none; margin: 12px 0; padding: 0; }
@@ -138,3 +150,4 @@ details.import .inline { margin-bottom: 8px; }
 .route-stops .leg { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .route-stops .leg.long { color: var(--warn); font-weight: 600; }
 .route-stops li.end b { color: var(--muted); }
+.route-stops .trips { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }

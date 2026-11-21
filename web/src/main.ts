@@ -1,6 +1,6 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
-import { $, api } from "./core/dom";
+import { $, api, closeOnBackdrop } from "./core/dom";
 import { initUpdates } from "./core/update";
 import { initWindowMode } from "./core/window-mode";
 import { hydrateIcons } from "./core/icons";
@@ -47,6 +47,7 @@ setOnRouted(() => { drawMap(); updateLegInfo(); });
 
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
+document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
 initFields(); initStays(); initRoutePlanner(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 

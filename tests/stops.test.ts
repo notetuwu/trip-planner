@@ -28,3 +28,21 @@ describe("fitting nights to the trip length", () => {
     expect(s.map((x) => x.nights)).toEqual([1, 1, 1]);
   });
 });
+
+import { reasoningSoFar, untangle } from "../server/trip/route-plan";
+describe("a route without doubling back", () => {
+  it("reorders the middle stops of a zig-zag", () => {
+    // Start, then east 3, east 1, east 2, end further east: 1 and 3 swap.
+    expect(untangle([[0, 0], [0, 3], [0, 1], [0, 2], [0, 4]])).toEqual([0, 2, 3, 1, 4]);
+  });
+  it("keeps a route that already flows", () => {
+    expect(untangle([[0, 0], [0, 1], [1, 1], [1, 0], [0, 0]])).toEqual([0, 1, 2, 3, 4]);
+  });
+});
+describe("the reasoning shown while a route is planned", () => {
+  it("reads the half-written reasoning and the stays so far", () => {
+    const reply = String.raw`{"reasoning": "Alps first,\nthen the lakes", "title": "x", "stays": [{"city": "Salzburg"}, {"city": "Hall`;
+    expect(reasoningSoFar(reply, "")).toBe("Alps first,\nthen the lakes\n\nStays so far: Salzburg");
+    expect(reasoningSoFar(String.raw`{"reasoning": "half \u00`, "hmm")).toBe("hmm\n\nhalf");
+  });
+});

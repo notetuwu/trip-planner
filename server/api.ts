@@ -88,13 +88,13 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "POST" && path === "/api/stops") {
       const body = await readJson(req);
       if (!body?.from || !body?.to || !body?.model) sendJson(res, 400, { error: "from, to and model are needed" });
-      else await busyWhile(() => streamProgress(res, (report) => suggestStops(body, report)));
+      else await busyWhile(() => streamProgress(res, (report, signal) => suggestStops(body, report, signal)));
     }
     // Plan the stays of a trip from a description (the selected model, then real road checks).
     else if (method === "POST" && path === "/api/route-plan") {
       const body = await readJson(req);
       if (!body?.start || !body?.model) sendJson(res, 400, { error: "A start and a model are needed" });
-      else await busyWhile(() => streamProgress(res, (report) => planRoute(body, report)));
+      else await busyWhile(() => streamProgress(res, (report, signal) => planRoute(body, report, signal)));
     }
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);

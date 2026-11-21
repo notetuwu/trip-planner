@@ -131,13 +131,15 @@
 </dialog>
 
 <dialog id="routeDialog" class="keys-dialog route-dialog">
+  <div class="route-main">
+  <div class="route-body">
   <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
   <h2>Plan a route</h2>
   <p class="hint">Describe the trip; your selected model suggests where to stay, and every leg is checked against the real roads. You can change the stays afterwards, then generate the itinerary as usual.</p>
   <form id="routeForm" class="route-form">
     <div class="row">
       <div><label for="rpStart">Start</label><input id="rpStart" required placeholder="e.g. your home town"></div>
-      <div><label for="rpEnd">End</label><input id="rpEnd" placeholder="Empty: back to the start"></div>
+      <div><label for="rpEnd">End</label><input id="rpEnd" placeholder="Empty: a round trip, back to the start"></div>
     </div>
     <div class="row" style="--cols:3">
       <div><label for="rpDate">Leaving on</label><input id="rpDate" type="date" required></div>
@@ -153,13 +155,19 @@
     </div>
     <div class="row" style="--cols:1">
       <div><label for="rpWhat">What do you want to see?</label>
-        <textarea id="rpWhat" required rows="3" placeholder="e.g. a road trip through Czechia, Austria and the Alps, maybe Italy, Switzerland and France; old towns, mountain passes, lakes"></textarea></div>
+        <textarea id="rpWhat" required rows="4" placeholder="e.g. a road trip through Czechia, Austria and the Alps, maybe Italy and Switzerland; old towns, mountain passes, lakes; a day trip to Liechtenstein"></textarea></div>
       <div><label for="rpStays">What kind of stays?</label>
         <input id="rpStays" placeholder="e.g. cosy B&amp;Bs, a night in a mountain hut, mid-range hotels"></div>
     </div>
-    <div class="route-actions"><button class="btn solid" id="rpGo">Plan the route</button><span class="hint" id="rpLive"></span></div>
   </form>
   <div id="routeResult"></div>
+  </div>
+  <aside class="route-think"><h3>How it's thinking</h3><div id="rpThink" class="hint">The model's reasoning shows here while it plans.</div></aside>
+  </div>
+  <div class="route-foot"><span class="hint" id="rpLive"></span>
+    <button class="btn" id="rpCancel" type="button" hidden>Cancel</button>
+    <button class="btn" id="rpGo" form="routeForm" type="submit">Plan the route</button>
+    <button class="btn solid" id="rpUse" type="button" hidden>Use these stays</button></div>
 </dialog>
 
 <dialog id="guideDialog" class="keys-dialog guide-dialog">

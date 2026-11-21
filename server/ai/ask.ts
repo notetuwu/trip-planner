@@ -1,6 +1,7 @@
 // A short one-off question to whichever model is selected (no tools), for helper tasks such as picking stops along a
 // route or proposing the stays of a trip. Answers are expected as JSON in the reply text. onProgress gets the number of
-// tokens written so far, for a live count while it works (where the model streams).
+// tokens written so far, for a live count while it works (where the model streams); onText gets the reply so far and
+// any thinking the model shows, so the page can show its reasoning. `signal` cancels the request.
 import { spawn } from "node:child_process";
 import os from "node:os";
 import Anthropic from "@anthropic-ai/sdk";
@@ -13,11 +14,20 @@ import { BASE } from "./responses";
 
 const TIMEOUT = 6 * 60_000;
 export type OnProgress = (tokens: number) => void;
+export interface AskOptions {
+  signal?: AbortSignal;
+  /** The reply so far and the model's own thinking so far (where it shows any). */
+  onText?: (reply: string, thinking: string) => void;
+}
 
-export async function askModel(modelId: string, prompt: string, onProgress: OnProgress = () => {}): Promise<string> {
-  const signal = AbortSignal.timeout(TIMEOUT);
-  let tokens = 0;
-  const tick = () => onProgress(++tokens);
+export async function askModel(modelId: string, prompt: string, onProgress: OnProgress = () => {}, opts: AskOptions = {}): Promise<string> {
+  const signal = opts.signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT), opts.signal]) : AbortSignal.timeout(TIMEOUT);
+  let tokens = 0, reply = "", thinking = "";
+  const tick = (piece = "", thought = "") => {
+    reply += piece; thinking += thought;
+    onProgress(++tokens);
+    opts.onText?.(reply, thinking);
+  };
 
   if (modelId.startsWith("local|")) {
     const { kind, base, model } = parseModelId(modelId);
@@ -35,7 +45,8 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
         if (!line.trim()) continue;
         const ev = JSON.parse(line);
         if (ev.error) throw new Error(`Ollama: ${ev.error}`);
-        if (ev.message?.content) { text += ev.message.content; tick(); }
+        if (ev.message?.content) { text += ev.message.content; tick(ev.message.content); }
+        else if (ev.message?.thinking) tick("", ev.message.thinking);
       }
       return text;
     }
@@ -48,7 +59,7 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
     if (!key) throw new Error(`No ${PROVIDERS[provider].name} API key.`);
     if (provider === "anthropic") {
       const stream = new Anthropic({ apiKey: key }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content: prompt }] }, { signal });
-      stream.on("text", tick);
+      stream.on("text", (t) => tick(t));
       const msg = await stream.finalMessage();
       return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
     }
@@ -64,16 +75,17 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
       const data = line.slice(5).trim();
       if (!data || data === "[DONE]") continue;
       const ev = JSON.parse(data);
-      if (ev.type === "response.output_text.delta" && ev.delta) { text += ev.delta; tick(); }
+      if (ev.type === "response.output_text.delta" && ev.delta) { text += ev.delta; tick(ev.delta); }
+      else if (ev.type === "response.reasoning_summary_text.delta" && ev.delta) tick("", ev.delta);
       if (ev.type === "response.completed" && !text) text = ev.response?.output_text || "";
     }
     return text;
   }
-  return askClaudeCli(modelId, prompt, tick);
+  return askClaudeCli(modelId, prompt, tick, signal);
 }
 
 /** An OpenAI-compatible chat endpoint (LM Studio, llama.cpp…), streamed. */
-async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: () => void) {
+async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void) {
   const res = await fetch(url, {
     method: "POST", signal, headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify({ model, temperature: 0.4, stream: true, messages: [{ role: "user", content: prompt }] }),
@@ -83,14 +95,16 @@ async function openAiChat(url: string, headers: Record<string, string>, model: s
   for await (const line of lines(res.body)) {
     const data = line.replace(/^data:\s*/, "").trim();
     if (!data || data === "[DONE]" || !line.startsWith("data:")) continue;
-    const piece = JSON.parse(data).choices?.[0]?.delta?.content;
-    if (piece) { text += piece; tick(); }
+    const delta = JSON.parse(data).choices?.[0]?.delta;
+    const piece = delta?.content, thought = delta?.reasoning_content || delta?.reasoning;
+    if (piece) { text += piece; tick(piece); }
+    else if (typeof thought === "string" && thought) tick("", thought);
   }
   return text;
 }
 
 /** Through the Claude Code CLI (your plan), with no tools; streamed so the progress count moves. */
-function askClaudeCli(model: string, prompt: string, tick: () => void) {
+function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thought?: string) => void, signal: AbortSignal) {
   return new Promise<string>((resolve, reject) => {
     const bin = findClaude();
     if (!bin) return reject(new Error("Could not find the claude CLI."));
@@ -101,6 +115,7 @@ function askClaudeCli(model: string, prompt: string, tick: () => void) {
     const child = spawn(bin, args, { cwd: os.tmpdir(), windowsHide: true, env });
     let buf = "", err = "", result: string | null = null, failed = "";
     const timer = setTimeout(() => { child.kill(); reject(new Error("Claude timed out")); }, TIMEOUT);
+    signal.addEventListener("abort", () => { child.kill(); reject(new Error("Cancelled")); }, { once: true });
     child.stdout.on("data", (d) => {
       buf += d;
       let i;
@@ -109,7 +124,9 @@ function askClaudeCli(model: string, prompt: string, tick: () => void) {
         if (!line) continue;
         try {
           const ev = JSON.parse(line);
-          if (ev.type === "stream_event" && ev.event?.delta?.type === "text_delta") tick();
+          const delta = ev.type === "stream_event" ? ev.event?.delta : null;
+          if (delta?.type === "text_delta") tick(delta.text || "");
+          else if (delta?.type === "thinking_delta") tick("", delta.thinking || "");
           if (ev.type === "result") { if (ev.is_error) failed = ev.result || "error"; else result = String(ev.result || ""); }
         } catch { /* not JSON */ }
       }
