@@ -25,7 +25,7 @@ function drawPlaces(fitToPlaces: boolean, bounds: LatLng[]) {
       radius: mark === "must" ? 7 : 5, color: "#fff", weight: 1.5, fillColor: color,
       fillOpacity: mark === "skip" ? .35 : .9, opacity: mark === "skip" ? .4 : 1,
     }).bindTooltip(esc(p.title), { direction: "top", offset: [0, -6] })
-      .bindPopup(placePopupHtml(p))
+      .bindPopup(placePopupHtml(p), { minWidth: 240, maxWidth: 340 })
       .addTo(layers.places);
     placeMarkers.set(p.title, m);
     if (fitToPlaces) bounds.push([loc.lat, loc.lng]);
