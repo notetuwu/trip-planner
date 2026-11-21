@@ -10,6 +10,7 @@ import { runGeneration } from "./generate/run";
 import { offlineHtml } from "./export/offline";
 import { directionsUrl, initDirectionLinks } from "./itinerary/directions";
 import { renderItinerary } from "./itinerary/render";
+import { initSearchKey } from "./itinerary/search";
 import { loadWeather } from "./itinerary/weather";
 import { initDays, selectDay } from "./map/days";
 import { drawMap } from "./map/draw";
@@ -38,6 +39,7 @@ onGeocoded(() => {
 });
 setOnRouted(() => { drawMap(); updateLegInfo(); });
 
+initSearchKey();
 initFields(); initStays(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 

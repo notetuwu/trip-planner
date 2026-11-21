@@ -1,6 +1,5 @@
 // The Leaflet map: tiles, layers, and the click-to-add behaviour.
 import * as L from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { $ } from "../core/dom";
 import { session } from "../core/state";
 import { openAddPopup } from "./add";

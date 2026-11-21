@@ -16,11 +16,16 @@ function isStale(it: Itinerary) {
 
 function eventsHtml(it: Itinerary) {
   if (!it.holidaysAndEvents?.length) return "";
-  return `<div class="events"><h2>Holidays &amp; events</h2><ul>${it.holidaysAndEvents.map((h) => {
-    const [a, b] = String(h.date || "").split("..");
-    const when = b ? `${fmtShort(a)} – ${fmtShort(b)}` : fmtDate(a) || h.date;
-    return `<li><span class="ev-date">${esc(when)}</span><div><b>${esc(h.name)}</b>${h.where ? ` <span class="hint">· ${esc(h.where)}</span>` : ""}<div>${esc(h.impact)}</div></div></li>`;
-  }).join("")}</ul></div>`;
+  // Collapsed by default: the names show in the summary line, the details when opened.
+  const names = it.holidaysAndEvents.map((h) => h.name.replace(/\s*\(.*$/, "")).join(", ");
+  return `<details class="events fold" data-fold="events">
+    <summary><h2>Holidays &amp; events</h2><span class="hint">${it.holidaysAndEvents.length} · ${esc(names.length > 110 ? names.slice(0, 110) + "…" : names)}</span></summary>
+    <ul>${it.holidaysAndEvents.map((h) => {
+      const [a, b] = String(h.date || "").split("..");
+      const when = b ? `${fmtShort(a)} – ${fmtShort(b)}` : fmtDate(a) || h.date;
+      return `<li><span class="ev-date">${esc(when)}</span><div><b>${esc(h.name)}</b>${h.where ? ` <span class="hint">· ${esc(h.where)}</span>` : ""}<div>${esc(h.impact)}</div></div></li>`;
+    }).join("")}</ul>
+  </details>`;
 }
 
 export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {

@@ -4,6 +4,8 @@ import days from "./days.css?raw";
 import itinerary from "./itinerary.css?raw";
 import map from "./map.css?raw";
 import settings from "./settings.css?raw";
+// Leaflet's own styles first, so the app's (dark mode popups and tooltips) override them.
+import "leaflet/dist/leaflet.css";
 import "./base.css";
 import "./settings.css";
 import "./map.css";

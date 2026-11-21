@@ -14,7 +14,8 @@ const crowMetres = (from: LatLng, to: LatLng) => distKm({ lat: from[0], lng: fro
 /** A wide, invisible line over a route so thin or dotted lines are easy to hover; the visible line thickens meanwhile. */
 export function hoverBand(line: LatLng[], tip: string, vis: L.Polyline) {
   const w = vis.options.weight!, o = vis.options.opacity!;
-  return L.polyline(line, { weight: 16, opacity: 0, lineCap: "round" })
+  // Clicks stay on the line (which jumps to the stop in the list) instead of reaching the map's "add a place" click.
+  return L.polyline(line, { weight: 16, opacity: 0, lineCap: "round", bubblingMouseEvents: false })
     .bindTooltip(tip, { sticky: true, className: "leg-tip" })
     .on("mouseover", () => vis.setStyle({ weight: w + 3, opacity: 1 }))
     .on("mouseout", () => vis.setStyle({ weight: w, opacity: o }));

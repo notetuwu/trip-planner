@@ -39,7 +39,7 @@ export function bookAheadHtml(it: Itinerary) {
       || { url: `https://www.google.com/search?q=${encodeURIComponent(`${bookingQuery(x.place, "")} tickets`)}`, label: "Tickets", title: "Search for tickets" };
     return `<a href="${esc(t.url)}" target="_blank" rel="noopener" title="${esc(t.title)}">${esc(t.label)} ↗</a>`;
   };
-  return `<details class="book-ahead" ${left ? "open" : ""}>
+  return `<details class="book-ahead fold" data-fold="book-ahead">
     <summary><h2>Book ahead</h2><span class="hint">${left ? `${left} of ${rows.length} still to book` : `all ${rows.length} booked`} · tickets and tours via ${esc(s.name)}</span></summary>
     <ul>${rows.map(({ d, x }) => {
       const key = bookingKey(d, x);

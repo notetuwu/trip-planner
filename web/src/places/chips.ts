@@ -53,9 +53,15 @@ export function initChips() {
     const t = target.closest<HTMLElement>(".chip")?.dataset.t; if (t == null) return;
     setMark(t, NEXT_MARK[state.marks[t] || ""]);
   });
-  $("#chips").addEventListener("mouseover", (e) => {
-    const t = (e.target as HTMLElement).closest<HTMLElement>(".chip")?.dataset.t;
+  // Hovering a place shows its name on the map (one at a time; closed again when the pointer moves on).
+  let shown: string | undefined;
+  const show = (t: string | undefined) => {
+    if (t === shown) return;
+    if (shown != null) placeMarkers.get(shown)?.closeTooltip();
+    shown = t;
     if (t != null) placeMarkers.get(t)?.openTooltip();
-  });
+  };
+  $("#chips").addEventListener("mouseover", (e) => show((e.target as HTMLElement).closest<HTMLElement>(".chip")?.dataset.t));
+  $("#chips").addEventListener("mouseleave", () => show(undefined));
   $("#placeFilter").addEventListener("input", renderChips);
 }

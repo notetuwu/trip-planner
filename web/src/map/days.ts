@@ -1,4 +1,5 @@
 // The day chips above the map, selecting a day, and linking itinerary stops with their pins.
+import type * as L from "leaflet";
 import { $, $$, esc } from "../core/dom";
 import { dayColor, fmtShort } from "../core/format";
 import { session, state } from "../core/state";
@@ -21,8 +22,22 @@ export function selectDay(i: number | null, { scroll = false } = {}) {
   $(".day-chip.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
+/** Scrolls the itinerary to a stop and flashes it. */
 export function highlightItem(di: number, xi: number) {
-  $(`.item[data-k="${di}-${xi}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const el = $(`.item[data-k="${di}-${xi}"]`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.toggle("flash", false); void el.offsetWidth; el.classList.toggle("flash", true);
+}
+
+/** The pin whose name is shown because its stop is hovered in the list (only one at a time). */
+let shown: L.Marker | undefined;
+function showPin(m: L.Marker | undefined) {
+  if (m === shown) return;
+  shown?.closeTooltip();
+  for (const p of $$(".num-pin.hot")) p.classList.toggle("hot", false);
+  shown = m;
+  if (m) { m.getElement()?.querySelector(".num-pin")?.classList.add("hot"); m.openTooltip(); }
 }
 
 export function initDays() {
@@ -33,8 +48,7 @@ export function initDays() {
   // Hovering a stop in the itinerary pops its pin on the map.
   $("#output").addEventListener("mouseover", (e) => {
     const k = (e.target as HTMLElement).closest<HTMLElement>(".item")?.dataset.k;
-    for (const p of $$(".num-pin.hot")) p.classList.remove("hot");
-    const m = k ? itemMarkers.get(k) : undefined;
-    if (m) { m.getElement()?.querySelector(".num-pin")?.classList.add("hot"); m.openTooltip(); }
+    showPin(k ? itemMarkers.get(k) : undefined);
   });
+  $("#output").addEventListener("mouseleave", () => showPin(undefined));
 }

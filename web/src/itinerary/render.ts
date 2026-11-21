@@ -13,6 +13,7 @@ import { itineraryIcs } from "../export/ics";
 import { wireBookAhead } from "./book-ahead";
 import { daysHtml, extrasHtml } from "./days-html";
 import { checkOpeningHours } from "./hours";
+import { searchHtml, wireSearch } from "./search";
 import { summaryHtml } from "./summary";
 
 function clearItinerary() {
@@ -55,6 +56,11 @@ function wire(out: HTMLElement) {
   };
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
   wireBookAhead(out);
+  // Collapsible sections stay open or closed across redraws.
+  for (const el of $$<HTMLDetailsElement>("details[data-fold]", out)) {
+    el.open = !!session.folds[el.dataset.fold!];
+    el.ontoggle = () => { session.folds[el.dataset.fold!] = el.open; };
+  }
   for (const el of $$("[data-sel]", out)) el.onclick = (e) => { if (!(e.target as HTMLElement).closest("a")) selectDay(+el.dataset.sel!); };
   for (const el of $$("[data-bar]", out)) el.onclick = () => selectDay(+el.dataset.bar!, { scroll: true });
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
@@ -72,8 +78,9 @@ export function renderItinerary(error?: string) {
   const cur = meta.currency || state.currency;
   const budget = meta.budget || state.dailyBudget;
   const byTitle = byTitleMap();
-  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
+  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
   wire(out);
+  wireSearch();
   updateLegInfo();
   checkOpeningHours();
 }

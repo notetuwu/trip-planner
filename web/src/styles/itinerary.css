@@ -56,9 +56,25 @@ label.check.off { opacity: .5; }
 .toolbar button:hover { border-color: var(--accent); color: var(--accent); }
 .refine { margin-top: 14px; display: flex; gap: 8px; align-items: flex-end; }
 .refine textarea { min-height: 40px; height: 40px; }
-.book-ahead { margin: 14px 0 4px; }
-.book-ahead summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.book-ahead summary h2 { margin: 0; display: inline; }
+/* Collapsible sections (holidays, book ahead): a turning arrow says they open. */
+.fold { margin: 10px 0 4px; }
+.fold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: "▸"; color: var(--muted); display: inline-block; transition: transform .15s; }
+.fold[open] > summary::before { transform: rotate(90deg); }
+.fold > summary h2 { margin: 0; display: inline; }
+.fold > summary:hover h2, .fold > summary:hover::before { color: var(--accent); }
+.fold > summary .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fold > ul { margin-top: 8px; }
+/* Itinerary search: stays at the top while scrolling through the days. */
+.it-search { position: sticky; top: -18px; z-index: 5; display: flex; gap: 10px; align-items: center; background: var(--panel); padding: 10px 0; margin: 6px 0 4px; border-bottom: 1px solid var(--line); }
+.it-search input { flex: 1; }
+.it-search .hint { white-space: nowrap; }
+#output [hidden] { display: none !important; }
+.item.search-hit .name a { background: color-mix(in srgb, var(--accent) 20%, transparent); border-radius: 4px; padding: 0 2px; }
+@keyframes stop-flash { from { background: color-mix(in srgb, var(--accent) 25%, transparent); } to { background: transparent; } }
+.item.flash { animation: stop-flash 1.8s ease-out; border-radius: 8px; }
+@media print { .it-search { display: none; } }
 .book-ahead ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .book-ahead li { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
 .book-ahead li.essential { border-left: 3px solid var(--accent); }
