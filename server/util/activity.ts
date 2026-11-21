@@ -1,11 +1,12 @@
 // Which app windows are open and whether a plan is being made, so the packaged app can quit by itself once its last
 // window is closed (but never in the middle of a generation). Each page checks in every 20 s with its own id and says
-// goodbye when it closes; a page that vanished without a goodbye (e.g. the browser crashed) counts as gone after 3 min.
+// goodbye when it closes; a page that vanished without a goodbye (e.g. the browser crashed) counts as gone after 12 h.
 
 const pages = new Map<string, number>(); // page id -> last check-in
 const started = Date.now();
 let lastSeen = Date.now(), lastGoodbye = 0, everOpened = false, busy = 0;
-const STALE = 3 * 60 * 1000;
+// Long: browsers put background tabs to sleep (no check-ins) without closing them; only a goodbye means "closed".
+const STALE = 12 * 3600 * 1000;
 
 export function touch() { lastSeen = Date.now(); }
 

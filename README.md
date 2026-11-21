@@ -30,7 +30,7 @@ Get the latest version from the [Releases page](https://github.com/notetuwu/trip
 - **macOS:** `…-macos-arm64.zip` (Apple Silicon) or `…-macos-x64.zip` (Intel). Unzip and move Trip Planner to Applications.
 - **Linux:** `…-linux-x64.tar.gz`. Unpack and run `trip-planner`.
 
-It opens in its own window (using Edge, Chrome or another Chromium browser in app mode, else your default browser) and quits when you close it. Your trips and settings are kept in `%APPDATA%\Trip Planner` on Windows, `~/Library/Application Support/Trip Planner` on macOS and `~/.local/share/trip-planner` on Linux. A log file, `trip-planner.log`, is written there too.
+It opens in your default browser and quits when you close that tab (set `TRIP_PLANNER_APP_WINDOW=1` for a window of its own instead, using Edge, Chrome or another Chromium browser in app mode). Your trips and settings are kept in `%APPDATA%\Trip Planner` on Windows, `~/Library/Application Support/Trip Planner` on macOS and `~/.local/share/trip-planner` on Linux. A log file, `trip-planner.log`, is written there too.
 
 **Updates:** when a newer version is out, a bar at the top says so. On Windows, **Update now** downloads it (checked against the checksum GitHub publishes), installs it and restarts; the window reloads by itself and your data stays where it is. On macOS and Linux it opens the download page. The app asks GitHub once when it starts; set `TRIP_PLANNER_NO_UPDATES=1` to turn that off.
 

@@ -61,7 +61,7 @@ await inject(exe, "NODE_SEA_BLOB", fs.readFileSync(path.join(WORK, "sea.blob")),
 
 // 4. Wrap it up for the system.
 const base = `Trip-Planner-${version}-${plat}-${arch}`;
-const readme = (data) => `Trip Planner ${version}\n\nStart it by double-clicking it; it opens in its own window and quits when you close it.\n`
+const readme = (data) => `Trip Planner ${version}\n\nStart it by double-clicking it; it opens in your browser and quits when you close that tab.\n`
   + `${data}\nFor planning you need Claude Code (logged in), a local model server such as Ollama, or an API key (🔑 in the app).\n`
   + "More: https://github.com/notetuwu/trip-planner\n";
 
