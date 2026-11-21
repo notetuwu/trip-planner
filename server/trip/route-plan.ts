@@ -8,6 +8,7 @@ import { addDays } from "../config";
 import { locateTown } from "../geo/geocode";
 import { waitForRoute } from "../geo/routing";
 import type { Report } from "../util/progress-stream";
+import { townAt } from "./stops";
 
 const MODES = ["car", "train", "bus", "bike", "ferry", "flight"] as const;
 type Mode = (typeof MODES)[number] | "";
@@ -26,9 +27,11 @@ export interface RouteRequest {
   interests?: string;
   model: string;
 }
-export interface PlannedDayTrip { place: string; why: string }
+export interface PlannedDayTrip { place: string; why: string; lat?: number; lng?: number }
 export interface PlannedStay { city: string; country: string; nights: number; travel: Mode; why: string; dayTrips?: PlannedDayTrip[]; lat?: number; lng?: number }
-export interface PlannedLeg { from: string; to: string; km?: number; hours?: number; tooLong: boolean; noRoad?: boolean }
+/** A sight between two stays, visited on the travel day. */
+export interface WayStop { place: string; why: string; lat: number; lng: number }
+export interface PlannedLeg { from: string; to: string; km?: number; hours?: number; tooLong: boolean; noRoad?: boolean; via?: WayStop[] }
 export interface RoutePlan {
   title: string; summary: string; start: string; end: string; startDate: string;
   stays: PlannedStay[]; legs: PlannedLeg[]; nights: number;
@@ -90,6 +93,57 @@ export function reasoningSoFar(reply: string, thinking: string) {
   return [thinking.trim(), why.trim(), cities.length ? `Stays so far: ${cities.join(" → ")}` : ""].filter(Boolean).join("\n\n");
 }
 
+const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+/** The town's own name ("Lindau, Germany" → "lindau") appears in what they wrote. */
+const named = (city: string, text: string) => { const c = norm(city.split(",")[0]); return !!c && ` ${norm(text)} `.includes(` ${c} `); };
+
+/**
+ * Two stays within `km` of each other are one stay: keeps the one they named in the description (else the one with
+ * more nights, else the first) and gives it the other's nights and day trips. Stays need lat/lng; changes `stays`.
+ */
+export function mergeClose(stays: PlannedStay[], description: string, maxKm = 30) {
+  for (let i = 0; i < stays.length; i++) for (let j = i + 1; j < stays.length; j++) {
+    const a = stays[i], b = stays[j];
+    if (a.lat == null || b.lat == null || km([a.lat, a.lng!], [b.lat, b.lng!]) > maxKm) continue;
+    const keepB = (named(b.city, description) && !named(a.city, description)) || (named(b.city, description) === named(a.city, description) && b.nights > a.nights);
+    const [keep, drop] = keepB ? [b, a] : [a, b];
+    keep.nights += drop.nights;
+    keep.dayTrips = [...(keep.dayTrips || []), ...(drop.dayTrips || [])];
+    stays.splice(stays.indexOf(drop), 1);
+    i = -1; break; // start over: the indexes moved
+  }
+}
+
+/**
+ * Where each day trip really belongs, now that everything is on the map: from a stay it's right by (25 km), else as a
+ * stop on the travel day when it lies on the way between two places, else from the closest stay (one with 2+ nights
+ * if that's hardly further). `points` are the start, the stays and the end; returns the stops on the way by leg.
+ */
+export function placeTrips(points: LatLng[], stays: PlannedStay[]): Map<number, WayStop[]> {
+  const trips = stays.flatMap((s) => s.dayTrips || []);
+  for (const s of stays) s.dayTrips = [];
+  const via = new Map<number, WayStop[]>();
+  const located = stays.filter((s) => s.lat != null);
+  for (const t of trips) {
+    if (t.lat == null || !located.length) { (stays[0].dayTrips ||= []).push(t); continue; }
+    const at: LatLng = [t.lat, t.lng!];
+    const dist = (s: PlannedStay) => km(at, [s.lat!, s.lng!]);
+    const nearest = located.reduce((a, b) => (dist(b) < dist(a) ? b : a));
+    const roomy = located.filter((s) => s.nights >= 2).reduce<PlannedStay | null>((a, b) => (!a || dist(b) < dist(a) ? b : a), null);
+    let leg = -1, best = Infinity;
+    for (let k = 0; k < points.length - 1; k++) {
+      const ab = km(points[k], points[k + 1]), detour = km(points[k], at) + km(at, points[k + 1]) - ab;
+      if (ab > 30 && detour < Math.max(15, ab * 0.25) && detour < best) { best = detour; leg = k; }
+    }
+    if (dist(nearest) > 25 && leg >= 0) { via.set(leg, [...(via.get(leg) || []), { place: t.place, why: t.why, lat: t.lat, lng: t.lng! }]); continue; }
+    const base = roomy && nearest.nights < 2 && dist(roomy) <= dist(nearest) * 1.5 + 10 ? roomy : nearest;
+    (base.dayTrips ||= []).push(t);
+  }
+  return via;
+}
+
+const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
 export async function planRoute(req: RouteRequest, report: Report = () => {}, signal?: AbortSignal): Promise<RoutePlan> {
   const days = Math.min(120, Math.max(1, Math.round(Number(req.days) || 7)));
   const nights = days - 1;
@@ -99,20 +153,32 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
   const maxHours = Math.min(14, Math.max(1, Number(req.maxHours) || 5));
   const howText = mode ? { car: "by car (they drive themselves)", train: "by train", bus: "by bus", bike: "by bike", ferry: "by ferry", flight: "by plane" }[mode] : "however suits each leg (car, train, bus, ferry or plane)";
 
+  // An address means nothing to the model on its own: say which town it's in.
+  const whereIs = async (q: string) => {
+    const at = await locate(q);
+    const t = at && (await townAt(at));
+    return { at, text: t && !norm(q).includes(norm(t.name)) ? `${q} (in ${t.name}${t.country ? `, ${t.country}` : ""})` : q };
+  };
+  report({ type: "status", text: "Finding the start…" });
+  const from = await whereIs(req.start);
+  const to = roundTrip ? from : await whereIs(end);
+  const month = req.startDate ? MONTHS[Number(req.startDate.slice(5, 7)) - 1] : "";
+
   report({ type: "status", text: "Thinking up a route…" });
   const prompt = `Plan the route of a trip: where to stay each night. (A separate step plans the days themselves later.)
 
-Start: ${req.start}${req.startDate ? `, leaving on ${req.startDate}` : ""}.
-End: ${roundTrip ? `back at ${req.start} (a round trip)` : end}.
+Start: ${from.text}${req.startDate ? `, leaving on ${req.startDate}` : ""}. That's where they set off from, not a stay.
+End: ${roundTrip ? `back at the start (a round trip)` : to.text}.
 Length: ${days} days, so ${nights} nights away.
-Travel: ${howText}; at most about ${maxHours} h of travel on a travel day.
+Travel: ${howText}; at most about ${maxHours} h of travel on a travel day.${month ? `
+Season: they travel in ${month}. Suggest only what works then (no skiing or ski jumps outside winter, no closed mountain passes or huts in winter, no summer-only things out of season).` : ""}
 ${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}
 What they want: ${req.description || "a varied, scenic trip"}
 ${req.stays ? `Kind of places to stay: ${req.stays}` : ""}
 
-Choose the stays in travel order, between the start and the end (not the start or end themselves). Give them ${nights} nights in total. Make it a real, drivable (or travelable) route: each leg within about ${maxHours} h, and the last stay within a day of the end. Spend 2-3 nights where there is a lot to see (so there are full days for day trips), 1 night for a stop on the way. Favour the places and regions they asked for; "maybe" means include it if it fits well. People they want to visit (family, friends) get a stay where it fits the route.
+Choose the stays in travel order, between the start and the end (not the start or end themselves). Give them ${nights} nights in total. Make it a real, drivable (or travelable) route: each leg within about ${maxHours} h, and the last stay within a day of the end. Spend 2-3 nights where there is a lot to see (so there are full days for day trips), 1 night for a stop on the way. Favour the places and regions they asked for; "maybe" means include it if it fits well. People they want to visit (family, friends) get a stay where it fits the route. A town they name is the stay for its area: don't add another stay within about 40 km of it (or of any other stay).
 The route must flow${roundTrip ? " as one loop" : " in one direction"}: each stay moves on from the last, and it never returns to a region it already left (no back and forth, no doubling back across a country). Group the stays by region and visit each region once.
-Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of a nearby stay that has 2+ nights. Only add day trips they asked for or that clearly fit what they want; most stays have none.
+Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of the stay closest to it (one with 2+ nights). If it lies between two stays, list it on the stay you arrive at after it: it becomes a stop on that travel day. Only add day trips they asked for or that clearly fit what they want; most stays have none.
 Reply with only JSON:
 {"reasoning": "first, think it through in a few short sentences: the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
 
@@ -134,12 +200,16 @@ Reply with only JSON:
   fitNights(stays, nights);
 
   // Where everything is, then the real road distance and time of each leg travelled by road.
-  const places = [{ city: req.start, country: "" }, ...stays, { city: end, country: "" }];
-  const coords: (LatLng | null)[] = [];
-  for (const [k, p] of places.entries()) {
-    report({ type: "status", text: `Checking where the stops are (${k + 1} of ${places.length})…` });
-    coords.push(await locate(p.country ? `${p.city}, ${p.country}` : p.city));
+  for (const [k, s] of stays.entries()) {
+    report({ type: "status", text: `Checking where the stays are (${k + 1} of ${stays.length})…` });
+    const c = await locate(s.country ? `${s.city}, ${s.country}` : s.city);
+    if (c) { s.lat = c[0]; s.lng = c[1]; }
   }
+  const before = stays.length;
+  mergeClose(stays, req.description || "");
+  if (stays.length < before) report({ type: "status", text: "Merged stays that were right next to each other" });
+  const places = [{ city: req.start, country: "" }, ...stays, { city: end, country: "" }];
+  const coords: (LatLng | null)[] = [from.at, ...stays.map((s): LatLng | null => (s.lat != null ? [s.lat, s.lng!] : null)), to.at];
   // Models still double back now and then; with one way of travelling, put the stays in the shortest order instead.
   if (mode && coords.every(Boolean)) {
     const order = untangle(coords as LatLng[]);
@@ -152,11 +222,18 @@ Reply with only JSON:
       report({ type: "status", text: "Put the stays in an order without doubling back" });
     }
   }
-  stays.forEach((s, k) => { const c = coords[k + 1]; if (c) { s.lat = c[0]; s.lng = c[1]; } });
+  // Each day trip from the stay it's really closest to, or as a stop on the way.
+  const trips = stays.flatMap((s) => s.dayTrips || []);
+  for (const [k, t] of trips.entries()) {
+    report({ type: "status", text: `Checking the day trips (${k + 1} of ${trips.length})…` });
+    const c = await locate(t.place);
+    if (c) { t.lat = c[0]; t.lng = c[1]; }
+  }
+  const via = coords.every(Boolean) ? placeTrips(coords as LatLng[], stays) : new Map<number, WayStop[]>();
   const legs: PlannedLeg[] = [];
   for (let k = 1; k < places.length; k++) {
     const travel = k < places.length - 1 ? stays[k - 1].travel : (mode || stays.at(-1)!.travel);
-    const leg: PlannedLeg = { from: places[k - 1].city, to: places[k].city, tooLong: false };
+    const leg: PlannedLeg = { from: places[k - 1].city, to: places[k].city, tooLong: false, ...(via.get(k - 1) ? { via: via.get(k - 1) } : {}) };
     const a = coords[k - 1], b = coords[k];
     if (a && b && ROAD.has(travel)) {
       report({ type: "status", text: `Checking the roads (${k} of ${places.length - 1})…` });

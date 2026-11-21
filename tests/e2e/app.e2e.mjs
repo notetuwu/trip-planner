@@ -165,7 +165,7 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
   await page.eval(`window.__e2e.route = { title: "Lakes and old towns", summary: "A loop.", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 4,
     stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "Duomo" }, { city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "Lake", dayTrips: [{ place: "Vaduz", why: "Liechtenstein" }] }],
-    legs: [{ from: "Padua", to: "Milano", km: 245, hours: 2.6, tooLong: false }, { from: "Milano", to: "Lucerne", km: 230, hours: 2.9, tooLong: false },
+    legs: [{ from: "Padua", to: "Milano", km: 245, hours: 2.6, tooLong: false }, { from: "Milano", to: "Lucerne", km: 230, hours: 2.9, tooLong: false, via: [{ place: "Lugano", why: "Lake town", lat: 46.0, lng: 8.95 }] },
       { from: "Lucerne", to: "Padua", km: 480, hours: 5.4, tooLong: true }] }`);
   await page.eval(`document.querySelector("#planRoute").click()`);
   assert.equal(await page.eval(`document.querySelector("#rpStart").value`), "Padua", "starts from the first stay");
@@ -177,6 +177,7 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.equal(asked.description, "lakes and old towns");
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /longer than your daily limit/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /Day trip: Vaduz/);
+  assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /On the way: Lugano/);
   assert.equal(await page.eval(`document.querySelector("#rpThink").textContent`), "Lakes first, then the loop home.", "shows the reasoning");
   assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
   await page.eval(`document.querySelector("#rpUse").click()`);
@@ -184,8 +185,10 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
   assert.deepEqual(await page.eval(`planner.state().stays[2].dayTrips`), [{ place: "Vaduz", mode: "car" }]);
   assert.match(await page.eval(`planner.state().notes`), /Stays: cosy B&Bs/);
+  assert.deepEqual(await page.eval(`[planner.state().marks.Lugano, planner.state().how.Lugano]`), ["must", "way"], "a stop on the way becomes a must-see on the way");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
+  assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {

@@ -44,7 +44,7 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 const sameTown = (a: string, b: string) => { const x = norm(a), y = norm(b); return !!x && !!y && (x === y || x.startsWith(y) || y.startsWith(x)); };
 
 /** The town at a point (city level), in English. */
-async function townAt([lat, lng]: LatLng) {
+export async function townAt([lat, lng]: LatLng) {
   try {
     const hit = await nominatim("reverse", new URLSearchParams({ lat: String(lat), lon: String(lng), format: "jsonv2", zoom: "10", addressdetails: "1", "accept-language": "en" }));
     const a = hit?.address || {};

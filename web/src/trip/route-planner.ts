@@ -4,7 +4,8 @@ import { $, esc, toast } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { icon } from "../core/icons";
 import { liveText, streamRequest } from "../core/progress";
-import { type Stay, save, state } from "../core/state";
+import { type Stay, save, session, setListPlaces, state } from "../core/state";
+import { renderChips } from "../places/chips";
 import { modelLabel } from "../generate/models";
 import { geocodeStays } from "../geo/geocode";
 import { renderItinerary } from "../itinerary/render";
@@ -16,7 +17,8 @@ import { renderTripTitle } from "./title";
 import type { TravelMode } from "../../../shared/types";
 
 interface PlannedStay { city: string; country: string; nights: number; travel: TravelMode; why: string; dayTrips?: { place: string; why: string }[] }
-interface PlannedLeg { from: string; to: string; km?: number; hours?: number; tooLong: boolean; noRoad?: boolean }
+interface WayStop { place: string; why: string; lat: number; lng: number }
+interface PlannedLeg { from: string; to: string; km?: number; hours?: number; tooLong: boolean; noRoad?: boolean; via?: WayStop[] }
 interface RoutePlan { title: string; summary: string; start: string; end: string; startDate: string; stays: PlannedStay[]; legs: PlannedLeg[]; nights: number }
 
 const val = (id: string) => $<HTMLInputElement>(`#${id}`).value.trim();
@@ -28,8 +30,12 @@ function open() {
   $<HTMLDialogElement>("#routeDialog").showModal();
 }
 
-const legLine = (l: PlannedLeg | undefined, travel: string) => {
-  if (!l) return "";
+const viaLines = (l: PlannedLeg) => (l.via || [])
+  .map((v) => `<div class="trips">${icon("route")} On the way: ${esc(v.place)}${v.why ? ` · ${esc(v.why)}` : ""}</div>`).join("");
+
+const legLine = (l: PlannedLeg | undefined, travel: string) => (l ? legText(l, travel) + viaLines(l) : "");
+
+const legText = (l: PlannedLeg, travel: string) => {
   const how = travel ? `by ${modeName(travel as TravelMode)}` : "";
   if (l.noRoad) return `<div class="leg long">${icon("warn")} No road found from ${esc(l.from)}; plan another way to get there</div>`;
   if (l.hours == null) return how ? `<div class="leg">${icon("route")} From ${esc(l.from)} ${esc(how)}</div>` : "";
@@ -100,7 +106,10 @@ async function plan_() {
 
 /** Replaces the trip's stays with the plan: the start (no night there), the stays, and the end. */
 function use(plan: RoutePlan) {
-  const before = { stays: JSON.parse(JSON.stringify(state.stays)) as Stay[], notes: state.notes };
+  const before = {
+    stays: JSON.parse(JSON.stringify(state.stays)) as Stay[], notes: state.notes,
+    customPlaces: [...state.customPlaces], marks: { ...state.marks }, how: { ...(state.how || {}) },
+  };
   const lastTravel = plan.stays.at(-1)?.travel || "car";
   state.stays = [
     { city: plan.start, start: plan.startDate, nights: 0, hotel: "" },
@@ -114,11 +123,21 @@ function use(plan: RoutePlan) {
   // What kind of stays they want helps the itinerary planner too.
   const pref = val("rpStays");
   if (pref && !state.notes.includes(pref)) state.notes = `${state.notes ? `${state.notes}\n` : ""}Stays: ${pref}`;
-  const refresh = () => { save(); fillFields(); renderStays(); renderTripTitle(); renderItinerary(); geocodeStays(); drawMap({ fit: true }); };
+  // Sights on the way become must-sees planned as stops on that travel day.
+  for (const v of plan.legs.flatMap((l) => l.via || [])) {
+    if (!session.places.some((p) => p.title === v.place) && !state.customPlaces.some((p) => p.title === v.place)) {
+      state.customPlaces.push({ title: v.place, note: v.why, lat: v.lat, lng: v.lng, custom: true, url: `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}` });
+    }
+    state.marks[v.place] = "must";
+    (state.how ||= {})[v.place] = "way";
+  }
+  const refresh = () => {
+    save(); setListPlaces(session.listPlaces); fillFields(); renderStays(); renderTripTitle(); renderChips(); renderItinerary(); geocodeStays(); drawMap({ fit: true });
+  };
   refresh();
   $<HTMLDialogElement>("#routeDialog").close();
   toast(`Using the route: ${plan.stays.length} stays, ${plan.nights} nights. Generate the itinerary when you're ready.`, () => {
-    state.stays = before.stays; state.notes = before.notes; refresh();
+    Object.assign(state, before); refresh();
   });
 }
 
