@@ -8,6 +8,10 @@ export interface GeoHit {
   country: string;
   cc: string;
   kind: string;
+  /** The place's own website, when OpenStreetMap has one (asked for itinerary stops only). */
+  website?: string;
+  /** Its other names (local, English, German…), so "Gletschergarten" matches a hit named "Glacier garden". */
+  names?: string[];
 }
 
 export interface ReverseHit {
@@ -25,6 +29,8 @@ export interface GeoQuery {
   near?: [number, number];
   /** Jump ahead of the saved-places backlog. */
   first?: boolean;
+  /** An itinerary stop: also ask for the place's website (cached under its own key). */
+  stop?: boolean;
 }
 
 export type LatLng = [number, number];

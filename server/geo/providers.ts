@@ -31,7 +31,12 @@ export function photonHit(f: any): GeoHit {
   return { lat, lng, name: p.name || street || "", label, country: p.country || "", cc: (p.countrycode || "").toLowerCase(), kind: p.osm_value || "" };
 }
 
-export const nominatimHit = (hit: any): GeoHit => ({
-  lat: +hit.lat, lng: +hit.lon, name: hit.name || hit.display_name.split(",")[0], label: hit.display_name,
-  country: hit.address?.country || "", cc: (hit.address?.country_code || "").toLowerCase(), kind: hit.type || "",
-});
+export function nominatimHit(hit: any): GeoHit {
+  const site = String(hit.extratags?.website || hit.extratags?.["contact:website"] || hit.extratags?.url || "").split(";")[0].trim();
+  return {
+    lat: +hit.lat, lng: +hit.lon, name: hit.name || hit.display_name.split(",")[0], label: hit.display_name,
+    country: hit.address?.country || "", cc: (hit.address?.country_code || "").toLowerCase(), kind: hit.type || "",
+    ...(/^https?:\/\//.test(site) ? { website: site } : {}),
+    ...(hit.namedetails ? { names: [...new Set(Object.values(hit.namedetails as Record<string, string>))].slice(0, 12) } : {}),
+  };
+}

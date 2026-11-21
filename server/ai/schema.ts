@@ -41,6 +41,7 @@ export const ITINERARY_SCHEMA = {
                   description: "Only for paid tickets, tours, timed entry or table reservations: essential = sells out or needs a slot, recommended = booking online saves queues or money, optional = easy on the spot",
                 },
                 bookAhead: { type: "string", description: "With essential/recommended booking: how far ahead, e.g. '2-3 weeks before'" },
+                website: { type: "string", description: "Official website or ticket page of a paid place, only if you know it for certain (never guess)" },
               },
             },
           },

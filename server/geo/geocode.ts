@@ -13,15 +13,16 @@ if (geoCache.data.__v !== 2) {
 }
 
 /** The "near" point (rounded to ~10 km) is part of the key only when given, so older cache entries stay valid. */
-export const geoKey = (q: string, cc?: string, near?: LatLng | null) =>
-  `${String(q).trim().toLowerCase()}|${cc || ""}${near ? `|${(+near[0]).toFixed(1)},${(+near[1]).toFixed(1)}` : ""}`;
+export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = false) =>
+  `${String(q).trim().toLowerCase()}|${cc || ""}${near ? `|${(+near[0]).toFixed(1)},${(+near[1]).toFixed(1)}` : ""}${stop ? "|s2" : ""}`;
 
 /**
  * `near` keeps results around that point, e.g. the town an itinerary stop is in, so a "Gasthaus zur Post"
  * is found in the right village rather than anywhere in the country.
  */
-export async function geocodeOne(q: string, cc?: string, near?: LatLng | null): Promise<GeoHit | null> {
+export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
   const params = new URLSearchParams({ q, format: "jsonv2", limit: "1", addressdetails: "1", "accept-language": "en" });
+  if (stop) { params.set("extratags", "1"); params.set("namedetails", "1"); } // its website and all its names
   if (cc) params.set("countrycodes", cc);
   if (near) {
     const [lat, lng] = near, d = 0.6; // roughly 50-65 km around the point
@@ -47,7 +48,7 @@ export async function geocodeOne(q: string, cc?: string, near?: LatLng | null): 
   return null;
 }
 
-interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean }
+interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean }
 const geoQueue: GeoJob[] = [];
 let geoBusy = false;
 
@@ -55,8 +56,8 @@ async function runGeoQueue() {
   if (geoBusy) return;
   geoBusy = true;
   while (geoQueue.length) {
-    const { q, cc, near, key } = geoQueue.shift()!;
-    try { geoCache.data[key] = await geocodeOne(q, cc, near); geoCache.save(); }
+    const { q, cc, near, key, stop } = geoQueue.shift()!;
+    try { geoCache.data[key] = await geocodeOne(q, cc, near, stop); geoCache.save(); }
     catch (e) { console.error("Geocode failed:", q, errMsg(e)); }
   }
   geoBusy = false;
@@ -66,14 +67,14 @@ async function runGeoQueue() {
 export function geocodeBatch(queries: GeoQuery[]) {
   const results: Record<string, unknown> = {};
   let pending = 0;
-  for (const { q, cc, near: n, first } of queries.slice(0, 1000)) {
+  for (const { q, cc, near: n, first, stop } of queries.slice(0, 1000)) {
     const near = Array.isArray(n) && n.length === 2 && n.every(isFinite) ? (n.map(Number) as LatLng) : null;
     if (!q || !String(q).trim()) continue;
-    const key = geoKey(q, cc, near);
+    const key = geoKey(q, cc, near, !!stop);
     if (key in geoCache.data) { results[key] = geoCache.data[key]; continue; }
     pending++;
     const queued = geoQueue.findIndex((x) => x.key === key);
-    const job = { q: String(q).trim(), cc, near, key, first: !!first };
+    const job = { q: String(q).trim(), cc, near, key, first: !!first, stop: !!stop };
     // Stays and itinerary stops jump ahead of the (often long) saved-places backlog, but stay in the order they
     // were asked for among themselves (a day's town must be found before the stops searched around it).
     if (first && !geoQueue[queued]?.first) {

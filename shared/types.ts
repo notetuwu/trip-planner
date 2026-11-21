@@ -71,6 +71,8 @@ export interface ItineraryItem {
   booking?: "essential" | "recommended" | "optional";
   /** How far ahead to book, e.g. "2-3 weeks before". */
   bookAhead?: string;
+  /** The place's official website or ticket page, as the model gave it (checked to exist before it's shown). */
+  website?: string;
 }
 
 export interface Day {

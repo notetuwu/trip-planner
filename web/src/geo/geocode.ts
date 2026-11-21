@@ -9,8 +9,8 @@ import { setMapStatus } from "../map/status";
 export const geo: Record<string, GeoHit | null> = {};
 
 /** Must match the server's key: the "near" point (rounded to ~10 km) is only part of it when given. */
-export const geoKey = (q: string, cc?: string, near?: LatLng | null) =>
-  `${String(q).trim().toLowerCase()}|${cc || ""}${near ? `|${(+near[0]).toFixed(1)},${(+near[1]).toFixed(1)}` : ""}`;
+export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = false) =>
+  `${String(q).trim().toLowerCase()}|${cc || ""}${near ? `|${(+near[0]).toFixed(1)},${(+near[1]).toFixed(1)}` : ""}${stop ? "|s2" : ""}`;
 
 const wanted = new Map<string, GeoQuery>();
 let timer: number | undefined;
@@ -20,7 +20,10 @@ const listeners: (() => void)[] = [];
 export const onGeocoded = (fn: () => void) => { listeners.push(fn); };
 
 export function geocode(queries: GeoQuery[]) {
-  for (const x of queries) if (x.q && !(geoKey(x.q, x.cc, x.near) in geo)) wanted.set(geoKey(x.q, x.cc, x.near), x);
+  for (const x of queries) {
+    const key = geoKey(x.q, x.cc, x.near, x.stop);
+    if (x.q && !(key in geo)) wanted.set(key, x);
+  }
   clearTimeout(timer);
   timer = window.setTimeout(poll, 300);
 }

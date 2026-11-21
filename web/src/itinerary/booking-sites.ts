@@ -38,14 +38,31 @@ export function paidEntry(x: ItineraryItem, towns: string[] = []) {
 
 export interface TicketLink { url: string; label: string; title: string }
 
-/** Where to get tickets for a stop: the platform for things to book ahead, else the place's own website, else a web
- *  search for its tickets (small museums and castles are rarely on the big platforms). */
-export function ticketLink(x: ItineraryItem, towns: string[], site: BookingSite, website?: string): TicketLink | null {
+const TICKET_PAGE = /ticket|biglietti|billet|buchen|booking|reserv|eintritt|preise|prices/i;
+
+/** The best of the place's own websites: a ticket page the model found beats the homepage OpenStreetMap lists. */
+export function pickWebsite(osm?: string, model?: string) {
+  if (model && TICKET_PAGE.test(model)) return model;
+  return osm || model;
+}
+
+/** Where to get tickets for a stop. Things to book ahead: the place's own site (when known) and the platform.
+ *  Other paid places: their own site, else a web search for their tickets (small museums and castles are rarely
+ *  on the big platforms). Free places, meals and transfers: nothing. */
+export function ticketLinks(x: ItineraryItem, towns: string[], site: BookingSite, website?: string): TicketLink[] {
   const q = bookingQuery(x.place, towns[0] || "");
-  if (bookableOnSite(x, towns)) return { url: site.search(q), label: site.name, title: `Find tickets on ${site.name}` };
-  if (!paidEntry(x, towns)) return null;
-  if (website) return { url: website, label: "Tickets / info", title: "The place's own website" };
-  return { url: `https://www.google.com/search?q=${encodeURIComponent(`${q} tickets`)}`, label: "Tickets", title: "Search for tickets and prices" };
+  const own = website ? { url: website, label: bookableOnSite(x, towns) ? "Official site" : "Tickets / info", title: "The place's own website" } : null;
+  if (bookableOnSite(x, towns)) return [...(own ? [own] : []), { url: site.search(q), label: site.name, title: `Find tickets on ${site.name}` }];
+  if (!paidEntry(x, towns)) return [];
+  return [own || { url: `https://www.google.com/search?q=${encodeURIComponent(`${q} tickets`)}`, label: "Tickets", title: "Search for tickets and prices" }];
+}
+
+/** What to search tickets for: for "Luzern → Mount Pilatus (cog railway + cable car)" it's the ride to Mount Pilatus. */
+export function ticketQuery(place: string) {
+  const [, to] = place.split(/\s*(?:→|->)\s*/);
+  if (!to) return bookingQuery(place, "");
+  const how = place.match(/\(([^)]+)\)/)?.[1];
+  return `${bookingQuery(to, "")}${how ? ` ${how}` : ""}`;
 }
 
 /** The search to run on the platform: the place, plus the town when the name doesn't say it. */

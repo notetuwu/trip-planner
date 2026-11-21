@@ -10,6 +10,7 @@ import { runGeneration } from "./generate/run";
 import { offlineHtml } from "./export/offline";
 import { directionsUrl, initDirectionLinks } from "./itinerary/directions";
 import { renderItinerary } from "./itinerary/render";
+import { refreshLinks } from "./itinerary/book-ahead";
 import { initSearchKey } from "./itinerary/search";
 import { loadWeather } from "./itinerary/weather";
 import { initDays, selectDay } from "./map/days";
@@ -29,7 +30,7 @@ import { renderTripTitle } from "./trip/title";
 // itinerary stops inside those countries.
 let lastCountries = "";
 onGeocoded(() => {
-  renderStays(); renderTripTitle(); drawMap(); renderChips();
+  renderStays(); renderTripTitle(); drawMap(); renderChips(); refreshLinks(); // links: websites found by the lookups
   geocodeStays();
   const cc = countryCodes();
   // Booking links depend on the countries (Klook vs GetYourGuide), so the itinerary is redrawn once they're known.

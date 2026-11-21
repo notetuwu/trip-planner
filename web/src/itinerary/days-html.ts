@@ -15,7 +15,7 @@ const mapsLink = (x: ItineraryItem, d: Day, byTitle: ByTitle) => byTitle.get(x.p
 /** xi is the item's index within its day; it matches the numbered pin on the map. */
 function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByTitle, cur: string) {
   const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route ↗</a>` : "";
-  const links = [dir, bookLink(x, d)].filter(Boolean).join(" · ");
+  const links = [dir, bookLink(x, d, di, xi)].filter(Boolean).join(" · ");
   const badge = x.booking === "essential" ? `<span class="book-badge" title="${esc(x.bookAhead ? `Book ${x.bookAhead}` : "Book ahead")}">book ahead</span>` : "";
   return `
     <li class="item ${x.fromList || byTitle.has(x.place) ? "listed" : ""}" data-k="${di}-${xi}">

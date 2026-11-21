@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GETYOURGUIDE, KLOOK, bookableOnSite, bookingQuery, bookingSite, paidEntry, ticketLink } from "../web/src/itinerary/booking-sites";
+import { GETYOURGUIDE, KLOOK, bookableOnSite, bookingQuery, bookingSite, paidEntry, pickWebsite, ticketLinks, ticketQuery } from "../web/src/itinerary/booking-sites";
 
 describe("booking site", () => {
   it("uses Klook for trips entirely in East/Southeast Asia", () => {
@@ -38,12 +38,23 @@ describe("what gets which link", () => {
     expect(bookableOnSite(item({ booking: "essential", place: "Dinner at Kikunoi" }))).toBe(false);
     expect(bookableOnSite(item({ booking: "essential", place: "Milan → Rome (train)" }))).toBe(false);
   });
-  it("picks platform, then the place's website, then a ticket search", () => {
+  it("links the place's own site, the platform for things to book ahead, else a ticket search", () => {
     const museum = item({ place: "Stadtmuseum", kind: "sight", cost: 12 });
-    expect(ticketLink(item({ kind: "sight", booking: "essential" }), ["Himeji"], KLOOK)?.label).toBe("Klook");
-    expect(ticketLink(museum, ["Bamberg"], GETYOURGUIDE, "https://example.org/museum")).toMatchObject({ url: "https://example.org/museum", label: "Tickets / info" });
-    expect(ticketLink(museum, ["Bamberg"], GETYOURGUIDE)?.url).toBe("https://www.google.com/search?q=Stadtmuseum%20Bamberg%20tickets");
-    expect(ticketLink(item({ kind: "sight", cost: 0 }), ["Bamberg"], GETYOURGUIDE)).toBeNull();
+    const castle = item({ kind: "sight", booking: "essential" });
+    expect(ticketLinks(castle, ["Himeji"], KLOOK).map((l) => l.label)).toEqual(["Klook"]);
+    expect(ticketLinks(castle, ["Himeji"], KLOOK, "https://example.org").map((l) => l.label)).toEqual(["Official site", "Klook"]);
+    expect(ticketLinks(museum, ["Bamberg"], GETYOURGUIDE, "https://example.org/museum")).toMatchObject([{ url: "https://example.org/museum", label: "Tickets / info" }]);
+    expect(ticketLinks(museum, ["Bamberg"], GETYOURGUIDE)[0].url).toBe("https://www.google.com/search?q=Stadtmuseum%20Bamberg%20tickets");
+    expect(ticketLinks(item({ kind: "sight", cost: 0 }), ["Bamberg"], GETYOURGUIDE)).toEqual([]);
+  });
+  it("searches a ride's tickets by where it goes", () => {
+    expect(ticketQuery("Luzern → Mount Pilatus (cog railway + cable car)")).toBe("Mount Pilatus cog railway + cable car");
+    expect(ticketQuery("Uffizi Gallery")).toBe("Uffizi Gallery");
+  });
+  it("prefers a ticket page the model found over the homepage OpenStreetMap lists", () => {
+    expect(pickWebsite("https://www.pilatus.ch", "https://www.pilatus.ch/bahnen/tickets")).toBe("https://www.pilatus.ch/bahnen/tickets");
+    expect(pickWebsite("https://www.gletschergarten.ch/", "https://example.org/about")).toBe("https://www.gletschergarten.ch/");
+    expect(pickWebsite(undefined, "https://example.org/about")).toBe("https://example.org/about");
   });
   it("adds the town unless the name has it", () => {
     expect(bookingQuery("Uffizi Gallery (book ahead)", "Florence")).toBe("Uffizi Gallery Florence");
