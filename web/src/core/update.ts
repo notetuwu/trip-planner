@@ -59,8 +59,8 @@ export async function checkForUpdates() {
   };
 }
 
-/** A little after start (so it doesn't compete with loading the trip), then every few hours while open. */
+/** A little after start (so it doesn't compete with loading the trip), then every hour while open (the app itself asks GitHub at most once an hour). */
 export const initUpdates = () => {
   setTimeout(checkForUpdates, 3000);
-  setInterval(() => { if (!document.getElementById("updateBar")) checkForUpdates(); }, 4 * 3600e3);
+  setInterval(() => { if (!document.getElementById("updateBar")) checkForUpdates(); }, 3600e3);
 };

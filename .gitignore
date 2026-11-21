@@ -4,6 +4,7 @@
 /lists/
 /cache/
 /keys.json
+/settings.json
 *.csv
 
 # Old versions and local clutter

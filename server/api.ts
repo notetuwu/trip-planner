@@ -8,9 +8,11 @@ import { routeBatch } from "./geo/routing";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
+import { openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
+import { handleSettings } from "./routes/settings";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
@@ -40,6 +42,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     // Open windows check in (and say goodbye when closed), so the packaged app knows when to quit.
     if (path === "/api/ping") { ping(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     if (path.startsWith("/api/update")) { await handleUpdate(req, res, path); return true; }
+    // The app's own window sends external links here, to open in the default browser.
+    if (method === "POST" && path === "/api/open") {
+      const body = await readJson(req);
+      sendJson(res, openInBrowser(String(body?.url || "")) ? 200 : 400, { ok: true }); return true;
+    }
+    if (path === "/api/settings") { await handleSettings(req, res); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
