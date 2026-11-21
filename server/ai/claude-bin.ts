@@ -1,4 +1,5 @@
-// Finds the Claude Code CLI: CLAUDE_BIN, then the PATH, then the binary bundled with the VS Code extension.
+// Finds the Claude Code CLI: CLAUDE_BIN, then the PATH, then the usual install folders, then the binary bundled with
+// the VS Code extension.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,6 +13,13 @@ export function findClaude(): string | null {
     const exe = out.find((p) => /\.exe$/i.test(p)) || out[0];
     if (exe) return exe;
   } catch { /* not on the PATH */ }
+  // The usual install locations (apps started from the Finder or a shortcut don't get the terminal's PATH).
+  const home = os.homedir();
+  const usual = process.platform === "win32"
+    ? [path.join(home, ".local", "bin", "claude.exe"), path.join(home, ".claude", "local", "claude.exe")]
+    : [path.join(home, ".local", "bin", "claude"), path.join(home, ".claude", "local", "claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
+  const found = usual.find((p) => fs.existsSync(p));
+  if (found) return found;
   // The VS Code extension ships its own binary (newest version wins).
   const extDir = path.join(os.homedir(), ".vscode", "extensions");
   try {

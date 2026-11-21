@@ -2,7 +2,7 @@
 import { cloudModels } from "./ai/cloud-models";
 import { detectLocalModels } from "./ai/local-models";
 import { findClaude } from "./ai/claude-bin";
-import { errMsg } from "./config";
+import { VERSION, errMsg } from "./config";
 import { geocodeBatch } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { reverseGeocode, searchPlaces } from "./geo/search";
@@ -13,6 +13,7 @@ import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
 import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
+import { busyWhile, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
 import { type Req, type Res, readJson, sendJson } from "./util/http";
 
@@ -31,7 +32,10 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
   const { method } = req, path = url.pathname;
   const refused = refuse(req);
   if (refused) { sendJson(res, 403, { error: refused }); return true; }
+  touch();
   try {
+    if (path === "/api/health") { sendJson(res, 200, { app: "trip-planner", version: VERSION }); return true; }
+    if (path === "/api/ping") { ping(); sendJson(res, 200, { ok: true }); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
     if (saveMatch) await handleSaves(req, res, saveMatch[1] && decodeURIComponent(saveMatch[1]));
@@ -73,7 +77,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       if (!isFinite(lat) || !isFinite(lng)) sendJson(res, 400, { error: "lat and lng required" });
       else sendJson(res, 200, (await reverseGeocode(lat, lng)) || {});
     }
-    else if (method === "POST" && path === "/api/itinerary") await handleItinerary(req, res);
+    else if (method === "POST" && path === "/api/itinerary") await busyWhile(() => handleItinerary(req, res));
     else sendJson(res, 404, { error: "Not found" });
   } catch (e) {
     console.error(errMsg(e));

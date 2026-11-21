@@ -1,9 +1,30 @@
 // Paths, limits and small helpers used across the server.
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
+import { isSea } from "node:sea";
 
-/** Where saves/, lists/, cache/ and any CSVs live: the project folder unless TRIP_PLANNER_DATA says otherwise. */
-export const ROOT = path.resolve(process.env.TRIP_PLANNER_DATA || process.cwd());
-export const PORT = Number(process.env.PORT) || 5173;
+/** The app's version, filled in at build time from package.json. */
+declare const __APP_VERSION__: string | undefined;
+export const VERSION = typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
+
+/** Running as the packaged app (one executable file) rather than from the source folder. */
+export const PACKAGED = isSea();
+
+/** The packaged app keeps its data in a "data" folder next to it (portable) or else in the user's app-data folder. */
+function packagedDataDir() {
+  const portable = path.join(path.dirname(process.execPath), "data");
+  if (fs.existsSync(portable)) return portable;
+  if (process.platform === "win32") return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Trip Planner");
+  if (process.platform === "darwin") return path.join(os.homedir(), "Library", "Application Support", "Trip Planner");
+  return path.join(process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share"), "trip-planner");
+}
+
+/** Where saves/, lists/, cache/ and any CSVs live: TRIP_PLANNER_DATA, else the app's data folder when packaged,
+ *  else the project folder. */
+export const ROOT = path.resolve(process.env.TRIP_PLANNER_DATA || (PACKAGED ? packagedDataDir() : process.cwd()));
+/** The packaged app uses an uncommon port, so it doesn't collide with dev servers (and keeps its storage). */
+export const PORT = Number(process.env.PORT) || (PACKAGED ? 47615 : 5173);
 export const SAVES_DIR = path.join(ROOT, "saves");
 export const LISTS_DIR = path.join(ROOT, "lists");
 export const CACHE_DIR = path.join(ROOT, "cache");

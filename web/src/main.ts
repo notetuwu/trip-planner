@@ -1,6 +1,6 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
-import { $ } from "./core/dom";
+import { $, api } from "./core/dom";
 import { session, state } from "./core/state";
 import { geocodeStays, onGeocoded } from "./geo/geocode";
 import { byTitleMap, geocodeItems, itemLoc } from "./geo/item-loc";
@@ -48,6 +48,10 @@ $("#generate").onclick = () => runGeneration();
 Object.assign(window, {
   planner: { state: () => state, session, applyState, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, directionsUrl, offlineHtml },
 });
+
+// Tells the server the page is still open (the packaged app quits a while after its window is gone).
+const heartbeat = () => api("/api/ping").catch(() => {});
+heartbeat(); setInterval(heartbeat, 20000);
 
 initMap();
 refreshModels();

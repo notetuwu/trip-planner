@@ -15,3 +15,6 @@ Thumbs.db
 
 # Build output
 /dist/
+
+# Packaged app (npm run package)
+/release/

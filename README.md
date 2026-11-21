@@ -22,16 +22,27 @@ It uses **Claude** through your own [Claude Code](https://claude.com/claude-code
 - **Budget and weather.** Costs per stop and per day against your daily budget, plus a forecast when the trip is close enough.
 - **Take it with you.** "Download for phone" saves one self-contained HTML file with the map, the days and a jump-to-today button. A calendar file (.ics) puts every stop in your phone's calendar. Print/PDF and JSON export are also available.
 
-## Requirements
+## Download
 
-- [Node.js](https://nodejs.org) 22.12 or newer.
-- One of:
-  - **Claude Code**, installed and logged in (`claude` works in your terminal). Generation uses your Claude subscription.
-  - **A local model server:** [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), llama.cpp server, Jan, KoboldCpp, GPT4All or vLLM. Running servers are detected automatically.
-  - **An API key** from [Anthropic](https://console.anthropic.com/settings/keys), [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys) (one key for many labs' models). You pay the provider per use.
-- Python 3, optional, for the `start.py` launcher.
+Get the latest version from the [Releases page](https://github.com/notetuwu/trip-planner/releases/latest). Nothing else needs to be installed:
 
-## Run it
+- **Windows:** `…-windows-x64-setup.exe` installs it with a Start menu entry (no admin rights needed). Or take `…-windows-x64-portable.zip`, unzip it anywhere (even a USB stick) and run `Trip Planner.exe`; the portable version keeps everything in the `data` folder next to it.
+- **macOS:** `…-macos-arm64.zip` (Apple Silicon) or `…-macos-x64.zip` (Intel). Unzip and move Trip Planner to Applications.
+- **Linux:** `…-linux-x64.tar.gz`. Unpack and run `trip-planner`.
+
+It opens in its own window (using Edge, Chrome or another Chromium browser in app mode, else your default browser) and quits when you close it. Your trips and settings are kept in `%APPDATA%\Trip Planner` on Windows, `~/Library/Application Support/Trip Planner` on macOS and `~/.local/share/trip-planner` on Linux. A log file, `trip-planner.log`, is written there too.
+
+The app isn't code-signed yet, so the first start shows a warning. On Windows, "Windows protected your PC": click **More info → Run anyway**. On macOS, right-click the app → **Open** (or allow it under System Settings → Privacy & Security).
+
+To plan, you need one of:
+
+- **Claude Code**, installed and logged in (`claude` works in your terminal). Generation uses your Claude subscription.
+- **A local model server:** [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), llama.cpp server, Jan, KoboldCpp, GPT4All or vLLM. Running servers are detected automatically.
+- **An API key** from [Anthropic](https://console.anthropic.com/settings/keys), [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys) (one key for many labs' models). You pay the provider per use.
+
+## Run from source
+
+Needs [Node.js](https://nodejs.org) 22.12 or newer (and Python 3 for the optional `start.py` launcher).
 
 ```sh
 python start.py            # installs, builds if needed, starts the server and opens http://localhost:5173
@@ -46,7 +57,7 @@ npm run build
 npm start
 ```
 
-Your trips are saved in `saves/`, imported place lists in `lists/`, and map lookups are cached in `cache/`. All three stay on your machine and are ignored by git.
+Run from source, your trips are saved in `saves/`, imported place lists in `lists/`, and map lookups are cached in `cache/`. All three stay on your machine and are ignored by git.
 
 ## Choosing a model
 
@@ -121,7 +132,8 @@ web/src/
   saves/            saved trips
   styles/           CSS
 server/
-  main.ts           production server (serves dist/web and the API)
+  main.ts           production server (serves the built page and the API); also the packaged app's entry
+  launcher.ts       the packaged app's window and quitting when it closes
   api.ts            routes for /api/*
   ai/               prompt, schema, runners for Claude Code, the Anthropic API, OpenAI/OpenRouter and local models
   research/         web search and page reading for local models
@@ -131,6 +143,8 @@ server/
   lists/            place lists: CSV, Google Maps import, storage
 shared/             types used by both sides
 tests/              unit tests
+scripts/            packaging (one executable per system), icon, test runner
+packaging/          icon and the Windows installer script
 ```
 
 ## Development
@@ -140,7 +154,10 @@ npm run dev         # Vite dev server with hot reload; the API runs inside it (s
 npm run typecheck   # TypeScript checks for the app, the server and the tests
 npm test            # unit tests (Vitest)
 npm run build       # production build into dist/
+npm run package     # the app as one executable for this system, in release/
 ```
+
+`npm run package` bakes the server and the built page into a copy of Node ([single executable application](https://nodejs.org/api/single-executable-applications.html)), so the result runs without Node installed. Releases are built by GitHub Actions for Windows (portable zip and an [Inno Setup](https://jrsoftware.org/isinfo.php) installer), macOS (Apple Silicon and Intel) and Linux whenever a version tag is pushed (`git tag v3.1.0 && git push origin v3.1.0`). `node scripts/make-icon.mjs` redraws the icon.
 
 GitHub Actions runs the typecheck, the tests and the build on every push.
 
