@@ -47,8 +47,11 @@ export function openWindow(url: string, dataDir: string, mode: WindowMode = read
 
 /** Opens a web address in the default browser (only http and https). */
 export function openInBrowser(url: string) {
-  if (!/^https?:\/\/[^\s]+$/i.test(url)) return false;
-  const [cmd, args] = process.platform === "win32" ? ["explorer.exe", [url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
+  if (!/^https?:\/\/[^\s"]+$/i.test(url)) return false;
+  // Windows: the system's URL handler. (explorer.exe misreads addresses with commas and similar characters, common in
+  // map and booking links, and then opens the Documents folder instead.)
+  const [cmd, args] = process.platform === "win32" ? ["rundll32.exe", ["url.dll,FileProtocolHandler", url]]
+    : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
   return true;
 }

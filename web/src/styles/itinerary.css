@@ -94,3 +94,12 @@ label.check.off { opacity: .5; }
 .book-ahead a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
 @media (max-width: 640px) { .book-ahead li { grid-template-columns: 1fr; } }
 @media print { .redo, .book-ahead input { display: none; } }
+.fix-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); color: var(--ink); font-size: 13px; }
+.fix-bar > svg.i { color: var(--warn); font-size: 16px; }
+.fix-bar span { flex: 1; min-width: 180px; }
+.fix-bar .btn { height: 30px; }
+.inline-progress { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 6px 12px 10px; margin-top: 4px; }
+.inline-progress .empty.loading.inline { padding: 14px 10px 6px; }
+.inline-progress .empty.loading.inline .sun { width: 34px; height: 34px; margin-bottom: 10px; }
+.fix-bar.busy { display: block; padding: 0; background: none; border: 0; }
+.day.replanning .day-head .redo { visibility: hidden; }

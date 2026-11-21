@@ -1,9 +1,10 @@
 // Generate, revise or re-plan one day: sends the trip, reads the server's NDJSON stream, and shows the result.
 import type { Itinerary, RunResult, StreamEvent } from "../../../shared/types";
-import { $, apiFetch } from "../core/dom";
+import { $, apiFetch, toast } from "../core/dom";
 import { type Meta, save, session, state } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
-import { renderItinerary } from "../itinerary/render";
+import { renderItinerary, setInlineProgress } from "../itinerary/render";
+import { fmtDate } from "../core/format";
 import { loadWeather } from "../itinerary/weather";
 import { drawMap } from "../map/draw";
 import { renderTripTitle } from "../trip/title";
@@ -78,7 +79,10 @@ export async function runGeneration(change: Change = {}) {
   running = true; btn.disabled = true;
   let fresh: Itinerary | null = null;
   const abort = new AbortController();
-  const view = showProgress({
+  // A day re-plan or a fix shows its progress inside the itinerary; the rest of the plan stays readable.
+  const box = redo || fix ? document.createElement("div") : undefined;
+  if (box) { box.className = "inline-progress"; setInlineProgress(redo ? { day: redo.day, el: box } : { fix: true, el: box }); }
+  const view = showProgress({ into: box,
     who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),
     doing: redo ? `re-planning ${redo.itinerary.days[redo.day]?.date}`
       : fix ? `fixing ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""} the map checks found (wrong town or closed)` : change.revise ? "revising your trip" : "planning your trip",
@@ -91,6 +95,7 @@ export async function runGeneration(change: Change = {}) {
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
     const data = await readStream(res, view.onEvent);
     if (!data) throw new Error("The server stopped before the plan was finished.");
+    setInlineProgress(null);
     if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
     else if (fix && state.itinerary) spliceFixed(state.itinerary, data, view, fix.problems.length);
     else {
@@ -107,7 +112,12 @@ export async function runGeneration(change: Change = {}) {
     save();
     renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix }); geocodeItems(); loadWeather();
     fresh = !redo && !fix ? state.itinerary : null;
+    if (redo) {
+      document.getElementById(`day-${redo.day}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      toast(`${fmtDate(redo.itinerary.days[redo.day].date)} is re-planned`);
+    } else if (fix) toast(`Fixed ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""}`);
   } catch (err) {
+    setInlineProgress(null);
     renderItinerary((err as Error).name === "AbortError" ? (fix ? "Fixing cancelled; the plan is as it was." : "Cancelled.") : (err as Error).message);
   } finally {
     view.stop(); btn.disabled = false; running = false;

@@ -50,7 +50,7 @@ async function windowSwitch() {
     await api("/api/settings", { method: "POST", body: JSON.stringify({ window: mode, reopen }) });
     if (reopen) { window.close(); setTimeout(() => alert("Switched. You can close this tab now."), 800); }
   };
-  document.querySelector("#headerTools")?.prepend(el);
+  document.querySelector("#appVersion")?.after(el);
 }
 
 export function initWindowMode() {

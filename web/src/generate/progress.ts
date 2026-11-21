@@ -11,11 +11,12 @@ export interface ProgressView {
   stop(): void;
 }
 
-export function showProgress(o: { who: string; doing: string; local: boolean; expectedDays: number; onCancel(): void }): ProgressView {
-  // Built once and then updated in place, so an opened reasoning panel stays open.
-  const out = $("#output");
+export function showProgress(o: { who: string; doing: string; local: boolean; expectedDays: number; onCancel(): void; into?: HTMLElement }): ProgressView {
+  // Built once and then updated in place, so an opened reasoning panel stays open. `into`: inside one day (or the fix
+  // bar) instead of replacing the whole itinerary.
+  const out = o.into || $("#output");
   out.innerHTML = `
-    <div class="empty loading">
+    <div class="empty loading${o.into ? " inline" : ""}">
       <div class="sun"></div>
       ${esc(o.who)} is ${esc(o.doing)}… <span data-gen-time>0s</span>
       <small data-gen-status>${o.local ? "Loading the model…" : "Starting…"}</small>

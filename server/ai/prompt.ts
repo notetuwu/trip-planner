@@ -145,6 +145,6 @@ ${others}
 ${JSON.stringify(d)}
 
 ## Re-plan only this day
-Re-plan ${d.date} (${d.city}). ${request ? `The travelers ask: ${request}` : "Give it a fresh plan with different choices where sensible."}
+Re-plan ${d.date} (${d.city}). ${request ? `The travelers ask: ${request}` : "Give it a fresh plan with different choices where sensible."} If you research online, look up only what this day needs (a few searches at most).
 Keep it consistent with the other days: don't repeat places they visit on another day, and keep where they sleep and any transfer that happens on this day. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only this one day, dated ${d.date}. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly explain the new plan for the day.`;
 }

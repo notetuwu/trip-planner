@@ -44,7 +44,7 @@
 .name-options button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 /* Reserve the looked-up address's space up front so the popup doesn't grow past the map edge. */
 .add-form .pop-meta.lookup { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; height: 2.8em; }
-.toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 2000; background: var(--ink); color: var(--panel); border-radius: 999px; padding: 8px 16px; display: flex; gap: 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.25); max-width: calc(100vw - 32px); }
+.toast { position: fixed; right: 20px; bottom: 20px; z-index: 2000; background: var(--ink); color: var(--panel); border-radius: 999px; padding: 8px 16px; display: flex; gap: 12px; align-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.25); max-width: calc(100vw - 32px); }
 .toast button { background: none; border: 0; color: var(--accent); font-weight: 700; cursor: pointer; padding: 0; }
 .leaflet-tooltip { background: var(--panel); color: var(--ink); border-color: var(--line); box-shadow: var(--shadow); font-weight: 600; }
 .leaflet-tooltip-right::before { border-right-color: var(--line); }

@@ -1,6 +1,7 @@
 // Planning request to Ollama's /api/chat, with the output forced to the itinerary schema.
 import { lines } from "../util/http";
 import type { LocalOutput } from "./local-output";
+import { loopGuard } from "./loop-guard";
 import { LOCAL_SCHEMA } from "./schema";
 import type { OnEvent, Trip } from "./types";
 
@@ -24,7 +25,10 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
   const needed = promptTokens + tripDays * 1000 + 4000 + (canThink ? 16000 : 0);
   const firstCtx = Math.min(cap, roundUp(needed));
 
-  const run = async (numCtx: number, think: boolean, label: string) => {
+  const run = async (numCtx: number, think: boolean, label: string): Promise<"ok" | "length" | "loop"> => {
+    // Stopped by the travelers (abort) or by us when the model starts repeating itself (stop).
+    const stop = new AbortController(), signal = AbortSignal.any([abort, stop.signal]);
+    const looping = loopGuard();
     onEvent({
       type: "prompt", label,
       info: `Sent to Ollama /api/chat · model: ${model} · context ${numCtx.toLocaleString()} tokens · temperature 0.4 · thinking ${think ? "on" : "off"} · `
@@ -32,7 +36,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
       text: prompt,
     });
     const chat = (withThink: boolean) => fetch(`${base}/api/chat`, {
-      method: "POST", signal: abort,
+      method: "POST", signal,
       body: JSON.stringify({
         model, stream: true, format: LOCAL_SCHEMA, ...(withThink ? { think: true } : canThink ? { think: false } : {}),
         messages: [{ role: "user", content: prompt }], options: { num_ctx: numCtx, temperature: 0.4 },
@@ -43,28 +47,41 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
     if (!res.ok && think) res = await chat(false);
     if (!res.ok) throw new Error(`Ollama: ${(await res.text()).slice(0, 500)}`);
     const tokensBefore = output.out.tokens;
-    for await (const line of lines(res.body)) {
-      if (!line.trim()) continue;
-      const ev = JSON.parse(line);
-      if (ev.error) throw new Error(`Ollama: ${ev.error}`);
-      if (ev.message?.thinking || ev.message?.content) output.tick();
-      if (ev.message?.thinking) output.onThinking(ev.message.thinking);
-      if (ev.message?.content) output.onContent(ev.message.content);
-      // The last line has Ollama's exact count and generation speed.
-      if (ev.done && ev.eval_count) output.setExact(tokensBefore + ev.eval_count, ev.eval_duration ? ev.eval_count / (ev.eval_duration / 1e9) : undefined);
-      if (ev.done) return ev.done_reason === "length" ? "length" : "ok";
+    try {
+      for await (const line of lines(res.body)) {
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.error) throw new Error(`Ollama: ${ev.error}`);
+        const text = ev.message?.thinking || ev.message?.content || "";
+        if (text) output.tick();
+        if (ev.message?.thinking) output.onThinking(ev.message.thinking);
+        if (ev.message?.content) output.onContent(ev.message.content);
+        if (text && looping(text)) { stop.abort(); return "loop"; }
+        // The last line has Ollama's exact count and generation speed.
+        if (ev.done && ev.eval_count) output.setExact(tokensBefore + ev.eval_count, ev.eval_duration ? ev.eval_count / (ev.eval_duration / 1e9) : undefined);
+        if (ev.done) return ev.done_reason === "length" ? "length" : "ok";
+      }
+    } catch (e) {
+      if (stop.signal.aborted && !abort.aborted) return "loop";
+      throw e;
     }
     return "ok";
   };
 
-  if (await run(firstCtx, canThink, "Planning prompt") === "ok") return;
-  // Out of room, usually from long thinking: once more with twice the room and without the thinking.
-  const wasThinking = output.out.content.trim() ? "before finishing the itinerary" : "while still thinking, before writing anything";
-  const secondCtx = Math.min(cap, roundUp(Math.max(firstCtx * 2, needed)));
-  if (secondCtx <= firstCtx && !canThink) throw outOfRoom(model, firstCtx, wasThinking);
-  onEvent({ type: "status", text: `${model} ran out of room (${firstCtx.toLocaleString()} tokens) ${wasThinking}; trying again with ${secondCtx.toLocaleString()} tokens${canThink ? " and without the long thinking" : ""}…` });
+  const first = await run(firstCtx, canThink, "Planning prompt");
+  if (first === "ok") return;
+  // Out of room (usually from long thinking) or stuck repeating itself: once more without the thinking, with twice
+  // the room if it ran out.
+  const when = output.out.content.trim() ? "before finishing the itinerary" : "while still thinking, before writing anything";
+  const secondCtx = first === "length" ? Math.min(cap, roundUp(Math.max(firstCtx * 2, needed))) : firstCtx;
+  if (first === "length" && secondCtx <= firstCtx && !canThink) throw outOfRoom(model, firstCtx, when);
+  onEvent({ type: "status", text: first === "loop"
+    ? `${model} got stuck repeating itself ${when}; trying again without the long thinking…`
+    : `${model} ran out of room (${firstCtx.toLocaleString()} tokens) ${when}; trying again with ${secondCtx.toLocaleString()} tokens${canThink ? " and without the long thinking" : ""}…` });
   output.restart();
-  if (await run(secondCtx, false, "Planning prompt (retry)") === "ok") return;
+  const second = await run(secondCtx, false, "Planning prompt (retry)");
+  if (second === "ok") return;
+  if (second === "loop") throw new Error(`${model} kept repeating itself instead of writing the plan, even without thinking. Try again, or a different model.`);
   throw outOfRoom(model, secondCtx, output.out.content.trim() ? "before finishing the itinerary" : "before writing anything");
 }
 

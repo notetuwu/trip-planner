@@ -1,4 +1,5 @@
 // One turn of the research conversation with a local model, with web_search / fetch_page offered as tools.
+import { loopGuard } from "../ai/loop-guard";
 import { lines } from "../util/http";
 
 export const MAX_LOOKUPS = Number(process.env.RESEARCH_MAX_LOOKUPS) || 30;
@@ -22,28 +23,37 @@ export interface RoundContext {
   tick(): void;
 }
 
-/** Sends the conversation so far; appends the model's reply to `messages` and returns its text and tool calls. */
-export async function chatRound(ctx: RoundContext, allowTools: boolean): Promise<{ content: string; calls: ToolCall[] }> {
+/** Sends the conversation so far; appends the model's reply to `messages` and returns its text and tool calls.
+ *  Throws "LOOP" if the model gets stuck repeating itself (noThink: ask without thinking, e.g. for the final summary). */
+export async function chatRound(ctx: RoundContext, allowTools: boolean, noThink = false): Promise<{ content: string; calls: ToolCall[] }> {
   const { kind, base, model, messages, abort } = ctx;
   let content = "", calls: ToolCall[] = [];
   if (kind === "ollama") {
+    const stop = new AbortController(), looping = loopGuard();
     const res = await fetch(`${base}/api/chat`, {
-      method: "POST", signal: abort,
-      body: JSON.stringify({ model, stream: true, messages, ...(allowTools ? { tools: TOOLS } : {}), options: { num_ctx: RESEARCH_CTX, temperature: 0.3 } }),
+      method: "POST", signal: AbortSignal.any([abort, stop.signal]),
+      body: JSON.stringify({ model, stream: true, messages, ...(noThink ? { think: false } : {}), ...(allowTools ? { tools: TOOLS } : {}), options: { num_ctx: RESEARCH_CTX, temperature: 0.3 } }),
     });
     if (!res.ok) {
       const err = await res.text();
       if (/does not support tools/i.test(err)) throw new Error("NO_TOOLS");
       throw new Error(`Ollama: ${err.slice(0, 300)}`);
     }
-    for await (const line of lines(res.body)) {
-      if (!line.trim()) continue;
-      const ev = JSON.parse(line);
-      if (ev.error) throw new Error(`Ollama: ${ev.error}`);
-      if (ev.message?.thinking || ev.message?.content) ctx.tick();
-      if (ev.message?.thinking) ctx.onThinking(ev.message.thinking);
-      if (ev.message?.content) content += ev.message.content;
-      if (ev.message?.tool_calls) calls.push(...ev.message.tool_calls.map((c: any) => ({ name: c.function.name, args: c.function.arguments || {} })));
+    try {
+      for await (const line of lines(res.body)) {
+        if (!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if (ev.error) throw new Error(`Ollama: ${ev.error}`);
+        const text = ev.message?.thinking || ev.message?.content || "";
+        if (text) ctx.tick();
+        if (ev.message?.thinking) ctx.onThinking(ev.message.thinking);
+        if (ev.message?.content) content += ev.message.content;
+        if (ev.message?.tool_calls) calls.push(...ev.message.tool_calls.map((c: any) => ({ name: c.function.name, args: c.function.arguments || {} })));
+        if (text && looping(text)) { stop.abort(); throw new Error("LOOP"); }
+      }
+    } catch (e) {
+      if (stop.signal.aborted && !abort.aborted) throw new Error("LOOP");
+      throw e;
     }
     messages.push({ role: "assistant", content, ...(calls.length ? { tool_calls: calls.map((c) => ({ function: { name: c.name, arguments: c.args } })) } : {}) });
     return { content, calls };
