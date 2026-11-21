@@ -41,6 +41,13 @@ function showPin(m: L.Marker | undefined) {
 }
 
 export function initDays() {
+  // A mouse wheel scrolls the row of days sideways (it only scrolls up and down by itself).
+  $("#dayChips").addEventListener("wheel", (e) => {
+    const el = e.currentTarget as HTMLElement;
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+    e.preventDefault();
+    el.scrollLeft += e.deltaY;
+  }, { passive: false });
   $("#dayChips").addEventListener("click", (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-day]"); if (!b) return;
     selectDay(b.dataset.day === "" ? null : +b.dataset.day!, { scroll: true });

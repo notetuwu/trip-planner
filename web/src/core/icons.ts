@@ -3,7 +3,7 @@
 import {
   ArrowLeftRight, ArrowUp, ArrowUpRight, BedDouble, Bike, Bus, CalendarDays, Car, Clock, Cloud, CloudDrizzle, CloudFog,
   Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
-  KeyRound, Map, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Ship, Smartphone, Star, Sun,
+  KeyRound, Map, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Share2, Ship, Smartphone, Star, Sun,
   Ticket, TrainFront, Trash2, TriangleAlert, Users, X,
 } from "lucide";
 
@@ -15,7 +15,7 @@ const ICONS = {
   cloudLightning: CloudLightning, cloudRain: CloudRain, cloudSnow: CloudSnow, cloudSun: CloudSun, dayTrip: CornerDownRight,
   download: Download, external: ExternalLink, file: FileText, walk: Footprints, hotel: Hotel, key: KeyRound, map: Map,
   pin: MapPin, monitor: Monitor, moon: Moon, plane: Plane, plus: Plus, printer: Printer, refresh: RefreshCw, route: Route,
-  search: Search, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, train: TrainFront, trash: Trash2,
+  search: Search, share: Share2, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, train: TrainFront, trash: Trash2,
   warn: TriangleAlert, users: Users, x: X,
 } satisfies Record<string, IconNode>;
 

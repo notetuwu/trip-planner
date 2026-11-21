@@ -61,14 +61,24 @@ ${OFFLINE_SCRIPT}
 </html>`;
 }
 
-export async function downloadForPhone() {
+function phoneFile() {
   const base = (state.itinerary?.destination || state.stays.map((s) => s.city).filter(Boolean).join("-") || "trip").replace(/[^\p{L}\p{N}-]+/gu, "-");
   const name = base + "-itinerary.html";
-  const file = new File([offlineHtml()], name, { type: "text/html" });
-  // Use the system share sheet where the browser allows sharing HTML files; otherwise download.
-  if (navigator.canShare?.({ files: [file] })) {
-    try { return await navigator.share({ files: [file], title: "Itinerary" }); }
-    catch (e) { if ((e as Error).name === "AbortError") return; }
-  }
-  downloadFile(file, name);
+  return new File([offlineHtml()], name, { type: "text/html" });
+}
+
+/** Saves the offline file (to send to your phone however you like). */
+export function downloadForPhone() {
+  const file = phoneFile();
+  downloadFile(file, file.name);
+}
+
+/** Can this browser hand files to the system share sheet? (Then a separate Share button is shown.) */
+export const canShareFiles = () => !!navigator.canShare?.({ files: [new File(["x"], "x.html", { type: "text/html" })] });
+
+/** Opens the system share sheet with the offline file; falls back to saving it. */
+export async function shareForPhone() {
+  const file = phoneFile();
+  try { await navigator.share({ files: [file], title: "Itinerary" }); }
+  catch (e) { if ((e as Error).name !== "AbortError") downloadFile(file, file.name); }
 }

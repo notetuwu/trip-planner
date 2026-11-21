@@ -2,7 +2,7 @@
 import { $, $$, downloadFile, esc } from "../core/dom";
 import { save, session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
-import { downloadForPhone } from "../export/offline";
+import { downloadForPhone, shareForPhone } from "../export/offline";
 import { runGeneration } from "../generate/run";
 import { renderDayChips, selectDay } from "../map/days";
 import { drawMap } from "../map/draw";
@@ -42,6 +42,7 @@ function downloadCalendar() {
 function wire(out: HTMLElement) {
   const tools: Record<string, () => void> = {
     phone: downloadForPhone,
+    share: shareForPhone,
     ics: downloadCalendar,
     print: () => window.print(),
     json: () => downloadFile(new Blob([JSON.stringify(state.itinerary, null, 2)], { type: "application/json" }), "itinerary.json"),

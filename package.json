@@ -1,6 +1,6 @@
 {
   "name": "local-trip-planner",
-  "version": "3.2.8",
+  "version": "3.2.9",
   "private": true,
   "description": "Day-by-day itinerary planner that runs locally with Claude Code or a local model.",
   "license": "MIT",
