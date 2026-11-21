@@ -6,6 +6,7 @@ import { parseJsonLoose } from "../ai/output";
 import { errMsg } from "../config";
 import { nominatim } from "../geo/providers";
 import { waitForRoute } from "../geo/routing";
+import type { Report } from "../util/progress-stream";
 
 export interface StopsRequest {
   from: { city: string; lat: number; lng: number };
@@ -53,7 +54,8 @@ async function townAt([lat, lng]: LatLng) {
   } catch { return null; }
 }
 
-export async function suggestStops(req: StopsRequest): Promise<StopsResult> {
+export async function suggestStops(req: StopsRequest, report: Report = () => {}): Promise<StopsResult> {
+  report({ type: "status", text: `Finding the road from ${req.from.city} to ${req.to.city}…` });
   const from: LatLng = [req.from.lat, req.from.lng], to: LatLng = [req.to.lat, req.to.lng];
   const route = await waitForRoute("car", from, to, 45000);
   if (route === null) throw new Error(`No road route was found between ${req.from.city} and ${req.to.city}.`);
@@ -68,6 +70,7 @@ export async function suggestStops(req: StopsRequest): Promise<StopsResult> {
   const points = pointsAlong(route.c, Array.from({ length: days - 1 }, (_, k) => (k + 1) / days));
   const towns: { name: string; country: string; afterHours: number }[] = [];
   for (const [k, p] of points.entries()) {
+    report({ type: "status", text: `${dist.toLocaleString("en")} km, about ${Math.round(hours)} h. Finding where each day ends (${k + 1} of ${points.length})…` });
     const t = await townAt(p);
     if (t) towns.push({ ...t, afterHours: Math.round(((k + 1) * hours) / days) });
   }
@@ -83,7 +86,8 @@ Choose the overnight stops between them, in travel order (not ${req.from.city} o
 Reply with only JSON: {"stops": [{"city": "...", "country": "...", "nights": 1, "why": "one short sentence"}]}`;
 
   try {
-    const parsed = parseJsonLoose(await askModel(req.model, prompt));
+    report({ type: "status", text: `Choosing towns for ${towns.length} night${towns.length > 1 ? "s" : ""} on the way…` });
+    const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n })));
     const stops = (Array.isArray(parsed?.stops) ? parsed.stops : [])
       .filter((s: any) => s && typeof s.city === "string" && s.city.trim() && !sameTown(s.city, req.from.city) && !sameTown(s.city, req.to.city))
       .slice(0, 40)

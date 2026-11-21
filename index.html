@@ -30,7 +30,7 @@
     </div>
     <div class="counts" id="saveStatus"></div>
 
-    <h2>Stays</h2>
+    <h2>Stays <small><button class="link-btn" id="planRoute" type="button" title="Describe the trip and get a route of stays to start from"><i data-icon="route"></i> Plan a route</button></small></h2>
     <div id="stays"></div>
     <button class="secondary" id="addStay">+ Add stay</button>
 
@@ -128,6 +128,38 @@
     and never included in saves or exports.</p>
   <div id="keyRows"></div>
   <div class="counts" id="keyStatus"></div>
+</dialog>
+
+<dialog id="routeDialog" class="keys-dialog route-dialog">
+  <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
+  <h2>Plan a route</h2>
+  <p class="hint">Describe the trip; your selected model suggests where to stay, and every leg is checked against the real roads. You can change the stays afterwards, then generate the itinerary as usual.</p>
+  <form id="routeForm" class="route-form">
+    <div class="row">
+      <div><label for="rpStart">Start</label><input id="rpStart" required placeholder="e.g. your home town"></div>
+      <div><label for="rpEnd">End</label><input id="rpEnd" placeholder="Empty: back to the start"></div>
+    </div>
+    <div class="row" style="--cols:3">
+      <div><label for="rpDate">Leaving on</label><input id="rpDate" type="date" required></div>
+      <div><label for="rpDays">Days</label><input id="rpDays" type="number" min="1" max="120" value="10" required></div>
+      <div><label for="rpHours">Travel a day, max</label><select id="rpHours">
+        <option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option><option value="5" selected>5 h</option>
+        <option value="6">6 h</option><option value="8">8 h</option><option value="10">10 h</option></select></div>
+    </div>
+    <div class="row" style="--cols:1">
+      <div><label for="rpMode">Getting around</label><select id="rpMode">
+        <option value="car">By car</option><option value="train">By train</option><option value="bus">By bus</option>
+        <option value="bike">By bike</option><option value="">Mixed (the model chooses per leg)</option></select></div>
+    </div>
+    <div class="row" style="--cols:1">
+      <div><label for="rpWhat">What do you want to see?</label>
+        <textarea id="rpWhat" required rows="3" placeholder="e.g. a road trip through Czechia, Austria and the Alps, maybe Italy, Switzerland and France; old towns, mountain passes, lakes"></textarea></div>
+      <div><label for="rpStays">What kind of stays?</label>
+        <input id="rpStays" placeholder="e.g. cosy B&amp;Bs, a night in a mountain hut, mid-range hotels"></div>
+    </div>
+    <div class="route-actions"><button class="btn solid" id="rpGo">Plan the route</button><span class="hint" id="rpLive"></span></div>
+  </form>
+  <div id="routeResult"></div>
 </dialog>
 
 <dialog id="guideDialog" class="keys-dialog guide-dialog">

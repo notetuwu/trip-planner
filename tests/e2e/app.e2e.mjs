@@ -39,7 +39,17 @@ const STUBS = `(() => {
     if (url.includes("/api/hours")) return json((body().checks || []).map(() => ({ status: "unknown", text: "" })));
     if (url.includes("/api/open")) { window.__e2e.open.push(body().url); return json({ ok: true }); }
     if (url.includes("/api/nearby")) return json({ warming: 0 });
-    if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return json(window.__e2e.stops); }
+    // Updates: scripted by the test through window.__e2e.update (absent: no update).
+    const up = window.__e2e.update;
+    if (up && url.includes("/api/update/status")) return json(up.statuses.length > 1 ? up.statuses.shift() : up.statuses[0]);
+    if (up && url.endsWith("/api/update") && (o.method || "GET") === "POST") return json({ phase: "downloading", received: 0, total: 1 });
+    if (up && url.endsWith("/api/update")) return json(up.info);
+    if (up && url.includes("/api/health")) return json({ app: "trip-planner", version: up.statuses.length > 1 ? up.info.current : up.info.latest });
+    // Streamed helpers: a status line, a token count, then the result (like the real server).
+    const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "done", result }]
+      .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
+    if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
+    if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
     if (url.includes("/api/itinerary")) {
       const b = body();
       window.__e2e.requests.push(b);
@@ -136,6 +146,42 @@ test("stops on the way are added between two stays, dates move, and Undo puts it
   assert.equal(asked.to.city, "Cape Town");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.equal(await page.eval(`planner.state().stays.length`), 2, "Undo restores the two stays");
+});
+
+test("after an update downloads and the app restarts at once, the page reloads into it", async () => {
+  await page.eval(`window.__e2e.update = {
+    info: { newer: true, current: "1.0.0", latest: "1.0.1", mode: "portable", notesUrl: "https://example.com" },
+    // Downloading, then straight back as the new version saying "idle" (the quick restart that used to hang at "0 MB of 0 MB").
+    statuses: [{ phase: "downloading", received: 5e6, total: 3e7 }, { phase: "downloading", received: 3e7, total: 3e7 }, { phase: "idle", received: 0, total: 0 }],
+  }; window.__beforeReload = true`);
+  await page.eval(`localStorage.removeItem("trip-planner-update-dismissed")`);
+  // The page checks for updates a few seconds after it loads.
+  await page.waitFor(`!!document.querySelector("#updateBar [data-update]")`, 10000, "the update bar");
+  await page.eval(`document.querySelector("#updateBar [data-update]").click()`);
+  await page.waitFor(`window.__beforeReload !== true`, 15000, "the page to reload");
+});
+
+test("plan a route: describe the trip, see the stays and leg times, use them, Undo", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await page.eval(`window.__e2e.route = { title: "Lakes and old towns", summary: "A loop.", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 4,
+    stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "Duomo" }, { city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "Lake" }],
+    legs: [{ from: "Padua", to: "Milano", km: 245, hours: 2.6, tooLong: false }, { from: "Milano", to: "Lucerne", km: 230, hours: 2.9, tooLong: false },
+      { from: "Lucerne", to: "Padua", km: 480, hours: 5.4, tooLong: true }] }`);
+  await page.eval(`document.querySelector("#planRoute").click()`);
+  assert.equal(await page.eval(`document.querySelector("#rpStart").value`), "Padua", "starts from the first stay");
+  await page.eval(`(() => { document.querySelector("#rpDays").value = "5"; document.querySelector("#rpWhat").value = "lakes and old towns";
+    document.querySelector("#rpStays").value = "cosy B&Bs"; document.querySelector("#rpGo").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#routeResult [data-use]")`);
+  const asked = await page.eval(`window.__e2e.routeAsked`);
+  assert.equal(asked.days, 5);
+  assert.equal(asked.description, "lakes and old towns");
+  assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /longer than your daily limit/);
+  await page.eval(`document.querySelector("#routeResult [data-use]").click()`);
+  const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights])`);
+  assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
+  assert.match(await page.eval(`planner.state().notes`), /Stays: cosy B&Bs/);
+  await page.eval(`document.querySelector("#toast button").click()`);
+  assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {

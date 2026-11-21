@@ -28,6 +28,7 @@ import { initLists, loadList, refreshLists } from "./places/lists";
 import { applyState, initSaves, refreshSaves } from "./saves/saves";
 import { initFields } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
+import { initRoutePlanner } from "./trip/route-planner";
 import { renderTripTitle } from "./trip/title";
 
 // New coordinates arrived: redraw, and once the stays' countries are known, look up hotels, place names and
@@ -46,7 +47,7 @@ setOnRouted(() => { drawMap(); updateLegInfo(); });
 
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
-initFields(); initStays(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
+initFields(); initStays(); initRoutePlanner(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.

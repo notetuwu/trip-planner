@@ -37,7 +37,9 @@ async function install(info: UpdateInfo) {
   try { await api("/api/update", { method: "POST" }); } catch (e) { bar(`<span>Couldn't update: ${esc((e as Error).message)}</span>`); return; }
   for (;;) {
     const s = await api<UpdateStatus>("/api/update/status").catch(() => null);
-    if (!s || s.phase === "installing") break; // the app is restarting
+    // Restarting: "installing", gone for a moment, or already the new version back saying "idle" (the restart can be
+    // quicker than this check, so the "installing" moment is easy to miss).
+    if (!s || s.phase === "installing" || s.phase === "idle") break;
     if (s.phase === "error") { bar(`<span>Update failed: ${esc(s.error)}</span> <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">Download it instead${ext()}</a>`); return; }
     bar(`<span>Downloading Trip Planner ${esc(info.latest)}… ${mb(s.received)} of ${mb(s.total)}</span>`);
     await new Promise((r) => setTimeout(r, 500));

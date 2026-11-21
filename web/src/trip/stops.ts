@@ -1,6 +1,7 @@
 // "Stops on the way": for a long drive between two stays, ask the server (real road route + the selected model) for
 // overnight stops and insert them as stays in between; later stays move back by the added nights. Undo restores.
-import { api, esc, toast } from "../core/dom";
+import { esc, toast } from "../core/dom";
+import { liveText, streamRequest } from "../core/progress";
 import { fmtDate } from "../core/format";
 import { type Stay, save, state } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
@@ -32,13 +33,14 @@ export function openStopsForm(i: number) {
 async function findStops(i: number, hoursPerDay: number, form: HTMLElement) {
   const a = state.stays[i - 1], b = state.stays[i], la = stayLoc(a), lb = stayLoc(b);
   if (!la || !lb) return;
-  form.innerHTML = `<span class="hint">Finding stops between ${esc(a.city)} and ${esc(b.city)}… (route, then ${esc(modelLabel(state.model))})</span>`;
+  form.innerHTML = `<span class="hint" data-live></span>`;
+  const line = form.querySelector<HTMLElement>("[data-live]")!;
   let res: StopsResult;
   try {
-    res = await api<StopsResult>("/api/stops", { method: "POST", body: JSON.stringify({
+    res = await streamRequest<StopsResult>("/api/stops", {
       from: { city: a.city, lat: la.lat, lng: la.lng }, to: { city: b.city, lat: lb.lat, lng: lb.lng },
       hoursPerDay, mode: b.travel || "car", model: state.model, travelers: state.travelers, interests: state.interests,
-    }) });
+    }, (live) => { line.textContent = `${modelLabel(state.model)}: ${liveText(live)}`; });
   } catch (e) {
     form.innerHTML = `<span class="hint">${esc((e as Error).message)}</span>`;
     return;

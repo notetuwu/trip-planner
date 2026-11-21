@@ -18,6 +18,8 @@ import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
 import { suggestStops } from "./trip/stops";
+import { planRoute } from "./trip/route-plan";
+import { streamProgress } from "./util/progress-stream";
 import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
 import { type Req, type Res, readJson, sendJson } from "./util/http";
@@ -86,7 +88,13 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "POST" && path === "/api/stops") {
       const body = await readJson(req);
       if (!body?.from || !body?.to || !body?.model) sendJson(res, 400, { error: "from, to and model are needed" });
-      else sendJson(res, 200, await busyWhile(() => suggestStops(body)));
+      else await busyWhile(() => streamProgress(res, (report) => suggestStops(body, report)));
+    }
+    // Plan the stays of a trip from a description (the selected model, then real road checks).
+    else if (method === "POST" && path === "/api/route-plan") {
+      const body = await readJson(req);
+      if (!body?.start || !body?.model) sendJson(res, 400, { error: "A start and a model are needed" });
+      else await busyWhile(() => streamProgress(res, (report) => planRoute(body, report)));
     }
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);
