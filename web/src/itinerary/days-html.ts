@@ -7,6 +7,7 @@ import type { ByTitle } from "../geo/item-loc";
 import { splitGroup } from "../trip/modes";
 import { bookLink } from "./book-ahead";
 import { directionsUrl } from "./directions";
+import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
 
 const mapsLink = (x: ItineraryItem, d: Day, byTitle: ByTitle) => byTitle.get(x.place)?.url ||
@@ -88,7 +89,7 @@ export function extrasHtml(it: Itinerary) {
   let html = "";
   if (it.tips?.length || it.unused?.length || it.sources?.length) {
     html += `<div class="extras">`;
-    if (it.tips?.length) html += `<div><h2>Tips</h2><ul>${it.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>`;
+    if (it.tips?.length) html += `<div><h2>Tips</h2><ul>${it.tips.map((t) => `<li>${tipHtml(t)}</li>`).join("")}</ul></div>`;
     if (it.unused?.length) html += `<div><h2>Didn't fit</h2><ul>${it.unused.map((u) => `<li>${esc(u.place)} <div class="reason">${esc(u.reason)}</div></li>`).join("")}</ul></div>`;
     if (it.sources?.length) html += `<div><h2>Sources</h2><ul class="sources">${it.sources.filter((s) => /^https?:\/\//.test(s)).map((s) =>
       `<li><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s.replace(/^https?:\/\/(www\.)?/, "").slice(0, 80))}</a></li>`).join("")}</ul></div>`;

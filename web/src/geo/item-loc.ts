@@ -3,6 +3,7 @@
 import type { Day, GeoHit, ItineraryItem, Place, Poi } from "../../../shared/types";
 import { session, state } from "../core/state";
 import { geo, geoKey, geocode } from "./geocode";
+import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
 
 export const byTitleMap = () => new Map(session.places.map((p) => [p.title, p]));
@@ -27,11 +28,30 @@ function dayHome(d: Day): Loc | null {
   return stay ? stayLoc(stay) : null;
 }
 
-/** Where a day happens: the towns it names plus where you sleep that night. */
+/** Every stay a day touches: on a travel day both the one you leave and the one you arrive at (and any in between). */
+const staysOn = (d: Day) => state.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0))
+  .map(stayLoc).filter((l): l is GeoHit => !!l);
+
+/** Where a day happens: the towns it names plus the stays it touches. */
 function dayRefs(d: Day): Loc[] {
-  const stay = stayOn(d);
-  const here = stay ? stayLoc(stay) : null;
-  return here ? [...dayTowns(d), here] : dayTowns(d);
+  return [...dayTowns(d), ...staysOn(d)];
+}
+
+/** The day's towns for messages: the ones it names, plus the stays it touches ("Lucerne / Bregenz"). */
+export function dayWhere(d: Day) {
+  const stays = state.stays.filter((s) => s.city && s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)).map((s) => s.city);
+  const names = [...daySegments(d), ...stays];
+  return [...new Map(names.map((n) => [n.toLowerCase(), n])).values()].join(" / ");
+}
+
+/** On a travel day, is the point roughly on the way between the stays (a detour of at most ~20%)? */
+function onTheDrive(loc: Loc, d: Day) {
+  const s = staysOn(d);
+  for (let i = 1; i < s.length; i++) {
+    const ab = distKm(s[i - 1], s[i]);
+    if (ab > 30 && distKm(s[i - 1], loc) + distKm(loc, s[i]) - ab <= Math.max(30, ab * 0.2)) return true;
+  }
+  return false;
 }
 
 // Does a lookup result really have the stop's name? Fuzzy search happily turns an invented "Gasthaus zur Linde"
@@ -101,7 +121,7 @@ export function poiFor(name: string, day?: Day): Poi | null {
  *  day's town, where it gets pinned as approximate instead of drawing an 850 km leg. */
 function farFromDay(loc: Loc, d: Day) {
   const refs = dayRefs(d);
-  return refs.length > 0 && refs.every((r) => distKm(loc, r) > 80) ? refs[0] : null;
+  return refs.length > 0 && refs.every((r) => distKm(loc, r) > 80) && !onTheDrive(loc, d) ? refs[0] : null;
 }
 
 export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | null {

@@ -33,8 +33,13 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
   }
 
   const prompt = buildPrompt({ ...trip, researchNotes: research?.notes }, places, { notes: "json", schema: true });
-  if (kind === "ollama") await planWithOllama({ base, model, prompt, trip, abort, onEvent, output });
-  else await planWithOpenAi({ base, model, prompt, abort, onEvent, output });
+  // Local servers send nothing while they read the prompt, which on a big trip can take minutes; say so until the first token.
+  onEvent({ type: "status", text: `Reading the prompt (about ${(Math.round(prompt.length / 4 / 1000) || 1).toLocaleString()}k tokens)… on big trips this can take a few minutes` });
+  const tick = output.tick;
+  let started = false;
+  const planOutput = { ...output, tick: () => { if (!started) { started = true; onEvent({ type: "status", text: "Planning the itinerary…" }); } tick(); } };
+  if (kind === "ollama") await planWithOllama({ base, model, prompt, trip, abort, onEvent, output: planOutput });
+  else await planWithOpenAi({ base, model, prompt, abort, onEvent, output: planOutput });
 
   let parsed;
   try { parsed = parseJsonLoose(out.content); } catch { /* reported below */ }

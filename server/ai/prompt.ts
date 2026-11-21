@@ -80,7 +80,7 @@ ${nearby}
 
 ## Trip-wide extras
 - "holidaysAndEvents": every public holiday, festival, major event or seasonal highlight in the visited places during the trip, with what it means for the plan.
-- "tips": 6-10 specific, practical tips for this trip: money and payment, transport passes or tickets worth buying (with prices), reservations to make and how far ahead, etiquette, SIM/data, luggage, tipping.
+- "tips": 6-10 specific, practical tips for this trip: money and payment, transport passes or tickets worth buying (with prices; for things bought online, such as a motorway vignette, a toll account or a rail pass, end the tip with the official website to buy it, only when you know it for certain${research ? " or found it online" : ""}), reservations to make and how far ahead, etiquette, SIM/data, luggage, tipping.
 - "unused": saved places you could not fit, with a short reason.${research ? `
 - "sources": the URLs you relied on most.` : ""}
 
@@ -105,9 +105,29 @@ ${trip.revise.request}
 Apply the requested changes to the current itinerary and return the complete updated itinerary. Keep everything the request doesn't touch as it is. Your planning notes should explain what you changed and why.`;
   }
   if (trip.redoDay) prompt += redoSection(trip.redoDay);
+  if (trip.fix) prompt += fixSection(trip.fix);
   // Servers without schema enforcement only have the prompt to go on.
   if (opts.schema) prompt += `\n\n## JSON schema\n${JSON.stringify(LOCAL_SCHEMA)}`;
   return prompt;
+}
+
+/** Fix the stops the planner's checks flagged: only the affected days come back. */
+export function fixSection({ itinerary, problems }: NonNullable<Trip["fix"]>) {
+  const days = [...new Set(problems.map((p) => p.day))].sort((a, b) => a - b).filter((i) => itinerary.days[i]);
+  const others = itinerary.days.map((x, i) => (days.includes(i) ? `${x.date} ${x.city}: (to fix, below)` : `${x.date} ${x.city}: ${x.items.map((it) => it.place).join("; ")}`)).join("\n");
+  return `
+
+## The rest of the trip (already planned, keep as is)
+${others}
+
+## Days to fix
+${days.map((i) => JSON.stringify(itinerary.days[i])).join("\n")}
+
+## Problems found by checking the plan against OpenStreetMap
+${problems.map((p) => `- ${itinerary.days[p.day]?.date}: ${p.text}`).join("\n")}
+
+## Fix only these problems
+For each problem, change only that stop: replace a place that isn't where the day is with a real place near that day's town (from the lists above if possible), and move a stop that's closed at the planned time to a time it's open, or swap it with another stop or a similar place. Keep everything else on those days as it is, including where they sleep and any transfer. If a must-see can't be moved to an open time on its day, keep it and say so in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only the ${days.length} day(s) to fix (${days.map((i) => itinerary.days[i].date).join(", ")}), each complete. "summary" is one sentence on what you fixed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly list what you changed.`;
 }
 
 /** Re-plan one day: the other days as context (names only, to keep it short), the day in full, and what to return. */

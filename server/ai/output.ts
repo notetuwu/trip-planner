@@ -33,8 +33,22 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
   }
   it.totalEstimatedCost = Number(it.totalEstimatedCost) || it.days.reduce((n: number, d: any) => n + d.estimatedCost, 0);
   it.summary = String(it.summary ?? "");
+  if (Array.isArray(it.tips)) it.tips = it.tips.map((t: any) => String(t ?? "").trim()).filter(Boolean);
+  // Models sometimes list a place under "didn't fit" and then say it's included after all.
+  if (Array.isArray(it.unused)) {
+    const planned = it.days.flatMap((d: any) => d.items.map((x: any) => simpleName(x.place)));
+    it.unused = it.unused.filter((u: any) => {
+      const name = simpleName(u?.place);
+      if (!name) return false;
+      if (/^\s*(already\s+)?(included|covered|scheduled|planned|visited)\b|\b(is|are|was|were)\s+(already\s+)?(included|covered|scheduled)\b/i.test(String(u.reason ?? ""))) return false;
+      return !planned.some((p: string) => p === name || (name.length > 5 && p.includes(name)));
+    });
+  }
   return it;
 }
+
+/** A place name for comparing: lowercase, without details in brackets or punctuation. */
+const simpleName = (s: unknown) => String(s ?? "").toLowerCase().replace(/[({[].*$/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** The (possibly still incomplete) planningNotes string from streamed JSON. */
 export function partialNotes(json: string): string | null {

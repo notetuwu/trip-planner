@@ -1,9 +1,11 @@
 // The saved places as chips: click to cycle must-see → skip → neutral; 👥 sets how many travelers want a must-see.
 import { $, $$, esc } from "../core/dom";
+import type { MustSeeHow } from "../../../shared/types";
 import { type Mark, groupSize, keepPlace, save, session, setListPlaces, state, whoFor } from "../core/state";
 import { placeLoc } from "../geo/locate";
 import { drawMap } from "../map/draw";
 import { placeMarkers } from "../map/map";
+import { mustSeeRoute } from "./route";
 
 export function renderChips() {
   const q = $<HTMLInputElement>("#placeFilter").value.toLowerCase();
@@ -14,7 +16,8 @@ export function renderChips() {
       const mark = state.marks[p.title] || "", w = whoFor(p.title);
       const badge = mark === "must" && n > 1
         ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">👥 ${w}/${n}</span>` : "";
-      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${esc(p.title)}${badge}</span>`;
+      const how = mark === "must" ? howBadge(p.title) : "";
+      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${esc(p.title)}${badge}${how}</span>`;
     })
     .join("");
   const mustTitles = Object.keys(state.marks).filter((t) => state.marks[t] === "must");
@@ -25,6 +28,22 @@ export function renderChips() {
     ? `${session.places.length} places (${located} on the map) · ${mustTitles.length} must-see${partial ? ` (${partial} for part of the group)` : ""} · ${skip} skipped`
     : "No places yet. Import a Google Maps list or a CSV, or let Claude pick everything.";
 }
+
+const HOW_LABEL: Record<string, string> = { "": "auto", way: "🛣 on the way", stay: "🏨 from stay" };
+
+/** On a must-see: plan it as a stop between stays, from a stay, or let the route decide (click to cycle). */
+function howBadge(title: string) {
+  const how = state.how?.[title] || "", r = mustSeeRoute(title);
+  const where = r?.leg ? `${r.leg.from} → ${r.leg.to}, about +${r.leg.detourKm} km` : "";
+  const auto = !r ? "Auto: where it is isn't known yet."
+    : r.onWay ? `Auto: it lies on the way (${where}), so it becomes a stop on that travel day.`
+    : `Auto: visited from ${r.base ? `${r.base.city} (${r.base.km} km away)` : "a stay"}; ${r.base && r.base.km < 20 ? "it's right by that stay" : `it isn't on the way between stays${where ? ` (closest: ${where})` : ""}`}.`;
+  const tip = { "": auto, way: `On the way: a stop on the drive ${where ? `(${where})` : "between two stays"}.`, stay: `From a stay: visited from ${r?.base?.city || "where you sleep"}, as a day trip if it's far.` }[how];
+  const label = how ? HOW_LABEL[how] : r?.onWay ? "auto · 🛣" : "auto";
+  return `<span class="how ${how ? "set" : ""}" data-how="${esc(title)}" title="${esc(`${tip} Click to change: auto → on the way → from stay.`)}">${label}</span>`;
+}
+
+const NEXT_HOW: Record<string, MustSeeHow | undefined> = { "": "way", way: "stay", stay: undefined };
 
 /** Sets (or clears, with no mark) a place's mark and shows the change. */
 export function setMark(title: string, mark: Mark | undefined) {
@@ -48,6 +67,13 @@ const NEXT_MARK: Record<string, Mark | undefined> = { "": "must", must: "skip", 
 export function initChips() {
   $("#chips").addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
+    const h = target.dataset.how;
+    if (h != null) {
+      const next = NEXT_HOW[state.how?.[h] || ""];
+      state.how = { ...state.how };
+      if (next) state.how[h] = next; else delete state.how[h];
+      save(); renderChips(); return;
+    }
     const w = target.dataset.who;
     if (w != null) {
       // Cycle all → all-1 → … → 1 → all.

@@ -37,6 +37,13 @@ function show(byItem: Map<string, HoursCheck>) {
 }
 
 let pending = false;
+/** Hours checks still to be asked or answered. */
+export const hoursBusy = () => pending || [...checks().values()].some((c) => !results.has(keyOf(c)));
+/** The warning for a stop ("Closed on Tuesday …"), if its hours clash with the plan. */
+export function hoursProblem(di: number, xi: number) {
+  const c = checks().get(`${di}-${xi}`), r = c && results.get(keyOf(c));
+  return r && r.status !== "ok" && r.status !== "unknown" ? r.text : null;
+}
 /** Shows warnings for the rendered itinerary, asking the server about anything not checked yet. */
 export async function checkOpeningHours() {
   const byItem = checks();

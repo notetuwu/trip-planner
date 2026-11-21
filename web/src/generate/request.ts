@@ -2,10 +2,11 @@
 import type { TripRequest } from "../../../shared/types";
 import { groupSize, keptElsewhere, state, whoFor } from "../core/state";
 import { stayLoc } from "../geo/locate";
+import { mustSeeRoutes } from "../places/route";
 import { fieldValues } from "../trip/fields";
 
 /** What to change: a revision of the whole plan, or a fresh plan for one day. */
-export type Change = Pick<TripRequest, "revise" | "redoDay">;
+export type Change = Pick<TripRequest, "revise" | "redoDay" | "fix">;
 
 export function tripRequest(change: Change = {}): TripRequest {
   const marked = (m: string) => Object.keys(state.marks).filter((t) => state.marks[t] === m);
@@ -24,6 +25,7 @@ export function tripRequest(change: Change = {}): TripRequest {
     research: state.research !== false,
     mustSee: marked("must"),
     mustSeeWho: Object.fromEntries(marked("must").filter((t) => whoFor(t) < groupSize()).map((t) => [t, whoFor(t)])),
+    mustSeeRoute: mustSeeRoutes(marked("must")),
     skip: marked("skip"),
     ...change,
   };

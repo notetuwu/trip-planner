@@ -32,4 +32,10 @@ describe("checking the websites a model gives", () => {
     expect(it.days[0].items.map((x) => x.website)).toEqual([`${base}/ok`, undefined, undefined]);
     expect(status[0]).toContain("Checking 2 websites");
   });
+  it("removes dead links from tips and keeps live ones", async () => {
+    const it: Itinerary = { summary: "", totalEstimatedCost: 0, days: [{ date: "d", city: "", title: "", estimatedCost: 0, items: [] }],
+      tips: [`Buy the vignette online at ${base}/ok.`, `Get a pass (${base}/gone).`, `Fake one: see ${base}/gone`] };
+    await verifyWebsites(it, () => {});
+    expect(it.tips).toEqual([`Buy the vignette online at ${base}/ok.`, "Get a pass.", "Fake one:"]);
+  });
 });

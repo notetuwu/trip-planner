@@ -1,5 +1,6 @@
 // The data sections of the planning prompt: saved places, stays, holidays and nearby real places.
 import type { Place } from "../../shared/types";
+import { routeNote } from "../../shared/route";
 import { addDays } from "../config";
 import type { NearbyPlace } from "../trip/nearby";
 import { MODE_TEXT, type Trip } from "./types";
@@ -8,8 +9,9 @@ export function placeLines(trip: Trip, places: Place[]) {
   return places.map((p) => {
     const extra = [p.note, p.tags, p.comment, p.address].filter(Boolean).join(" | ");
     const who = trip.mustSeeWho?.[p.title];
+    const route = routeNote(trip.mustSeeRoute?.[p.title]);
     const flag = trip.mustSee?.includes(p.title)
-      ? (who && who < trip.travelers ? ` [MUST SEE for ${who} of ${trip.travelers} travelers]` : " [MUST SEE]")
+      ? ` [MUST SEE${who && who < trip.travelers ? ` for ${who} of ${trip.travelers} travelers` : ""}${route ? ` - ${route}` : ""}]`
       : trip.skip?.includes(p.title) ? " [SKIP]" : "";
     // Coordinates go in a separate tag (not the brackets) so models don't copy them into the place name.
     const at = typeof p.lat === "number" && typeof p.lng === "number" ? ` {location ${p.lat.toFixed(4)},${p.lng.toFixed(4)}}` : "";

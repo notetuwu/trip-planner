@@ -16,6 +16,9 @@ const wanted = new Map<string, GeoQuery>();
 let timer: number | undefined;
 const listeners: (() => void)[] = [];
 
+/** Lookups still waiting for an answer. */
+export const geocodeBusy = () => wanted.size > 0;
+
 /** Called (debounced) whenever new coordinates arrive. */
 export const onGeocoded = (fn: () => void) => { listeners.push(fn); };
 

@@ -32,6 +32,7 @@ function renameCustom(t: string) {
   // Marks and group sizes are keyed by name, so move them along.
   if (t in state.marks) { state.marks[name] = state.marks[t]; delete state.marks[t]; }
   if (t in state.who) { state.who[name] = state.who[t]; delete state.who[t]; }
+  if (state.how && t in state.how) { state.how[name] = state.how[t]; delete state.how[t]; }
   refresh();
 }
 
@@ -44,7 +45,7 @@ export function wirePlacePopup(el: HTMLElement) {
   for (const b of $$("[data-remove-custom]", el)) b.onclick = () => {
     const t = b.dataset.removeCustom!;
     state.customPlaces = state.customPlaces.filter((p) => p.title !== t);
-    delete state.marks[t]; delete state.who[t];
+    delete state.marks[t]; delete state.who[t]; if (state.how) delete state.how[t];
     refresh();
   };
   for (const b of $$("[data-rename-custom]", el)) b.onclick = () => renameCustom(b.dataset.renameCustom!);

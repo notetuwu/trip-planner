@@ -64,6 +64,12 @@ details.import .inline { margin-bottom: 8px; }
   border: 1px solid currentColor; opacity: .55; font-variant-numeric: tabular-nums;
 }
 .chip .who:hover { opacity: 1; }
+.chip .how {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 500;
+  border: 1px dashed currentColor; opacity: .55;
+}
+.chip .how:hover { opacity: 1; }
+.chip .how.set { opacity: 1; border-style: solid; }
 .chip .who.part { opacity: 1; background: var(--ok); color: var(--panel); border-color: var(--ok); }
 .counts { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .keys-dialog { width: min(520px, 92vw); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: var(--panel); color: var(--ink); }

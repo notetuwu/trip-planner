@@ -4,7 +4,7 @@ import type { Day, LatLng, Route } from "../../../shared/types";
 import { $, esc } from "../core/dom";
 import { fmtDate, fmtDist, fmtDur } from "../core/format";
 import { state } from "../core/state";
-import { byTitleMap, daySegments, itemLoc } from "../geo/item-loc";
+import { byTitleMap, daySegments, dayWhere, itemLoc } from "../geo/item-loc";
 import { distKm } from "../geo/locate";
 import { cleanStop, splitGroup } from "../trip/modes";
 import { type Leg, dayLegs, legRoute } from "./routes";
@@ -41,7 +41,7 @@ export function updateLegInfo() {
       const el = $(`[data-far="${di}-${xi}"]`); if (!el) return;
       const loc = itemLoc(x, d, byTitle);
       el.hidden = !loc?.elsewhere;
-      if (loc?.elsewhere) el.textContent = `⚠ The only "${cleanStop(x.place)}" known is far away (${loc.elsewhere}), not near ${daySegments(d)[0] || "this day's town"}. Probably a mix-up by the AI; pinned in town for now.`;
+      if (loc?.elsewhere) el.textContent = `⚠ The only "${cleanStop(x.place)}" known is far away (${loc.elsewhere}), not near ${dayWhere(d) || "this day's town"}. Probably a mix-up by the AI; pinned in town for now.`;
     });
     for (const leg of dayLegs(d, byTitle)) {
       const el = $(`[data-leg="${di}-${leg.xi}"]`);

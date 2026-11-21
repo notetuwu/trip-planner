@@ -67,3 +67,5 @@
 .item .book { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
 .item .book:hover { text-decoration: underline; }
 .book-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
+.extras li a { color: var(--accent); }
+.tip-links { color: var(--muted); font-size: 12px; white-space: nowrap; }

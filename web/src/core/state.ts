@@ -1,5 +1,5 @@
 // The trip being edited (saved in localStorage) plus session-only data such as the loaded place list.
-import type { DayTrip, Itinerary, ListSummary, Place, Poi, TravelMode } from "../../../shared/types";
+import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode } from "../../../shared/types";
 
 export interface Stay {
   city: string;
@@ -52,12 +52,16 @@ export interface AppState {
   marks: Record<string, Mark>;
   /** How many travelers want each must-see (when not everyone). */
   who: Record<string, number>;
+  /** Must-sees the travelers want on the way between stays or from a stay (unset: decided by the route). */
+  how?: Record<string, MustSeeHow>;
   customPlaces: Place[];
   /** Copies of must-see places from place lists, so they stay part of the trip whichever list is chosen. */
   kept?: Place[];
   itinerary: Itinerary | null;
   meta: Meta | null;
   research?: boolean;
+  /** After a plan, send what the map and opening-hours checks find back to the model to fix (default on). */
+  autoFix?: boolean;
   /** Things to book that the travelers ticked off, by "date|place". */
   booked?: Record<string, boolean>;
 }

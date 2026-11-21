@@ -35,3 +35,15 @@ describe("model output", () => {
     expect(normalizeItinerary({ summary: "x" })).toBeNull();
   });
 });
+
+import { normalizeItinerary as norm2 } from "../server/ai/output";
+describe("didn't fit", () => {
+  it("drops places that are in the plan or said to be included", () => {
+    const it = norm2({ days: [{ date: "d", items: [{ place: "Chiesa di Sant'Alessandro", description: "" }] }], unused: [
+      { place: "Chiesa di Sant'Alessandro", reason: "x" },
+      { place: "Duomo", reason: "Included on Sep 17 (Milan) - this is a MUST SEE and is covered." },
+      { place: "Far castle", reason: "Too far from every stay." },
+    ] })!;
+    expect(it.unused!.map((u) => u.place)).toEqual(["Far castle"]);
+  });
+});

@@ -105,6 +105,19 @@ export interface Itinerary {
   planningNotes?: string;
 }
 
+/** A must-see on the way ("way") between stays, or visited from where you sleep ("stay"); unset = decide by the route. */
+export type MustSeeHow = "way" | "stay";
+
+export interface MustSeeRoute {
+  how?: MustSeeHow;
+  /** The pair of consecutive stays it adds the least detour to (straight-line km). */
+  leg?: { from: string; to: string; date?: string; detourKm: number; legKm: number };
+  /** The nearest stay with a night there. */
+  base?: { city: string; km: number };
+  /** Lies on the way closely enough to be a stop on the travel day. */
+  onWay: boolean;
+}
+
 /** Body of POST /api/itinerary. */
 export interface TripRequest {
   dailyBudget: number;
@@ -120,8 +133,12 @@ export interface TripRequest {
   research: boolean;
   mustSee: string[];
   mustSeeWho: Record<string, number>;
+  /** Where each must-see sits on the route, and whether the travelers want it on the way or from a stay. */
+  mustSeeRoute?: Record<string, MustSeeRoute>;
   skip: string[];
   revise?: { itinerary: Itinerary; request: string };
+  /** Fix the problems the checks found (stops far from their day, closed at the planned time), keeping the rest. */
+  fix?: { itinerary: Itinerary; problems: { day: number; text: string }[] };
   /** Re-plan one day (index into itinerary.days), keeping the rest. */
   redoDay?: { itinerary: Itinerary; day: number; request: string };
 }

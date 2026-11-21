@@ -14,7 +14,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
   } catch { /* older Ollama */ }
   // The context window must hold the prompt, the thinking and the whole JSON answer (about 1k tokens per day).
   // Ollama's default is only a few thousand tokens, and running out ends the answer early.
-  const tripDays = trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
+  const tripDays = trip.redoDay ? 1 : trip.fix ? new Set(trip.fix.problems.map((p) => p.day)).size : trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
   const needed = Math.ceil(prompt.length / 3) + tripDays * 1000 + 4000 + (canThink ? 16000 : 0);
   const numCtx = Math.min(Number(process.env.OLLAMA_NUM_CTX) || 65536, Math.ceil(needed / 4096) * 4096);
   onEvent({

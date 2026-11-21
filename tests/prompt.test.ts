@@ -43,3 +43,16 @@ describe("planning prompt", () => {
     expect(p).toContain('"days" containing only this one day');
   });
 });
+
+import { fixSection } from "../server/ai/prompt";
+describe("fixing what the checks found", () => {
+  it("sends only the affected days with their problems", () => {
+    const day = (date: string, city: string, place: string) => ({ date, city, title: "", estimatedCost: 0, items: [{ time: "12:00", place, description: "" }] });
+    const itinerary = { summary: "", totalEstimatedCost: 0, days: [day("2027-09-16", "Padua", "Duomo"), day("2027-09-17", "Milano", "Cafe Pedrocchi")] };
+    const text = fixSection({ itinerary, problems: [{ day: 1, text: '"Cafe Pedrocchi" at 12:00: the only place of that name is in Padua' }] });
+    expect(text).toMatch(/2027-09-16 Padua: Duomo/);
+    expect(text).toMatch(/2027-09-17 Milano: \(to fix, below\)/);
+    expect(text).toMatch(/- 2027-09-17: "Cafe Pedrocchi"/);
+    expect(text).toMatch(/containing only the 1 day\(s\) to fix \(2027-09-17\)/);
+  });
+});
