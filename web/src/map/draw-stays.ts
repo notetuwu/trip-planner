@@ -1,0 +1,63 @@
+// Stays on the map: numbered pins, the legs between them (driven ones along the road), and day trips.
+import * as L from "leaflet";
+import type { LatLng, TravelMode } from "../../../shared/types";
+import { esc } from "../core/dom";
+import { addDays, fmtDate, fmtDist, fmtDur } from "../core/format";
+import { session, state } from "../core/state";
+import { geo, geoKey } from "../geo/geocode";
+import { stayLoc } from "../geo/locate";
+import { modeIcon, modeName } from "../trip/modes";
+import { hoverBand } from "./legs";
+import { cssVar, layers } from "./map";
+import { requestRoutes, routeKey, routes } from "./routes";
+
+interface StayLeg { from: LatLng; to: LatLng; mode?: TravelMode; label: string; trip?: boolean; place?: string }
+
+function stayLegs(): StayLeg[] {
+  const legs: StayLeg[] = [];
+  state.stays.forEach((s, i) => {
+    const here = stayLoc(s); if (!here) return;
+    const prev = i > 0 ? stayLoc(state.stays[i - 1]) : null;
+    if (prev) legs.push({ from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}` });
+    for (const t of s.dayTrips || []) {
+      const g = t.place ? geo[geoKey(t.place)] : null;
+      if (g) legs.push({ from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ⇄ ${t.place}`, trip: true, place: t.place });
+    }
+  });
+  return legs;
+}
+
+/** Draws the stays; returns their pin positions (for fitting the map). */
+export function drawStays(): LatLng[] {
+  const accent = cssVar("--accent");
+  const pts: LatLng[] = [];
+  state.stays.forEach((s, i) => {
+    const loc = stayLoc(s); if (!loc) return;
+    pts.push([loc.lat, loc.lng]);
+    const end = s.start ? addDays(s.start, s.nights) : "";
+    L.marker([loc.lat, loc.lng], {
+      icon: L.divIcon({ className: "", html: `<div class="stay-pin"><b>${i + 1}</b></div>`, iconSize: [30, 30], iconAnchor: [15, 30] }),
+      zIndexOffset: 1000,
+    }).bindTooltip(esc(s.city), { direction: "right", offset: [12, -16], permanent: session.selectedDay == null })
+      .bindPopup(`<b>${esc(s.city)}</b><div class="pop-meta">${s.start ? `${fmtDate(s.start)} → ${fmtDate(end)} · ` : ""}${s.nights} night${s.nights == 1 ? "" : "s"}</div>${s.hotel ? `<div>🛏 ${esc(s.hotel)}</div>` : ""}`)
+      .addTo(layers.stays);
+  });
+
+  const driven: { mode: "car"; from: LatLng; to: LatLng }[] = [];
+  for (const l of stayLegs()) {
+    const byRoad = l.mode === "car" || l.mode === "bus";
+    const r = byRoad ? routes[routeKey("car", l.from, l.to)] : null;
+    if (byRoad) driven.push({ mode: "car", from: l.from, to: l.to });
+    const tip = `${modeIcon(l.mode) || "↔"} ${esc(l.label)}${l.mode ? ` · ${modeName(l.mode)}` : ""}${r ? ` · ${fmtDist(r.d)}, ${fmtDur(r.t)}` : ""}`;
+    const line = r ? r.c : [l.from, l.to];
+    const vis = L.polyline(line, {
+      color: accent, weight: r ? 3 : l.trip ? 1.5 : 2, opacity: l.trip ? .55 : .75, interactive: false,
+      dashArray: r ? undefined : l.mode === "flight" ? "2 8" : "6 6",
+    }).addTo(layers.stays);
+    hoverBand(line, tip, vis).addTo(layers.stays);
+    if (l.trip) L.circleMarker(l.to, { radius: 5, color: accent, weight: 2, fillColor: "#fff", fillOpacity: 1 })
+      .bindTooltip(`${modeIcon(l.mode) || "📍"} Day trip: ${esc(l.place)}`, { direction: "top" }).addTo(layers.stays);
+  }
+  if (driven.length) requestRoutes(driven);
+  return pts;
+}

@@ -1,0 +1,26 @@
+{
+  "name": "local-trip-planner",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Day-by-day itinerary planner that runs locally with Claude Code or a local model.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && vite build --ssr server/main.ts --outDir dist/server --emptyOutDir",
+    "start": "node dist/server/main.js",
+    "typecheck": "tsc -p tsconfig.web.json && tsc -p tsconfig.server.json"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@types/leaflet": "^1.9.22",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8"
+  }
+}

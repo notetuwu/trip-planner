@@ -22,7 +22,7 @@ It uses either **Claude** (through your own [Claude Code](https://claude.com/cla
 
 ## Requirements
 
-- [Node.js](https://nodejs.org) 18 or newer. There is nothing to `npm install`.
+- [Node.js](https://nodejs.org) 22.12 or newer.
 - One of:
   - **Claude Code**, installed and logged in (`claude` works in your terminal). Generation uses your Claude subscription.
   - **A local model server:** [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), llama.cpp server, Jan, KoboldCpp, GPT4All or vLLM. Running servers are detected automatically.
@@ -31,14 +31,16 @@ It uses either **Claude** (through your own [Claude Code](https://claude.com/cla
 ## Run it
 
 ```sh
-python start.py            # starts the server and opens http://localhost:5173
+python start.py            # installs, builds if needed, starts the server and opens http://localhost:5173
 python start.py --port 8080 --no-browser
 ```
 
-Or start it without Python:
+Or with npm:
 
 ```sh
-node server.js
+npm install
+npm run build
+npm start
 ```
 
 Your trips are saved in `saves/`, imported place lists in `lists/`, and map lookups are cached in `cache/`. All three stay on your machine and are ignored by git.
@@ -93,9 +95,44 @@ The **Google Maps list import** uses an unofficial Google endpoint, the same one
 
 ## How it works
 
-`server.js` is a single dependency-free Node server. It serves `public/index.html` (the whole UI in one file, with [Leaflet](https://leafletjs.com) for the map) and a few JSON endpoints.
+The browser app is written in TypeScript and built with [Vite](https://vite.dev). It uses [Leaflet](https://leafletjs.com) for the map and has no UI framework. The server is a plain Node HTTP server, also in TypeScript, with no runtime dependencies.
 
-When you generate, it gathers holidays and nearby places, builds one detailed prompt, and then either runs `claude -p` with a JSON schema or talks to the local model server directly. The progress streams back to the page as NDJSON.
+When you generate, the server gathers holidays and nearby places, builds one detailed prompt, and then either runs `claude -p` with a JSON schema or talks to the local model server directly. Progress streams back to the page as newline-delimited JSON.
+
+```
+index.html          page markup (Vite entry)
+web/src/
+  main.ts           wires everything up
+  core/             state, DOM helpers, formatting
+  geo/              geocoding and where stays, places and stops are
+  trip/             stays editor, transport modes, settings fields, title
+  places/           place lists and chips
+  map/              Leaflet map, drawing, routes, adding stops, search
+  itinerary/        itinerary rendering, directions links, weather
+  generate/         model picker, request, live progress, stream reader
+  export/           the offline phone export
+  saves/            saved trips
+  styles/           CSS
+server/
+  main.ts           production server (serves dist/web and the API)
+  api.ts            routes for /api/*
+  ai/               prompt, schema, Claude Code and local model runners
+  research/         web search and page reading for local models
+  geo/              geocoding, reverse lookup, routing
+  trip/             holidays and real places from OpenStreetMap
+  lists/            place lists: CSV, Google Maps import, storage
+shared/types.ts     types used by both sides
+```
+
+## Development
+
+```sh
+npm run dev         # Vite dev server with hot reload; the API runs inside it (server changes reload too)
+npm run typecheck   # TypeScript checks for the app and the server
+npm run build       # production build into dist/
+```
+
+`python start.py --dev` does the same as `npm run dev` and opens the browser.
 
 ## License
 

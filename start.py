@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
-"""Start the trip planner: runs `node server.js` (unless it is already running) and opens it in the browser.
+"""Start the trip planner and open it in the browser.
 
-Usage:  python start.py [--port 5173] [--no-browser]
+Installs the dependencies and builds the app the first time (and again whenever the source changed), then runs
+the server unless it's already running.
+
+Usage:  python start.py [--port 5173] [--no-browser] [--dev]
+  --dev   run the Vite dev server instead (hot reload while editing the code)
 Stop with Ctrl+C (or close the window).
 """
 import argparse
@@ -14,6 +18,8 @@ import urllib.request
 import webbrowser
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+BUILT = os.path.join(HERE, "dist", "server", "main.js")
+SOURCES = ["web", "server", "shared", "index.html", "package.json", "vite.config.ts"]
 
 
 def is_up(url):
@@ -24,10 +30,29 @@ def is_up(url):
         return False
 
 
+def newest_source():
+    newest = 0.0
+    for name in SOURCES:
+        path = os.path.join(HERE, name)
+        if os.path.isfile(path):
+            newest = max(newest, os.path.getmtime(path))
+        for root, _, files in os.walk(path):
+            for f in files:
+                newest = max(newest, os.path.getmtime(os.path.join(root, f)))
+    return newest
+
+
+def npm(npm_cmd, *args):
+    result = subprocess.run([npm_cmd, *args], cwd=HERE)
+    if result.returncode != 0:
+        sys.exit(f"`npm {' '.join(args)}` failed (exit code {result.returncode}).")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--port", type=int, default=int(os.environ.get("PORT", 5173)))
     ap.add_argument("--no-browser", action="store_true", help="don't open a browser tab")
+    ap.add_argument("--dev", action="store_true", help="run the Vite dev server (hot reload)")
     args = ap.parse_args()
     url = f"http://localhost:{args.port}"
 
@@ -37,12 +62,25 @@ def main():
             webbrowser.open(url)
         return
 
-    node = shutil.which("node")
-    if not node:
-        sys.exit("Node.js is needed but wasn't found on PATH. Install it from https://nodejs.org and try again.")
+    node, npm_cmd = shutil.which("node"), shutil.which("npm")
+    if not node or not npm_cmd:
+        sys.exit("Node.js (with npm) is needed but wasn't found on PATH. Install it from https://nodejs.org and try again.")
 
-    proc = subprocess.Popen([node, os.path.join(HERE, "server.js")], cwd=HERE, env={**os.environ, "PORT": str(args.port)})
-    for _ in range(150):
+    if not os.path.isdir(os.path.join(HERE, "node_modules")):
+        print("Installing dependencies (first run)...")
+        npm(npm_cmd, "install")
+
+    env = {**os.environ, "PORT": str(args.port)}
+    if args.dev:
+        cmd = [npm_cmd, "run", "dev"]
+    else:
+        if not os.path.exists(BUILT) or newest_source() > os.path.getmtime(BUILT):
+            print("Building the app...")
+            npm(npm_cmd, "run", "build")
+        cmd = [node, BUILT]
+
+    proc = subprocess.Popen(cmd, cwd=HERE, env=env)
+    for _ in range(300):
         if proc.poll() is not None:
             sys.exit(f"The server stopped (exit code {proc.returncode}). Is port {args.port} already in use? Try --port 5174.")
         if is_up(url):

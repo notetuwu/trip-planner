@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trip Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Shippori+Mincho:wght@600;700&display=swap" rel="stylesheet">
+</head>
+<body class="app">
+<header>
+  <div class="brand"><span>●</span> Trip Planner</div>
+  <div class="trip-title" id="tripTitle"></div>
+</header>
+
+<main>
+  <section class="panel settings">
+    <h2>Saved trips <small><button class="link-btn" id="newTrip" title="Start a new, empty trip">+ New trip</button></small></h2>
+    <div class="inline">
+      <select id="saveList"><option value="">— Saved trips —</option></select>
+      <button class="btn" id="loadSave" title="Load the selected trip">Load</button>
+      <button class="btn solid" id="saveBtn" title="Save current inputs">Save</button>
+      <button class="btn" id="delSave" title="Delete the selected trip">✕</button>
+    </div>
+    <div class="counts" id="saveStatus"></div>
+
+    <h2>Stays</h2>
+    <div id="stays"></div>
+    <button class="secondary" id="addStay">+ Add stay</button>
+
+    <h2>Places <small id="listMeta"></small></h2>
+    <div class="inline">
+      <select id="listSelect"><option value="">No place list</option></select>
+      <button class="btn" id="syncList" title="Re-import this list from its source">⟳ Sync</button>
+      <button class="btn" id="delList" title="Remove this list">✕</button>
+    </div>
+    <details class="import">
+      <summary>+ Import places</summary>
+      <label for="gmUrl">Google Maps list link</label>
+      <div class="inline">
+        <input id="gmUrl" placeholder="https://maps.app.goo.gl/…">
+        <button class="btn solid" id="gmImport">Import</button>
+      </div>
+      <div class="hint">In Google Maps: Saved → open the list → Share → "Anyone with the link". The list re-syncs automatically when it's older than an hour.</div>
+      <div class="hint" style="margin-top:8px">Or upload a CSV (e.g. from Google Takeout → Saved):
+        <span class="btn file-btn">Choose CSV<input type="file" id="csvFile" accept=".csv,text/csv"></span></div>
+      <div class="counts" id="importStatus"></div>
+    </details>
+    <div class="legend">Click a place (here or on the map) once for ★ must-see, again to skip, again to reset. On a must-see, click 👥 to set how many of you want to go; Claude can split the group.</div>
+    <div class="places-tools"><input id="placeFilter" placeholder="Filter places…"></div>
+    <div class="chips" id="chips"></div>
+    <div class="counts" id="counts"></div>
+
+    <h2>Budget &amp; style</h2>
+    <div class="row" style="--cols:3">
+      <div><label for="dailyBudget">Daily budget</label><input id="dailyBudget" type="number" min="0" step="10"></div>
+      <div><label for="currency">Currency</label>
+        <select id="currency"></select></div>
+      <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
+    </div>
+    <div class="row">
+      <div><label for="pace">Pace</label>
+        <select id="pace">
+          <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>
+          <option value="balanced (3-5 stops per day)">Balanced</option>
+          <option value="packed (as much as possible, early starts)">Packed</option>
+        </select></div>
+      <div><label for="model">Model <button class="link-btn" id="refreshModels" title="Look for local model servers again">⟳ detect</button></label>
+        <select id="model">
+          <option value="default">CLI default</option>
+          <option value="opus">Opus</option>
+          <option value="sonnet">Sonnet</option>
+          <option value="haiku">Haiku (fast)</option>
+        </select></div>
+    </div>
+    <div class="hint" id="modelHint" style="margin:-4px 0 6px"></div>
+    <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
+    <div class="row" style="--cols:1">
+      <div><label for="interests">Interests</label><textarea id="interests" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
+      <div><label for="notes">Anything else</label><textarea id="notes" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
+    </div>
+
+    <div class="generate-bar"><button class="primary" id="generate">Generate itinerary</button></div>
+  </section>
+
+  <section class="panel map-panel">
+    <div class="map-bar">
+      <div class="day-chips" id="dayChips"></div>
+      <div class="map-toggles">
+        <label><input type="checkbox" id="showPlaces" checked> Places</label>
+        <label><input type="checkbox" id="showRoutes" checked> Routes</label>
+      </div>
+    </div>
+    <div class="map-wrap">
+      <div id="map"></div>
+      <form class="map-search" id="mapSearch" autocomplete="off">
+        <div class="inline"><input id="mapSearchQ" type="search" placeholder="Add a place by name…"><button class="btn solid">Search</button></div>
+        <ul id="mapResults" hidden></ul>
+      </form>
+      <div class="map-status" id="mapStatus" hidden></div>
+    </div>
+  </section>
+
+  <section class="panel" id="output">
+    <div class="empty"><div class="sun"></div>Your itinerary will appear here.</div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+
+<script type="module" src="/web/src/main.ts"></script>
+</body>
+</html>
