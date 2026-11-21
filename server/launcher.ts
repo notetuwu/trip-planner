@@ -58,8 +58,36 @@ export function openInBrowser(url: string) {
   defaultBrowserCommand().then((cmd) => {
     const [exe, args] = cmd ? fillCommand(cmd, url) : ["rundll32.exe", ["url.dll,FileProtocolHandler", url]];
     spawn(exe, args, { stdio: "ignore", detached: true }).unref();
+    if (cmd) bringToFront(path.basename(exe, path.extname(exe)));
   });
   return true;
+}
+
+// Windows only lets the program you're using bring a window to the front; the planner's server runs in the background,
+// so the browser would open the link in a tab but stay behind. A short hidden PowerShell step brings its window up
+// (restoring it if minimized); the Alt key tap is the usual way to be allowed to do that.
+const FRONT_SCRIPT = `
+$ErrorActionPreference = 'SilentlyContinue'
+Start-Sleep -Milliseconds 500
+Add-Type -Namespace TP -Name W -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+[DllImport("user32.dll")] public static extern void keybd_event(byte v, byte s, uint f, UIntPtr e);
+'@
+$p = Get-Process -Name $env:TP_BROWSER | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+if ($p) {
+  $h = $p.MainWindowHandle
+  if ([TP.W]::IsIconic($h)) { [void][TP.W]::ShowWindow($h, 9) }
+  [TP.W]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero); [TP.W]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+  [void][TP.W]::SetForegroundWindow($h)
+}`;
+
+export function bringToFront(processName: string) {
+  if (process.platform !== "win32" || !/^[\w .-]+$/.test(processName)) return;
+  const encoded = Buffer.from(FRONT_SCRIPT, "utf16le").toString("base64");
+  spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-EncodedCommand", encoded],
+    { stdio: "ignore", detached: true, windowsHide: true, env: { ...process.env, TP_BROWSER: processName } }).unref();
 }
 
 let browserCommand: Promise<string | null> | null = null;

@@ -74,3 +74,17 @@ describe("nearby places for local models", () => {
     expect(text.length).toBeLessThan(nearbySection(trip).length / 2);
   });
 });
+
+import { localResearch } from "../server/research/research";
+describe("researching one day", () => {
+  it("names the stay that day is in, not the first one", async () => {
+    const day = (date: string, city: string) => ({ date, city, title: "", estimatedCost: 0, items: [] });
+    const itinerary = { summary: "", totalEstimatedCost: 0, days: [day("2027-09-10", "Home"), day("2027-09-13", "Salzburg")] };
+    const trip: any = { travelers: 2, stays: [{ city: "Home", start: "2027-09-06", nights: 5 }, { city: "Salzburg", start: "2027-09-11", nights: 3 }],
+      redoDay: { itinerary, day: 1, request: "" } };
+    let prompt = "";
+    await localResearch({ kind: "ollama", base: "http://127.0.0.1:9", model: "x", trip, places: [], abort: new AbortController().signal,
+      onThinking: () => {}, tick: () => {}, onEvent: (e: any) => { if (e.type === "prompt" && !prompt) prompt = e.text; } }).catch(() => {});
+    expect(prompt).toMatch(/2027-09-13 in Salzburg \(staying in Salzburg\)/);
+  });
+});

@@ -4,6 +4,7 @@ import type { Place } from "../../shared/types";
 import { serverName } from "../ai/local-models";
 import { tripLine } from "../ai/prompt-sections";
 import type { OnEvent, Trip } from "../ai/types";
+import { addDays } from "../config";
 import { MAX_LOOKUPS, RESEARCH_CTX, type RoundContext, type ToolCall, chatRound } from "./chat-round";
 import { fetchPage } from "./fetch-page";
 import { webSearch } from "./search";
@@ -15,7 +16,8 @@ const lookupLimit = (trip: Trip) => (trip.redoDay ? Math.min(DAY_LOOKUPS, MAX_LO
 function dayResearchPrompt(trip: Trip, limit: number) {
   const { itinerary, day, request } = trip.redoDay!;
   const d = itinerary.days[day];
-  const stay = trip.stays.find((s) => s.start && d.date >= s.start);
+  // The stay whose dates include the day (on a travel day, the one you arrive at).
+  const stay = trip.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)).at(-1);
   return `You are researching one day of a trip before it gets re-planned: ${d.date} in ${d.city}${stay ? ` (staying in ${stay.city})` : ""}.
 ${request ? `The travelers ask: ${request}\n` : ""}Currently planned that day: ${d.items.map((x) => x.place).join("; ") || "nothing"}.
 Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}.
