@@ -107,13 +107,13 @@ if (process.platform === "win32") {
   run("codesign", ["--force", "--deep", "--sign", "-", app]); // ad-hoc signature, required on Apple Silicon
   run("ditto", ["-c", "-k", "--keepParent", app, path.join(OUT, `${base}.zip`)]);
 } else {
-  const dir = path.join(WORK, "trip-planner");
-  fs.mkdirSync(dir);
+  const dir = path.join(WORK, "linux", "trip-planner"); // not WORK/trip-planner: that's the program itself
+  fs.mkdirSync(dir, { recursive: true });
   fs.copyFileSync(exe, path.join(dir, "trip-planner"));
   fs.chmodSync(path.join(dir, "trip-planner"), 0o755);
   fs.copyFileSync(path.join(ROOT, "packaging/icon.png"), path.join(dir, "icon.png"));
   fs.writeFileSync(path.join(dir, "README.txt"), readme("Your data is kept in ~/.local/share/trip-planner. To keep it next to the program instead (portable), create a folder named \"data\" here.\n"));
-  run("tar", ["-czf", path.join(OUT, `${base}.tar.gz`), "-C", WORK, "trip-planner"]);
+  run("tar", ["-czf", path.join(OUT, `${base}.tar.gz`), "-C", path.dirname(dir), "trip-planner"]);
 }
 
 console.log(`\nDone: ${fs.readdirSync(OUT).filter((f) => f !== "work").join(", ")} in release/`);
