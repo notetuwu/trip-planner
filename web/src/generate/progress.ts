@@ -16,13 +16,13 @@ export function showProgress(o: { who: string; doing: string; local: boolean; ex
   // bar) instead of replacing the whole itinerary.
   const out = o.into || $("#output");
   out.innerHTML = `
-    <div class="empty loading${o.into ? " inline" : ""}">
+    <div class="empty loading${o.into ? " compact" : ""}">
       <div class="sun"></div>
       ${esc(o.who)} is ${esc(o.doing)}… <span data-gen-time>0s</span>
       <small data-gen-status>${o.local ? "Loading the model…" : "Starting…"}</small>
       <small data-gen-tokens class="gen-tokens"></small>
       <div class="gen-bar"><i data-gen-bar></i></div>
-      <small>${o.local ? "Local models can take several minutes, depending on your hardware." : "This usually takes 1–3 minutes."}</small>
+      ${o.into ? "" : `<small>${o.local ? "Local models can take several minutes, depending on your hardware." : "This usually takes 1–3 minutes."}</small>`}
       <button class="btn" data-gen-cancel style="margin-top:14px">Cancel</button>
     </div>
     ${thoughtsHtml("", { live: true })}

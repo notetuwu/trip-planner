@@ -84,7 +84,7 @@ export async function runGeneration(change: Change = {}) {
   if (box) { box.className = "inline-progress"; setInlineProgress(redo ? { day: redo.day, el: box } : { fix: true, el: box }); }
   const view = showProgress({ into: box,
     who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),
-    doing: redo ? `re-planning ${redo.itinerary.days[redo.day]?.date}`
+    doing: redo ? `re-planning ${fmtDate(redo.itinerary.days[redo.day]?.date || "")}`
       : fix ? `fixing ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""} the map checks found (wrong town or closed)` : change.revise ? "revising your trip" : "planning your trip",
     expectedDays: redo ? 1 : fix ? new Set(fix.problems.map((p) => p.day)).size : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
   });

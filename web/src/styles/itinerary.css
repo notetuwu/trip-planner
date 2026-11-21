@@ -98,8 +98,11 @@ label.check.off { opacity: .5; }
 .fix-bar > svg.i { color: var(--warn); font-size: 16px; }
 .fix-bar span { flex: 1; min-width: 180px; }
 .fix-bar .btn { height: 30px; }
-.inline-progress { border: 1px dashed var(--line-strong); border-radius: 10px; padding: 6px 12px 10px; margin-top: 4px; }
-.inline-progress .empty.loading.inline { padding: 14px 10px 6px; }
-.inline-progress .empty.loading.inline .sun { width: 34px; height: 34px; margin-bottom: 10px; }
+.inline-progress { border: 1px solid var(--line); background: var(--field); border-radius: 12px; padding: 4px 14px 12px; margin: 12px 0 4px; }
+.inline-progress .empty.loading.compact { padding: 16px 10px 8px; font-size: 13.5px; color: var(--ink); }
+.inline-progress .empty.loading.compact .sun { width: 30px; height: 30px; margin-bottom: 10px; }
+.inline-progress .empty.loading.compact small { color: var(--muted); }
+.inline-progress .empty.loading.compact .btn { margin-top: 10px !important; height: 30px; }
+.inline-progress .thoughts { margin: 8px 0 0; background: var(--panel); }
 .fix-bar.busy { display: block; padding: 0; background: none; border: 0; }
 .day.replanning .day-head .redo { visibility: hidden; }
