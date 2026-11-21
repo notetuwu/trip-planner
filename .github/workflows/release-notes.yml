@@ -1,0 +1,28 @@
+name: Release notes
+
+# Rewrites the notes of an existing release ("What's new" from the commit messages, then how to download). Run it from
+# the Actions tab (Run workflow) with a version tag, e.g. for releases made before the notes were written automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag, e.g. v3.5.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: node scripts/release-notes.mjs "$TAG" > notes.md
+        env:
+          TAG: ${{ inputs.tag }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          body_path: notes.md
