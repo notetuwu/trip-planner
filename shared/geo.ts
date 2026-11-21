@@ -45,6 +45,8 @@ export interface Poi {
   city?: string;
   /** OpenStreetMap opening_hours, e.g. "Tu-Su 09:00-17:00". */
   hours?: string;
+  /** The place's own website, from OpenStreetMap. */
+  website?: string;
 }
 
 /** Is a stop open while it's planned? Checked against its OpenStreetMap opening hours. */

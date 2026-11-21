@@ -59,7 +59,7 @@ export async function handleItinerary(req: Req, res: Res) {
     trip.holidays = await tripHolidays(trip.stays).catch(() => []);
     trip.nearby = await nearbyPlaces(trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
     // The page uses these to put stops on the map at their exact spot.
-    send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours }) => ({ name, lat, lng, city: n.city, hours }))) });
+    send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
     const run = runnerFor(String(trip.model || ""));
     const result = await run(trip, places, send, abort.signal);
     console.log(`Done in ${(result.durationMs / 1000).toFixed(0)}s`);

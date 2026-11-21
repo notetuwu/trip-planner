@@ -1,21 +1,24 @@
-// Booking: a "Book" link on stops with tickets or tours, and a checklist of everything worth booking before the trip.
+// Booking: a ticket link on stops that cost money to get in, and a checklist of everything worth booking before the trip.
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { $$, esc } from "../core/dom";
 import { fmtDate } from "../core/format";
 import { save, state } from "../core/state";
-import { daySegments } from "../geo/item-loc";
+import { byTitleMap, daySegments, exactPoi } from "../geo/item-loc";
 import { tripCountries } from "../geo/locate";
-import { bookableOnSite, bookingQuery, bookingSite } from "./booking-sites";
+import { bookingQuery, bookingSite, ticketLink } from "./booking-sites";
 
 const site = () => bookingSite(tripCountries().map(([cc]) => cc));
-const town = (d: Day) => daySegments(d)[0] || d.city;
-const mapsUrl = (x: ItineraryItem, d: Day) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${town(d)}`)}`;
+/** The day's towns, without bracketed details such as an address. */
+const towns = (d: Day) => {
+  const t = (daySegments(d).length ? daySegments(d) : [d.city]).map((s) => s.replace(/\s*\([^)]*\)/g, "").trim()).filter(Boolean);
+  return t.length ? t : [d.city];
+};
+const mapsUrl = (x: ItineraryItem, d: Day) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${towns(d)[0]}`)}`;
 
-/** The link on a stop in the day list ("" when there's nothing to book on the platform). */
+/** The ticket link on a stop in the day list ("" for free places, meals and transfers). */
 export function bookLink(x: ItineraryItem, d: Day) {
-  if (!bookableOnSite(x)) return "";
-  const s = site();
-  return `<a class="book" href="${esc(s.search(bookingQuery(x.place, town(d))))}" target="_blank" rel="noopener" title="Find tickets on ${esc(s.name)}">🎟 ${esc(s.name)} ↗</a>`;
+  const link = ticketLink(x, towns(d), site(), exactPoi(x, d, byTitleMap())?.website);
+  return link ? `<a class="book" href="${esc(link.url)}" target="_blank" rel="noopener" title="${esc(link.title)}">🎟 ${esc(link.label)} ↗</a>` : "";
 }
 
 export const bookingKey = (d: Day, x: ItineraryItem) => `${d.date}|${x.place}`;
@@ -26,11 +29,16 @@ export function bookAheadHtml(it: Itinerary) {
   if (!rows.length) return "";
   const s = site(), booked = state.booked || {};
   const left = rows.filter(({ d, x }) => !booked[bookingKey(d, x)]).length;
-  const link = (d: Day, x: ItineraryItem) => bookableOnSite(x)
-    ? `<a href="${esc(s.search(bookingQuery(x.place, town(d))))}" target="_blank" rel="noopener">${esc(s.name)} ↗</a>`
-    : x.kind === "meal" || /^(breakfast|brunch|lunch|dinner)\b/i.test(x.place)
-      ? `<a href="${esc(mapsUrl(x, d))}" target="_blank" rel="noopener" title="Find the restaurant's phone or booking page">Reserve ↗</a>`
-      : "";
+  const byTitle = byTitleMap();
+  const link = (d: Day, x: ItineraryItem) => {
+    if (x.kind === "meal" || /^(breakfast|brunch|lunch|dinner)\b/i.test(x.place)) {
+      return `<a href="${esc(mapsUrl(x, d))}" target="_blank" rel="noopener" title="Find the restaurant's phone or booking page">Reserve ↗</a>`;
+    }
+    const t = ticketLink(x, towns(d), s, exactPoi(x, d, byTitle)?.website)
+      // Trains, cable cars and the like: search for their tickets.
+      || { url: `https://www.google.com/search?q=${encodeURIComponent(`${bookingQuery(x.place, "")} tickets`)}`, label: "Tickets", title: "Search for tickets" };
+    return `<a href="${esc(t.url)}" target="_blank" rel="noopener" title="${esc(t.title)}">${esc(t.label)} ↗</a>`;
+  };
   return `<details class="book-ahead" ${left ? "open" : ""}>
     <summary><h2>Book ahead</h2><span class="hint">${left ? `${left} of ${rows.length} still to book` : `all ${rows.length} booked`} · tickets and tours via ${esc(s.name)}</span></summary>
     <ul>${rows.map(({ d, x }) => {

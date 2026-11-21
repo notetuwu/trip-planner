@@ -105,6 +105,14 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
   return fuzzy ? { ...fuzzy, approx: true } : null;
 }
 
+/** The OpenStreetMap place a stop is (same name and pinned on it), or null. */
+export function exactPoi(x: ItineraryItem, d: Day, byTitle: ByTitle): Poi | null {
+  const poi = poiFor(x.place, d);
+  if (!poi) return null;
+  const loc = itemLoc(x, d, byTitle);
+  return loc && !loc.approx && distKm(loc, poi) <= 0.3 ? poi : null;
+}
+
 /** Looks up the itinerary's towns, then its stops around them (only what isn't known or looked up yet). */
 export function geocodeItems() {
   const it = state.itinerary; if (!it || !countryCodes()) return;

@@ -4,8 +4,8 @@ import type { HoursCheck, HoursResult } from "../../../shared/types";
 import { $$, api, esc } from "../core/dom";
 import { state } from "../core/state";
 import { endMin, toMin } from "../export/ics";
-import { byTitleMap, itemLoc, poiFor } from "../geo/item-loc";
-import { distKm, stayLoc, stayOn } from "../geo/locate";
+import { byTitleMap, exactPoi } from "../geo/item-loc";
+import { stayLoc, stayOn } from "../geo/locate";
 
 const results = new Map<string, HoursResult>();
 const keyOf = (c: HoursCheck) => [c.hours, c.date, c.time, c.minutes, c.cc].join("|");
@@ -15,10 +15,9 @@ function checks() {
   const it = state.itinerary, byTitle = byTitleMap(), out = new Map<string, HoursCheck>();
   if (!it) return out;
   it.days.forEach((d, di) => d.items.forEach((x, xi) => {
-    const poi = poiFor(x.place, d);
-    if (!poi?.hours || x.kind === "transfer") return;
-    const loc = itemLoc(x, d, byTitle);
-    if (!loc || loc.approx || distKm(loc, poi) > 0.3) return; // the stop isn't this place
+    if (x.kind === "transfer") return;
+    const poi = exactPoi(x, d, byTitle);
+    if (!poi?.hours) return;
     const start = toMin(x.time), stay = stayOn(d);
     out.set(`${di}-${xi}`, {
       hours: poi.hours, date: d.date, time: start == null ? "" : x.time.slice(0, 5),
