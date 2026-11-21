@@ -1,16 +1,17 @@
-# Personal data: your trips, imported place lists and lookup caches stay on your machine.
-saves/
-lists/
-cache/
-keys.json
+# Personal data: your trips, imported place lists, lookup caches and API keys stay on your machine.
+# (Anchored with "/" so code folders with the same names, like web/src/saves/ or server/lists/, are kept.)
+/saves/
+/lists/
+/cache/
+/keys.json
 *.csv
 
 # Old versions and local clutter
-backup-v1/
+/backup-v1/
 node_modules/
 .env
 .DS_Store
 Thumbs.db
 
 # Build output
-dist/
+/dist/
