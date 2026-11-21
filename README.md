@@ -156,12 +156,13 @@ npm run dev         # Vite dev server with hot reload; the API runs inside it (s
 npm run typecheck   # TypeScript checks for the app, the server and the tests
 npm test            # unit tests (Vitest)
 npm run build       # production build into dist/
+npm run e2e         # browser tests of the main flows against dist/ (headless Chrome or Edge; CHROME_PATH to pick one)
 npm run package     # the app as one executable for this system, in release/
 ```
 
 `npm run package` bakes the server and the built page into a copy of Node ([single executable application](https://nodejs.org/api/single-executable-applications.html)), so the result runs without Node installed. Releases are built by GitHub Actions for Windows (portable zip and an [Inno Setup](https://jrsoftware.org/isinfo.php) installer), macOS (Apple Silicon and Intel) and Linux whenever a version tag is pushed (`git tag v3.1.0 && git push origin v3.1.0`). `node scripts/make-icon.mjs` redraws the icon.
 
-GitHub Actions runs the typecheck, the tests and the build on every push.
+GitHub Actions runs the typecheck, the unit tests, the build and the browser tests on every push.
 
 `python start.py --dev` does the same as `npm run dev` and opens the browser.
 

@@ -64,6 +64,9 @@ export interface AppState {
   autoFix?: boolean;
   /** Things to book that the travelers ticked off, by "date|place". */
   booked?: Record<string, boolean>;
+  /** Packing list: ticked items, and items the travelers added themselves. */
+  packed?: Record<string, boolean>;
+  packingExtra?: string[];
 }
 
 const STORE_KEY = "trip-planner-v2";

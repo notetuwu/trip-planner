@@ -113,3 +113,7 @@ details.import .inline { margin-bottom: 8px; }
 .guide-models code { font: 600 12.5px ui-monospace, Consolas, monospace; }
 .guide-models .btn.copy { height: 28px; padding: 0 9px; font-size: 12px; }
 .pick-badge { font-size: 11px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
+.stay-hotels { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
+.stay-hotels:hover { text-decoration: underline; }
+.stay-leg .leg-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; white-space: nowrap; }
+.stay-leg .leg-link:hover { text-decoration: underline; }

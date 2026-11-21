@@ -9,7 +9,8 @@ import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { modeOptions } from "./modes";
 import { renderTripTitle } from "./title";
-import { icon } from "../core/icons";
+import { ext, icon } from "../core/icons";
+import { bookableMode, hotelUrl, transportUrl } from "../itinerary/travel-links";
 
 /** Each stay after the first starts where the previous one ends, unless the user overrides it. */
 function chainDates() {
@@ -24,6 +25,7 @@ function legHtml(i: number) {
   const a = state.stays[i - 1], b = state.stays[i];
   return `<div class="stay-leg" data-i="${i}">
     <span class="leg-text">${esc(a.city || `Stay ${i}`)} → ${esc(b.city || `Stay ${i + 1}`)}</span>
+    ${a.city && b.city && bookableMode(b.travel) ? `<a class="leg-link" href="${esc(transportUrl(a.city, b.city))}" target="_blank" rel="noopener" title="Ways to get from ${esc(a.city)} to ${esc(b.city)} on Rome2Rio, with links to book">Compare${ext()}</a>` : ""}
     <select data-k="travel" title="How you get from ${esc(a.city || "the previous stay")} to ${esc(b.city || "this stay")}">${modeOptions(b.travel)}</select>
   </div>`;
 }
@@ -49,6 +51,7 @@ function stayHtml(s: Stay, i: number) {
         <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
       </div>
       ${geoLine ? `<div class="stay-geo" title="${esc(loc?.label || "")}">${geoLine}</div>` : ""}
+      ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
           <div class="day-trip" data-ti="${ti}">

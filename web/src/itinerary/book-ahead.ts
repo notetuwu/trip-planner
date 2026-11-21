@@ -2,12 +2,14 @@
 // Websites are looked up while the page is open, so the links are refreshed in place when they arrive.
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { $$, esc } from "../core/dom";
-import { fmtDate } from "../core/format";
+import { addDays, fmtDate } from "../core/format";
 import { save, state } from "../core/state";
 import { type ByTitle, byTitleMap, daySegments, stopWebsite } from "../geo/item-loc";
 import { tripCountries } from "../geo/locate";
 import { type TicketLink, bookingSite, pickWebsite, ticketLinks, ticketQuery } from "./booking-sites";
 import { ext, icon } from "../core/icons";
+import { modeName } from "../trip/modes";
+import { bookableMode, hotelUrl, transportUrl } from "./travel-links";
 
 const site = () => bookingSite(tripCountries().map(([cc]) => cc));
 const towns = (d: Day) => { const t = daySegments(d); return t.length ? t : [d.city]; };
@@ -43,13 +45,41 @@ export function bookLink(x: ItineraryItem, d: Day, di: number, xi: number) {
 export const bookingKey = (d: Day, x: ItineraryItem) => `${d.date}|${x.place}`;
 
 /** Everything marked essential or recommended to book, in trip order, with a tick box each. */
+/** Stays to book (Booking.com) and transfers to book (Rome2Rio), each with a tick box like the tickets. */
+function tripRows() {
+  const travelers = Number(state.travelers) || 1;
+  const hotels = state.stays.filter((s) => s.city && s.start && Number(s.nights) > 0).map((s) => ({
+    key: `hotel|${s.start}|${s.city}`, date: s.start, what: `Stay in ${s.city}`,
+    when: `${s.nights} night${Number(s.nights) > 1 ? "s" : ""}${s.hotel ? ` · ${s.hotel}` : ""}`,
+    link: { url: hotelUrl(s, travelers), label: "Booking.com", title: `Hotels in ${s.city}, ${fmtDate(s.start)} – ${fmtDate(addDays(s.start, s.nights))}` },
+  }));
+  const rides = state.stays.map((s, i) => ({ s, prev: state.stays[i - 1] })).filter(({ s, prev }) => prev?.city && s.city && s.start && bookableMode(s.travel))
+    .map(({ s, prev }) => ({
+      key: `travel|${s.start}|${prev.city}>${s.city}`, date: s.start, what: `${prev.city} → ${s.city}`,
+      when: s.travel ? modeName(s.travel) : "train, bus or flight",
+      link: { url: transportUrl(prev.city, s.city), label: "Compare on Rome2Rio", title: `Ways to get from ${prev.city} to ${s.city}, with links to book` },
+    }));
+  return [...hotels, ...rides].sort((a, b) => a.date.localeCompare(b.date));
+}
+
 export function bookAheadHtml(it: Itinerary) {
   const rows = it.days.flatMap((d, di) => d.items.map((x, xi) => ({ d, x, di, xi })).filter(({ x }) => x.booking === "essential" || x.booking === "recommended"));
-  if (!rows.length) return "";
+  const trip = tripRows();
+  if (!rows.length && !trip.length) return "";
   const s = site(), booked = state.booked || {}, byTitle = byTitleMap();
-  const left = rows.filter(({ d, x }) => !booked[bookingKey(d, x)]).length;
+  const total = rows.length + trip.length;
+  const left = rows.filter(({ d, x }) => !booked[bookingKey(d, x)]).length + trip.filter((r) => !booked[r.key]).length;
+  const tripHtml = trip.map((r) => `<li class="trip">
+        <label><input type="checkbox" data-booked="${esc(r.key)}" ${booked[r.key] ? "checked" : ""}>
+          <span class="ev-date">${esc(fmtDate(r.date))}</span>
+          <b>${esc(r.what)}</b></label>
+        <span class="when">${esc(r.when)}</span>
+        <span class="links"><a href="${esc(r.link.url)}" target="_blank" rel="noopener" title="${esc(r.link.title)}">${esc(r.link.label)}${ext()}</a></span>
+      </li>`).join("");
   return `<details class="book-ahead fold" data-fold="book-ahead">
-    <summary><h2>Book ahead</h2><span class="hint">${left ? `${left} of ${rows.length} still to book` : `all ${rows.length} booked`} · official sites where known, plus ${esc(s.name)}</span></summary>
+    <summary><h2>Book ahead</h2><span class="hint">${left ? `${left} of ${total} still to book` : `all ${total} booked`} · stays, transport and tickets</span></summary>
+    ${trip.length ? `<div class="ahead-sub">Stays &amp; transport</div><ul>${tripHtml}</ul>` : ""}
+    ${rows.length ? `<div class="ahead-sub">Tickets <span class="hint">official sites where known, plus ${esc(s.name)}</span></div>` : ""}
     <ul>${rows.map(({ d, x, di, xi }) => {
       const key = bookingKey(d, x);
       return `<li class="${x.booking}">

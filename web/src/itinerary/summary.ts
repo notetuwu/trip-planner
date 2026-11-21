@@ -5,6 +5,7 @@ import { dayColor, fmtDate, fmtShort, money } from "../core/format";
 import { state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { bookAheadHtml } from "./book-ahead";
+import { packingHtml } from "./packing";
 import { promptHtml, thoughtsHtml } from "./panels";
 import { icon } from "../core/icons";
 import { canShareFiles } from "../export/offline";
@@ -43,6 +44,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
     ${meta.prompt?.length ? promptHtml(meta.prompt) : ""}
     ${eventsHtml(it)}
     ${bookAheadHtml(it)}
+    ${packingHtml(it)}
     <div class="stats">
       <div class="stat"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total</span></div>
       <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day (budget ${money(budget, cur)})</span></div>

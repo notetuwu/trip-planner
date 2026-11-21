@@ -11,6 +11,7 @@ import { updateLegInfo } from "../map/legs";
 import { renderTripTitle } from "../trip/title";
 import { itineraryIcs } from "../export/ics";
 import { wireBookAhead } from "./book-ahead";
+import { wirePacking } from "./packing";
 import { daysHtml, extrasHtml } from "./days-html";
 import { checkOpeningHours } from "./hours";
 import { searchHtml, wireSearch } from "./search";
@@ -61,6 +62,7 @@ function wire(out: HTMLElement) {
   };
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
   wireBookAhead(out);
+  wirePacking(out, () => renderItinerary());
   // Collapsible sections stay open or closed across redraws.
   for (const el of $$<HTMLDetailsElement>("details[data-fold]", out)) {
     el.open = !!session.folds[el.dataset.fold!];

@@ -84,7 +84,7 @@ label.check.off { opacity: .5; }
 .item.flash { animation: stop-flash 1.8s ease-out; border-radius: 8px; }
 @media print { .it-search { display: none; } }
 .book-ahead ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
-.book-ahead li { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+.book-ahead li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
 .book-ahead li.essential { border-left: 3px solid var(--accent); }
 .book-ahead label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; margin: 0; font-size: 13px; color: var(--ink); min-width: 0; }
 .book-ahead label input { width: auto; flex: none; margin: 0; accent-color: var(--accent); }
@@ -106,3 +106,18 @@ label.check.off { opacity: .5; }
 .inline-progress .thoughts { margin: 8px 0 0; background: var(--panel); }
 .fix-bar.busy { display: block; padding: 0; background: none; border: 0; }
 .day.replanning .day-head .redo { visibility: hidden; }
+.ahead-sub { font-size: 12px; font-weight: 700; color: var(--muted); margin: 12px 0 0; display: flex; gap: 8px; align-items: baseline; }
+.ahead-sub .hint { font-weight: 400; }
+.book-ahead li.trip { border-left: 3px solid var(--track-0); }
+.packing-groups { display: grid; gap: 4px 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 4px; }
+.packing ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
+.packing li { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.packing label { display: flex; gap: 8px; align-items: baseline; margin: 0; color: var(--ink); font-weight: 400; cursor: pointer; }
+.packing label input { flex: none; width: 15px; height: 15px; transform: translateY(2px); }
+.packing input:checked + span { text-decoration: line-through; color: var(--muted); }
+.packing .icon-btn { width: 22px; height: 22px; font-size: 14px; }
+.pack-add { display: flex; gap: 6px; margin-top: 6px; }
+.pack-add input { height: 30px; font-size: 13px; }
+.pack-add .btn { height: 30px; }
+.book-ahead .when { overflow-wrap: anywhere; }
+.book-ahead label b { min-width: 0; }
