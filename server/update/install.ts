@@ -20,6 +20,7 @@ async function download(asset: NonNullable<UpdateInfo["asset"]>): Promise<Buffer
   status.phase = "downloading"; status.received = 0; status.total = asset.size;
   const res = await fetch(asset.url, { redirect: "follow", signal: AbortSignal.timeout(10 * 60e3) });
   if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
+  if (!status.total) status.total = Number(res.headers.get("content-length")) || 0; // unknown when found without the API
   const parts: Buffer[] = [];
   for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) { parts.push(Buffer.from(chunk)); status.received += chunk.length; }
   const data = Buffer.concat(parts);

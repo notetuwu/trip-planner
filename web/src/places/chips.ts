@@ -1,6 +1,6 @@
 // The saved places as chips: click to cycle must-see → skip → neutral; 👥 sets how many travelers want a must-see.
 import { $, $$, esc } from "../core/dom";
-import { type Mark, groupSize, save, session, state, whoFor } from "../core/state";
+import { type Mark, groupSize, keepPlace, save, session, setListPlaces, state, whoFor } from "../core/state";
 import { placeLoc } from "../geo/locate";
 import { drawMap } from "../map/draw";
 import { placeMarkers } from "../map/map";
@@ -29,6 +29,11 @@ export function renderChips() {
 /** Sets (or clears, with no mark) a place's mark and shows the change. */
 export function setMark(title: string, mark: Mark | undefined) {
   if (mark) state.marks[title] = mark; else delete state.marks[title];
+  // A must-see from a list is kept with the trip; unmarked, the copy goes (and with it the chip, if it's from another list).
+  const place = session.places.find((p) => p.title === title);
+  if (mark === "must" && place) keepPlace(place);
+  else state.kept = (state.kept || []).filter((k) => k.title !== title);
+  setListPlaces(session.listPlaces);
   save(); renderChips(); drawMap();
 }
 

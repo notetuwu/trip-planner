@@ -53,6 +53,8 @@ export interface AppState {
   /** How many travelers want each must-see (when not everyone). */
   who: Record<string, number>;
   customPlaces: Place[];
+  /** Copies of must-see places from place lists, so they stay part of the trip whichever list is chosen. */
+  kept?: Place[];
   itinerary: Itinerary | null;
   meta: Meta | null;
   research?: boolean;
@@ -108,8 +110,24 @@ export const session = {
 
 export function setListPlaces(list: Place[]) {
   session.listPlaces = list;
-  session.places = [...list, ...state.customPlaces];
+  // Must-sees from the list are copied into the trip, so they stay when another list (or none) is chosen.
+  for (const p of list) if (state.marks[p.title] === "must") keepPlace(p);
+  const shown = new Set([...list, ...state.customPlaces].map((p) => p.title));
+  session.places = [...list, ...state.customPlaces, ...(state.kept || []).filter((p) => !shown.has(p.title) && state.marks[p.title] === "must")];
 }
+
+/** Keeps (or refreshes) the trip's own copy of a must-see place from a place list. */
+export function keepPlace(p: Place) {
+  if (p.custom) return;
+  const { title, note, url, tags, comment, address, lat, lng } = p;
+  state.kept = [...(state.kept || []).filter((k) => k.title !== title), { title, note, url, tags, comment, address, lat, lng }];
+}
+
+/** Must-see places kept from place lists that aren't in the current list: sent along like map-picked places. */
+export const keptElsewhere = () => {
+  const inList = new Set(session.listPlaces.map((p) => p.title));
+  return (state.kept || []).filter((p) => !inList.has(p.title) && state.marks[p.title] === "must");
+};
 
 export const groupSize = () => Math.max(1, +state.travelers || 1);
 /** How many travelers want a must-see place (defaults to everyone). */
