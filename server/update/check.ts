@@ -1,4 +1,4 @@
-// Is there a newer release on GitHub? Only the packaged app asks (once per start, cached for a few hours);
+// Is there a newer release on GitHub? Only the packaged app asks (the answer is kept for 15 minutes: about 4 requests an hour, far under GitHub's 60);
 // TRIP_PLANNER_NO_UPDATES=1 turns it off. Also works out how this copy can update itself.
 import fs from "node:fs";
 import path from "node:path";
@@ -66,7 +66,7 @@ async function fromReleasesPage(): Promise<Release> {
 export async function checkForUpdate(): Promise<UpdateInfo | null> {
   if (!PACKAGED || process.env.TRIP_PLANNER_NO_UPDATES || VERSION === "dev") return null;
   // "Nothing new" is kept for an hour; failures aren't kept at all.
-  if (cached && Date.now() - cached.at < 3600e3) return cached.info;
+  if (cached && Date.now() - cached.at < 15 * 60e3) return cached.info;
   let rel: Release;
   try { rel = await fromApi(); }
   catch (e) {

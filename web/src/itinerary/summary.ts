@@ -54,7 +54,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       ${it.days.map((d, i) => `<button style="--c:${dayColor(i)};height:${Math.max(4, (d.estimatedCost / maxCost) * 100)}%" class="${d.estimatedCost > budget ? "over" : ""}" data-bar="${i}" title="${esc(fmtDate(d.date))}: ${esc(money(d.estimatedCost, cur))}"></button>`).join("")}
     </div>
     <div class="toolbar">
-      <button data-tool="phone" title="Save one self-contained file that works offline on your phone">${icon("phone")} For phone</button>
+      <button data-tool="phone" title="Save one self-contained file that works offline on your phone (send it with Phone Link, AirDrop, a messenger or email)">${icon("phone")} For phone</button>
       ${canShareFiles() ? `<button data-tool="share" title="Send the phone file with the system share menu">${icon("share")} Share</button>` : ""}
       <button data-tool="ics" title="Every stop as an event, for your phone's calendar">${icon("calendar")} Calendar</button>
       <button data-tool="print" title="Print it or save it as a PDF">${icon("printer")} Print / PDF</button>

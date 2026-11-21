@@ -73,8 +73,11 @@ export function downloadForPhone() {
   downloadFile(file, file.name);
 }
 
-/** Can this browser hand files to the system share sheet? (Then a separate Share button is shown.) */
-export const canShareFiles = () => !!navigator.canShare?.({ files: [new File(["x"], "x.html", { type: "text/html" })] });
+/** Can this browser hand files to the system share sheet? (Then a separate Share button is shown.) Not on Windows:
+ *  its share menu passes files made in the browser on as nothing to some apps (Phone Link: "sending 0 files"), so
+ *  there the file is saved and shared from Explorer instead. */
+export const canShareFiles = () => !/Windows/i.test(navigator.userAgent)
+  && !!navigator.canShare?.({ files: [new File(["x"], "x.html", { type: "text/html" })] });
 
 /** Opens the system share sheet with the offline file; falls back to saving it. */
 export async function shareForPhone() {

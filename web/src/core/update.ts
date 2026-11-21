@@ -60,8 +60,12 @@ export async function checkForUpdates() {
   };
 }
 
-/** A little after start (so it doesn't compete with loading the trip), then every hour while open (the app itself asks GitHub at most once an hour). */
+/** A little after start (so it doesn't compete with loading the trip), then every 15 minutes while open and when you
+ *  come back to the window after a while (the app itself asks GitHub at most every 15 minutes). */
+let lastCheck = 0;
+const checkNow = () => { if (!document.getElementById("updateBar")) { lastCheck = Date.now(); checkForUpdates(); } };
 export const initUpdates = () => {
-  setTimeout(checkForUpdates, 3000);
-  setInterval(() => { if (!document.getElementById("updateBar")) checkForUpdates(); }, 3600e3);
+  setTimeout(checkNow, 3000);
+  setInterval(checkNow, 15 * 60e3);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - lastCheck > 15 * 60e3) checkNow(); });
 };
