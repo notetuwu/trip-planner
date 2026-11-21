@@ -14,6 +14,10 @@ describe("opening hours", () => {
     expect(r.text).toContain("Sunday");
     expect(checkHours({ ...base, hours: "Tu-Su 10:00-18:00", date: "2026-03-02", time: "" }).status).toBe("closed-all-day");
   });
+  it("only notes a closing time that still leaves time for a visit", () => {
+    // 16:00 visit, next stop at 18:00, closes at 17:00: an hour there is fine, so it's a note, not a problem.
+    expect(checkHours({ ...base, date: "2026-03-02", time: "16:00", minutes: 120 })).toMatchObject({ status: "closes-soon", text: expect.stringContaining("about 1 h there") });
+  });
   it("spots arriving early and staying past closing", () => {
     expect(checkHours({ ...base, date: "2026-03-02", time: "08:30" })).toMatchObject({ status: "opens-later", text: expect.stringContaining("09:00") });
     expect(checkHours({ ...base, date: "2026-03-02", time: "16:30" })).toMatchObject({ status: "closes-early", text: expect.stringContaining("17:00") });

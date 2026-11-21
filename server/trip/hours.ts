@@ -43,7 +43,11 @@ export function checkHours(c: HoursCheck): HoursResult {
     }
     const closes = oh.getNextChange(start, end);
     if (closes && closes.getTime() - start.getTime() < (end.getTime() - start.getTime()) - 15 * 60000) {
-      return { status: "closes-early", text: `Closes at ${hhmm(closes)} (${listed})` };
+      // Closing before the next stop is only a problem when it leaves too little time for a visit.
+      const left = Math.round((closes.getTime() - start.getTime()) / 60000);
+      if (left < 45) return { status: "closes-early", text: `Closes at ${hhmm(closes)}, only ${left} min after the planned time (${listed})` };
+      const stay = left >= 120 ? `${Math.round(left / 60)} h` : left >= 60 ? `about ${Math.round(left / 30) / 2} h` : `${left} min`;
+      return { status: "closes-soon", text: `Closes at ${hhmm(closes)} (${stay} there; ${listed})` };
     }
     return { status: "ok", text: "" };
   } catch {

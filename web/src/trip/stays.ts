@@ -11,9 +11,10 @@ import { modeOptions } from "./modes";
 import { renderTripTitle } from "./title";
 import { ext, icon } from "../core/icons";
 import { bookableMode, hotelUrl, transportUrl } from "../itinerary/travel-links";
+import { openStopsForm } from "./stops";
 
 /** Each stay after the first starts where the previous one ends, unless the user overrides it. */
-function chainDates() {
+export function chainDates() {
   for (let i = 1; i < state.stays.length; i++) {
     const prev = state.stays[i - 1];
     if (prev.start && !state.stays[i].manualStart) state.stays[i].start = addDays(prev.start, prev.nights);
@@ -27,6 +28,7 @@ function legHtml(i: number) {
     <span class="leg-text">${esc(a.city || `Stay ${i}`)} → ${esc(b.city || `Stay ${i + 1}`)}</span>
     ${a.city && b.city && bookableMode(b.travel) ? `<a class="leg-link" href="${esc(transportUrl(a.city, b.city))}" target="_blank" rel="noopener" title="Ways to get from ${esc(a.city)} to ${esc(b.city)} on Rome2Rio, with links to book">Compare${ext()}</a>` : ""}
     <select data-k="travel" title="How you get from ${esc(a.city || "the previous stay")} to ${esc(b.city || "this stay")}">${modeOptions(b.travel)}</select>
+    ${stayLoc(a) && stayLoc(b) && ["car", "bus", "bike", ""].includes(b.travel || "") ? `<button class="link-btn leg-stops" data-stops="${i}" type="button" title="Add overnight stops along the road between ${esc(a.city)} and ${esc(b.city)}">${icon("plus")} Stops on the way</button>` : ""}
   </div>`;
 }
 
@@ -117,5 +119,9 @@ function onClick(e: Event) {
 export function initStays() {
   $("#stays").addEventListener("change", onChange);
   $("#stays").addEventListener("click", onClick);
+  $("#stays").addEventListener("click", (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>("[data-stops]");
+    if (b) openStopsForm(+b.dataset.stops!);
+  });
   $("#addStay").onclick = () => { state.stays.push({ city: "", start: "", nights: 2, hotel: "" }); save(); renderStays(); };
 }

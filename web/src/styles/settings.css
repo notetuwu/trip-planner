@@ -117,3 +117,10 @@ details.import .inline { margin-bottom: 8px; }
 .stay-hotels:hover { text-decoration: underline; }
 .stay-leg .leg-link { font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; white-space: nowrap; }
 .stay-leg .leg-link:hover { text-decoration: underline; }
+.stay-leg { flex-wrap: wrap; }
+.stay-leg .leg-stops { font-size: 12px; }
+.stops-form { flex-basis: 100%; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 0 2px; font-size: 12px; color: var(--ink); }
+.stops-form select { width: auto; height: 28px; font-size: 12px; }
+.stops-form .btn { height: 28px; font-size: 12px; padding: 0 10px; }
+.stops-form .hint { flex-basis: 100%; }
+.far-warn.note { color: var(--muted); }

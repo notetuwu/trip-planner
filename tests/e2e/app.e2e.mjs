@@ -11,6 +11,8 @@ const STUBS = `(() => {
     padua: [45.4064, 11.8768, "it", "Italy"], milano: [45.4642, 9.19, "it", "Italy"],
     lucerne: [47.0502, 8.3093, "ch", "Switzerland"], bregenz: [47.5031, 9.7471, "at", "Austria"],
     osaka: [34.6937, 135.5023, "jp", "Japan"], kyoto: [35.0116, 135.7681, "jp", "Japan"],
+    tunis: [36.8065, 10.1815, "tn", "Tunisia"], "cape town": [-33.9249, 18.4241, "za", "South Africa"],
+    cairo: [30.0444, 31.2357, "eg", "Egypt"], nairobi: [-1.2921, 36.8219, "ke", "Kenya"],
   };
   const geoKey = (q, cc, near, stop) => String(q).trim().toLowerCase() + "|" + (cc || "")
     + (near ? "|" + (+near[0]).toFixed(1) + "," + (+near[1]).toFixed(1) : "") + (stop ? "|s2" : "");
@@ -20,7 +22,7 @@ const STUBS = `(() => {
   };
   const p5 = (n) => (+n).toFixed(5);
   const json = (o) => Promise.resolve(new Response(JSON.stringify(o), { status: 200, headers: { "Content-Type": "application/json" } }));
-  window.__e2e = { open: [], requests: [], answer: () => null, delay: 0 };
+  window.__e2e = { open: [], requests: [], answer: () => null, delay: 0, stops: { km: 12733, hours: 156, stops: [], picked: "model" } };
   const real = window.fetch.bind(window);
   window.fetch = (u, o = {}) => {
     const url = String(u), body = () => JSON.parse(o.body || "{}");
@@ -37,6 +39,7 @@ const STUBS = `(() => {
     if (url.includes("/api/hours")) return json((body().checks || []).map(() => ({ status: "unknown", text: "" })));
     if (url.includes("/api/open")) { window.__e2e.open.push(body().url); return json({ ok: true }); }
     if (url.includes("/api/nearby")) return json({ warming: 0 });
+    if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return json(window.__e2e.stops); }
     if (url.includes("/api/itinerary")) {
       const b = body();
       window.__e2e.requests.push(b);
@@ -98,6 +101,41 @@ test("a stop in the wrong town is offered for fixing, and only that day comes ba
   await page.waitFor(`planner.state().itinerary.days[3].items[1]?.place === "Luini"`);
   assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].place`), "Cappella degli Scrovegni", "other days untouched");
   await page.waitFor(`document.querySelector("#fixBar")?.hidden === true`, 15000, "the fix bar to go");
+});
+
+test("with automatic fixing on, the plan comes back already fixed", async () => {
+  await trip({ ...PADUA_MILANO, autoFix: true });
+  await page.eval(`window.__e2e.answer = (b) => b.fix
+    ? { summary: "Swapped.", totalEstimatedCost: 0, days: [day("2027-09-17", "Milano", [stop("13:00", "Luini")])] }
+    : { summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")]),
+        day("2027-09-17", "Milano", [stop("13:00", "Caffe Pedrocchi")])] }`);
+  await page.eval(`window.__seen = []; new MutationObserver(() => { if (document.querySelector("#output .day")) window.__seen.push([...document.querySelectorAll("#output .item .name")].map((e) => e.textContent.trim()).join()); }).observe(document.querySelector("#output"), { childList: true, subtree: true }); document.querySelector("#generate").click()`);
+  await page.waitFor(`window.__e2e.requests.length === 2 && planner.state().itinerary?.days[1].items[0].place === "Luini" && !!document.querySelector("#output .day")`, 30000, "the fixed plan");
+  assert.ok(await page.eval(`window.__e2e.requests[1].fix.problems.length === 1`));
+  assert.equal(await page.eval(`window.__seen.some((t) => t.includes("Caffe Pedrocchi"))`), false, "the unfixed plan was never shown");
+  await page.sleep(1500);
+  assert.equal(await page.eval(`window.__e2e.requests.length`), 2, "no extra fix round after showing it");
+});
+
+test("stops on the way are added between two stays, dates move, and Undo puts it back", async () => {
+  await trip({ stays: [{ city: "Tunis", start: "2027-07-05", nights: 3, hotel: "" }, { city: "Cape Town", start: "2027-07-08", nights: 2, hotel: "", travel: "car", manualStart: true }],
+    list: "", listChosen: true, autoFix: false });
+  await page.eval(`window.__e2e.stops = { km: 12733, hours: 156, picked: "model", stops: [
+    { city: "Cairo", country: "Egypt", nights: 2, why: "Pyramids" }, { city: "Nairobi", country: "Kenya", nights: 1, why: "Halfway" } ] }`);
+  await page.waitFor(`!!document.querySelector('[data-stops="1"]')`);
+  await page.eval(`document.querySelector('[data-stops="1"]').click()`);
+  await page.eval(`(() => { const f = document.querySelector(".stops-form"); f.querySelector("select").value = "8"; f.querySelector("[data-go]").click(); })()`);
+  await page.waitFor(`planner.state().stays.length === 4`);
+  const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights, s.travel || ""])`);
+  assert.deepEqual(stays, [
+    ["Tunis", "2027-07-05", 3, ""], ["Cairo, Egypt", "2027-07-08", 2, "car"], ["Nairobi, Kenya", "2027-07-10", 1, "car"], ["Cape Town", "2027-07-11", 2, "car"],
+  ]);
+  const asked = await page.eval(`window.__e2e.stopsAsked`);
+  assert.equal(asked.hoursPerDay, 8);
+  assert.equal(asked.from.city, "Tunis");
+  assert.equal(asked.to.city, "Cape Town");
+  await page.eval(`document.querySelector("#toast button").click()`);
+  assert.equal(await page.eval(`planner.state().stays.length`), 2, "Undo restores the two stays");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {

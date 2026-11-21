@@ -1,5 +1,5 @@
 // Generate, revise or re-plan one day: sends the trip, reads the server's NDJSON stream, and shows the result.
-import type { Itinerary, RunResult, StreamEvent } from "../../../shared/types";
+import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../shared/types";
 import { $, apiFetch, toast } from "../core/dom";
 import { type Meta, save, session, state } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
@@ -59,13 +59,30 @@ function spliceFixed(current: Itinerary, data: RunResult, view: ProgressView, co
     costUsd: meta.costUsd != null || data.costUsd != null ? (meta.costUsd || 0) + (data.costUsd || 0) : undefined };
 }
 
-/** Once the checks on a fresh plan are done, has the model fix what they found (one round). */
-async function autoFix(it: Itinerary) {
+/** Sends a trip request and reads the answer (progress goes to the view). */
+async function request(trip: TripRequest, view: ProgressView, signal: AbortSignal) {
+  const res = await apiFetch("/api/itinerary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(trip), signal });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+  const data = await readStream(res, view.onEvent);
+  if (!data) throw new Error("The server stopped before the plan was finished.");
+  return data;
+}
+
+/** Before a fresh plan is shown: check it against the map and opening hours, and have the model fix what the checks
+ *  find (one round), so the plan you get is already fixed. Anything left shows the Fix bar, which runs only on a click. */
+async function fixBeforeShowing(it: Itinerary, view: ProgressView, signal: AbortSignal) {
   if (state.autoFix === false) return;
-  if (!(await checksSettled(it))) return;
+  view.onEvent({ type: "status", text: "Checking the plan against the map and opening hours…" });
+  geocodeItems();
+  const settled = await checksSettled(it, 120_000);
   setMapStatus("");
+  if (!settled || signal.aborted) return;
   const problems = planProblems(it);
-  if (problems.length) await runGeneration({ fix: { itinerary: it, problems } });
+  if (!problems.length) return;
+  view.onEvent({ type: "status", text: `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found (wrong town or closed)…` });
+  const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
+  try { spliceFixed(it, await request(trip, view, signal), view, problems.length); }
+  catch (e) { if ((e as Error).name === "AbortError") throw e; /* keep the plan as it was; the Fix bar offers it again */ }
 }
 
 let running = false;
@@ -77,7 +94,6 @@ export async function runGeneration(change: Change = {}) {
   if (change.fix) trip.research = false;
   const redo = change.redoDay, fix = change.fix;
   running = true; btn.disabled = true;
-  let fresh: Itinerary | null = null;
   const abort = new AbortController();
   // A day re-plan or a fix shows its progress inside the itinerary; the rest of the plan stays readable.
   const box = redo || fix ? document.createElement("div") : undefined;
@@ -89,12 +105,7 @@ export async function runGeneration(change: Change = {}) {
     expectedDays: redo ? 1 : fix ? new Set(fix.problems.map((p) => p.day)).size : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
   });
   try {
-    const res = await apiFetch("/api/itinerary", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(trip), signal: abort.signal,
-    });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-    const data = await readStream(res, view.onEvent);
-    if (!data) throw new Error("The server stopped before the plan was finished.");
+    const data = await request(trip, view, abort.signal);
     setInlineProgress(null);
     if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
     else if (fix && state.itinerary) spliceFixed(state.itinerary, data, view, fix.problems.length);
@@ -107,11 +118,11 @@ export async function runGeneration(change: Change = {}) {
       };
       state.meta = meta;
       session.selectedDay = null;
+      if (!change.revise) await fixBeforeShowing(state.itinerary, view, abort.signal);
     }
     session.weather = {};
     save();
     renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix }); geocodeItems(); loadWeather();
-    fresh = !redo && !fix ? state.itinerary : null;
     if (redo) {
       document.getElementById(`day-${redo.day}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       toast(`${fmtDate(redo.itinerary.days[redo.day].date)} is re-planned`);
@@ -122,5 +133,4 @@ export async function runGeneration(change: Change = {}) {
   } finally {
     view.stop(); btn.disabled = false; running = false;
   }
-  if (fresh) await autoFix(fresh);
 }

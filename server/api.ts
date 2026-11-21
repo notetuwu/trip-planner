@@ -17,6 +17,7 @@ import { handleSettings } from "./routes/settings";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
+import { suggestStops } from "./trip/stops";
 import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
 import { type Req, type Res, readJson, sendJson } from "./util/http";
@@ -80,6 +81,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const provider = path.slice("/api/keys/".length), body = await readJson(req);
       if (!isProvider(provider)) sendJson(res, 404, { error: "Unknown provider" });
       else { setKey(provider, String(body?.key || "")); sendJson(res, 200, keyStatus()); }
+    }
+    // Overnight stops between two stays on a long drive (route + the selected model).
+    else if (method === "POST" && path === "/api/stops") {
+      const body = await readJson(req);
+      if (!body?.from || !body?.to || !body?.model) sendJson(res, 400, { error: "from, to and model are needed" });
+      else sendJson(res, 200, await busyWhile(() => suggestStops(body)));
     }
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);

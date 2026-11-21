@@ -33,6 +33,7 @@ function show(byItem: Map<string, HoursCheck>) {
     const c = byItem.get(el.dataset.hours!), r = c && results.get(keyOf(c));
     const warn = r && r.status !== "ok" && r.status !== "unknown";
     el.hidden = !warn;
+    el.classList.toggle("note", r?.status === "closes-soon");
     el.innerHTML = warn ? `${icon("clock")} ${esc(r.text)}` : "";
   }
 }
@@ -43,7 +44,7 @@ export const hoursBusy = () => pending || [...checks().values()].some((c) => !re
 /** The warning for a stop ("Closed on Tuesday …"), if its hours clash with the plan. */
 export function hoursProblem(di: number, xi: number) {
   const c = checks().get(`${di}-${xi}`), r = c && results.get(keyOf(c));
-  return r && r.status !== "ok" && r.status !== "unknown" ? r.text : null;
+  return r && !["ok", "unknown", "closes-soon"].includes(r.status) ? r.text : null;
 }
 /** Shows warnings for the rendered itinerary, asking the server about anything not checked yet. */
 export async function checkOpeningHours() {

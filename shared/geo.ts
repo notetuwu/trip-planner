@@ -68,7 +68,8 @@ export interface HoursCheck {
 }
 
 export interface HoursResult {
-  status: "ok" | "closed" | "opens-later" | "closes-early" | "closed-all-day" | "unknown";
+  /** closes-soon: closes before the next stop but leaves time for a visit (a note, not a problem). */
+  status: "ok" | "closed" | "opens-later" | "closes-early" | "closes-soon" | "closed-all-day" | "unknown";
   text: string;
 }
 
