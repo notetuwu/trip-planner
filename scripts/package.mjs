@@ -36,7 +36,7 @@ const walk = (dir) => {
 };
 walk(path.join(ROOT, "dist/web"));
 fs.writeFileSync(path.join(WORK, "sea-config.json"), JSON.stringify({
-  main: "server.cjs", output: "sea.blob", disableExperimentalSEAWarning: true, useCodeCache: false, assets,
+  main: "server.cjs", output: "sea.blob", disableExperimentalSEAWarning: true, useCodeCache: true, assets, // code cache: faster start
 }, null, 2));
 run(process.execPath, ["--experimental-sea-config", "sea-config.json"]);
 

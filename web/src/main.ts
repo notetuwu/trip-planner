@@ -1,6 +1,7 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
 import { $, api } from "./core/dom";
+import { initUpdates } from "./core/update";
 import { session, state } from "./core/state";
 import { geocodeStays, onGeocoded } from "./geo/geocode";
 import { byTitleMap, geocodeItems, itemLoc } from "./geo/item-loc";
@@ -40,7 +41,7 @@ onGeocoded(() => {
 });
 setOnRouted(() => { drawMap(); updateLegInfo(); });
 
-initSearchKey();
+initSearchKey(); initUpdates();
 initFields(); initStays(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
@@ -49,9 +50,12 @@ Object.assign(window, {
   planner: { state: () => state, session, applyState, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, directionsUrl, offlineHtml },
 });
 
-// Tells the server the page is still open (the packaged app quits a while after its window is gone).
-const heartbeat = () => api("/api/ping").catch(() => {});
+// Tells the server this window is open, and when it closes (the packaged app quits after its last window closes).
+const pageId = Math.random().toString(36).slice(2);
+const heartbeat = () => api(`/api/ping?id=${pageId}`).catch(() => {});
 heartbeat(); setInterval(heartbeat, 20000);
+addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?id=${pageId}`));
+addEventListener("pageshow", (e) => { if (e.persisted) heartbeat(); }); // back from the browser's page cache
 
 initMap();
 refreshModels();

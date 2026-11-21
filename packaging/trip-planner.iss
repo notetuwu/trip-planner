@@ -43,3 +43,6 @@ Name: "{autodesktop}\Trip Planner"; Filename: "{app}\Trip Planner.exe"; Tasks: d
 
 [Run]
 Filename: "{app}\Trip Planner.exe"; Description: "Start Trip Planner"; Flags: nowait postinstall skipifsilent
+; Updates from inside the app run this installer silently: start the new version, without a new window (the open
+; window reloads itself).
+Filename: "{app}\Trip Planner.exe"; Parameters: "--no-window"; Flags: nowait; Check: WizardSilent

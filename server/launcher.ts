@@ -1,10 +1,9 @@
 // The packaged app's window: Edge, Chrome or another Chromium browser in app mode (its own window, no tabs or address
-// bar, its own profile in the data folder), else the default browser. The app quits when its window closes, or a few
-// minutes after the page stopped checking in.
-import { type ChildProcess, spawn } from "node:child_process";
+// bar, its own profile in the data folder), else the default browser. The app quits once its last window is closed.
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { idleFor, isBusy } from "./util/activity";
+import { allClosed } from "./util/activity";
 
 const CANDIDATES: Record<string, string[]> = {
   win32: [
@@ -19,7 +18,10 @@ const CANDIDATES: Record<string, string[]> = {
   linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge", "/usr/bin/brave-browser", "/snap/bin/chromium"],
 };
 
-const findBrowser = () => (CANDIDATES[process.platform] || []).find((p) => p && !p.startsWith("undefined") && fs.existsSync(p)) || null;
+/** TRIP_PLANNER_BROWSER picks the browser for the window; TRIP_PLANNER_BROWSER_ARGS adds flags (e.g. for tests). */
+const findBrowser = () => process.env.TRIP_PLANNER_BROWSER
+  || (CANDIDATES[process.platform] || []).find((p) => p && !p.startsWith("undefined") && fs.existsSync(p)) || null;
+const extraArgs = () => (process.env.TRIP_PLANNER_BROWSER_ARGS || "").split(/\s+/).filter(Boolean);
 
 /** Is the app already running on this port? Then a second start just opens another window. */
 export async function alreadyRunning(url: string) {
@@ -29,25 +31,18 @@ export async function alreadyRunning(url: string) {
   } catch { return false; }
 }
 
-/** Opens the app; returns the browser process when it got its own window (null for the default browser). */
-export function openWindow(url: string, dataDir: string): ChildProcess | null {
+/** Opens a window on the app. The browser is started on its own (detached): on Windows, programs started normally
+ *  are closed together with the program that started them, which would take the window down when a second launch
+ *  (that only opens a window) exits. */
+export function openWindow(url: string, dataDir: string) {
   const browser = findBrowser();
-  if (browser) {
-    const profile = path.join(dataDir, "window");
-    return spawn(browser, [`--app=${url}`, `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--window-size=1500,950"], { stdio: "ignore", detached: false });
-  }
-  const [cmd, args] = process.platform === "win32" ? ["explorer.exe", [url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
+  const [cmd, args] = browser
+    ? [browser, [`--app=${url}`, `--user-data-dir=${path.join(dataDir, "window")}`, "--no-first-run", "--no-default-browser-check", "--window-size=1500,950", ...extraArgs()]]
+    : process.platform === "win32" ? ["explorer.exe", [url]] : process.platform === "darwin" ? ["open", [url]] : ["xdg-open", [url]];
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
-  return null;
 }
 
-/** Quits when the window is closed, or when the page has been gone for a few minutes (e.g. a browser tab was closed). */
-export function quitWhenClosed(window: ChildProcess | null, quit: () => void) {
-  const started = Date.now();
-  // A browser that was already running with this profile hands the window over and exits at once; that isn't a close.
-  window?.on("exit", () => {
-    if (Date.now() - started < 10000) return;
-    setInterval(() => { if (!isBusy()) quit(); }, 3000); // let a running generation finish first
-  });
-  setInterval(() => { if (idleFor(3 * 60 * 1000)) quit(); }, 30000).unref();
+/** Quits a few seconds after the last window closed (not on a reload), once nothing is running. */
+export function quitWhenClosed(quit: () => void) {
+  setInterval(() => { if (allClosed(5000)) quit(); }, 2000).unref();
 }

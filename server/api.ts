@@ -11,9 +11,10 @@ import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
+import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
-import { busyWhile, ping, touch } from "./util/activity";
+import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
 import { type Req, type Res, readJson, sendJson } from "./util/http";
 
@@ -22,7 +23,8 @@ export function startup() {
   loadEnvFile();
   adoptCsvFiles();
   console.log(`Place lists: ${listSummaries().map((l) => `${l.name} (${l.count})`).join(", ") || "none yet"}`);
-  console.log(`Claude CLI: ${findClaude() || "NOT FOUND (set CLAUDE_BIN)"}`);
+  // Looking for the CLI starts a process, so it's done after the server is up rather than delaying it.
+  setTimeout(() => console.log(`Claude CLI: ${findClaude() || "NOT FOUND (set CLAUDE_BIN)"}`), 1500);
 }
 
 /** Handles an /api request; returns false for anything else. */
@@ -34,8 +36,11 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
   if (refused) { sendJson(res, 403, { error: refused }); return true; }
   touch();
   try {
-    if (path === "/api/health") { sendJson(res, 200, { app: "trip-planner", version: VERSION }); return true; }
-    if (path === "/api/ping") { ping(); sendJson(res, 200, { ok: true }); return true; }
+    if (path === "/api/health") { sendJson(res, 200, { app: "trip-planner", version: VERSION, windows: openWindows() }); return true; }
+    // Open windows check in (and say goodbye when closed), so the packaged app knows when to quit.
+    if (path === "/api/ping") { ping(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
+    if (path.startsWith("/api/update")) { await handleUpdate(req, res, path); return true; }
+    if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
     if (saveMatch) await handleSaves(req, res, saveMatch[1] && decodeURIComponent(saveMatch[1]));
