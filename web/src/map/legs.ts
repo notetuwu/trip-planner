@@ -4,7 +4,7 @@ import type { Day, LatLng, Route } from "../../../shared/types";
 import { $, esc } from "../core/dom";
 import { fmtDate, fmtDist, fmtDur } from "../core/format";
 import { state } from "../core/state";
-import { byTitleMap, daySegments, dayWhere, itemLoc } from "../geo/item-loc";
+import { byTitleMap, dayWhere, itemLoc } from "../geo/item-loc";
 import { distKm } from "../geo/locate";
 import { cleanStop, splitGroup } from "../trip/modes";
 import { type Leg, dayLegs, legRoute } from "./routes";
