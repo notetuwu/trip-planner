@@ -9,6 +9,7 @@ import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { modeOptions } from "./modes";
 import { renderTripTitle } from "./title";
+import { icon } from "../core/icons";
 
 /** Each stay after the first starts where the previous one ends, unless the user overrides it. */
 function chainDates() {
@@ -27,16 +28,20 @@ function legHtml(i: number) {
   </div>`;
 }
 
+/** The stay's day trips at the top of its card ("↪ Venice"), so they're seen when scrolling past. */
+const tripPills = (s: Stay) => (s.dayTrips || []).filter((t) => t.place.trim())
+  .map((t) => `<span class="trip-pill" title="Day trip from ${esc(s.city || "here")}">${icon("dayTrip")} ${esc(t.place)}</span>`).join("");
+
 function stayHtml(s: Stay, i: number) {
   const loc = stayLoc(s);
-  const geoLine = !s.city ? "" : loc ? `📍 ${esc(loc.label)}` : geoKey(s.city) in geo ? "📍 Not found — try a bigger nearby town" : "📍 Locating…";
+  const geoLine = !s.city ? "" : loc ? `${icon("pin")} ${esc(loc.label)}` : geoKey(s.city) in geo ? `${icon("pin")} Not found — try a bigger nearby town` : `${icon("pin")} Locating…`;
   return `${i ? legHtml(i) : ""}
     <div class="stay" data-i="${i}">
       <div class="stay-head">
-        <span><span class="stay-num">${i + 1}</span><span class="stay-dates">${s.start ? `${fmtDate(s.start)} → ${fmtDate(addDays(s.start, s.nights))}` : "Set an arrival date"}</span></span>
+        <span><span class="stay-num">${i + 1}</span><span class="stay-dates">${s.start ? `${fmtDate(s.start)} → ${fmtDate(addDays(s.start, s.nights))}` : "Set an arrival date"}</span>${tripPills(s)}</span>
         <span>
-          ${i > 0 ? `<button class="icon-btn" data-act="up" title="Move up">↑</button>` : ""}
-          ${state.stays.length > 1 ? `<button class="icon-btn" data-act="del" title="Remove">✕</button>` : ""}
+          ${i > 0 ? `<button class="icon-btn" data-act="up" title="Move up">${icon("arrowUp")}</button>` : ""}
+          ${state.stays.length > 1 ? `<button class="icon-btn" data-act="del" title="Remove">${icon("x")}</button>` : ""}
         </span>
       </div>
       <div class="row">
@@ -51,10 +56,10 @@ function stayHtml(s: Stay, i: number) {
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
           <div class="day-trip" data-ti="${ti}">
-            <span class="dt-label">Day trip</span>
+            <span class="dt-label">${icon("dayTrip")} Day trip</span>
             <input data-dt="place" value="${esc(t.place)}" placeholder="e.g. Venice">
             <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode)}</select>
-            <button class="icon-btn" data-act="deltrip" title="Remove day trip">✕</button>
+            <button class="icon-btn" data-act="deltrip" title="Remove day trip">${icon("x")}</button>
           </div>`).join("")}
         <button class="link-btn" data-act="addtrip">＋ Day trip${s.nights < 2 ? ` <span class="muted">(needs a full day, so 2+ nights)</span>` : ""}</button>
       </div>

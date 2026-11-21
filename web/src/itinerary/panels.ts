@@ -1,6 +1,7 @@
 // The collapsible "Reasoning" and "Prompt sent to the model" panels, used live while generating and afterwards.
 import { esc } from "../core/dom";
 import type { Lookup, PromptPart } from "../core/state";
+import { icon } from "../core/icons";
 
 /** The model's planning notes are light Markdown: paragraphs, "- " bullets, **bold**, # headings. */
 export function mdLite(text: string | undefined) {
@@ -18,8 +19,8 @@ export function mdLite(text: string | undefined) {
 export const thoughtsBody = (notes: string | undefined, thinking = "", lookups: Lookup[] = []) =>
   (thinking ? `<div class="raw-thinking"><b>Thinking</b>${esc(thinking)}</div>` : "") +
   (lookups.length ? `<div class="lookups"><b>Looked up online (${lookups.length})</b><ul>${lookups.map((l) => `<li>${l.url
-    ? `📄 <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 70))}</a>`
-    : `🔍 ${esc(l.query)}`}</li>`).join("")}</ul></div>` : "") +
+    ? `${icon("file")} <a href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.url.replace(/^https?:\/\/(www\.)?/, "").slice(0, 70))}</a>`
+    : `${icon("search")} ${esc(l.query)}`}</li>`).join("")}</ul></div>` : "") +
   mdLite(notes);
 
 export const thoughtsHtml = (notes: string | undefined, { thinking = "", lookups = [] as Lookup[], live = false } = {}) => `

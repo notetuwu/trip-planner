@@ -40,7 +40,7 @@ export async function refreshModels() {
   if ((isLocal(state.model) && !localModels.some((m) => m.id === state.model)) || (isApi(state.model) && !cloudModels.some((m) => m.id === state.model))) {
     html += `<optgroup label="Not available">${option(state.model, `${modelLabel(state.model)} (${isApi(state.model) ? "no key" : "offline"})`)}</optgroup>`;
   }
-  html += `<optgroup label="More">${option(ADD_KEY, "🔑 Add or change API keys…")}</optgroup>`;
+  html += `<optgroup label="More">${option(ADD_KEY, "Add or change API keys…")}</optgroup>`;
   sel.innerHTML = html;
   sel.value = state.model;
   if (sel.value !== state.model) sel.value = "default";
@@ -59,10 +59,10 @@ export function syncResearch() {
   $<HTMLInputElement>("#research").checked = state.research !== false;
   $<HTMLInputElement>("#autoFix").checked = state.autoFix !== false;
   $("#researchHint").textContent = isLocal(state.model)
-    ? ": the model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
+    ? "The model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
     : isApi(state.model)
-      ? ": the model uses its provider's own web search (billed per search on top of tokens)"
-      : ": Claude checks opening hours, prices and events on the web (slower, more accurate)";
+      ? "The model uses its provider's own web search (billed per search on top of tokens)"
+      : "Claude checks opening hours, prices and events on the web (slower, more accurate)";
 }
 
 export function initModels() {

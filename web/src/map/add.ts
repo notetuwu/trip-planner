@@ -8,6 +8,7 @@ import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
 import { addCustomPlace, addStop } from "./edit";
 import { map } from "./map";
+import { icon } from "../core/icons";
 
 export const toMin = (t: string | undefined) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
 const fromMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -63,7 +64,7 @@ export function openAddPopup(latlng: L.LatLng, preset: Preset = {}) {
         <input name="time" type="time" value="${defaultTime(di, latlng)}">
       </div>` : ""}
       <input name="desc" placeholder="Note (optional)">
-      <div class="pop-actions"><button type="submit" class="on">${it ? "＋ Add" : "★ Add must-see"}</button></div>
+      <div class="pop-actions"><button type="submit" class="on">${it ? `${icon("plus")} Add` : `${icon("star")} Add must-see`}</button></div>
     </form>`).openOn(map);
   const el = popup.getElement()!, form = el.querySelector("form")!;
   const field = <T extends HTMLElement = HTMLInputElement>(name: string) => form.elements.namedItem(name) as T;

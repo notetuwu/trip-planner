@@ -3,6 +3,8 @@ import "./styles";
 import { $, api } from "./core/dom";
 import { initUpdates } from "./core/update";
 import { initWindowMode } from "./core/window-mode";
+import { hydrateIcons } from "./core/icons";
+import { initTheme } from "./core/theme";
 import { session, state } from "./core/state";
 import { geocodeStays, onGeocoded } from "./geo/geocode";
 import { byTitleMap, geocodeItems, itemLoc } from "./geo/item-loc";
@@ -42,6 +44,7 @@ onGeocoded(() => {
 });
 setOnRouted(() => { drawMap(); updateLegInfo(); });
 
+hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 initFields(); initStays(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();

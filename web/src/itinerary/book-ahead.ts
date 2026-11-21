@@ -7,23 +7,24 @@ import { save, state } from "../core/state";
 import { type ByTitle, byTitleMap, daySegments, stopWebsite } from "../geo/item-loc";
 import { tripCountries } from "../geo/locate";
 import { type TicketLink, bookingSite, pickWebsite, ticketLinks, ticketQuery } from "./booking-sites";
+import { ext, icon } from "../core/icons";
 
 const site = () => bookingSite(tripCountries().map(([cc]) => cc));
 const towns = (d: Day) => { const t = daySegments(d); return t.length ? t : [d.city]; };
 const mapsUrl = (x: ItineraryItem, d: Day) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${towns(d)[0]}`)}`;
 const isMeal = (x: ItineraryItem) => x.kind === "meal" || /^(breakfast|brunch|lunch|dinner)\b/i.test(x.place);
 
-const anchors = (links: TicketLink[], cls: string, icon: string) => links
-  .map((l) => `<a class="${cls}" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.title)}">${icon}${esc(l.label)} ↗</a>`).join(" · ");
+const anchors = (links: TicketLink[], cls: string, prefix: string) => links
+  .map((l) => `<a class="${cls}" href="${esc(l.url)}" target="_blank" rel="noopener" title="${esc(l.title)}">${prefix}${esc(l.label)}${ext()}</a>`).join(" · ");
 
 /** The ticket links on a stop in the day list ("" for free places, meals and transfers). */
 function stopLinks(d: Day, x: ItineraryItem, byTitle: ByTitle) {
-  return anchors(ticketLinks(x, towns(d), site(), pickWebsite(stopWebsite(x, d, byTitle), x.website)), "book", "🎟 ");
+  return anchors(ticketLinks(x, towns(d), site(), pickWebsite(stopWebsite(x, d, byTitle), x.website)), "book", icon("ticket"));
 }
 
 /** The links in the book-ahead list: a restaurant's page to reserve, else tickets (trains and rides included). */
 function aheadLinks(d: Day, x: ItineraryItem, byTitle: ByTitle) {
-  if (isMeal(x)) return `<a href="${esc(mapsUrl(x, d))}" target="_blank" rel="noopener" title="Find the restaurant's phone or booking page">Reserve ↗</a>`;
+  if (isMeal(x)) return `<a href="${esc(mapsUrl(x, d))}" target="_blank" rel="noopener" title="Find the restaurant's phone or booking page">Reserve${ext()}</a>`;
   const website = pickWebsite(stopWebsite(x, d, byTitle), x.website);
   const links = ticketLinks(x, towns(d), site(), website);
   if (!links.length) {

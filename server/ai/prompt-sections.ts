@@ -49,10 +49,18 @@ export function holidayLines(trip: Trip) {
 
 const poiLine = (p: NearbyPlace) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.hours ? [`hours ${p.hours}`] : [])].join("; ")}) {location ${p.lat},${p.lng}}`;
 
-export function nearbySection(trip: Trip) {
-  return (trip.nearby || []).filter((n) => n.sights.length || n.food.length)
-    .map((n) => `### ${n.city}\nSights:\n${n.sights.map(poiLine).join("\n") || "(none found)"}\nFood and drink:\n${n.food.map(poiLine).join("\n") || "(none found)"}`)
-    .join("\n\n");
+/** Real places near each stay. Compact: each town once, and only the best-ranked places, fewer the more towns there
+ *  are (a few for places you only pass through), so a long trip doesn't fill a local model's context. */
+export function nearbySection(trip: Trip, compact = false) {
+  const lists = (trip.nearby || []).filter((n) => n.sights.length || n.food.length);
+  const towns = compact ? [...new Map(lists.map((n) => [n.city.trim().toLowerCase(), n])).values()] : lists;
+  const nights = (city: string) => trip.stays.filter((s) => s.city === city).reduce((n, s) => n + (Number(s.nights) || 0), 0);
+  const perTown = Math.max(8, Math.min(30, Math.floor(180 / Math.max(1, towns.length))));
+  return towns.map((n) => {
+    const keep = !compact ? 99 : nights(n.city) === 0 ? 4 : perTown;
+    const sights = n.sights.slice(0, keep), food = n.food.slice(0, compact ? Math.ceil(keep * 0.6) : 99);
+    return `### ${n.city}\nSights:\n${sights.map(poiLine).join("\n") || "(none found)"}\nFood and drink:\n${food.map(poiLine).join("\n") || "(none found)"}`;
+  }).join("\n\n");
 }
 
 /** One-line trip description for the research prompt. */

@@ -6,6 +6,7 @@ import { state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { bookAheadHtml } from "./book-ahead";
 import { promptHtml, thoughtsHtml } from "./panels";
+import { icon } from "../core/icons";
 
 /** The stays have changed since this itinerary was made (e.g. a new trip typed over an old one). */
 function isStale(it: Itinerary) {
@@ -52,15 +53,16 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       ${it.days.map((d, i) => `<button style="--c:${dayColor(i)};height:${Math.max(4, (d.estimatedCost / maxCost) * 100)}%" class="${d.estimatedCost > budget ? "over" : ""}" data-bar="${i}" title="${esc(fmtDate(d.date))}: ${esc(money(d.estimatedCost, cur))}"></button>`).join("")}
     </div>
     <div class="toolbar">
-      <button data-tool="phone" title="One self-contained file that works offline on your phone">📱 Download for phone</button>
-      <button data-tool="ics" title="Every stop as an event, for your phone's calendar">📅 Calendar (.ics)</button>
-      <button data-tool="print">Print / PDF</button>
-      <button data-tool="json">Download JSON</button>
-      <button data-tool="clear">Clear itinerary</button>
+      <button data-tool="phone" title="One self-contained file that works offline on your phone">${icon("phone")} For phone</button>
+      <button data-tool="ics" title="Every stop as an event, for your phone's calendar">${icon("calendar")} Calendar</button>
+      <button data-tool="print" title="Print it or save it as a PDF">${icon("printer")} Print / PDF</button>
+      <button data-tool="json" title="The itinerary as a JSON file">${icon("download")} JSON</button>
+      <button data-tool="clear" class="danger" title="Clear this itinerary" aria-label="Clear this itinerary">${icon("trash")}</button>
     </div>
     <div class="refine">
-      <textarea id="refineText" placeholder="Ask for changes, e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”"></textarea>
-      <button class="btn solid" id="refineBtn">Revise</button>
+      <label for="refineText">Ask for changes</label>
+      <textarea id="refineText" rows="2" placeholder="e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”"></textarea>
+      <div class="refine-actions"><button class="btn solid" id="refineBtn">Revise the plan</button></div>
     </div>
   </div>`;
 }

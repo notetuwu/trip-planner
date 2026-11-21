@@ -6,6 +6,7 @@ import { placeLoc } from "../geo/locate";
 import { drawMap } from "../map/draw";
 import { placeMarkers } from "../map/map";
 import { mustSeeRoute } from "./route";
+import { icon } from "../core/icons";
 
 export function renderChips() {
   const q = $<HTMLInputElement>("#placeFilter").value.toLowerCase();
@@ -15,9 +16,9 @@ export function renderChips() {
     .map((p) => {
       const mark = state.marks[p.title] || "", w = whoFor(p.title);
       const badge = mark === "must" && n > 1
-        ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">👥 ${w}/${n}</span>` : "";
+        ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">${icon("users")} ${w}/${n}</span>` : "";
       const how = mark === "must" ? howBadge(p.title) : "";
-      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${esc(p.title)}${badge}${how}</span>`;
+      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${mark === "must" ? icon("star", "star") : ""}${esc(p.title)}${badge}${how}</span>`;
     })
     .join("");
   const mustTitles = Object.keys(state.marks).filter((t) => state.marks[t] === "must");
@@ -29,7 +30,7 @@ export function renderChips() {
     : "No places yet. Import a Google Maps list or a CSV, or let Claude pick everything.";
 }
 
-const HOW_LABEL: Record<string, string> = { "": "auto", way: "🛣 on the way", stay: "🏨 from stay" };
+const HOW_LABEL: Record<string, string> = { "": "auto", way: `${icon("route")} on the way`, stay: `${icon("hotel")} from stay` };
 
 /** On a must-see: plan it as a stop between stays, from a stay, or let the route decide (click to cycle). */
 function howBadge(title: string) {
@@ -39,7 +40,7 @@ function howBadge(title: string) {
     : r.onWay ? `Auto: it lies on the way (${where}), so it becomes a stop on that travel day.`
     : `Auto: visited from ${r.base ? `${r.base.city} (${r.base.km} km away)` : "a stay"}; ${r.base && r.base.km < 20 ? "it's right by that stay" : `it isn't on the way between stays${where ? ` (closest: ${where})` : ""}`}.`;
   const tip = { "": auto, way: `On the way: a stop on the drive ${where ? `(${where})` : "between two stays"}.`, stay: `From a stay: visited from ${r?.base?.city || "where you sleep"}, as a day trip if it's far.` }[how];
-  const label = how ? HOW_LABEL[how] : r?.onWay ? "auto · 🛣" : "auto";
+  const label = how ? HOW_LABEL[how] : r?.onWay ? `auto · ${icon("route")}` : "auto";
   return `<span class="how ${how ? "set" : ""}" data-how="${esc(title)}" title="${esc(`${tip} Click to change: auto → on the way → from stay.`)}">${label}</span>`;
 }
 

@@ -6,6 +6,7 @@ import { state } from "../core/state";
 import { endMin, toMin } from "../export/ics";
 import { byTitleMap, exactPoi } from "../geo/item-loc";
 import { stayLoc, stayOn } from "../geo/locate";
+import { icon } from "../core/icons";
 
 const results = new Map<string, HoursResult>();
 const keyOf = (c: HoursCheck) => [c.hours, c.date, c.time, c.minutes, c.cc].join("|");
@@ -32,7 +33,7 @@ function show(byItem: Map<string, HoursCheck>) {
     const c = byItem.get(el.dataset.hours!), r = c && results.get(keyOf(c));
     const warn = r && r.status !== "ok" && r.status !== "unknown";
     el.hidden = !warn;
-    el.innerHTML = warn ? `🕒 ${esc(r.text)}` : "";
+    el.innerHTML = warn ? `${icon("clock")} ${esc(r.text)}` : "";
   }
 }
 

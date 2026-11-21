@@ -1,12 +1,15 @@
 // Transport between stays and on day trips, and helpers for reading itinerary stops.
 import type { ItineraryItem, TravelMode } from "../../../shared/types";
 import { state } from "../core/state";
+import { type IconName, icon } from "../core/icons";
 
 /** "" lets the planner choose. */
-export const TRAVEL_MODES: [TravelMode, string][] = [["", "Planner decides"], ["car", "🚗 Car"], ["train", "🚆 Train"], ["bus", "🚌 Bus"], ["flight", "✈️ Flight"], ["ferry", "⛴ Ferry"], ["bike", "🚲 Bike"]];
+export const TRAVEL_MODES: [TravelMode, string][] = [["", "Planner decides"], ["car", "Car"], ["train", "Train"], ["bus", "Bus"], ["flight", "Flight"], ["ferry", "Ferry"], ["bike", "Bike"]];
+const MODE_ICONS: Partial<Record<TravelMode, IconName>> = { car: "car", train: "train", bus: "bus", flight: "plane", ferry: "ship", bike: "bike" };
 const label = (m: TravelMode | undefined) => (m ? TRAVEL_MODES.find(([k]) => k === m)?.[1] || "" : "");
-export const modeName = (m?: TravelMode) => label(m).replace(/^\S+\s/, "").toLowerCase();
-export const modeIcon = (m?: TravelMode) => label(m).split(" ")[0];
+export const modeName = (m?: TravelMode) => label(m).toLowerCase();
+/** The mode's icon as SVG markup, or "" when the planner decides. */
+export const modeIcon = (m?: TravelMode) => (m && MODE_ICONS[m] ? icon(MODE_ICONS[m]!) : "");
 export const modeOptions = (sel?: TravelMode) =>
   TRAVEL_MODES.map(([k, text]) => `<option value="${k}"${(sel || "") === k ? " selected" : ""}>${text}</option>`).join("");
 

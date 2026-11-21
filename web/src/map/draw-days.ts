@@ -10,13 +10,14 @@ import { highlightItem } from "./days";
 import { hoverBand, legTip } from "./legs";
 import { itemMarkers, layers } from "./map";
 import { dayLegs, legRoute } from "./routes";
+import { icon } from "../core/icons";
 
 function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
   const color = dayColor(di);
   d.items.forEach((x, xi) => {
     const loc = itemLoc(x, d, byTitle);
     if (!loc) return;
-    const note = loc.elsewhere ? ` · ⚠ the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
+    const note = loc.elsewhere ? ` · ${icon("warn")} the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
     const m = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({ className: "", html: `<div class="num-pin${loc.approx ? " approx" : ""}" style="--c:${color}">${xi + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
     }).bindTooltip(`${esc(x.time)} ${esc(x.place)}${note}`, { direction: "top", offset: [0, -10] })

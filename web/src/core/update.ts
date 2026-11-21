@@ -1,6 +1,7 @@
 // The "new version available" bar of the packaged app: install it (Windows) or open the download page (macOS, Linux).
 // "Later" hides that version; the bar comes back for the next one.
 import { api, esc } from "./dom";
+import { ext } from "./icons";
 
 interface UpdateInfo { newer: boolean; current?: string; latest?: string; notesUrl?: string; mode?: "installer" | "portable" | "manual"; error?: string }
 interface UpdateStatus { phase: "idle" | "downloading" | "installing" | "error"; received: number; total: number; error?: string }
@@ -37,7 +38,7 @@ async function install(info: UpdateInfo) {
   for (;;) {
     const s = await api<UpdateStatus>("/api/update/status").catch(() => null);
     if (!s || s.phase === "installing") break; // the app is restarting
-    if (s.phase === "error") { bar(`<span>Update failed: ${esc(s.error)}</span> <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">Download it instead ↗</a>`); return; }
+    if (s.phase === "error") { bar(`<span>Update failed: ${esc(s.error)}</span> <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">Download it instead${ext()}</a>`); return; }
     bar(`<span>Downloading Trip Planner ${esc(info.latest)}… ${mb(s.received)} of ${mb(s.total)}</span>`);
     await new Promise((r) => setTimeout(r, 500));
   }
@@ -51,7 +52,7 @@ export async function checkForUpdates() {
   const auto = info.mode === "installer" || info.mode === "portable";
   const el = bar(`<span>Trip Planner <b>${esc(info.latest)}</b> is available (you have ${esc(info.current)}).</span>
     <button class="btn solid" data-update>${auto ? "Update now" : "Download"}</button>
-    <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">What's new ↗</a>
+    <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">What's new${ext()}</a>
     <button class="link-btn" data-later>Later</button>`);
   el.querySelector<HTMLButtonElement>("[data-later]")!.onclick = () => { localStorage.setItem(DISMISSED, info.latest!); el.remove(); };
   el.querySelector<HTMLButtonElement>("[data-update]")!.onclick = () => {

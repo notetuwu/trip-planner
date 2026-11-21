@@ -4,9 +4,10 @@ import { session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { type Loc, stayLoc } from "../geo/locate";
 import { renderItinerary } from "./render";
+import { type IconName, icon } from "../core/icons";
 
-const WMO: [number, string][] = [[0, "☀️"], [2, "🌤️"], [3, "☁️"], [48, "🌫️"], [57, "🌦️"], [67, "🌧️"], [77, "🌨️"], [82, "🌧️"], [86, "🌨️"], [99, "⛈️"]];
-export const wmoIcon = (code: number) => (WMO.find(([max]) => code <= max) || WMO.at(-1)!)[1];
+const WMO: [number, IconName][] = [[0, "sun"], [2, "cloudSun"], [3, "cloud"], [48, "cloudFog"], [57, "cloudDrizzle"], [67, "cloudRain"], [77, "cloudSnow"], [82, "cloudRain"], [86, "cloudSnow"], [99, "cloudLightning"]];
+export const wmoIcon = (code: number) => icon((WMO.find(([max]) => code <= max) || WMO.at(-1)!)[1]);
 
 export async function loadWeather() {
   const it = state.itinerary; if (!it) return;

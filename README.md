@@ -115,7 +115,7 @@ The **Google Maps list import** uses an unofficial Google endpoint, the same one
 
 ## How it works
 
-The browser app is written in TypeScript and built with [Vite](https://vite.dev). It uses [Leaflet](https://leafletjs.com) for the map and has no UI framework. The server is a plain Node HTTP server, also in TypeScript. Its only dependencies are the Anthropic SDK and the `opening_hours` parser.
+The browser app is written in TypeScript and built with [Vite](https://vite.dev). It uses [Leaflet](https://leafletjs.com) for the map and [Lucide](https://lucide.dev) icons (ISC license), and has no UI framework. Light and dark mode follow the system unless you pick one with the button at the top right. The server is a plain Node HTTP server, also in TypeScript. Its only dependencies are the Anthropic SDK and the `opening_hours` parser.
 
 When you generate, the server gathers holidays and nearby places, builds one detailed prompt, and then runs `claude -p` with a JSON schema, calls the Anthropic Messages API or the OpenAI/OpenRouter Responses API, or talks to the local model server directly. Progress streams back to the page as newline-delimited JSON.
 

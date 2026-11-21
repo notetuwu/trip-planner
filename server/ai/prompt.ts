@@ -8,6 +8,8 @@ import type { Trip } from "./types";
 const STOPS_PER_DAY = { relaxed: "3-4", balanced: "4-6", packed: "6-8" };
 
 export interface PromptOptions {
+  /** Shorter lists of nearby places (local models: a smaller prompt is faster to read and leaves room to think). */
+  compact?: boolean;
   /** "text": planning notes as plain text before the itinerary; "json": in a planningNotes field (JSON-only answers). */
   notes?: "text" | "json";
   /** The model can search the web itself while planning (used when the trip asks for research). */
@@ -22,7 +24,7 @@ export function buildPrompt(trip: Trip, places: Place[], opts: PromptOptions = {
   const json = opts.notes === "json";
   const research = !!opts.webTools && !!trip.research;
   const holidays = holidayLines(trip);
-  const nearby = nearbySection(trip);
+  const nearby = nearbySection(trip, opts.compact);
   const pace = (Object.keys(STOPS_PER_DAY) as (keyof typeof STOPS_PER_DAY)[]).find((k) => String(trip.pace).startsWith(k)) || "balanced";
   const giveBack = opts.outputTool
     ? ` Then call the \`${opts.outputTool}\` tool with the complete itinerary (never write the itinerary itself as text).`

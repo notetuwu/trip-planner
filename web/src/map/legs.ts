@@ -8,6 +8,7 @@ import { byTitleMap, dayWhere, itemLoc } from "../geo/item-loc";
 import { distKm } from "../geo/locate";
 import { cleanStop, splitGroup } from "../trip/modes";
 import { type Leg, dayLegs, legRoute } from "./routes";
+import { icon } from "../core/icons";
 
 const crowMetres = (from: LatLng, to: LatLng) => distKm({ lat: from[0], lng: from[1] }, { lat: to[0], lng: to[1] }) * 1000;
 
@@ -24,8 +25,8 @@ export function hoverBand(line: LatLng[], tip: string, vis: L.Polyline) {
 /** Hover text for a day's leg: which day, from where to where, how, and how far. */
 export function legTip(d: Day, leg: Leg, r: Route | null | undefined) {
   const a = d.items[leg.fromXi], b = d.items[leg.xi], t = b.transport || "";
-  const how = leg.mode === "foot" ? "🚶 walk" : leg.mode === "car" ? "🚗 by road"
-    : /flight|fly|plane/i.test(t) ? "✈️ flight" : /ferry|boat|ship|vaporetto/i.test(t) ? "⛴ boat" : "🚆 rail / transit";
+  const how = leg.mode === "foot" ? `${icon("walk")} walk` : leg.mode === "car" ? `${icon("car")} by road`
+    : /flight|fly|plane/i.test(t) ? `${icon("plane")} flight` : /ferry|boat|ship|vaporetto/i.test(t) ? `${icon("ship")} boat` : `${icon("train")} rail / transit`;
   const dist = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)}` : `${fmtDist(crowMetres(leg.from, leg.to))} straight line`;
   const g = splitGroup(b);
   return `<b>${esc(fmtDate(d.date))}</b>${g ? ` · ${esc(g)}` : ""}<br>${leg.fromXi + 1}. ${esc(a.place)} → ${leg.xi + 1}. ${esc(b.place)}<br>` +
@@ -41,7 +42,7 @@ export function updateLegInfo() {
       const el = $(`[data-far="${di}-${xi}"]`); if (!el) return;
       const loc = itemLoc(x, d, byTitle);
       el.hidden = !loc?.elsewhere;
-      if (loc?.elsewhere) el.textContent = `⚠ The only "${cleanStop(x.place)}" known is far away (${loc.elsewhere}), not near ${dayWhere(d) || "this day's town"}. Probably a mix-up by the AI; pinned in town for now.`;
+      if (loc?.elsewhere) el.innerHTML = `${icon("warn")} The only "${cleanStop(x.place)}" known is far away (${esc(loc.elsewhere)}), not near ${esc(dayWhere(d) || "this day's town")}. Probably a mix-up by the AI; pinned in town for now.`;
     });
     for (const leg of dayLegs(d, byTitle)) {
       const el = $(`[data-leg="${di}-${leg.xi}"]`);

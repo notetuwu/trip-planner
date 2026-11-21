@@ -2,6 +2,7 @@
 // keys.json there); the page only ever gets back whether a key is set and its last characters.
 import type { CloudProvider, KeyStatus } from "../../../shared/types";
 import { $, $$, api, esc } from "../core/dom";
+import { ext, icon } from "../core/icons";
 
 const PROVIDERS: { id: CloudProvider; name: string; env: string; url: string; note: string }[] = [
   { id: "anthropic", name: "Anthropic", env: "ANTHROPIC_API_KEY", url: "https://console.anthropic.com/settings/keys", note: "Claude models with Anthropic's web search." },
@@ -13,14 +14,14 @@ function rowHtml(p: (typeof PROVIDERS)[number], s: KeyStatus | undefined) {
   const status = !s?.set ? "No key" : s.source === "env" ? `Set from ${p.env} (${esc(s.hint)})` : `Saved (${esc(s.hint)})`;
   return `<div class="key-row" data-provider="${p.id}">
     <div class="key-head"><b>${p.name}</b> <span class="hint">${status}</span>
-      <a class="link-btn" href="${p.url}" target="_blank" rel="noopener">get a key ↗</a></div>
+      <a class="link-btn" href="${p.url}" target="_blank" rel="noopener">get a key${ext()}</a></div>
     <div class="hint">${p.note}</div>
     ${s?.source === "env"
       ? `<div class="hint">Change it where ${p.env} is set (environment or .env file).</div>`
       : `<div class="inline">
           <input type="password" autocomplete="off" spellcheck="false" placeholder="${s?.set ? "Paste a new key to replace it" : "Paste your API key"}">
           <button class="btn solid" data-save>Save</button>
-          ${s?.set ? `<button class="btn" data-remove title="Remove this key">✕</button>` : ""}
+          ${s?.set ? `<button class="btn" data-remove title="Remove this key">${icon("x")}</button>` : ""}
         </div>`}
   </div>`;
 }

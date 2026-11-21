@@ -31,7 +31,10 @@ export function localOutput(onEvent: OnEvent) {
   /** Exact totals from the server (Ollama reports them at the end). */
   const setExact = (tokens: number, perSec?: number) => { out.tokens = tokens; out.perSec = perSec; meter(tokens, { force: true, perSec }); };
 
-  return { out, onThinking, onContent, tick, setExact };
+  /** Starts the answer over (a retry), keeping the token count and the thinking shown so far. */
+  const restart = () => { out.content = ""; raw = ""; inlineThought = 0; days = 0; lastNotes = ""; onEvent({ type: "progress", days: 0 }); };
+
+  return { out, onThinking, onContent, tick, setExact, restart };
 }
 
 export type LocalOutput = ReturnType<typeof localOutput>;

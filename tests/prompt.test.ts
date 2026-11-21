@@ -56,3 +56,21 @@ describe("fixing what the checks found", () => {
     expect(text).toMatch(/containing only the 1 day\(s\) to fix \(2027-09-17\)/);
   });
 });
+
+import { nearbySection } from "../server/ai/prompt-sections";
+describe("nearby places for local models", () => {
+  const poi = (name: string) => ({ name, kind: "museum", extras: [], lat: 1, lng: 2 });
+  const list = (city: string) => ({ city, sights: Array.from({ length: 30 }, (_, i) => poi(`${city} sight ${i}`)), food: Array.from({ length: 30 }, (_, i) => poi(`${city} food ${i}`)) });
+  const trip: any = { stays: [{ city: "Home", nights: 3 }, { city: "A", nights: 2 }, { city: "Airport", nights: 0 }, { city: "Home", nights: 0 }],
+    nearby: [list("Home"), list("A"), list("Airport"), list("Home")] };
+  it("keeps everything normally", () => {
+    expect((nearbySection(trip).match(/sight \d+/g) || []).length).toBe(120);
+  });
+  it("compact: each town once, fewer places, few for pass-through stops", () => {
+    const text = nearbySection(trip, true);
+    expect((text.match(/### Home/g) || []).length).toBe(1);
+    expect((text.match(/Airport sight/g) || []).length).toBe(4);
+    expect((text.match(/A sight/g) || []).length).toBe(30);
+    expect(text.length).toBeLessThan(nearbySection(trip).length / 2);
+  });
+});

@@ -6,12 +6,17 @@
 <title>Trip Planner</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Shippori+Mincho:wght@600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+  // Light or dark before the first paint (no flash): the saved choice, else the system setting.
+  (function () { var t = localStorage.getItem("trip-planner-theme"); if (t !== "light" && t !== "dark") t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; document.documentElement.dataset.theme = t; })();
+</script>
 </head>
 <body class="app">
 <header>
-  <div class="brand"><span>●</span> Trip Planner</div>
+  <div class="brand"><span class="logo"><i data-icon="map"></i></span>Trip Planner</div>
   <div class="trip-title" id="tripTitle"></div>
+  <div class="header-tools" id="headerTools"><button class="icon-btn theme-btn" id="themeBtn" type="button"></button></div>
 </header>
 
 <main>
@@ -21,7 +26,7 @@
       <select id="saveList"><option value="">— Saved trips —</option></select>
       <button class="btn" id="loadSave" title="Load the selected trip">Load</button>
       <button class="btn solid" id="saveBtn" title="Save current inputs">Save</button>
-      <button class="btn" id="delSave" title="Delete the selected trip">✕</button>
+      <button class="btn" id="delSave" title="Delete the selected trip"><i data-icon="trash"></i></button>
     </div>
     <div class="counts" id="saveStatus"></div>
 
@@ -32,8 +37,8 @@
     <h2>Places <small id="listMeta"></small></h2>
     <div class="inline">
       <select id="listSelect"><option value="">No place list</option></select>
-      <button class="btn" id="syncList" title="Re-import this list from its source">⟳ Sync</button>
-      <button class="btn" id="delList" title="Remove this list">✕</button>
+      <button class="btn" id="syncList" title="Re-import this list from its source"><i data-icon="refresh"></i> Sync</button>
+      <button class="btn" id="delList" title="Remove this list"><i data-icon="trash"></i></button>
     </div>
     <details class="import">
       <summary>+ Import places</summary>
@@ -47,7 +52,7 @@
         <span class="btn file-btn">Choose CSV<input type="file" id="csvFile" accept=".csv,text/csv"></span></div>
       <div class="counts" id="importStatus"></div>
     </details>
-    <div class="legend">Click a place (here or on the map) once for ★ must-see, again to skip, again to reset. On a must-see, click 👥 to set how many of you want to go; Claude can split the group.</div>
+    <div class="legend">Click a place (here or on the map) once for <i data-icon="star"></i> must-see, again to skip, again to reset. On a must-see, <i data-icon="users"></i> sets how many of you want to go (the planner can split the group) and the route badge sets on the way or from a stay.</div>
     <div class="places-tools"><input id="placeFilter" placeholder="Filter places…"></div>
     <div class="chips" id="chips"></div>
     <div class="counts" id="counts"></div>
@@ -59,14 +64,16 @@
         <select id="currency"></select></div>
       <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
     </div>
-    <div class="row">
+    <div class="row" style="--cols:1">
       <div><label for="pace">Pace</label>
         <select id="pace">
           <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>
           <option value="balanced (3-5 stops per day)">Balanced</option>
           <option value="packed (as much as possible, early starts)">Packed</option>
         </select></div>
-      <div><label for="model">Model <button class="link-btn" id="refreshModels" title="Look for local model servers again">⟳ detect</button><button class="link-btn" id="openKeys" title="Use Claude, GPT and other models with your own API key">🔑 keys</button></label>
+    </div>
+    <div class="row" style="--cols:1">
+      <div><label for="model">Model <span class="label-tools"><button class="link-btn" id="refreshModels" type="button" title="Look for local model servers again"><i data-icon="refresh"></i> Detect</button><button class="link-btn" id="openKeys" type="button" title="Use Claude, GPT and other models with your own API key"><i data-icon="key"></i> API keys</button></span></label>
         <select id="model">
           <option value="default">CLI default</option>
           <option value="opus">Opus</option>
@@ -74,9 +81,9 @@
           <option value="haiku">Haiku (fast)</option>
         </select></div>
     </div>
-    <div class="hint" id="modelHint" style="margin:-4px 0 6px"></div>
+    <div class="hint model-hint" id="modelHint"></div>
     <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
-    <label class="check"><input type="checkbox" id="autoFix"> Fix what the checks find <span class="hint">: after the plan, stops in the wrong town or closed at the planned time go back to the model once</span></label>
+    <label class="check"><input type="checkbox" id="autoFix"> Fix what the checks find <span class="hint">After the plan, stops in the wrong town or closed at the planned time go back to the model once.</span></label>
     <div class="row" style="--cols:1">
       <div><label for="interests">Interests</label><textarea id="interests" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
       <div><label for="notes">Anything else</label><textarea id="notes" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
@@ -111,7 +118,7 @@
 <div class="toast" id="toast" hidden></div>
 
 <dialog id="keysDialog" class="keys-dialog">
-  <form method="dialog" class="keys-close"><button class="btn" title="Close">✕</button></form>
+  <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
   <h2>API keys</h2>
   <p class="hint">Optional: with a key you can plan with cloud models that search the web themselves. You pay the provider per use
     (a long trip with research on a top model can cost a dollar or two; smaller models much less; the cost is shown after each plan where known). Keys are kept in <code>keys.json</code> in the planner folder, only sent to that provider,

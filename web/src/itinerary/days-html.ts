@@ -9,13 +9,14 @@ import { bookLink } from "./book-ahead";
 import { directionsUrl } from "./directions";
 import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
+import { ext, icon } from "../core/icons";
 
 const mapsLink = (x: ItineraryItem, d: Day, byTitle: ByTitle) => byTitle.get(x.place)?.url ||
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${d.city}`)}`;
 
 /** xi is the item's index within its day; it matches the numbered pin on the map. */
 function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByTitle, cur: string) {
-  const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route ↗</a>` : "";
+  const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route${ext()}</a>` : "";
   const links = [dir, bookLink(x, d, di, xi)].filter(Boolean).join(" · ");
   const badge = x.booking === "essential" ? `<span class="book-badge" title="${esc(x.bookAhead ? `Book ${x.bookAhead}` : "Book ahead")}">book ahead</span>` : "";
   return `
@@ -25,7 +26,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         <span class="n">${xi + 1}</span>
         <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
-        <button class="del" data-del="${di}-${xi}" title="Remove this stop">✕</button>
+        <button class="del" data-del="${di}-${xi}" title="Remove this stop">${icon("x")}</button>
       </div>
       ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
       ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${x.transport && links ? " · " : ""}${links}</div>` : ""}
@@ -47,7 +48,7 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
       trackColor[label] ??= Object.keys(trackColor).length % 4;
       const people = rs.find((r) => r.x.people)?.x.people;
       return `<div class="track t${trackColor[label]}">
-        <div class="track-head">${esc(label)}${people ? `<span>👥 ${people}</span>` : ""}</div>
+        <div class="track-head">${esc(label)}${people ? `<span>${icon("users")} ${people}</span>` : ""}</div>
         <ul class="items">${rs.map((r) => item(r.x, r.i)).join("")}</ul>
       </div>`;
     });
@@ -72,9 +73,9 @@ export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: n
       <div class="day-head" data-sel="${i}" title="Show this day on the map">
         <h4><span class="date">${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
-          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)} ${Math.round(w.max)}° / ${Math.round(w.min)}°</span>` : ""}
+          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${Math.round(w.max)}° / ${Math.round(w.min)}°</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
-          <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">↻</button>
+          <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>
       </div>
       <ul class="items">${dayItemsHtml(d, i, byTitle, cur, trackColor)}</ul>
