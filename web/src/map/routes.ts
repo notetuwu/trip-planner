@@ -2,9 +2,11 @@
 import type { Day, ItineraryItem, LatLng, Route, RouteMode } from "../../../shared/types";
 import { api } from "../core/dom";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
-import { distKm } from "../geo/locate";
+import { distKm, stayLoc } from "../geo/locate";
+import { state } from "../core/state";
 import { chosenMode, splitGroup } from "../trip/modes";
 import { setMapStatus } from "./status";
+import { DRIVE_KM, arrivalStay, isTransfer } from "./travel-day";
 
 /** Route key -> route, or null if there is none. */
 export const routes: Record<string, Route | null> = {};
@@ -23,10 +25,10 @@ const RAIL = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|reg
 const ROAD = /\b(bus|coach|taxi|uber|car|drive|driving|shuttle|transfer)\b/i;
 export const FOOT = /\b(walk|walking|on foot|stroll|hike|zu fu)/i;
 
-function legMode(x: ItineraryItem, a: LatLng, b: LatLng): LegMode | null {
+function legMode(x: ItineraryItem, a: LatLng, b: LatLng, dayMode = ""): LegMode | null {
   const t = String(x.transport || ""), km = distKm({ lat: a[0], lng: a[1] }, { lat: b[0], lng: b[1] });
   if (km < 0.03) return null;
-  const m = chosenMode(x);
+  const m = chosenMode(x) || (km > 2 && !FOOT.test(t) ? dayMode : "");
   if (m === "car" || m === "bus") return "car";
   if (m && m !== "bike") return "straight";
   if (RAIL.test(t) && km > 2) return "straight";
@@ -37,14 +39,20 @@ function legMode(x: ItineraryItem, a: LatLng, b: LatLng): LegMode | null {
 
 /** The legs of a day: from each stop to the next one with a location (each split group follows its own path). */
 export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
-  const pts = d.items.map((x, xi) => ({ x, xi, loc: itemLoc(x, d, byTitle) })).filter((p) => p.loc);
+  // Transfers are movements, not places; on a travel day the long legs are the drive between the stays, drawn as one
+  // line with the stays (see travel-day.ts), and other legs follow the mode picked for that drive.
+  const pts = d.items.map((x, xi) => ({ x, xi, loc: isTransfer(x) ? null : itemLoc(x, d, byTitle) })).filter((p) => p.loc);
+  const arrive = arrivalStay(d);
+  const drive = arrive > 0 && !!stayLoc(state.stays[arrive - 1]) && !!stayLoc(state.stays[arrive]);
+  const dayMode = arrive > 0 ? state.stays[arrive].travel || "" : "";
   const groups = [...new Set(d.items.map(splitGroup).filter(Boolean))];
   const paths = groups.length ? groups.map((g) => pts.filter((p) => !splitGroup(p.x) || p.x.group === g)) : [pts];
   const legs = new Map<number, Leg>();
   for (const path of paths) {
     for (let i = 1; i < path.length; i++) {
       const from: LatLng = [path[i - 1].loc!.lat, path[i - 1].loc!.lng], to: LatLng = [path[i].loc!.lat, path[i].loc!.lng];
-      const mode = legMode(path[i].x, from, to);
+      if (drive && distKm({ lat: from[0], lng: from[1] }, { lat: to[0], lng: to[1] }) > DRIVE_KM) continue;
+      const mode = legMode(path[i].x, from, to, dayMode);
       if (mode) legs.set(path[i].xi, { xi: path[i].xi, fromXi: path[i - 1].xi, mode, from, to });
     }
   }

@@ -4,6 +4,7 @@ import type { CloudModel, CloudProvider, LocalModel, ModelsResponse } from "../.
 import { $, api, esc } from "../core/dom";
 import { save, state } from "../core/state";
 import { openKeys } from "./keys";
+import { openLocalGuide } from "./local-guide";
 
 let localModels: LocalModel[] = [], cloudModels: CloudModel[] = [];
 export let lastModels: ModelsResponse | null = null;
@@ -46,11 +47,18 @@ export async function refreshModels() {
   if (sel.value !== state.model) sel.value = "default";
   syncResearch();
   const errors = Object.entries(lastModels?.errors || {}).map(([p, e]) => `${PROVIDER_NAME[p as CloudProvider]}: ${e}`);
-  $("#modelHint").textContent = [
-    localModels.length ? `${localModels.length} local model${localModels.length > 1 ? "s" : ""} found (free, but weaker at long plans).` : "No local model server running.",
+  const hint = $("#modelHint");
+  hint.textContent = [
+    localModels.length ? `${localModels.length} local model${localModels.length > 1 ? "s" : ""} found (free, but weaker at long plans).` : "No local model yet.",
     cloudModels.length ? `${cloudModels.length} API models available.` : "",
     ...errors,
-  ].filter(Boolean).join(" ");
+  ].filter(Boolean).join(" ") + " ";
+  const guide = document.createElement("button");
+  guide.className = "link-btn"; guide.type = "button";
+  guide.textContent = localModels.length ? "Local model guide" : "Set one up";
+  guide.onclick = () => openLocalGuide(async () => { await refreshModels(); return lastModels; });
+  hint.append(guide);
+  return lastModels;
 }
 
 /** Web research is on by default. Claude Code and API models search the web themselves; for local models the

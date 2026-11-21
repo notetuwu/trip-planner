@@ -10,12 +10,13 @@ import { highlightItem } from "./days";
 import { hoverBand, legTip } from "./legs";
 import { itemMarkers, layers } from "./map";
 import { dayLegs, legRoute } from "./routes";
+import { isTransfer } from "./travel-day";
 import { icon } from "../core/icons";
 
 function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
   const color = dayColor(di);
   d.items.forEach((x, xi) => {
-    const loc = itemLoc(x, d, byTitle);
+    const loc = isTransfer(x) ? null : itemLoc(x, d, byTitle);
     if (!loc) return;
     const note = loc.elsewhere ? ` · ${icon("warn")} the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
     const m = L.marker([loc.lat, loc.lng], {

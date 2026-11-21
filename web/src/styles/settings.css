@@ -98,3 +98,18 @@ details.import .inline { margin-bottom: 8px; }
 .update-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; padding: 8px 16px; background: var(--accent-soft); color: var(--ink); border-bottom: 1px solid var(--line); font-size: 13px; }
 .update-bar a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .update-bar .btn { padding: 4px 12px; }
+.guide-dialog { width: min(640px, 94vw); }
+.guide-steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 14px; }
+.guide-steps li { padding-left: 4px; line-height: 1.5; }
+.guide-steps li::marker { font-weight: 700; color: var(--accent); }
+.guide-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.guide-actions a.btn { text-decoration: none; }
+.guide-status { margin-top: 4px; }
+.ok-text { color: var(--ok); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.guide-models { width: 100%; border-collapse: collapse; margin: 10px 0 6px; font-size: 13px; }
+.guide-models td { border-top: 1px solid var(--line); padding: 8px 6px; vertical-align: middle; }
+.guide-models td.num { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.guide-models tr.pick td { background: var(--ok-soft); }
+.guide-models code { font: 600 12.5px ui-monospace, Consolas, monospace; }
+.guide-models .btn.copy { height: 28px; padding: 0 9px; font-size: 12px; }
+.pick-badge { font-size: 11px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 0 7px; margin-left: 4px; }

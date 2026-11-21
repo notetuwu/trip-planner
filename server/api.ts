@@ -1,6 +1,7 @@
 // All /api routes. Used by the production server (main.ts) and mounted into Vite's dev server (vite.config.ts).
 import { cloudModels } from "./ai/cloud-models";
 import { detectLocalModels } from "./ai/local-models";
+import { ensureOllama, gpuInfo, ollamaInstalled } from "./ai/ollama-start";
 import { findClaude } from "./ai/claude-bin";
 import { VERSION, errMsg } from "./config";
 import { geocodeBatch } from "./geo/geocode";
@@ -67,8 +68,13 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       sendJson(res, 202, { warming: warmNearby(Array.isArray(body?.stays) ? body.stays : []) });
     }
     else if (method === "GET" && path === "/api/models") {
+      const ollamaUp = await ensureOllama(); // starts an installed Ollama that isn't running
       const [local, cloud] = await Promise.all([detectLocalModels(), cloudModels()]);
-      sendJson(res, 200, { claude: !!findClaude(), local, cloud: cloud.models, errors: cloud.errors, keys: keyStatus() });
+      sendJson(res, 200, { claude: !!findClaude(), local, cloud: cloud.models, errors: cloud.errors, keys: keyStatus(),
+        ollama: { installed: ollamaInstalled(), running: ollamaUp } });
+    }
+    else if (method === "GET" && path === "/api/gpu") {
+      sendJson(res, 200, await gpuInfo());
     }
     else if (method === "PUT" && path.startsWith("/api/keys/")) {
       const provider = path.slice("/api/keys/".length), body = await readJson(req);

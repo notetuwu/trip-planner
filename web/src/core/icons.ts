@@ -2,7 +2,7 @@
 // Only the icons listed here end up in the bundle.
 import {
   ArrowLeftRight, ArrowUp, ArrowUpRight, BedDouble, Bike, Bus, CalendarDays, Car, Clock, Cloud, CloudDrizzle, CloudFog,
-  CloudLightning, CloudRain, CloudSnow, CloudSun, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
+  Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
   KeyRound, Map, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Ship, Smartphone, Star, Sun,
   Ticket, TrainFront, Trash2, TriangleAlert, Users, X,
 } from "lucide";
@@ -11,7 +11,7 @@ type IconNode = [string, Record<string, string | number | undefined>][];
 
 const ICONS = {
   arrowLeftRight: ArrowLeftRight, arrowUp: ArrowUp, arrowUpRight: ArrowUpRight, bed: BedDouble, bike: Bike, bus: Bus,
-  calendar: CalendarDays, car: Car, clock: Clock, cloud: Cloud, cloudDrizzle: CloudDrizzle, cloudFog: CloudFog,
+  calendar: CalendarDays, car: Car, check: Check, copy: Copy, clock: Clock, cloud: Cloud, cloudDrizzle: CloudDrizzle, cloudFog: CloudFog,
   cloudLightning: CloudLightning, cloudRain: CloudRain, cloudSnow: CloudSnow, cloudSun: CloudSun, dayTrip: CornerDownRight,
   download: Download, external: ExternalLink, file: FileText, walk: Footprints, hotel: Hotel, key: KeyRound, map: Map,
   pin: MapPin, monitor: Monitor, moon: Moon, plane: Plane, plus: Plus, printer: Printer, refresh: RefreshCw, route: Route,

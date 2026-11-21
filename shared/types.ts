@@ -168,7 +168,12 @@ export interface ModelsResponse {
   keys: Record<CloudProvider, KeyStatus>;
   /** Problems listing a provider's models, e.g. a rejected key. */
   errors: Partial<Record<CloudProvider, string>>;
+  /** Whether Ollama is installed on this computer and answering (the planner starts it if it's installed). */
+  ollama: { installed: boolean; running: boolean };
 }
+
+/** GET /api/gpu: the graphics card and its memory, for the local-model guide (null when unknown). */
+export interface GpuInfo { name: string; memGb: number; unified?: boolean }
 
 export interface LocalModel {
   id: string;
