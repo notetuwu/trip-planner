@@ -23,7 +23,7 @@ const EXPORT_CSS = `
 export function offlineHtml() {
   const it = state.itinerary!;
   const content = $("#output").cloneNode(true) as HTMLElement;
-  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .thoughts, .stale", content)) el.remove();
+  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .redo, .thoughts, .stale", content)) el.remove();
   // The export has no script to fill directions links on click, so fill them in now.
   for (const a of $$<HTMLAnchorElement>("a[data-dir]", content)) {
     const [di, xi] = a.dataset.dir!.split("-").map(Number), url = directionsUrl(di, xi);

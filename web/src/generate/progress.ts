@@ -11,13 +11,13 @@ export interface ProgressView {
   stop(): void;
 }
 
-export function showProgress(o: { who: string; revising: boolean; local: boolean; expectedDays: number; onCancel(): void }): ProgressView {
+export function showProgress(o: { who: string; doing: string; local: boolean; expectedDays: number; onCancel(): void }): ProgressView {
   // Built once and then updated in place, so an opened reasoning panel stays open.
   const out = $("#output");
   out.innerHTML = `
     <div class="empty loading">
       <div class="sun"></div>
-      ${esc(o.who)} is ${o.revising ? "revising" : "planning"} your trip… <span data-gen-time>0s</span>
+      ${esc(o.who)} is ${esc(o.doing)}… <span data-gen-time>0s</span>
       <small data-gen-status>${o.local ? "Loading the model…" : "Starting…"}</small>
       <small data-gen-tokens class="gen-tokens"></small>
       <div class="gen-bar"><i data-gen-bar></i></div>

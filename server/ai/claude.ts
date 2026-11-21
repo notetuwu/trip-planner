@@ -55,11 +55,11 @@ export const runClaude: Runner = (trip, places, onEvent, abort) => new Promise<R
     const [model, stats] = usage || ["Claude", {}];
     resolve({
       itinerary, reasoning: reasoning.trim(), costUsd: result.total_cost_usd, durationMs: result.duration_ms,
-      engine: `${model} via Claude Code`, tokens: stats.outputTokens || doneTokens,
+      engine: `${model} via Claude Code`, tokens: stats.outputTokens || doneTokens, billing: "plan",
     });
   });
 
-  const prompt = buildPrompt(trip, places);
+  const prompt = buildPrompt(trip, places, { webTools: true });
   onEvent({
     type: "prompt", label: "Prompt",
     info: `Sent to the Claude Code CLI (claude -p) · model: ${trip.model && trip.model !== "default" ? trip.model : "CLI default"} · tools: ${trip.research ? "WebSearch, WebFetch" : "none"} · `

@@ -65,7 +65,7 @@
           <option value="balanced (3-5 stops per day)">Balanced</option>
           <option value="packed (as much as possible, early starts)">Packed</option>
         </select></div>
-      <div><label for="model">Model <button class="link-btn" id="refreshModels" title="Look for local model servers again">⟳ detect</button></label>
+      <div><label for="model">Model <button class="link-btn" id="refreshModels" title="Look for local model servers again">⟳ detect</button><button class="link-btn" id="openKeys" title="Use Claude, GPT and other models with your own API key">🔑 keys</button></label>
         <select id="model">
           <option value="default">CLI default</option>
           <option value="opus">Opus</option>
@@ -107,6 +107,16 @@
 </main>
 
 <div class="toast" id="toast" hidden></div>
+
+<dialog id="keysDialog" class="keys-dialog">
+  <form method="dialog" class="keys-close"><button class="btn" title="Close">✕</button></form>
+  <h2>API keys</h2>
+  <p class="hint">Optional: with a key you can plan with cloud models that search the web themselves. You pay the provider per use
+    (a long trip with research on a top model can cost a dollar or two; smaller models much less; the cost is shown after each plan where known). Keys are kept in <code>keys.json</code> in the planner folder, only sent to that provider,
+    and never included in saves or exports.</p>
+  <div id="keyRows"></div>
+  <div class="counts" id="keyStatus"></div>
+</dialog>
 
 <script type="module" src="/web/src/main.ts"></script>
 </body>

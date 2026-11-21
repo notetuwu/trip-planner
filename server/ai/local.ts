@@ -32,7 +32,7 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
     onEvent({ type: "status", text: "Planning the itinerary…" });
   }
 
-  const prompt = buildPrompt({ ...trip, researchNotes: research?.notes }, places, { local: true });
+  const prompt = buildPrompt({ ...trip, researchNotes: research?.notes }, places, { notes: "json", schema: true });
   if (kind === "ollama") await planWithOllama({ base, model, prompt, trip, abort, onEvent, output });
   else await planWithOpenAi({ base, model, prompt, abort, onEvent, output });
 
@@ -55,6 +55,6 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
   }
   return {
     itinerary, reasoning, thinking: out.thinking.trim().slice(0, 20000), durationMs: Date.now() - t0,
-    tokens: out.tokens, perSec: out.perSec, engine: `${model} (${serverName(kind, base)})`,
+    tokens: out.tokens, perSec: out.perSec, engine: `${model} (${serverName(kind, base)})`, billing: "local",
   };
 };

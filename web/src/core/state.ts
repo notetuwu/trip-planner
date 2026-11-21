@@ -28,6 +28,8 @@ export interface Meta {
   perSec?: number;
   engine?: string;
   local?: boolean;
+  billing?: "plan" | "api" | "local";
+  searches?: number;
   budget?: number;
   currency?: string;
   at?: string;
@@ -54,6 +56,8 @@ export interface AppState {
   itinerary: Itinerary | null;
   meta: Meta | null;
   research?: boolean;
+  /** Things to book that the travelers ticked off, by "date|place". */
+  booked?: Record<string, boolean>;
 }
 
 const STORE_KEY = "trip-planner-v2";

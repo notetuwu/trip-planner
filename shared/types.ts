@@ -1,4 +1,6 @@
 // Types shared by the server and the browser app.
+export type * from "./geo";
+import type { Poi } from "./geo";
 
 export interface Place {
   title: string;
@@ -64,6 +66,11 @@ export interface ItineraryItem {
   lng?: number;
   group?: string;
   people?: number;
+  kind?: "sight" | "activity" | "meal" | "transfer" | "other";
+  /** For places with tickets, tours or reservations: how much booking ahead matters. */
+  booking?: "essential" | "recommended" | "optional";
+  /** How far ahead to book, e.g. "2-3 weeks before". */
+  bookAhead?: string;
 }
 
 export interface Day {
@@ -113,51 +120,35 @@ export interface TripRequest {
   mustSeeWho: Record<string, number>;
   skip: string[];
   revise?: { itinerary: Itinerary; request: string };
+  /** Re-plan one day (index into itinerary.days), keeping the rest. */
+  redoDay?: { itinerary: Itinerary; day: number; request: string };
 }
 
-export interface GeoHit {
-  lat: number;
-  lng: number;
+export type CloudProvider = "anthropic" | "openai" | "openrouter";
+
+/** A model reached with an API key; id is "api|<provider>|<model>". */
+export interface CloudModel {
+  id: string;
   name: string;
-  label: string;
-  country: string;
-  cc: string;
-  kind: string;
+  provider: CloudProvider;
 }
 
-export interface ReverseHit {
-  name: string;
-  label: string;
-  options: { name: string; level: "place" | "area" | "town" }[];
-  short: string;
-  city: string;
-  cc: string;
+export interface KeyStatus {
+  set: boolean;
+  /** "env" when it comes from an environment variable (or .env), "file" when saved from the page. */
+  source: "env" | "file" | "";
+  /** The key's last characters, to tell keys apart. */
+  hint: string;
 }
 
-export interface GeoQuery {
-  q: string;
-  cc?: string;
-  near?: [number, number];
-  /** Jump ahead of the saved-places backlog. */
-  first?: boolean;
-}
-
-export type LatLng = [number, number];
-
-/** A routed leg: distance (m), duration (s) and the path as [lat, lng] pairs. */
-export interface Route {
-  d: number;
-  t: number;
-  c: LatLng[];
-}
-
-export type RouteMode = "foot" | "car";
-
-export interface Poi {
-  name: string;
-  lat: number;
-  lng: number;
-  city?: string;
+/** GET /api/models */
+export interface ModelsResponse {
+  claude: boolean;
+  local: LocalModel[];
+  cloud: CloudModel[];
+  keys: Record<CloudProvider, KeyStatus>;
+  /** Problems listing a provider's models, e.g. a rejected key. */
+  errors: Partial<Record<CloudProvider, string>>;
 }
 
 export interface LocalModel {
@@ -176,6 +167,9 @@ export interface RunResult {
   tokens?: number;
   perSec?: number;
   engine: string;
+  /** How the run is paid for: Claude subscription, an API key, or free on this computer. */
+  billing?: "plan" | "api" | "local";
+  searches?: number;
 }
 
 /** One line of the NDJSON stream from POST /api/itinerary. */

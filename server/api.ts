@@ -1,4 +1,5 @@
 // All /api routes. Used by the production server (main.ts) and mounted into Vite's dev server (vite.config.ts).
+import { cloudModels } from "./ai/cloud-models";
 import { detectLocalModels } from "./ai/local-models";
 import { findClaude } from "./ai/claude-bin";
 import { errMsg } from "./config";
@@ -6,14 +7,18 @@ import { geocodeBatch } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
+import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
+import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
+import { refuse } from "./util/guard";
 import { type Req, type Res, readJson, sendJson } from "./util/http";
 
 /** Runs once when the server starts. */
 export function startup() {
+  loadEnvFile();
   adoptCsvFiles();
   console.log(`Place lists: ${listSummaries().map((l) => `${l.name} (${l.count})`).join(", ") || "none yet"}`);
   console.log(`Claude CLI: ${findClaude() || "NOT FOUND (set CLAUDE_BIN)"}`);
@@ -24,6 +29,8 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
   const url = new URL(req.url || "/", `http://${req.headers.host}`);
   if (!url.pathname.startsWith("/api/")) return false;
   const { method } = req, path = url.pathname;
+  const refused = refuse(req);
+  if (refused) { sendJson(res, 403, { error: refused }); return true; }
   try {
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
@@ -42,7 +49,19 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const body = await readJson(req);
       sendJson(res, 202, { warming: warmNearby(Array.isArray(body?.stays) ? body.stays : []) });
     }
-    else if (method === "GET" && path === "/api/models") sendJson(res, 200, { claude: !!findClaude(), local: await detectLocalModels() });
+    else if (method === "GET" && path === "/api/models") {
+      const [local, cloud] = await Promise.all([detectLocalModels(), cloudModels()]);
+      sendJson(res, 200, { claude: !!findClaude(), local, cloud: cloud.models, errors: cloud.errors, keys: keyStatus() });
+    }
+    else if (method === "PUT" && path.startsWith("/api/keys/")) {
+      const provider = path.slice("/api/keys/".length), body = await readJson(req);
+      if (!isProvider(provider)) sendJson(res, 404, { error: "Unknown provider" });
+      else { setKey(provider, String(body?.key || "")); sendJson(res, 200, keyStatus()); }
+    }
+    else if (method === "POST" && path === "/api/hours") {
+      const body = await readJson(req);
+      sendJson(res, 200, (Array.isArray(body?.checks) ? body.checks : []).slice(0, 500).map(checkHours));
+    }
     else if (method === "GET" && path === "/api/search") {
       const q = (url.searchParams.get("q") || "").trim();
       const num = (k: string) => (url.searchParams.has(k) ? +url.searchParams.get(k)! : NaN);

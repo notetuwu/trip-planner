@@ -4,7 +4,7 @@ import type { TripStay } from "../../shared/types";
 import { errMsg, sleep } from "../config";
 import { type OsmElement, nearbyElements, pool } from "./overpass";
 
-export interface NearbyPlace { name: string; kind: string; extras: string[]; lat: number; lng: number }
+export interface NearbyPlace { name: string; kind: string; extras: string[]; lat: number; lng: number; hours?: string }
 export interface NearbyList { city: string; sights: NearbyPlace[]; food: NearbyPlace[] }
 
 const FOOD = ["restaurant", "cafe", "biergarten", "ice_cream", "fast_food", "bar", "pub"];
@@ -28,7 +28,10 @@ function rankNearby(elements: OsmElement[], interests: string) {
     let score = (t.wikidata || t.wikipedia ? 4 : 0) + (t.website ? 1 : 0) + (t.opening_hours ? 1 : 0);
     if (isFood) score += (t.amenity === "restaurant" || t.amenity === "cafe" ? 1 : 0) + (extras.some((x) => /options|fully/.test(x)) ? 5 : 0);
     else score += ["museum", "castle", "palace", "attraction", "zoo", "aquarium"].includes(kind) ? 2 : 0;
-    (isFood ? food : sights).push({ name: t.name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score });
+    (isFood ? food : sights).push({
+      name: t.name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score,
+      ...(t.opening_hours ? { hours: String(t.opening_hours).slice(0, 120) } : {}),
+    });
   }
   const top = (arr: typeof sights, n: number) => arr.sort((a, b) => b.score - a.score).slice(0, n).map(({ score: _, ...p }) => p);
   return { sights: top(sights, 30), food: top(food, 30) };

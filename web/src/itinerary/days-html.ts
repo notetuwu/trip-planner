@@ -5,6 +5,7 @@ import { dayColor, fmtDate, money } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { splitGroup } from "../trip/modes";
+import { bookLink } from "./book-ahead";
 import { directionsUrl } from "./directions";
 import { wmoIcon } from "./weather";
 
@@ -14,19 +15,22 @@ const mapsLink = (x: ItineraryItem, d: Day, byTitle: ByTitle) => byTitle.get(x.p
 /** xi is the item's index within its day; it matches the numbered pin on the map. */
 function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByTitle, cur: string) {
   const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route ↗</a>` : "";
+  const links = [dir, bookLink(x, d)].filter(Boolean).join(" · ");
+  const badge = x.booking === "essential" ? `<span class="book-badge" title="${esc(x.bookAhead ? `Book ${x.bookAhead}` : "Book ahead")}">book ahead</span>` : "";
   return `
     <li class="item ${x.fromList || byTitle.has(x.place) ? "listed" : ""}" data-k="${di}-${xi}">
       <div class="item-top">
         <time>${esc(x.time)}</time>
         <span class="n">${xi + 1}</span>
-        <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a></span>
+        <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
         <button class="del" data-del="${di}-${xi}" title="Remove this stop">✕</button>
       </div>
       ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
-      ${x.transport || dir ? `<div class="transport">${esc(x.transport || "")}${x.transport && dir ? " · " : ""}${dir}</div>` : ""}
+      ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${x.transport && links ? " · " : ""}${links}</div>` : ""}
       <div class="leg" data-leg="${di}-${xi}"></div>
       <div class="far-warn" data-far="${di}-${xi}" hidden></div>
+      <div class="far-warn" data-hours="${di}-${xi}" hidden></div>
     </li>`;
 }
 
@@ -69,6 +73,7 @@ export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: n
         <span class="right">
           ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)} ${Math.round(w.max)}° / ${Math.round(w.min)}°</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
+          <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">↻</button>
         </span>
       </div>
       <ul class="items">${dayItemsHtml(d, i, byTitle, cur, trackColor)}</ul>
@@ -91,8 +96,11 @@ export function extrasHtml(it: Itinerary) {
   }
   const meta = state.meta || {};
   const tokenStats = meta.tokens ? ` · ${meta.tokens.toLocaleString()} tokens${meta.perSec ? ` at ${Math.round(meta.perSec)} tok/s` : ""}` : "";
-  if (meta.durationMs) html += `<p class="counts gen-meta" style="margin-top:20px">Generated in ${Math.round(meta.durationMs / 1000)}s${tokenStats} ${meta.local
-    ? `by ${esc(meta.engine)}, running on this computer (free)`
+  const billing = meta.billing || (meta.local ? "local" : "plan");
+  const searches = meta.searches ? ` · ${meta.searches} web searches` : "";
+  if (meta.durationMs) html += `<p class="counts gen-meta" style="margin-top:20px">Generated in ${Math.round(meta.durationMs / 1000)}s${tokenStats}${searches} ${
+    billing === "local" ? `by ${esc(meta.engine)}, running on this computer (free)`
+    : billing === "api" ? `by ${esc(meta.engine)}, billed to your API key${meta.costUsd != null ? ` (about $${meta.costUsd.toFixed(2)})` : ""}`
     : `${meta.engine ? `by ${esc(meta.engine)}` : "via Claude Code"} (counts toward your Claude plan usage, no API charges)`}</p>`;
   return html;
 }

@@ -7,21 +7,36 @@ import type { Trip } from "./types";
 /** How many stops a day should have at each pace (meals come on top). */
 const STOPS_PER_DAY = { relaxed: "3-4", balanced: "4-6", packed: "6-8" };
 
-export function buildPrompt(trip: Trip, places: Place[], { local = false } = {}) {
-  const research = !local && trip.research;
+export interface PromptOptions {
+  /** "text": planning notes as plain text before the itinerary; "json": in a planningNotes field (JSON-only answers). */
+  notes?: "text" | "json";
+  /** The model can search the web itself while planning (used when the trip asks for research). */
+  webTools?: boolean;
+  /** The itinerary goes into this tool call instead of a structured answer. */
+  outputTool?: string;
+  /** Append the JSON schema, for servers that may not enforce it. */
+  schema?: boolean;
+}
+
+export function buildPrompt(trip: Trip, places: Place[], opts: PromptOptions = {}) {
+  const json = opts.notes === "json";
+  const research = !!opts.webTools && !!trip.research;
   const holidays = holidayLines(trip);
   const nearby = nearbySection(trip);
   const pace = (Object.keys(STOPS_PER_DAY) as (keyof typeof STOPS_PER_DAY)[]).find((k) => String(trip.pace).startsWith(k)) || "balanced";
+  const giveBack = opts.outputTool
+    ? ` Then call the \`${opts.outputTool}\` tool with the complete itinerary (never write the itinerary itself as text).`
+    : " Then return the itinerary.";
 
   let prompt = `You are an expert local travel planner building a detailed, realistic day-by-day itinerary. Work out the destination country or countries from the stays and the saved places.
 
 ${research
   ? `Research online while you plan, using web search and web fetch: opening hours and closing days on the actual dates, current ticket prices, festivals and events during the trip, transport options, times and prices between the cities, and anything else that is date-dependent or uncertain. Prefer official websites. Focus on the must-sees, day trips and transfers rather than looking up every café; about 10-25 searches is plenty. Where you could not verify something, say so in the item's description.`
-  : `Use your own knowledge of the destination (geography, opening days, holidays, transit, typical prices, local customs).${local ? "" : " Do not use tools; just answer."}`}
+  : `Use your own knowledge of the destination (geography, opening days, holidays, transit, typical prices, local customs).${!json && !opts.outputTool ? " Do not use tools; just answer." : ""}`}
 
-${local
-  ? `If you think before answering, keep it brief (a few short paragraphs): most of your effort belongs in the itinerary itself. Answer with one JSON object only, matching the schema at the end. Start with "planningNotes": notes for the travelers`
-  : `${research ? "When your research is done, and right before" : "Before"} returning the itinerary, write your planning notes as plain text in your reply (not inside the itinerary; its "summary" is just a 2-4 sentence overview) for the travelers`} (they can expand them to see how you approached the plan): how you split the days between cities and day trips, where the must-sees went and why, what the holidays and events mean for the plan, budget trade-offs, and anything you had to compromise on or leave out. Use short paragraphs or "- " bullets (one bullet per line), under 250 words.${local ? "" : " Then return the itinerary."}
+${json
+  ? `If you think before answering, keep it brief (a few short paragraphs): most of your effort belongs in the itinerary itself. Answer with one JSON object only, matching the schema${opts.schema ? " at the end" : ""}. Start with "planningNotes": notes for the travelers`
+  : `${research ? "When your research is done, and right before" : "Before"} returning the itinerary, write your planning notes as plain text in your reply (not inside the itinerary; its "summary" is just a 2-4 sentence overview) for the travelers`} (they can expand them to see how you approached the plan): how you split the days between cities and day trips, where the must-sees went and why, what the holidays and events mean for the plan, budget trade-offs, and anything you had to compromise on or leave out. Use short paragraphs or "- " bullets (one bullet per line), under 250 words.${json ? "" : giveBack}
 
 ## Stays (in order)
 ${stayLines(trip)}
@@ -55,6 +70,9 @@ ${nearby}
 - "transport": how to get there from the previous stop, with mode or line and minutes, e.g. "Tram 1 from Hauptbahnhof, 12 min" or "Walk, 5 min".
 - "cost": on every item, for the whole group (0 if free): tickets, meals, fares. The day's "estimatedCost" is the sum of its item costs. Don't pad days to reach the budget.
 - "description": what to do there and why it's worth it, with practical details (opening hours, whether to book ahead, best time to go, what to order).
+- "kind" on every item: sight, activity, meal, transfer or other.
+- "booking" on anything with paid tickets, tours, timed entry or table reservations (omit it for free places): "essential" when it sells out or needs a timed slot, "recommended" when booking online saves queueing or money, "optional" when tickets are easy to get on the spot. With essential or recommended, "bookAhead" says how far ahead, e.g. "2-3 weeks before" or "the day before".
+- Where a place lists its opening hours ("hours …", OpenStreetMap syntax), schedule it while it's open on that weekday.
 - "notes" on the day: anything that affects it, such as holidays, closures (e.g. museums closed on Mondays), markets, festivals, weather and season, bookings to make ahead, or the day going over budget.
 - On travel days between cities, the transfer is its own item with departure time, duration, operator or route and price. Name it "<from> → <to> (<mode>)", e.g. "Padua → Milan (car)". Plan around check-out (about 10:00) and check-in (about 15:00).${hasChosenModes(trip) ? `
 - Where the stays above say how the travelers get somewhere ("chosen by the travelers"), use exactly that mode; don't swap it for another. By car: the route and main roads, driving time, distance, tolls or vignettes, fuel and parking costs, and a worthwhile stop on the way if there is one. By train or bus: a real connection with operator, departure time, duration and fare, and whether to book ahead. Day trips with a chosen mode are their own outbound and return items ("Milan → Rome (train)", later "Rome → Milan (train)").` : ""}
@@ -86,7 +104,25 @@ ${trip.revise.request}
 
 Apply the requested changes to the current itinerary and return the complete updated itinerary. Keep everything the request doesn't touch as it is. Your planning notes should explain what you changed and why.`;
   }
+  if (trip.redoDay) prompt += redoSection(trip.redoDay);
   // Servers without schema enforcement only have the prompt to go on.
-  if (local) prompt += `\n\n## JSON schema\n${JSON.stringify(LOCAL_SCHEMA)}`;
+  if (opts.schema) prompt += `\n\n## JSON schema\n${JSON.stringify(LOCAL_SCHEMA)}`;
   return prompt;
+}
+
+/** Re-plan one day: the other days as context (names only, to keep it short), the day in full, and what to return. */
+function redoSection({ itinerary, day, request }: NonNullable<Trip["redoDay"]>) {
+  const d = itinerary.days[day];
+  const others = itinerary.days.map((x, i) => (i === day ? `${x.date} ${x.city}: (this day)` : `${x.date} ${x.city}: ${x.items.map((it) => it.place).join("; ")}`)).join("\n");
+  return `
+
+## The rest of the trip (already planned, keep as is)
+${others}
+
+## Day to re-plan
+${JSON.stringify(d)}
+
+## Re-plan only this day
+Re-plan ${d.date} (${d.city}). ${request ? `The travelers ask: ${request}` : "Give it a fresh plan with different choices where sensible."}
+Keep it consistent with the other days: don't repeat places they visit on another day, and keep where they sleep and any transfer that happens on this day. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only this one day, dated ${d.date}. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly explain the new plan for the day.`;
 }

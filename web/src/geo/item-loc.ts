@@ -52,7 +52,7 @@ const nearOf = (home: Loc): [number, number] => [home.lat, home.lng];
 const normName = (s: string) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s*\([^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 let poiIndex = new Map<string, Poi[]>(), poiIndexOf: Poi[] | undefined;
 /** Several stays can have a place of the same name; with a day given, the one nearest that day wins. */
-function poiFor(name: string, day?: Day): Poi | null {
+export function poiFor(name: string, day?: Day): Poi | null {
   const pois = state.meta?.pois;
   if (pois !== poiIndexOf) {
     poiIndexOf = pois; poiIndex = new Map();

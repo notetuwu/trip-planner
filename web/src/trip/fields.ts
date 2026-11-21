@@ -21,6 +21,7 @@ export function initFields() {
   for (const f of FIELDS) {
     const el = input(f);
     el.addEventListener("input", () => {
+      if (f === "model" && el.value.startsWith("__")) return; // menu actions such as "Add API keys…", not models
       (state as unknown as Record<Field, string | number>)[f] = el.type === "number" ? +el.value : el.value;
       save();
       if (f === "travelers") { renderChips(); renderTripTitle(); }

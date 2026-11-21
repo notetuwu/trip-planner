@@ -2,6 +2,7 @@
 saves/
 lists/
 cache/
+keys.json
 *.csv
 
 # Old versions and local clutter

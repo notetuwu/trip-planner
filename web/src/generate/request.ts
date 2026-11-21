@@ -1,10 +1,13 @@
 // The trip as sent to POST /api/itinerary.
-import type { Itinerary, TripRequest } from "../../../shared/types";
+import type { TripRequest } from "../../../shared/types";
 import { groupSize, state, whoFor } from "../core/state";
 import { stayLoc } from "../geo/locate";
 import { fieldValues } from "../trip/fields";
 
-export function tripRequest(revise?: { itinerary: Itinerary; request: string }): TripRequest {
+/** What to change: a revision of the whole plan, or a fresh plan for one day. */
+export type Change = Pick<TripRequest, "revise" | "redoDay">;
+
+export function tripRequest(change: Change = {}): TripRequest {
   const marked = (m: string) => Object.keys(state.marks).filter((t) => state.marks[t] === m);
   return {
     ...fieldValues(),
@@ -18,6 +21,6 @@ export function tripRequest(revise?: { itinerary: Itinerary; request: string }):
     mustSee: marked("must"),
     mustSeeWho: Object.fromEntries(marked("must").filter((t) => whoFor(t) < groupSize()).map((t) => [t, whoFor(t)])),
     skip: marked("skip"),
-    revise,
+    ...change,
   };
 }

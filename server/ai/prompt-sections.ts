@@ -45,7 +45,7 @@ export function holidayLines(trip: Trip) {
   ).join("\n");
 }
 
-const poiLine = (p: NearbyPlace) => `- ${p.name} (${[p.kind, ...p.extras].join("; ")}) {location ${p.lat},${p.lng}}`;
+const poiLine = (p: NearbyPlace) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.hours ? [`hours ${p.hours}`] : [])].join("; ")}) {location ${p.lat},${p.lng}}`;
 
 export function nearbySection(trip: Trip) {
   return (trip.nearby || []).filter((n) => n.sights.length || n.food.length)

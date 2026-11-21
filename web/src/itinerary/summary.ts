@@ -4,6 +4,7 @@ import { esc } from "../core/dom";
 import { dayColor, fmtDate, fmtShort, money } from "../core/format";
 import { state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
+import { bookAheadHtml } from "./book-ahead";
 import { promptHtml, thoughtsHtml } from "./panels";
 
 /** The stays have changed since this itinerary was made (e.g. a new trip typed over an old one). */
@@ -34,6 +35,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
     ${meta.reasoning || meta.thinking || meta.lookups?.length ? thoughtsHtml(meta.reasoning, { thinking: meta.thinking, lookups: meta.lookups || [] }) : ""}
     ${meta.prompt?.length ? promptHtml(meta.prompt) : ""}
     ${eventsHtml(it)}
+    ${bookAheadHtml(it)}
     <div class="stats">
       <div class="stat"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total</span></div>
       <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day (budget ${money(budget, cur)})</span></div>
@@ -46,6 +48,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
     </div>
     <div class="toolbar">
       <button data-tool="phone" title="One self-contained file that works offline on your phone">📱 Download for phone</button>
+      <button data-tool="ics" title="Every stop as an event, for your phone's calendar">📅 Calendar (.ics)</button>
       <button data-tool="print">Print / PDF</button>
       <button data-tool="json">Download JSON</button>
       <button data-tool="clear">Clear itinerary</button>

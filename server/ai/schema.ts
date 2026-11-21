@@ -35,6 +35,12 @@ export const ITINERARY_SCHEMA = {
                 lng: { type: "number", description: "Longitude of the place, best estimate" },
                 group: { type: "string", description: "Only while the travelers split up: short label of the subgroup doing this, e.g. 'Group A'. Omit when everyone is together." },
                 people: { type: "number", description: "How many travelers are in that subgroup. Omit when everyone is together." },
+                kind: { type: "string", enum: ["sight", "activity", "meal", "transfer", "other"] },
+                booking: {
+                  type: "string", enum: ["essential", "recommended", "optional"],
+                  description: "Only for paid tickets, tours, timed entry or table reservations: essential = sells out or needs a slot, recommended = booking online saves queues or money, optional = easy on the spot",
+                },
+                bookAhead: { type: "string", description: "With essential/recommended booking: how far ahead, e.g. '2-3 weeks before'" },
               },
             },
           },

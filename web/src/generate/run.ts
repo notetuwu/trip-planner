@@ -1,15 +1,15 @@
-// Generate or revise: sends the trip, reads the server's NDJSON stream, and shows the finished itinerary.
+// Generate, revise or re-plan one day: sends the trip, reads the server's NDJSON stream, and shows the result.
 import type { Itinerary, RunResult, StreamEvent } from "../../../shared/types";
 import { $, apiFetch } from "../core/dom";
-import { save, session, state } from "../core/state";
+import { type Meta, save, session, state } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
 import { renderItinerary } from "../itinerary/render";
 import { loadWeather } from "../itinerary/weather";
 import { drawMap } from "../map/draw";
 import { renderTripTitle } from "../trip/title";
 import { isLocal, modelLabel } from "./models";
-import { showProgress } from "./progress";
-import { tripRequest } from "./request";
+import { type ProgressView, showProgress } from "./progress";
+import { type Change, tripRequest } from "./request";
 
 /** Reads one JSON object per line; returns the final "done" event. */
 async function readStream(res: Response, onEvent: (ev: StreamEvent) => void): Promise<RunResult | null> {
@@ -31,14 +31,30 @@ async function readStream(res: Response, onEvent: (ev: StreamEvent) => void): Pr
   }
 }
 
-export async function runGeneration(revise?: { itinerary: Itinerary; request: string }) {
+/** Swaps the re-planned day into the current itinerary and adds its notes to the reasoning. */
+function spliceDay(current: Itinerary, day: number, data: RunResult, view: ProgressView) {
+  const old = current.days[day], fresh = data.itinerary.days[0];
+  if (!fresh) throw new Error("The model didn't return the day.");
+  current.days[day] = { ...fresh, date: old.date };
+  current.totalEstimatedCost = current.days.reduce((n, d) => n + (Number(d.estimatedCost) || 0), 0);
+  const meta = state.meta || {};
+  const notes = data.reasoning ? `\n\n**Re-planned ${old.date}${data.itinerary.summary ? `:** ${data.itinerary.summary}` : ":**"}\n\n${data.reasoning}` : "";
+  state.meta = { ...meta, reasoning: (meta.reasoning || "") + notes, pois: [...(meta.pois || []), ...view.collected.pois] };
+}
+
+let running = false;
+
+export async function runGeneration(change: Change = {}) {
+  if (running) return;
   const btn = $<HTMLButtonElement>("#generate");
-  const trip = tripRequest(revise);
-  btn.disabled = true;
+  const trip = tripRequest(change);
+  const redo = change.redoDay;
+  running = true; btn.disabled = true;
   const abort = new AbortController();
   const view = showProgress({
-    who: modelLabel(state.model), revising: !!revise, local: isLocal(state.model), onCancel: () => abort.abort(),
-    expectedDays: revise ? revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
+    who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),
+    doing: redo ? `re-planning ${redo.itinerary.days[redo.day]?.date}` : change.revise ? "revising your trip" : "planning your trip",
+    expectedDays: redo ? 1 : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
   });
   try {
     const res = await apiFetch("/api/itinerary", {
@@ -47,18 +63,23 @@ export async function runGeneration(revise?: { itinerary: Itinerary; request: st
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
     const data = await readStream(res, view.onEvent);
     if (!data) throw new Error("The server stopped before the plan was finished.");
-    state.itinerary = data.itinerary;
-    state.meta = {
-      costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, ...view.collected,
-      tokens: data.tokens, perSec: data.perSec, engine: data.engine, local: isLocal(trip.model),
-      budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(),
-    };
-    session.selectedDay = null; session.weather = {};
+    if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
+    else {
+      state.itinerary = data.itinerary;
+      const meta: Meta = {
+        costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, ...view.collected,
+        tokens: data.tokens, perSec: data.perSec, engine: data.engine, local: isLocal(trip.model), billing: data.billing,
+        searches: data.searches, budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(),
+      };
+      state.meta = meta;
+      session.selectedDay = null;
+    }
+    session.weather = {};
     save();
-    renderItinerary(); renderTripTitle(); drawMap({ fit: true }); geocodeItems(); loadWeather();
+    renderItinerary(); renderTripTitle(); drawMap({ fit: !redo }); geocodeItems(); loadWeather();
   } catch (err) {
     renderItinerary((err as Error).name === "AbortError" ? "Cancelled." : (err as Error).message);
   } finally {
-    view.stop(); btn.disabled = false;
+    view.stop(); btn.disabled = false; running = false;
   }
 }

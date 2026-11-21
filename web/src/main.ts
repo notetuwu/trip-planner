@@ -31,7 +31,8 @@ onGeocoded(() => {
   renderStays(); renderTripTitle(); drawMap(); renderChips();
   geocodeStays();
   const cc = countryCodes();
-  if (cc && cc !== lastCountries) { lastCountries = cc; geocodePlaces(); loadWeather(); }
+  // Booking links depend on the countries (Klook vs GetYourGuide), so the itinerary is redrawn once they're known.
+  if (cc && cc !== lastCountries) { lastCountries = cc; geocodePlaces(); loadWeather(); renderItinerary(); }
   geocodeItems(); // asks only for stops not looked up yet, e.g. once their day's town is known
   warmNearby();
 });

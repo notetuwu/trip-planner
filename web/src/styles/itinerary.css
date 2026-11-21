@@ -56,3 +56,17 @@ label.check.off { opacity: .5; }
 .toolbar button:hover { border-color: var(--accent); color: var(--accent); }
 .refine { margin-top: 14px; display: flex; gap: 8px; align-items: flex-end; }
 .refine textarea { min-height: 40px; height: 40px; }
+.book-ahead { margin: 14px 0 4px; }
+.book-ahead summary { cursor: pointer; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.book-ahead summary h2 { margin: 0; display: inline; }
+.book-ahead ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.book-ahead li { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
+.book-ahead li.essential { border-left: 3px solid var(--accent); }
+.book-ahead label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; margin: 0; font-size: 13px; color: var(--ink); min-width: 0; }
+.book-ahead label input { width: auto; flex: none; margin: 0; accent-color: var(--accent); }
+.book-ahead label .ev-date { color: var(--accent); font-weight: 600; font-size: 12px; min-width: 84px; }
+.book-ahead input:checked ~ b { text-decoration: line-through; color: var(--muted); }
+.book-ahead .when { color: var(--muted); font-size: 12px; }
+.book-ahead a { color: var(--accent); font-weight: 600; text-decoration: none; white-space: nowrap; }
+@media (max-width: 640px) { .book-ahead li { grid-template-columns: 1fr; } }
+@media print { .redo, .book-ahead input { display: none; } }

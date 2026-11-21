@@ -66,3 +66,11 @@ details.import .inline { margin-bottom: 8px; }
 .chip .who:hover { opacity: 1; }
 .chip .who.part { opacity: 1; background: var(--ok); color: var(--panel); border-color: var(--ok); }
 .counts { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.keys-dialog { width: min(520px, 92vw); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: var(--panel); color: var(--ink); }
+.keys-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.keys-dialog h2 { margin-top: 0; }
+.keys-close { float: right; margin: 0; }
+.key-row { border-top: 1px solid var(--line); padding: 10px 0; display: grid; gap: 6px; }
+.key-head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.key-head .link-btn { margin-left: auto; text-decoration: none; }
+label .link-btn + .link-btn { margin-left: 8px; }

@@ -62,3 +62,8 @@
   .panel { box-shadow: none; border: 0; }
   .day { break-inside: avoid; }
 }
+.redo { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 2px; line-height: 1; }
+.redo:hover { color: var(--accent); }
+.item .book { color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+.item .book:hover { text-decoration: underline; }
+.book-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
