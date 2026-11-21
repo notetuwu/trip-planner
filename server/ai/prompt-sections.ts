@@ -3,6 +3,7 @@ import type { Place } from "../../shared/types";
 import { routeNote } from "../../shared/route";
 import { addDays } from "../config";
 import type { NearbyPlace } from "../trip/nearby";
+import { driveNote } from "../trip/drives";
 import { MODE_TEXT, type Trip } from "./types";
 
 export function placeLines(trip: Trip, places: Place[]) {
@@ -30,7 +31,8 @@ export function stayLines(trip: Trip) {
       ? " (passing through, no overnight stay)"
       : `; travel days: ${s.start} (arrival) and ${addDays(s.start, nights)} (departure); full days: ${full.length ? full.join(", ") : "none"}`;
     const prev = trip.stays[i - 1];
-    const travel = prev && s.travel && MODE_TEXT[s.travel] ? `\n   Getting here from ${prev.city}: ${MODE_TEXT[s.travel]} (chosen by the travelers)` : "";
+    const drive = driveNote(trip, i);
+    const travel = prev && s.travel && MODE_TEXT[s.travel] ? `\n   Getting here from ${prev.city}: ${MODE_TEXT[s.travel]} (chosen by the travelers)${drive ? `; ${drive}` : ""}` : "";
     const trips = (s.dayTrips || []).filter((t) => t.place)
       .map((t) => `\n   Planned day trip: ${t.place}${MODE_TEXT[t.mode] ? `, ${MODE_TEXT[t.mode]} there and back (chosen by the travelers)` : ""}, on one of the full days`).join("");
     return `${i + 1}. ${s.city}${s.country ? ` (${s.country})` : ""}: arrive ${s.start}, ${nights} night(s)${s.hotel ? `, staying at/near ${s.hotel}` : ""}${days}${travel}${trips}`;
@@ -66,7 +68,7 @@ export function nearbySection(trip: Trip, compact = false) {
 /** One-line trip description for the research prompt. */
 export function tripLine(trip: Trip) {
   return trip.stays.map((s, i) => `${s.city}${s.country ? ` (${s.country})` : ""} from ${s.start}, ${s.nights} night(s)`
-    + `${i && s.travel && MODE_TEXT[s.travel] ? `, arriving ${MODE_TEXT[s.travel]}` : ""}`
+    + `${i && s.travel && MODE_TEXT[s.travel] ? `, arriving ${MODE_TEXT[s.travel]}${driveNote(trip, i) ? ` (${driveNote(trip, i)})` : ""}` : ""}`
     + (s.dayTrips || []).filter((t) => t.place).map((t) => `, day trip to ${t.place}${MODE_TEXT[t.mode] ? ` ${MODE_TEXT[t.mode]}` : ""}`).join(""),
   ).join("; ");
 }

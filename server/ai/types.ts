@@ -7,6 +7,8 @@ export interface Trip extends TripRequest {
   holidays?: Holiday[];
   nearby?: NearbyList[];
   researchNotes?: string;
+  /** Road routes between consecutive stays travelled by road, by the arriving stay's index (null: no road route). */
+  drives?: Record<number, { km: number; hours: number } | null>;
 }
 
 /** Progress events go to the browser as they happen (everything but the final "done"/"error"). */

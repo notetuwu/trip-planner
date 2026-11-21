@@ -158,6 +158,8 @@ test("book ahead links hotels and transport; the packing list fits the countries
   assert.equal(hotel.searchParams.get("checkin"), "2027-04-01");
   assert.equal(hotel.searchParams.get("checkout"), "2027-04-04");
   assert.equal(hotel.searchParams.get("group_adults"), "2");
+  assert.equal(hotel.searchParams.get("dest_type"), "latlong", "Booking needs a position; text alone finds nothing");
+  assert.equal(Number(hotel.searchParams.get("latitude")).toFixed(2), "34.69");
   assert.ok(links.includes("https://www.rome2rio.com/map/Osaka/Kyoto"));
   const packing = await page.eval(`document.querySelector('details[data-fold="packing"]').textContent`);
   assert.match(packing, /Cash in yen/);

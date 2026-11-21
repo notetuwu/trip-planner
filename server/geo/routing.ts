@@ -51,6 +51,14 @@ async function runQueue(mode: RouteMode) {
 
 interface LegRequest { mode: RouteMode; from: LatLng; to: LatLng }
 
+/** One route, waiting for it if it isn't cached yet: the route, null if none exists, undefined if it took too long. */
+export async function waitForRoute(mode: RouteMode, from: LatLng, to: LatLng, ms = 30000): Promise<Route | null | undefined> {
+  const key = routeKey(mode, from, to), t0 = Date.now();
+  routeBatch([{ mode, from, to }]);
+  while (!(key in routeCache.data) && Date.now() - t0 < ms) await sleep(300);
+  return routeCache.data[key];
+}
+
 /** Answers cached routes (null = no route exists) and queues the rest. */
 export function routeBatch(legs: LegRequest[]) {
   const routes: Record<string, Route | null> = {};

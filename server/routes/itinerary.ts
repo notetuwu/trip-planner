@@ -11,6 +11,7 @@ import { errMsg } from "../config";
 import { reverseGeocode } from "../geo/search";
 import { getList } from "../lists/store";
 import { tripHolidays } from "../trip/holidays";
+import { roadRoutes } from "../trip/drives";
 import { nearbyPlaces } from "../trip/nearby";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 
@@ -58,6 +59,7 @@ export async function handleItinerary(req: Req, res: Res) {
   try {
     send({ type: "status", text: "Looking up holidays and real places near your stays…" });
     trip.holidays = await tripHolidays(trip.stays).catch(() => []);
+    trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));
     trip.nearby = await nearbyPlaces(trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
     // The page uses these to put stops on the map at their exact spot.
     send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });

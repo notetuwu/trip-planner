@@ -4,14 +4,16 @@ import type { TravelMode } from "../../../shared/types";
 import { addDays } from "../core/format";
 import type { Stay } from "../core/state";
 
-/** Booking.com search for a stay: the hotel (if named) or the town, with check-in/out and the group size. */
-export function hotelUrl(s: Stay, travelers: number) {
+/** Booking.com search for a stay: around the stay's position (Booking ignores a place given only as text), labelled
+ *  with the hotel or the town, with check-in/out and the group size. */
+export function hotelUrl(s: Stay, travelers: number, at?: { lat: number; lng: number } | null) {
   // "around the Garden Court Hotel" → "Garden Court Hotel": the search wants a name, not a note.
   const hotel = s.hotel.trim().replace(/^(around|near|close to|next to|by|somewhere near|in)\s+(the\s+)?/i, "");
   const q = new URLSearchParams({
     ss: hotel ? `${hotel}, ${s.city}` : s.city,
     checkin: s.start, checkout: addDays(s.start, Number(s.nights) || 1),
     group_adults: String(Math.max(1, travelers || 1)), no_rooms: "1", group_children: "0",
+    ...(at ? { dest_type: "latlong", latitude: at.lat.toFixed(5), longitude: at.lng.toFixed(5) } : {}),
   });
   return `https://www.booking.com/searchresults.html?${q}`;
 }

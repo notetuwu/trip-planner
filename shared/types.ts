@@ -51,6 +51,9 @@ export interface TripStay {
   hotel: string;
   country?: string;
   cc?: string;
+  /** Where the stay is (the hotel if found, else the town), as the browser located it. */
+  lat?: number;
+  lng?: number;
   travel?: TravelMode;
   dayTrips?: DayTrip[];
 }

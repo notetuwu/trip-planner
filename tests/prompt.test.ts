@@ -88,3 +88,18 @@ describe("researching one day", () => {
     expect(prompt).toMatch(/2027-09-13 in Salzburg \(staying in Salzburg\)/);
   });
 });
+
+import { stayLines } from "../server/ai/prompt-sections";
+describe("road routes in the prompt", () => {
+  const stays = [{ city: "Tunis", start: "2027-07-05", nights: 3 }, { city: "Cape Town", start: "2027-07-08", nights: 2, travel: "car" }];
+  it("tells the model the drive exists and how long it takes", () => {
+    const text = stayLines({ stays, drives: { 1: { km: 10512, hours: 140.4 } } } as any);
+    expect(text).toMatch(/a road route exists \(checked with a routing service\): 10,512 km, about 140 h of driving, i\.e\. at least 16 days/);
+  });
+  it("says so when there's no road", () => {
+    expect(stayLines({ stays, drives: { 1: null } } as any)).toMatch(/no road route was found/);
+  });
+  it("says nothing when it wasn't checked", () => {
+    expect(stayLines({ stays } as any)).not.toMatch(/routing service/);
+  });
+});

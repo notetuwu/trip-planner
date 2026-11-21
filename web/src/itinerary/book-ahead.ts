@@ -5,7 +5,7 @@ import { $$, esc } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { save, state } from "../core/state";
 import { type ByTitle, byTitleMap, daySegments, stopWebsite } from "../geo/item-loc";
-import { tripCountries } from "../geo/locate";
+import { stayLoc, tripCountries } from "../geo/locate";
 import { type TicketLink, bookingSite, pickWebsite, ticketLinks, ticketQuery } from "./booking-sites";
 import { ext, icon } from "../core/icons";
 import { modeName } from "../trip/modes";
@@ -51,7 +51,7 @@ function tripRows() {
   const hotels = state.stays.filter((s) => s.city && s.start && Number(s.nights) > 0).map((s) => ({
     key: `hotel|${s.start}|${s.city}`, date: s.start, what: `Stay in ${s.city}`,
     when: `${s.nights} night${Number(s.nights) > 1 ? "s" : ""}${s.hotel ? ` · ${s.hotel}` : ""}`,
-    link: { url: hotelUrl(s, travelers), label: "Booking.com", title: `Hotels in ${s.city}, ${fmtDate(s.start)} – ${fmtDate(addDays(s.start, s.nights))}` },
+    link: { url: hotelUrl(s, travelers, stayLoc(s)), label: "Booking.com", title: `Hotels in ${s.city}, ${fmtDate(s.start)} – ${fmtDate(addDays(s.start, s.nights))}` },
   }));
   const rides = state.stays.map((s, i) => ({ s, prev: state.stays[i - 1] })).filter(({ s, prev }) => prev?.city && s.city && s.start && bookableMode(s.travel))
     .map(({ s, prev }) => ({

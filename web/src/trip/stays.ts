@@ -51,7 +51,7 @@ function stayHtml(s: Stay, i: number) {
         <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
       </div>
       ${geoLine ? `<div class="stay-geo" title="${esc(loc?.label || "")}">${geoLine}</div>` : ""}
-      ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
+      ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1, loc))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
           <div class="day-trip" data-ti="${ti}">
