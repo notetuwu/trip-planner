@@ -28,17 +28,13 @@ function legHtml(i: number) {
   </div>`;
 }
 
-/** The stay's day trips at the top of its card ("↪ Venice"), so they're seen when scrolling past. */
-const tripPills = (s: Stay) => (s.dayTrips || []).filter((t) => t.place.trim())
-  .map((t) => `<span class="trip-pill" title="Day trip from ${esc(s.city || "here")}">${icon("dayTrip")} ${esc(t.place)}</span>`).join("");
-
 function stayHtml(s: Stay, i: number) {
   const loc = stayLoc(s);
   const geoLine = !s.city ? "" : loc ? `${icon("pin")} ${esc(loc.label)}` : geoKey(s.city) in geo ? `${icon("pin")} Not found — try a bigger nearby town` : `${icon("pin")} Locating…`;
   return `${i ? legHtml(i) : ""}
     <div class="stay" data-i="${i}">
       <div class="stay-head">
-        <span><span class="stay-num">${i + 1}</span><span class="stay-dates">${s.start ? `${fmtDate(s.start)} → ${fmtDate(addDays(s.start, s.nights))}` : "Set an arrival date"}</span>${tripPills(s)}</span>
+        <span><span class="stay-num">${i + 1}</span><span class="stay-dates">${s.start ? `${fmtDate(s.start)} → ${fmtDate(addDays(s.start, s.nights))}` : "Set an arrival date"}</span></span>
         <span>
           ${i > 0 ? `<button class="icon-btn" data-act="up" title="Move up">${icon("arrowUp")}</button>` : ""}
           ${state.stays.length > 1 ? `<button class="icon-btn" data-act="del" title="Remove">${icon("x")}</button>` : ""}

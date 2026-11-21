@@ -3,6 +3,7 @@
 .stay .row { margin-bottom: 8px; }
 .stay .row:last-child { margin-bottom: 0; }
 .stay-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-weight: 600; gap: 8px; }
+.stay-head > span:last-child { display: flex; gap: 2px; flex: none; }
 .stay-num { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 700; margin-right: 8px; }
 .stay-dates { font-weight: 400; color: var(--muted); font-size: 12px; }
 .stay-leg { display: flex; align-items: center; gap: 8px; margin: -4px 0 6px 14px; padding-left: 14px; border-left: 2px dashed var(--line); min-height: 34px; font-size: 12px; color: var(--muted); }
@@ -14,11 +15,6 @@
   background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
 }
 .day-trip .dt-label { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
-.trip-pill {
-  display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600;
-  background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent); vertical-align: 1px;
-  max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
 .day-trip input { flex: 1; min-width: 0; height: 30px; font-size: 12.5px; background: var(--panel); }
 .day-trip select { width: auto; max-width: 150px; height: 30px; font-size: 12px; background-color: var(--panel); }
 .day-trip .dt-label { display: inline-flex; align-items: center; gap: 4px; }
