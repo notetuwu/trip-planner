@@ -5,7 +5,7 @@ import { session, state } from "../core/state";
 import { geo, geoKey, geocode } from "./geocode";
 import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
-import { splitGroup } from "../trip/modes";
+import { splitGroup, transferEnds } from "../trip/modes";
 
 export const byTitleMap = () => new Map(session.places.map((p) => [p.title, p]));
 export type ByTitle = Map<string, Place>;
@@ -54,12 +54,31 @@ function townList(d: Day): Town[] {
 const bare = (name: string) => name.split(",")[0].trim().toLowerCase();
 const count = (text: string, name: string) => { const n = bare(name); return n ? text.split(n).length - 1 : 0; };
 
-/** Where a stop is looked for: the town its name mentions ("Lunch in Onomichi"); for a split group's stop, the town
- *  that group spends the day in (Miyajima on the Hiroshima group's day); else the day's own town or the stay. */
+/** Where the plan has got to by this stop: the town of the last transfer before it ("Osaka → Kyoto" puts the next
+ *  stops in Kyoto, "Kyoto → Osaka" back in Osaka), following only the stop's own group on a split day. */
+function townSoFar(x: ItineraryItem, d: Day, towns: Town[]): Town | null {
+  const g = splitGroup(x);
+  let at: Town | null = null;
+  for (const y of d.items) {
+    if (y === x) return at;
+    if (splitGroup(y) && splitGroup(y) !== g) continue;
+    const ends = transferEnds(y);
+    if (!ends) continue;
+    const to = bare(ends[1]);
+    at = towns.find((t) => bare(t.name) && (to.includes(bare(t.name)) || bare(t.name).includes(to))) || at;
+  }
+  return at;
+}
+
+/** Where a stop is looked for: the town its name mentions ("Lunch in Onomichi"); else where the day's transfers have
+ *  taken it (Kyoto after "Osaka → Kyoto"); for a split group's stop, the town that group spends the day in (Miyajima
+ *  on the Hiroshima group's day); else the day's own town or the stay. */
 function itemTown(x: ItineraryItem, d: Day): Town | null {
   const towns = townList(d), name = String(x.place).toLowerCase();
   const own = towns.find((t) => bare(t.name) && name.includes(bare(t.name)));
   if (own) return own;
+  const sofar = townSoFar(x, d, towns);
+  if (sofar) return sofar;
   const g = splitGroup(x);
   if (g) {
     const stays = state.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)).map((s) => bare(s.city));
