@@ -55,14 +55,33 @@ export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, s
     const [lng, lat] = f.geometry.coordinates, r = Math.PI / 180;
     return Math.hypot((lng - near[1]) * Math.cos(lat * r), lat - near[0]) * 111;
   };
+  // "…, Austria": only answers in that country (Photon happily finds an "Alpine Centre" in Australia otherwise).
+  const named = countryCode(q.split(",").at(-1) || "");
   for (const name of new Set([q, q.replace(/\s+[-–|(].*$/, "")])) {
     const pp = new URLSearchParams({ q: name, limit: "5", lang: "en" });
     if (near) { pp.set("lat", String(near[0])); pp.set("lon", String(near[1])); }
     const f = (await photon(pp))
-      .find((f) => (!ccs.length || ccs.includes((f.properties.countrycode || "").toLowerCase())) && km(f) < 60);
+      .find((f) => {
+        const fc = (f.properties.countrycode || "").toLowerCase();
+        return (!ccs.length || ccs.includes(fc)) && (!named || !fc || fc === named) && km(f) < 60;
+      });
     if (f) return photonHit(f);
   }
   return null;
+}
+
+let countries: Map<string, string> | null = null;
+/** The ISO code of a country named in English ("Austria" → "at"), or "" if it isn't a country's name. */
+export function countryCode(name: string) {
+  if (!countries) {
+    countries = new Map();
+    const names = new Intl.DisplayNames(["en"], { type: "region" });
+    for (let a = 65; a <= 90; a++) for (let b = 65; b <= 90; b++) {
+      const code = String.fromCharCode(a, b);
+      try { const n = names.of(code); if (n && n !== code) countries.set(n.toLowerCase(), code.toLowerCase()); } catch { /* not a region */ }
+    }
+  }
+  return countries.get(name.trim().toLowerCase()) || "";
 }
 
 interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean }

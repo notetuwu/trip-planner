@@ -40,7 +40,7 @@ async function windowSwitch() {
   const el = document.createElement("label");
   el.className = "window-mode";
   el.title = "How the planner opens when you start it";
-  el.innerHTML = `Opens in <select><option value="app">its own window</option><option value="browser">a browser tab</option></select>`;
+  el.innerHTML = `<span>Opens in</span> <select><option value="app">its own window</option><option value="browser">a browser tab</option></select>`;
   const select = el.querySelector("select")!;
   select.value = s.window;
   select.onchange = async () => {

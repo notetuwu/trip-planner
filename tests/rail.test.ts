@@ -43,3 +43,13 @@ describe("choosing among place search answers", () => {
     expect(bestHit([{ category: "boundary", type: "administrative", name: "Bezirk X" }])?.type).toBe("administrative");
   });
 });
+
+import { countryCode } from "../server/geo/geocode";
+describe("country names in place searches", () => {
+  it("knows a country's code from its English name, and nothing else", () => {
+    expect(countryCode("Austria")).toBe("at");
+    expect(countryCode(" switzerland ")).toBe("ch");
+    expect(countryCode("Upper Austria")).toBe("");
+    expect(countryCode("Salzburg")).toBe("");
+  });
+});

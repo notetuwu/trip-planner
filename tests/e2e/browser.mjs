@@ -78,6 +78,8 @@ export async function launch() {
       await waitFor(() => page.eval("document.readyState === 'complete' && !!window.planner"), 20000, "the page to load");
     },
     waitFor: (expr, ms, what) => waitFor(() => page.eval(expr), ms, what || expr),
+    /** Makes the page this many CSS pixels wide and high (like a smaller window or a phone). */
+    setViewport: (width, height) => send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }),
     /** Saves a PNG of the page, or of an element (CSS selector) scrolled into view. */
     async screenshot(file, selector) {
       let clip;

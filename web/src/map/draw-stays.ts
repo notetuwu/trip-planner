@@ -8,24 +8,26 @@ import { geo, geoKey } from "../geo/geocode";
 import { distKm, stayLoc, stayMapsUrl } from "../geo/locate";
 import { modeIcon, modeName } from "../trip/modes";
 import { hoverBand } from "./legs";
+import { focusStay } from "../trip/stays";
 import { cssVar, layers } from "./map";
 import { requestRoutes, routeKey, routes } from "./routes";
 import { icon } from "../core/icons";
 import { byTitleMap } from "../geo/item-loc";
 import { type ViaStop, viaStops } from "./travel-day";
 
-interface StayLeg { from: LatLng; to: LatLng; mode?: TravelMode; label: string; trip?: boolean; place?: string; via?: ViaStop[] }
+/** `i`: the stay it arrives at (or the stay a day trip starts from), for jumping to it in the list. */
+interface StayLeg { i: number; from: LatLng; to: LatLng; mode?: TravelMode; label: string; trip?: boolean; place?: string; via?: ViaStop[] }
 
 function stayLegs(): StayLeg[] {
   const legs: StayLeg[] = [], byTitle = byTitleMap();
   state.stays.forEach((s, i) => {
     const here = stayLoc(s); if (!here) return;
     const prev = i > 0 ? stayLoc(state.stays[i - 1]) : null;
-    if (prev) legs.push({ from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}`, via: viaStops(i, byTitle) });
+    if (prev) legs.push({ i, from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}`, via: viaStops(i, byTitle) });
     for (const t of s.dayTrips || []) {
       const g = t.place ? geo[geoKey(t.place)] : null;
       // A day trip found hundreds of km away is a wrong match for its name, not somewhere to go and back in a day.
-      if (g && distKm(here, g) < 300) legs.push({ from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
+      if (g && distKm(here, g) < 300) legs.push({ i, from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
     }
   });
   return legs;
@@ -44,6 +46,7 @@ export function drawStays(): LatLng[] {
       zIndexOffset: 1000,
     }).bindTooltip(esc(s.city), { direction: "right", offset: [12, -16], permanent: session.selectedDay == null })
       .bindPopup(`<b>${esc(s.city)}</b><div class="pop-meta">${s.start ? `${fmtDate(s.start)} → ${fmtDate(end)} · ` : ""}${s.nights} night${s.nights == 1 ? "" : "s"}</div>${s.hotel ? `<div>${icon("bed")} ${esc(s.hotel)}</div>` : ""}<div><a href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener">${icon("pin")} Open in Google Maps</a></div>`)
+      .on("click", () => focusStay(i))
       .addTo(layers.stays);
   });
 
@@ -66,7 +69,7 @@ export function drawStays(): LatLng[] {
       color: accent, weight: r ? 3 : l.trip ? 1.5 : 2, opacity: l.trip ? .55 : .75, interactive: false,
       dashArray: r ? undefined : l.mode === "flight" ? "2 8" : "6 6",
     }).addTo(layers.stays);
-    hoverBand(line, tip, vis).addTo(layers.stays);
+    hoverBand(line, tip, vis).on("click", () => focusStay(l.i, !l.trip)).addTo(layers.stays);
     if (l.trip) L.circleMarker(l.to, { radius: 5, color: accent, weight: 2, fillColor: "#fff", fillOpacity: 1 })
       .bindTooltip(`${modeIcon(l.mode) || icon("pin")} Day trip: ${esc(l.place)}`, { direction: "top" }).addTo(layers.stays);
   }

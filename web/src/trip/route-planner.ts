@@ -8,6 +8,7 @@ import { type Stay, save, session, setListPlaces, state } from "../core/state";
 import { renderChips } from "../places/chips";
 import { modelLabel } from "../generate/models";
 import { geocodeStays } from "../geo/geocode";
+import { placeLoc } from "../geo/locate";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { fillFields } from "./fields";
@@ -23,7 +24,18 @@ interface RoutePlan { title: string; summary: string; start: string; end: string
 
 const val = (id: string) => $<HTMLInputElement>(`#${id}`).value.trim();
 
+/** The starred places, with where they are (when known) and how they want to visit them. */
+function mustSees() {
+  return session.places.filter((p) => state.marks[p.title] === "must").slice(0, 40).map((p) => {
+    const loc = placeLoc(p), how = state.how?.[p.title];
+    return { name: p.title, ...(loc ? { lat: +loc.lat.toFixed(3), lng: +loc.lng.toFixed(3) } : {}), ...(how ? { how } : {}) };
+  });
+}
+
 function open() {
+  const n = mustSees().length;
+  $("#rpMustRow").hidden = !n;
+  $("#rpMustLabel").textContent = `Plan around my must-see places (${n})`;
   const first = state.stays.find((s) => s.city);
   if (!val("rpStart") && first) $<HTMLInputElement>("#rpStart").value = first.city;
   if (!val("rpDate")) $<HTMLInputElement>("#rpDate").value = first?.start || addDays(new Date().toISOString().slice(0, 10), 30);
@@ -63,10 +75,37 @@ function showPlan(plan: RoutePlan) {
   useBtn.hidden = false;
   useBtn.onclick = () => use(plan);
   $("#rpGo").textContent = "Try again";
+  shown = plan;
+  tries.push(routeLine(plan));
   $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" });
 }
 
 let running: AbortController | null = null;
+/** The plan on screen, the routes suggested so far (for "Try again"), and why they asked for another. */
+let shown: RoutePlan | null = null;
+const tries: string[] = [];
+const reasons: string[] = [];
+
+/** "Salzburg (2 nights) → Hallstatt (3 nights; day trip: Dachstein) → …", for telling the model what it suggested. */
+const routeLine = (plan: RoutePlan) => plan.stays.map((s) => `${s.city} (${s.nights} night${s.nights > 1 ? "s" : ""}${
+  s.dayTrips?.length ? `; day trips: ${s.dayTrips.map((t) => t.place).join(", ")}` : ""})`).join(" → ");
+
+function renderReasons() {
+  $("#rpReasons").innerHTML = reasons.map((r, k) => `<li><span>${esc(r)}</span>
+    <button class="icon-btn" type="button" data-k="${k}" title="Remove this reason">${icon("x")}</button></li>`).join("");
+  $("#rpReasons").querySelectorAll<HTMLButtonElement>("button").forEach((b) => { b.onclick = () => { reasons.splice(+b.dataset.k!, 1); renderReasons(); }; });
+}
+
+/** Try again: the first click asks what should be different; the next one (or Enter) plans again with that. */
+function tryAgain() {
+  const box = $("#rpFeedback"), why = $<HTMLInputElement>("#rpWhy");
+  if (box.hidden) { box.hidden = false; why.focus(); box.scrollIntoView({ block: "nearest", behavior: "smooth" }); return; }
+  const text = why.value.trim();
+  if (text && !reasons.includes(text)) reasons.push(text);
+  why.value = "";
+  renderReasons();
+  plan_();
+}
 
 async function plan_() {
   const form = $<HTMLFormElement>("#routeForm");
@@ -82,11 +121,15 @@ async function plan_() {
   go.disabled = true;
   $<HTMLButtonElement>("#rpUse").hidden = true;
   $("#routeResult").innerHTML = "";
+  shown = null;
   try {
     const plan = await streamRequest<RoutePlan>("/api/route-plan", {
       start: val("rpStart"), end: val("rpEnd"), startDate: val("rpDate"), days: +val("rpDays"), mode: val("rpMode"),
       maxHours: +val("rpHours"), description: val("rpWhat"), stays: val("rpStays"),
-      travelers: state.travelers, interests: state.interests, model,
+      travelers: state.travelers, interests: state.interests, model, budget: state.dailyBudget, currency: state.currency,
+      // Earlier suggestions and what they want different, so another try doesn't repeat them.
+      previous: tries.slice(-4), feedback: [...reasons],
+      mustSee: !$("#rpMustRow").hidden && $<HTMLInputElement>("#rpMust").checked ? mustSees() : [],
     }, (l) => {
       live.textContent = `${modelLabel(model)}: ${liveText(l)}`;
       if (l.reasoning && think.textContent !== l.reasoning) {
@@ -135,6 +178,9 @@ function use(plan: RoutePlan) {
     save(); setListPlaces(session.listPlaces); fillFields(); renderStays(); renderTripTitle(); renderChips(); renderItinerary(); geocodeStays(); drawMap({ fit: true });
   };
   refresh();
+  // A new route next time: forget the tries and reasons for this one.
+  tries.length = 0; reasons.length = 0; renderReasons(); shown = null;
+  $("#rpFeedback").hidden = true; $("#rpGo").textContent = "Plan the route"; $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
   $<HTMLDialogElement>("#routeDialog").close();
   toast(`Using the route: ${plan.stays.length} stays, ${plan.nights} nights. Generate the itinerary when you're ready.`, () => {
     Object.assign(state, before); refresh();
@@ -143,5 +189,6 @@ function use(plan: RoutePlan) {
 
 export function initRoutePlanner() {
   $("#planRoute").onclick = open;
-  $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); plan_(); };
+  $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); if (shown) tryAgain(); else plan_(); };
+  $<HTMLInputElement>("#rpWhy").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tryAgain(); } };
 }

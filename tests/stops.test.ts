@@ -114,3 +114,10 @@ describe("far day trips that are on the way", () => {
     expect(via.get(1)?.map((v) => v.place)).toEqual(["Neuschwanstein Castle"]);
   });
 });
+describe("day trips the map can't find", () => {
+  it("stay on the stay the model put them on", () => {
+    const stays = [stay("Reutte", 47.49, 10.72, 1), stay("Zell am See", 47.32, 12.8, 2, [{ place: "Grossglockner High Alpine Road", why: "" }])];
+    placeTrips([[48.1, 11.6], [47.49, 10.72], [47.32, 12.8], [48.1, 11.6]], stays);
+    expect(stays.map((s) => (s.dayTrips || []).map((t) => t.place))).toEqual([[], ["Grossglockner High Alpine Road"]]);
+  });
+});

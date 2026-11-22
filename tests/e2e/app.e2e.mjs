@@ -165,7 +165,8 @@ test("after an update downloads and the app restarts at once, the page reloads i
 });
 
 test("plan a route: describe the trip, see the stays and leg times, use them, Undo", async () => {
-  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false,
+    customPlaces: [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775, custom: true }], marks: { "Caffe Pedrocchi": "must" }, how: { "Caffe Pedrocchi": "stay" } });
   await page.eval(`window.__e2e.route = { title: "Lakes and old towns", summary: "A loop.", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 4,
     stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "Duomo" }, { city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "Lake", dayTrips: [{ place: "Vaduz", why: "Liechtenstein" }] }],
     legs: [{ from: "Padua", to: "Milano", km: 245, hours: 2.6, tooLong: false }, { from: "Milano", to: "Lucerne", km: 230, hours: 2.9, tooLong: false, via: [{ place: "Lugano", why: "Lake town", lat: 46.0, lng: 8.95 }] },
@@ -177,12 +178,32 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   await page.waitFor(`!document.querySelector("#rpUse").hidden`);
   const asked = await page.eval(`window.__e2e.routeAsked`);
   assert.equal(asked.days, 5);
+  assert.deepEqual(asked.mustSee, [{ name: "Caffe Pedrocchi", lat: 45.408, lng: 11.877, how: "stay" }], "plans around the must-see places");
   assert.equal(asked.description, "lakes and old towns");
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /longer than your daily limit/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /Day trip: Vaduz/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /On the way: Lugano/);
   assert.equal(await page.eval(`document.querySelector("#rpThink").textContent`), "Lakes first, then the loop home.", "shows the reasoning");
   assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
+  // Try again asks why first, then sends the reasons and the earlier route; reasons can be removed.
+  await page.eval(`document.querySelector("#rpGo").click()`);
+  assert.equal(await page.eval(`document.querySelector("#rpFeedback").hidden`), false, "Try again asks what should be different");
+  assert.equal(await page.eval(`window.__e2e.routeAsked.feedback.length`), 0, "and doesn't plan yet");
+  await page.eval(`(() => { const i = document.querySelector("#rpWhy"); i.value = "less driving";
+    i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  await page.waitFor(`window.__e2e.routeAsked.feedback.length === 1 && !document.querySelector("#rpUse").hidden`);
+  let again = await page.eval(`window.__e2e.routeAsked`);
+  assert.deepEqual(again.feedback, ["less driving"]);
+  assert.equal(again.previous.length, 1);
+  assert.match(again.previous[0], /Milano \(2 nights\) → Lucerne \(2 nights; day trips: Vaduz\)/);
+  await page.eval(`(() => { document.querySelector("#rpWhy").value = "a night by a lake"; document.querySelector("#rpGo").click(); })()`);
+  await page.waitFor(`window.__e2e.routeAsked.feedback.length === 2 && !document.querySelector("#rpUse").hidden`);
+  again = await page.eval(`window.__e2e.routeAsked`);
+  assert.deepEqual(again.feedback, ["less driving", "a night by a lake"], "later tries keep the earlier reasons");
+  assert.equal(again.previous.length, 2, "and the earlier routes");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["less driving", "a night by a lake"]);
+  await page.eval(`document.querySelector("#rpReasons li button").click()`);
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["a night by a lake"], "× removes a reason");
   await page.eval(`document.querySelector("#rpUse").click()`);
   const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights])`);
   assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
@@ -202,6 +223,16 @@ test("trains follow the tracks: a train leg and a train day trip ask for train r
   assert.ok(link, "the location line is a link");
   assert.match(link[0], /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=Padua/);
   assert.equal(link[1], "_blank");
+});
+
+test("a must-see that isn't from a place list can be removed with its x, and Undo brings it back", async () => {
+  await trip({ ...PADUA_MILANO, marks: { "Caffe Pedrocchi": "must" } });
+  assert.ok(await page.eval(`!!document.querySelector('.chip[data-t="Caffe Pedrocchi"] .chip-x')`), "the x is there");
+  await page.eval(`document.querySelector('.chip[data-t="Caffe Pedrocchi"] .chip-x').click()`);
+  assert.equal(await page.eval(`!!document.querySelector('.chip[data-t="Caffe Pedrocchi"]')`), false, "the chip is gone");
+  assert.equal(await page.eval(`planner.state().customPlaces.length + "|" + (planner.state().marks["Caffe Pedrocchi"] || "")`), "0|");
+  await page.eval(`document.querySelector("#toast button").click()`);
+  assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must", "Undo puts it back");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {

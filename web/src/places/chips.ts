@@ -1,5 +1,5 @@
 // The saved places as chips: click to cycle must-see → skip → neutral; 👥 sets how many travelers want a must-see.
-import { $, $$, esc } from "../core/dom";
+import { $, $$, esc, toast } from "../core/dom";
 import type { MustSeeHow } from "../../../shared/types";
 import { type Mark, groupSize, keepPlace, save, session, setListPlaces, state, whoFor } from "../core/state";
 import { placeLoc } from "../geo/locate";
@@ -18,7 +18,9 @@ export function renderChips() {
       const badge = mark === "must" && n > 1
         ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">${icon("users")} ${w}/${n}</span>` : "";
       const how = mark === "must" ? howBadge(p.title) : "";
-      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${mark === "must" ? icon("star", "star") : ""}${esc(p.title)}${badge}${how}</span>`;
+      // Places picked on the map or added by the route planner aren't in any list: they can be removed outright.
+      const x = p.custom ? `<button class="chip-x" type="button" data-remove="${esc(p.title)}" title="Remove this place">${icon("x")}</button>` : "";
+      return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${mark === "must" ? icon("star", "star") : ""}${esc(p.title)}${badge}${how}${x}</span>`;
     })
     .join("");
   const mustTitles = Object.keys(state.marks).filter((t) => state.marks[t] === "must");
@@ -65,9 +67,22 @@ export function flashChip(title: string) {
 
 const NEXT_MARK: Record<string, Mark | undefined> = { "": "must", must: "skip", skip: undefined };
 
+/** Removes a place that isn't from a list (picked on the map, or added by the route planner), with Undo. */
+function removePlace(title: string) {
+  const before = { customPlaces: [...state.customPlaces], marks: { ...state.marks }, how: { ...(state.how || {}) }, who: { ...state.who } };
+  state.customPlaces = state.customPlaces.filter((p) => p.title !== title);
+  delete state.marks[title]; delete state.who[title];
+  if (state.how) delete state.how[title];
+  const refresh = () => { setListPlaces(session.listPlaces); save(); renderChips(); drawMap(); };
+  refresh();
+  toast(`Removed “${title}”`, () => { Object.assign(state, before); refresh(); });
+}
+
 export function initChips() {
   $("#chips").addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
+    const rm = target.closest<HTMLElement>("[data-remove]")?.dataset.remove;
+    if (rm != null) { removePlace(rm); return; }
     const h = target.dataset.how;
     if (h != null) {
       const next = NEXT_HOW[state.how?.[h] || ""];

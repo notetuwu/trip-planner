@@ -76,6 +76,8 @@ details.import .inline { margin-bottom: 8px; }
 .chip .star { fill: currentColor; }
 .chip.skip { background: var(--skip-soft); color: var(--skip); text-decoration: line-through; }
 .chip.flash { animation: flash 1.2s ease-out; }
+.chip-x { display: inline-grid; place-items: center; width: 16px; height: 16px; margin: 0 -4px 0 4px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; opacity: .55; cursor: pointer; font-size: 11px; vertical-align: -2px; }
+.chip-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
 @keyframes flash { 0% { box-shadow: 0 0 0 4px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
 .chip .who {
   display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: 11px;
@@ -152,4 +154,14 @@ details.import .inline { margin-bottom: 8px; }
 .route-stops .leg { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .route-stops .leg.long { color: var(--warn); font-weight: 600; }
 .route-stops li.end b { color: var(--muted); }
+.route-feedback { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.route-feedback label { display: block; font-weight: 600; margin-bottom: 6px; }
+.route-feedback .hint { margin: 6px 0 0; }
+.route-reasons { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.route-reasons:empty { display: none; }
+.route-reasons li { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
+.route-reasons li span { flex: 1; min-width: 0; }
+.route-reasons .icon-btn { width: 24px; height: 24px; flex: none; }
 .route-stops .trips { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.stay.flash, .stay-leg.flash { animation: stay-flash 1.6s ease-out; }
+@keyframes stay-flash { 0%, 35% { background-color: color-mix(in srgb, var(--accent) 16%, transparent); } 100% { background-color: transparent; } }

@@ -25,7 +25,16 @@ export interface RouteRequest {
   stays?: string;
   travelers?: number;
   interests?: string;
+  /** Spending per day for everything (stays included), in `currency`. */
+  budget?: number;
+  currency?: string;
   model: string;
+  /** Routes it suggested before ("Salzburg (2 nights) → …"), when they asked to try again. */
+  previous?: string[];
+  /** Why they asked to try again: what should be different. */
+  feedback?: string[];
+  /** Places they starred, to plan the route around; `how`: on the way between stays, or from a stay. */
+  mustSee?: { name: string; lat?: number; lng?: number; how?: "way" | "stay" }[];
 }
 /** `way`: they asked to see it on the way, so it becomes a stop on a travel day rather than a day trip. */
 export interface PlannedDayTrip { place: string; why: string; way?: boolean; lat?: number; lng?: number }
@@ -128,13 +137,14 @@ export function mergeClose(stays: PlannedStay[], description: string, maxKm = 30
  * detour; every other day trip goes from the closest stay (one with 2+ nights if that's hardly further). `points` are the start, the stays and the end; returns the stops on the way by leg.
  */
 export function placeTrips(points: LatLng[], stays: PlannedStay[], description = ""): Map<number, WayStop[]> {
-  const trips = stays.flatMap((s) => s.dayTrips || []);
+  const trips = stays.flatMap((s) => (s.dayTrips || []).map((t) => ({ t, from: s })));
   for (const s of stays) s.dayTrips = [];
   const via = new Map<number, WayStop[]>();
   const located = stays.filter((s) => s.lat != null);
   const stayCountries = new Set(stays.map((s) => norm(s.country)).filter(Boolean));
-  for (const t of trips) {
-    if (t.lat == null || !located.length) { if (!t.way) (stays[0].dayTrips ||= []).push(t); continue; }
+  for (const { t, from } of trips) {
+    // Not found on the map: it stays where the model put it.
+    if (t.lat == null || !located.length) { if (!t.way) (from.dayTrips ||= []).push(t); continue; }
     const at: LatLng = [t.lat, t.lng!];
     const dist = (s: PlannedStay) => km(at, [s.lat!, s.lng!]);
     const nearest = located.reduce((a, b) => (dist(b) < dist(a) ? b : a));
@@ -188,7 +198,29 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
   const to = roundTrip ? from : await whereIs(end);
   const month = req.startDate ? MONTHS[Number(req.startDate.slice(5, 7)) - 1] : "";
 
-  report({ type: "status", text: "Thinking up a route…" });
+  const list = (v: unknown, max: number) => (Array.isArray(v) ? v : []).map((x) => String(x || "").trim().slice(0, 600)).filter(Boolean).slice(-max);
+  const previous = list(req.previous, 4), feedback = list(req.feedback, 12);
+  const again = !previous.length && !feedback.length ? "" : `
+${previous.length ? `They asked for another route. What you suggested before:
+${previous.map((p, k) => `${k + 1}. ${p}`).join("\n")}
+Don't hand back the same route again; keep the parts they didn't object to if they still fit.` : ""}
+${feedback.length ? `What they want different (the most important part, follow every point):
+${feedback.map((f) => `- ${f}`).join("\n")}` : ""}
+`;
+
+  const must = (Array.isArray(req.mustSee) ? req.mustSee : []).slice(0, 40)
+    .filter((m) => m && typeof m.name === "string" && m.name.trim())
+    .map((m) => `- ${m.name.trim().slice(0, 120)}${Number.isFinite(m.lat) && Number.isFinite(m.lng) ? ` (at ${(+m.lat!).toFixed(2)}, ${(+m.lng!).toFixed(2)})` : ""}${m.how === "way" ? " [on the way: a stop on a drive between stays]" : m.how === "stay" ? " [from a stay]" : ""}`);
+  const mustText = must.length ? `
+Must-see places they've starred. Plan the route around them so every one gets visited, in one of three ways:
+- a stay near it, when it's a highlight of a town worth staying in (Hohensalzburg Fortress: a stay in Salzburg);
+- a day trip from a stay with 2+ nights, when it's within about 1.5 h of one (Burg Hohenwerfen: a day trip from that Salzburg stay; list it in that stay's "dayTrips");
+- a stop on a drive between two stays, when it lies on the way (those marked [on the way] always; list it in "onTheWay").
+Choose where the stays go so that this works, rather than dropping a place:
+${must.join("\n")}
+` : "";
+
+  report({ type: "status", text: previous.length ? "Thinking up another route…" : "Thinking up a route…" });
   const prompt = `Plan the route of a trip: where to stay each night. (A separate step plans the days themselves later.)
 
 Start: ${from.text}${req.startDate ? `, leaving on ${req.startDate}` : ""}. That's where they set off from, not a stay.
@@ -196,16 +228,17 @@ End: ${roundTrip ? `back at the start (a round trip)` : to.text}.
 Length: ${days} days, so ${nights} nights away.
 Travel: ${howText}; at most about ${maxHours} h of travel on a travel day.${month ? `
 Season: they travel in ${month}. Suggest only what works then (no skiing or ski jumps outside winter, no closed mountain passes or huts in winter, no summer-only things out of season).` : ""}
-${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}
+${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}${Number(req.budget) > 0 ? ` Budget: about ${Math.round(Number(req.budget))} ${String(req.currency || "EUR").slice(0, 3)} per day for everything, stays included.` : ""}
 What they want: ${req.description || "a varied, scenic trip"}
 ${req.stays ? `Kind of places to stay: ${req.stays}` : ""}
-
+${mustText}${again}
 Choose the stays in travel order, between the start and the end (not the start or end themselves). Give them ${nights} nights in total. Make it a real, drivable (or travelable) route: each leg within about ${maxHours} h, and the last stay within a day of the end. Spend 2-3 nights where there is a lot to see (so there are full days for day trips), 1 night for a stop on the way. Favour the places and regions they asked for; "maybe" means include it if it fits well. People they want to visit (family, friends) get a stay where it fits the route. A town they name is the stay for its area: don't add another stay within about 40 km of it (or of any other stay).
+Mind what beds cost: tiny, famous places with few and pricey places to stay (Hallstatt, for example) are usually better as a day trip from a nearby town that's easier on the budget (Hallstatt from Salzburg or Bad Ischl), unless they ask to stay there or their budget is generous.
 The route must flow${roundTrip ? " as one loop" : " in one direction"}: each stay moves on from the last, and it never returns to a region it already left (no back and forth, no doubling back across a country). Group the stays by region and visit each region once.
 Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of the stay closest to it (one with 2+ nights). Only add day trips they asked for or that clearly fit what they want; most stays have none. Use real place names that a map can find (a town or a sight, with its country).
 On the way: a place they ask to see on the way ("X on the way", "stop at X on the drive", "pass through X") is never a stay: put it in "onTheWay" of the stay they arrive at after passing it. Only for places they mention that way; leave it empty otherwise.
 Reply with only JSON:
-{"reasoning": "first, think it through in a few short sentences: the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
+{"reasoning": "first, think it through in a few short sentences: ${feedback.length ? "how you change it for what they asked, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
 
   const trips = (list: unknown, way: boolean): PlannedDayTrip[] => (Array.isArray(list) ? list : [])
     .map((t: any) => (typeof t === "string" ? { place: t, why: "" } : { place: String(t?.place || ""), why: String(t?.why || "") }))

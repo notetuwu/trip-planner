@@ -127,3 +127,14 @@ export function initStays() {
   });
   $("#addStay").onclick = () => { state.stays.push({ city: "", start: "", nights: 2, hotel: "" }); save(); renderStays(); };
 }
+
+/** Scrolls the stays list to a stay (and the connection into it, for a leg clicked on the map) and flashes them. */
+export function focusStay(i: number, leg = false) {
+  const stay = document.querySelector<HTMLElement>(`.stay[data-i="${i}"]`);
+  const conn = leg ? document.querySelector<HTMLElement>(`.stay-leg[data-i="${i}"]`) : null;
+  (conn || stay)?.scrollIntoView({ behavior: "smooth", block: leg ? "start" : "center" });
+  for (const el of [conn, stay]) {
+    if (!el) continue;
+    el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); // restart the animation
+  }
+}

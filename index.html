@@ -159,8 +159,16 @@
       <div><label for="rpStays">What kind of stays?</label>
         <input id="rpStays" placeholder="e.g. cosy B&amp;Bs, a night in a mountain hut, mid-range hotels"></div>
     </div>
+    <label class="check" id="rpMustRow" hidden><input type="checkbox" id="rpMust" checked> <span id="rpMustLabel">Plan around my must-see places</span>
+      <span class="hint">The route makes every place you starred reachable: from a stay, as a day trip, or on a drive between stays ("on the way" ones on a drive).</span></label>
   </form>
   <div id="routeResult"></div>
+  <div id="rpFeedback" class="route-feedback" hidden>
+    <label for="rpWhy">What should be different?</label>
+    <ul id="rpReasons" class="route-reasons"></ul>
+    <input id="rpWhy" maxlength="300" placeholder="e.g. less driving in Austria, a night by a lake, skip Italy">
+    <p class="hint">Press Enter or Try again. Every reason in the list goes to the model, together with the routes it already suggested, so it doesn't repeat them.</p>
+  </div>
   </div>
   <aside class="route-think"><h3>How it's thinking</h3><div id="rpThink" class="hint">The model's reasoning shows here while it plans.</div></aside>
   </div>
