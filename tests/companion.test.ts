@@ -1,7 +1,7 @@
 // The trip chat's prompt: the trip, the conversation so far (only the last turns), and the question; answers cleaned;
 // changes to the plan read from the reply's last line.
 import { describe, expect, it } from "vitest";
-import { cleanAnswer, companionPrompt, parseChange } from "../server/trip/companion";
+import { cleanAnswer, compactPrompt, companionPrompt, parseChange } from "../server/trip/companion";
 
 
 describe("trip chat", () => {
@@ -42,5 +42,12 @@ describe("trip chat", () => {
   });
   it("tells the model how to change the setup", () => {
     expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain('"onTheWay": places to visit on a travel day between two stays');
+  });
+  it("a compacted chat: the summary goes in the prompt; compacting asks for decisions and what's open", () => {
+    expect(companionPrompt({ model: "m", question: "x", summary: "- Pedrocchi on the way" })).toContain("## Earlier in this conversation (summary)");
+    const p = compactPrompt([{ role: "me", text: "make day 2 easier" }, { role: "ai", text: "Done." }], "- earlier bit");
+    expect(p).toContain("Traveler: make day 2 easier");
+    expect(p).toContain("- earlier bit");
+    expect(p).toContain("which changes to the plan were applied");
   });
 });

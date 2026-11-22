@@ -4,7 +4,7 @@ import { detectLocalModels } from "./ai/local-models";
 import { ensureOllama, gpuInfo, ollamaInstalled } from "./ai/ollama-start";
 import { findClaude } from "./ai/claude-bin";
 import { VERSION, errMsg } from "./config";
-import { geocodeBatch } from "./geo/geocode";
+import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
@@ -21,7 +21,7 @@ import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
 import { suggestStops } from "./trip/stops";
 import { planRoute } from "./trip/route-plan";
-import { askCompanion } from "./trip/companion";
+import { askCompanion, compactChat } from "./trip/companion";
 import { streamProgress } from "./util/progress-stream";
 import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
@@ -63,6 +63,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
     if (saveMatch) await handleSaves(req, res, saveMatch[1] && decodeURIComponent(saveMatch[1]));
     else if (listMatch) await handleLists(req, res, listMatch[1] && decodeURIComponent(listMatch[1]), listMatch[2]);
+    else if (method === "GET" && path === "/api/geocode/status") sendJson(res, 200, geocodeStatus());
     else if (method === "POST" && path === "/api/geocode") {
       const body = await readJson(req);
       sendJson(res, 200, geocodeBatch(Array.isArray(body?.queries) ? body.queries : []));
@@ -103,6 +104,11 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       else await busyWhile(() => streamProgress(res, (report, signal) => planRoute(body, report, signal)));
     }
     // The trip chat: a question about the trip on screen, answered by the selected model.
+    else if (method === "POST" && path === "/api/companion/compact") {
+      const body = await readJson(req);
+      if (!body?.model) sendJson(res, 400, { error: "A model is needed" });
+      else await busyWhile(() => streamProgress(res, (report, signal) => compactChat(body, report, signal)));
+    }
     else if (method === "POST" && path === "/api/companion") {
       const body = await readJson(req);
       if (!body?.question || !body?.model) sendJson(res, 400, { error: "A question and a model are needed" });

@@ -12,7 +12,7 @@ import { addDays, fmtDate, todayIso } from "../core/format";
 import { icon } from "../core/icons";
 import { streamRequest } from "../core/progress";
 import { type AppState, keepPlace, save, session, setListPlaces, state } from "../core/state";
-import { sameName } from "../geo/locate";
+import { geocodePlaces, sameName } from "../geo/locate";
 import { applyHow, renderChips } from "../places/chips";
 import { renderStays } from "./stays";
 import { geocodeItems } from "../geo/item-loc";
@@ -23,21 +23,43 @@ import { drawMap } from "../map/draw";
 import { map } from "../map/map";
 
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
-interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[] }
+interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[] }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; status?: ChangeState }
-type Turn = { role: "me" | "ai"; text: string; change?: PlanChange };
+type Turn = { role: "me" | "ai"; text: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange };
+/** Pictures attached to the next message: what's sent (shrunk to at most 1600 px) and a small copy kept with the chat. */
+interface Picture { type: string; data: string; thumb: string }
+let pictures: Picture[] = [];
+/** The full-size picture behind each small copy shown in the chat (only while the page is open). */
+const fullSize = new Map<string, string>();
+
+/** A picture big, over everything; a click or Escape closes it. */
+function showPicture(src: string) {
+  const box = document.createElement("div");
+  box.className = "lightbox";
+  box.innerHTML = `<img src="${esc(fullSize.get(src) || src)}" alt=""><button type="button" class="lightbox-x" title="Close (Esc)">${icon("x")}</button>`;
+  const close = () => { box.classList.remove("show"); setTimeout(() => box.remove(), 180); document.removeEventListener("keydown", onKey); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+  box.onclick = close;
+  document.addEventListener("keydown", onKey);
+  document.body.append(box);
+  requestAnimationFrame(() => box.classList.add("show"));
+}
+/** While it answers: the answer so far, and its thinking so far (with when it started). */
+interface Pending { text: string; thinking: string; since: number; until: number; answering: boolean }
 
 let running: AbortController | null = null;
 /** What a change touches, to put back on Undo. */
-type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept">;
+type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept" | "customPlaces">;
 /** The changes applied one after another since the last Undo (by message index), and the trip from before the first:
  *  Undo on the latest puts all of them back. Only while the page is open. */
 let chain: { snap: Snapshot; cards: number[] } | null = null;
-const capture = (): Snapshot => structuredClone({ itinerary: state.itinerary, stays: state.stays, marks: state.marks, how: state.how, kept: state.kept });
+const capture = (): Snapshot => structuredClone({ itinerary: state.itinerary, stays: state.stays, marks: state.marks, how: state.how, kept: state.kept, customPlaces: state.customPlaces });
 
 const panel = () => $<HTMLElement>("#chatPanel");
 const box = () => $<HTMLTextAreaElement>("#cpQ");
-const MAX_TURNS = 40;
+/** Compacting: once this many messages aren't covered by the summary, the older ones are summarized, keeping the
+ *  most recent few as they are. */
+const COMPACT_AT = 16, KEEP_RECENT = 6, HISTORY = 12;
 const OPEN_KEY = "trip-planner-chat-open";
 
 /** Everything the chat knows about the trip, as plain text. Long itineraries lose the descriptions first. */
@@ -99,6 +121,7 @@ function opsLines(t?: TripOps) {
     ...(t.fromStay || []).map((p) => `${p}: from where you sleep`),
     ...(t.removeDayTrips || []).map((x) => `No day trip to ${x.place}${x.stay ? ` from ${x.stay}` : ""}`),
     ...(t.addDayTrips || []).map((x) => `Day trip to ${x.place} from ${x.stay} (${x.mode})`),
+    ...(t.addPlaces || []).map((x) => `Add ${x.name}${x.where ? ` (${x.where})` : ""} to your places${x.must ? " as a must-see" : ""}`),
   ];
 }
 
@@ -121,18 +144,32 @@ function changeCard(c: PlanChange, k: number, latest: boolean) {
   return `<div class="cp-change${latest ? "" : " old"}"><div class="cp-change-what">${icon("route")} <span>${c.request ? `<b>${esc(c.request)}</b>` : ""}${lines.length ? `<ul class="cp-ops">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}<span class="hint">${what}</span></span></div><div class="cp-change-act">${actions}</div></div>`;
 }
 
-function render(pending?: string) {
+/** The model's thinking above its answer, folded like Claude's: "Thought for 12s" (open and live while it thinks). */
+function thinkingHtml(thinking: string, label: string, open: boolean) {
+  return `<details class="cp-think"${open ? " open" : ""}><summary>${icon("sparkles")}<span>${esc(label)}</span></summary><div class="cp-think-body">${mdLite(thinking)}</div></details>`;
+}
+
+function render(pending?: Pending) {
   const log = $("#cpLog");
+  // Keep an opened "Thought for…" open across redraws.
+  const opened = new Set([...log.querySelectorAll<HTMLDetailsElement>("details.cp-think[data-k]")].filter((d) => d.open).map((d) => d.dataset.k));
   const turns = chat(), last = turns.length - 1;
   // Buttons only on the very last message: once they write again, the conversation moves on from there.
-  const bubble = (t: Turn, k: number) => t.role === "me" ? `<div class="rc-msg me">${esc(t.text)}</div>`
-    : `<div class="rc-msg ai">${mdLite(t.text)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}</div>`;
+  // Where the summary ends: a marker you can open to read it.
+  const covered = state.chatSummarized || 0;
+  const marker = (k: number) => (state.chatSummary && k === covered - 1
+    ? `<details class="cp-summary"><summary>${icon("file")} Earlier messages summarized</summary><div class="cp-think-body">${mdLite(state.chatSummary)}</div></details>` : "");
+  const pics = (t: Turn) => (t.images?.length ? `<div class="cp-pics">${t.images.map((src) => `<img src="${esc(src)}" alt="" data-zoom title="Click to see it big">`).join("")}</div>` : "");
+  const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${esc(t.text)}</div>` : ""}${marker(k)}`
+    : `<div class="rc-msg ai">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, opened.has(String(k))).replace('<details class="cp-think"', `<details class="cp-think" data-k="${k}"`) : ""}${mdLite(t.text)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
     : ["Is this route realistic?", "What's the weather like then?", "What should we not miss?", "What should we pack?"];
   log.innerHTML = turns.map(bubble).join("")
-    + (pending != null ? `<div class="rc-msg ai pending">${pending ? mdLite(pending) : `<span class="typing"><i></i><i></i><i></i></span>`}</div>` : "")
+    + (pending != null ? `<div class="rc-msg ai pending">${pending.thinking
+      ? thinkingHtml(pending.thinking, pending.answering ? `Thought for ${Math.max(1, Math.round(((pending.until || Date.now()) - pending.since) / 1000))}s` : "Thinking…", !pending.answering) : ""}${pending.text
+      ? mdLite(pending.text) : pending.answering || !pending.thinking ? `<span class="typing"><i></i><i></i><i></i></span>` : ""}</div>` : "")
     || `<div class="cp-empty"><div class="cp-empty-icon">${icon("chat")}</div>
         <p><b>Ask anything about your trip</b></p>
         <p class="hint">${hasPlan ? "What's on a day, where to eat, what to book, how to get around. Or ask for a change (“swap days 3 and 4”) and apply it from here." : "Questions about the places, the season or the route. Once there's a plan, you can change it from here too."}</p>
@@ -142,6 +179,9 @@ function render(pending?: string) {
   log.querySelectorAll<HTMLButtonElement>("[data-skip]").forEach((b) => { b.onclick = () => setStatus(+b.dataset.skip!, "skipped"); });
   log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(); });
   log.scrollTop = log.scrollHeight;
+  // The live thinking scrolls to its newest line.
+  const live = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
+  if (live) live.scrollTop = live.scrollHeight;
   idle();
 }
 
@@ -173,6 +213,13 @@ function applyOps(t: TripOps) {
   for (const r of t.removeDayTrips || []) for (const s of state.stays) {
     if (sameStay(s.city, r.stay)) s.dayTrips = (s.dayTrips || []).filter((d) => !samePlace(d.place, r.place));
   }
+  // New places (one recognised in a picture, say): as places picked by them; they're located on the map afterwards.
+  for (const a of t.addPlaces || []) {
+    const known = session.places.find((p) => samePlace(p.title, a.name));
+    const title = known?.title || a.name;
+    if (!known) state.customPlaces = [...state.customPlaces, { title, address: a.where, custom: true }];
+    if (a.must) state.marks[title] = "must";
+  }
   for (const a of t.addDayTrips || []) {
     const s = state.stays.find((x) => sameStay(x.city, a.stay));
     if (s && !(s.dayTrips || []).some((d) => samePlace(d.place, a.place))) s.dayTrips = [...(s.dayTrips || []), { place: a.place, mode: a.mode as never }];
@@ -183,7 +230,7 @@ function applyOps(t: TripOps) {
 function refreshAll() {
   setListPlaces(session.listPlaces);
   save();
-  renderStays(); renderChips(); renderItinerary(); drawMap({ fit: false }); geocodeItems();
+  renderStays(); renderChips(); renderItinerary(); drawMap({ fit: false }); geocodeItems(); geocodePlaces();
 }
 
 /** Applies a change: the setup first, then the days it touches (only what was asked; the other days stay exactly as they
@@ -216,6 +263,77 @@ function undo() {
   save(); render();
 }
 
+/** A picture shrunk to fit `max` pixels, as JPEG (base64 without the prefix, and as a data URL). */
+async function shrink(file: File, max: number, quality: number) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = fail; i.src = url; });
+    const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas");
+    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale);
+    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+    const dataUrl = c.toDataURL("image/jpeg", quality);
+    return { dataUrl, data: dataUrl.split(",")[1] };
+  } finally { URL.revokeObjectURL(url); }
+}
+
+/** Attaches pictures to the next message (at most 4). */
+async function addPictures(files: File[]) {
+  for (const f of files.slice(0, 4 - pictures.length)) {
+    try {
+      const [big, small] = await Promise.all([shrink(f, 1600, 0.85), shrink(f, 240, 0.7)]);
+      pictures.push({ type: "image/jpeg", data: big.data, thumb: small.dataUrl });
+      fullSize.set(small.dataUrl, big.dataUrl);
+    } catch { $("#cpLive").textContent = `Couldn't read ${f.name} as a picture.`; }
+  }
+  renderPictures();
+  box().focus();
+}
+
+function renderPictures() {
+  const el = $("#cpAttach");
+  el.hidden = !pictures.length;
+  el.innerHTML = pictures.map((p, k) => `<span class="cp-thumb"><img src="${p.thumb}" alt="" data-zoom title="Click to see it big"><button type="button" data-unpic="${k}" title="Remove">${icon("x")}</button></span>`).join("");
+  idle();
+}
+
+/** A message as the model gets it: changes with how they went. */
+const turnText = (t: Turn) => ({ role: t.role, text: `${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}` });
+
+/** Summarizes the messages up to `upTo` (with the summary before them) so long chats stay quick; the messages stay on
+ *  screen, with a marker where the summary ends. Without a summary (it failed), the chat just carries on. */
+async function compact(upTo: number) {
+  const from = state.chatSummarized || 0;
+  if (upTo <= from || compacting) return;
+  compacting = true;
+  const live = $("#cpLive");
+  live.textContent = "Summarizing the earlier conversation…";
+  try {
+    const { summary } = await streamRequest<{ summary: string }>("/api/companion/compact", {
+      model: chatModel(), turns: chat().slice(from, upTo).map(turnText), summary: state.chatSummary || "",
+    }, (l) => { live.textContent = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""}`; });
+    state.chatSummary = summary; state.chatSummarized = upTo;
+    save();
+    live.textContent = "";
+  } catch (e) { live.textContent = `Couldn't summarize: ${(e as Error).message}`; }
+  finally { compacting = false; render(); }
+}
+let compacting = false;
+
+/** The chat's model menu: "Same as planning (…)" and every model the planning menu has (its actions left out). */
+function syncModels() {
+  const pick = $<HTMLSelectElement>("#cpModel"), main = $<HTMLSelectElement>("#model");
+  const opts = [...main.options].filter((o) => o.value && !o.value.startsWith("__"));
+  const planning = main.selectedOptions[0]?.textContent?.trim() || "the planning model";
+  const want = state.chatModel && opts.some((o) => o.value === state.chatModel) ? state.chatModel : "";
+  const html = `<option value="">Same as planning (${esc(planning)})</option>` + opts.map((o) => `<option value="${esc(o.value)}">${esc(o.textContent?.trim() || o.value)}</option>`).join("");
+  if (pick.dataset.html !== html) { pick.innerHTML = html; pick.dataset.html = html; }
+  pick.value = want;
+}
+
+/** The model that answers in the chat. */
+const chatModel = () => (state.chatModel && [...$<HTMLSelectElement>("#model").options].some((o) => o.value === state.chatModel) ? state.chatModel : state.model);
+
 /** The send button, or while it answers, a stop button in its place (like Claude Code's). */
 function idle() {
   const send = $<HTMLButtonElement>("#cpSend"), busy = !!running;
@@ -224,9 +342,9 @@ function idle() {
     send.innerHTML = icon(busy ? "stop" : "arrowUp");
     send.title = busy ? "Stop" : "Send (Enter) · new line with Shift+Enter";
   }
-  send.disabled = !busy && !box().value.trim();
-  const model = $<HTMLSelectElement>("#model").selectedOptions[0]?.textContent?.trim() || "";
-  $("#cpModel").textContent = model ? `· ${model}` : "";
+  send.disabled = !busy && !box().value.trim() && !pictures.length;
+  $<HTMLButtonElement>("#cpCompact").hidden = busy || chat().length - (state.chatSummarized || 0) < 4;
+  syncModels();
 }
 
 function fit() {
@@ -236,24 +354,30 @@ function fit() {
 }
 
 async function ask() {
-  const question = box().value.trim();
-  if (!question || running) return;
+  const question = box().value.trim() || (pictures.length ? "What is this place?" : "");
+  if (!question || running || compacting) return;
+  const sent = pictures;
+  pictures = []; renderPictures();
   const live = $("#cpLive");
-  // What came before, with the changes that were applied, so "undo that" or "and day 4 too" make sense.
-  const history = chat().slice(-12).map((t) => ({ role: t.role, text: t.change ? `${t.text}\n(${changeNote(t.change)})` : t.text }));
-  state.chat = [...chat(), { role: "me" as const, text: question }].slice(-MAX_TURNS);
+  // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
+  if (chat().length - (state.chatSummarized || 0) > COMPACT_AT) await compact(chat().length - KEEP_RECENT);
+  // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
+  const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - HISTORY)).map(turnText);
+  state.chat = [...chat(), { role: "me" as const, text: box().value.trim() || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}) }];
   save();
   box().value = ""; fit();
   running = new AbortController();
-  render("");
+  const pending: Pending = { text: "", thinking: "", since: 0, until: 0, answering: false };
+  render(pending);
   try {
-    const { answer, change } = await streamRequest<{ answer: string; change?: PlanChange }>("/api/companion", {
-      model: state.model, question, history, context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
+    const { answer, change, thinking, thoughtSecs } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number }>("/api/companion", {
+      model: chatModel(), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
     }, (l) => {
       live.textContent = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""} · ${l.seconds} s`;
-      if (l.reasoning) render(l.reasoning);
+      if (l.thinking && l.thinking !== pending.thinking) { pending.since ||= Date.now(); pending.thinking = l.thinking; render(pending); }
+      if (l.reasoning && l.reasoning !== pending.text) { if (!pending.answering) pending.until = Date.now(); pending.answering = true; pending.text = l.reasoning; render(pending); }
     }, running.signal);
-    state.chat = [...chat(), { role: "ai" as const, text: answer, ...(change ? { change: { ...change, status: "offered" as const } } : {}) }].slice(-MAX_TURNS);
+    state.chat = [...chat(), { role: "ai" as const, text: answer, ...(thinking ? { thinking, thoughtSecs } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}) }];
     live.textContent = "";
   } catch (e) {
     const err = e as Error;
@@ -292,12 +416,43 @@ export function openChat(text?: string) {
 
 export function initCompanion() {
   $("#chatBtn").onclick = () => (panel().hidden ? openChat() : setOpen(false));
+  // The chat's own model (or the planning one); the menu follows the planning menu as models come and go.
+  $<HTMLSelectElement>("#cpModel").onchange = (e) => { state.chatModel = (e.target as HTMLSelectElement).value; save(); };
+  const main = $<HTMLSelectElement>("#model");
+  main.addEventListener("change", syncModels);
+  new MutationObserver(syncModels).observe(main, { childList: true });
   $("#cpClose").onclick = () => setOpen(false);
   $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else ask(); };
   box().addEventListener("input", () => { fit(); idle(); });
   box().addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); } });
-  $("#chatPanel .rc-box").onclick = (e) => { if (e.target === e.currentTarget) box().focus(); };
-  $("#cpClear").onclick = () => { if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; chain = null; save(); render(); } };
+  $("#cpBox").onclick = (e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("cp-tools-fill")) box().focus(); };
+  // Pictures: the button, pasting one into the box, or dropping one on the chat.
+  const file = $<HTMLInputElement>("#cpImage");
+  file.onchange = () => { addPictures([...(file.files || [])]); file.value = ""; };
+  box().addEventListener("paste", (e) => {
+    const imgs = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
+    if (imgs.length) { e.preventDefault(); addPictures(imgs); }
+  });
+  panel().addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); $("#cpBox").classList.add("over"); } });
+  panel().addEventListener("dragleave", (e) => { if (e.target === panel()) $("#cpBox").classList.remove("over"); });
+  panel().addEventListener("drop", (e) => {
+    e.preventDefault(); $("#cpBox").classList.remove("over");
+    addPictures([...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/")));
+  });
+  $("#cpAttach").onclick = (e) => {
+    const k = (e.target as HTMLElement).closest<HTMLElement>("[data-unpic]")?.dataset.unpic;
+    if (k != null) { pictures.splice(+k, 1); renderPictures(); return; }
+    const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
+    if (img) showPicture(img.getAttribute("src")!);
+  };
+  $("#cpLog").addEventListener("click", (e) => {
+    const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
+    if (img) showPicture(img.getAttribute("src")!);
+  });
+  $("#cpClear").onclick = () => {
+    if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; state.chatSummary = ""; state.chatSummarized = 0; chain = null; save(); render(); }
+  };
+  $("#cpCompact").onclick = () => compact(chat().length);
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.
   for (const t of chat()) if (t.change?.status === "applying") t.change.status = "offered";

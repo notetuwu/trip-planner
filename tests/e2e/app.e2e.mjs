@@ -59,6 +59,7 @@ const STUBS = `(() => {
     if (lists && listPath && listPath.lastIndexOf("/") === 0) { const name = decodeURIComponent(listPath.slice(1)); return json({ name, places: lists[name] || [], source: { type: "csv" } }); }
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
+    if (url.includes("/api/companion/compact")) { window.__e2e.compactAsked = body(); return stream({ summary: "- They want Pedrocchi on the way." }); }
     if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream(window.__e2e.companion || { answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
     if (url.includes("/api/itinerary")) {
       const b = body();
@@ -563,6 +564,22 @@ test("the chat can set a place on the way (taking it off the stay's day trips); 
   await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
   assert.equal(await page.eval(`planner.state().stays[0].dayTrips[0].place`), "Caffe Pedrocchi, Italy", "back to before the first change");
   assert.equal(await page.eval(`planner.state().how?.["Caffe Pedrocchi"] || ""`), "");
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
+test("a long chat is compacted: the older messages are summarized and the summary is sent instead", async () => {
+  const chat = Array.from({ length: 18 }, (_, k) => ({ role: k % 2 ? "ai" : "me", text: `message ${k}` }));
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false, chat });
+  await page.eval(`window.__e2e.companion = { answer: "Noted." }; document.querySelector("#chatBtn").click();
+    (() => { const q = document.querySelector("#cpQ"); q.value = "one more"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`planner.state().chat.length === 20`, 10000, "the answer");
+  const asked = await page.eval(`window.__e2e.compactAsked`);
+  assert.equal(asked.turns.length, 12, "the 18 messages minus the 6 most recent");
+  assert.equal(await page.eval(`planner.state().chatSummarized`), 12);
+  const sent = await page.eval(`window.__e2e.companionAsked`);
+  assert.equal(sent.summary, "- They want Pedrocchi on the way.");
+  assert.equal(sent.history[0].text, "message 12", "only what came after the summary");
+  assert.ok(await page.eval(`!!document.querySelector("#cpLog .cp-summary")`), "a marker where the summary ends");
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 

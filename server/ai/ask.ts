@@ -24,7 +24,13 @@ export interface AskOptions {
   onRetry?: (message: string) => void;
   /** What's added to the prompt when it's asked once more (default: answer with the JSON right away). */
   nudge?: string;
+  /** A plain-text answer (the trip chat) instead of JSON: Ollama isn't held to JSON, and thinks as set in Settings. */
+  text?: boolean;
+  /** Pictures to look at (the trip chat), base64 without the "data:" prefix. Models that can't see them say so. */
+  images?: AskImage[];
 }
+export interface AskImage { type: string; data: string }
+const dataUrl = (i: AskImage) => `data:${i.type};base64,${i.data}`;
 
 /**
  * Asks, watching for the model going round in circles (the same block of thinking over and over until it runs out of
@@ -59,17 +65,19 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
   if (modelId.startsWith("local|")) {
     const { kind, base, model } = parseModelId(modelId);
     if (kind === "ollama") {
+      const images = opts.images?.length ? { images: opts.images.map((i) => i.data) } : {};
       const chat = (noThink: boolean) => fetch(`${base}/api/chat`, {
         method: "POST", signal,
         body: JSON.stringify({
-          model, stream: true, format: "json", ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt }],
+          model, stream: true, ...(opts.text ? {} : { format: "json" }), ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt, ...images }],
           // Asked again after a loop: a little more randomness and a penalty on repeating, to get it out of the rut.
           options: { num_ctx: 16384, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { repeat_penalty: 1.15 } : {}) },
           keep_alive: keepAlive(tune().keepAlive),
         }),
       });
-      // Thinking off where the model has it (much faster for a small task); models without it reject the option.
-      let res = await chat(true);
+      // Thinking off where the model has it (much faster for a small task; the chat thinks as set in Settings); models
+      // without it reject the option.
+      let res = await chat(!opts.text || tune().thinking === "off");
       if (!res.ok) res = await chat(false);
       if (!res.ok) throw new Error(`Ollama: ${(await res.text()).slice(0, 300)}`);
       let text = "";
@@ -82,7 +90,7 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
       }
       return text;
     }
-    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick, retry);
+    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick, retry, opts.images);
   }
 
   if (modelId.startsWith("api|")) {
@@ -90,7 +98,10 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     const key = getKey(provider);
     if (!key) throw new Error(`No ${PROVIDERS[provider].name} API key.`);
     if (provider === "anthropic") {
-      const stream = new Anthropic({ apiKey: key }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content: prompt }] }, { signal });
+      const content = opts.images?.length
+        ? [...opts.images.map((i) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: i.data } })), { type: "text" as const, text: prompt }]
+        : prompt;
+      const stream = new Anthropic({ apiKey: key }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content }] }, { signal });
       stream.on("text", (t) => tick(t));
       const msg = await stream.finalMessage();
       return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
@@ -98,7 +109,9 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     // OpenAI / OpenRouter: the Responses API, streamed.
     const res = await fetch(`${BASE[provider]}/responses`, {
       method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, input: prompt, stream: true }),
+      body: JSON.stringify({ model, stream: true, input: opts.images?.length
+        ? [{ role: "user", content: [{ type: "input_text", text: prompt }, ...opts.images.map((i) => ({ type: "input_image", image_url: dataUrl(i) }))] }]
+        : prompt }),
     });
     if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${(await res.text()).slice(0, 300)}`);
     let text = "";
@@ -113,14 +126,15 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     }
     return text;
   }
-  return askClaudeCli(modelId, prompt, tick, signal);
+  return askClaudeCli(modelId, prompt, tick, signal, opts.images);
 }
 
 /** An OpenAI-compatible chat endpoint (LM Studio, llama.cpp…), streamed. */
-async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false) {
+async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false, images?: AskImage[]) {
+  const content = images?.length ? [{ type: "text", text: prompt }, ...images.map((i) => ({ type: "image_url", image_url: { url: dataUrl(i) } }))] : prompt;
   const res = await fetch(url, {
     method: "POST", signal, headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ model, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content }] }),
   });
   if (!res.ok) throw new Error(`${url}: ${(await res.text()).slice(0, 300)}`);
   let text = "";
@@ -136,12 +150,13 @@ async function openAiChat(url: string, headers: Record<string, string>, model: s
 }
 
 /** Through the Claude Code CLI (your plan), with no tools; streamed so the progress count moves. */
-function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thought?: string) => void, signal: AbortSignal) {
+function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thought?: string) => void, signal: AbortSignal, images?: AskImage[]) {
   return new Promise<string>((resolve, reject) => {
     const bin = findClaude();
     if (!bin) return reject(new Error("Could not find the claude CLI."));
+    // With pictures, the message goes in as stream-json (text and image blocks); otherwise as plain text.
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "", "--no-session-persistence",
-      ...(model && model !== "default" ? ["--model", model] : [])];
+      ...(images?.length ? ["--input-format", "stream-json"] : []), ...(model && model !== "default" ? ["--model", model] : [])];
     const env = { ...process.env };
     delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_AUTH_TOKEN; // always the plan, never API billing
     const child = spawn(bin, args, { cwd: os.tmpdir(), windowsHide: true, env });
@@ -170,6 +185,8 @@ function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thou
       if (result != null) resolve(result);
       else reject(new Error(`Claude: ${(failed || err || `exit ${code}`).slice(0, 300)}`));
     });
-    child.stdin.end(prompt);
+    child.stdin.end(images?.length
+      ? `${JSON.stringify({ type: "user", message: { role: "user", content: [...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.type, data: i.data } })), { type: "text", text: prompt }] } })}\n`
+      : prompt);
   });
 }

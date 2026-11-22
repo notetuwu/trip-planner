@@ -4,7 +4,7 @@ import {
   ArrowLeftRight, ArrowUp, ArrowUpRight, BedDouble, Bike, Bus, CalendarDays, Car, Clock, Cloud, CloudDrizzle, CloudFog,
   Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
   KeyRound, Map, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Share2, Ship, Smartphone, Star, Sun,
-  Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles,
+  Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles, ImagePlus,
 } from "lucide";
 
 type IconNode = [string, Record<string, string | number | undefined>][];
@@ -16,7 +16,7 @@ const ICONS = {
   download: Download, external: ExternalLink, file: FileText, walk: Footprints, hotel: Hotel, key: KeyRound, map: Map,
   pin: MapPin, monitor: Monitor, moon: Moon, plane: Plane, plus: Plus, printer: Printer, refresh: RefreshCw, route: Route,
   search: Search, share: Share2, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, train: TrainFront, trash: Trash2,
-  warn: TriangleAlert, users: Users, x: X, settings: Settings, cpu: Cpu, wifi: Wifi, drive: HardDrive, sliders: Sliders, power: Power, chat: MessageCircle, upload: Upload, stop: Square, sparkles: Sparkles,
+  warn: TriangleAlert, users: Users, x: X, settings: Settings, cpu: Cpu, wifi: Wifi, drive: HardDrive, sliders: Sliders, power: Power, chat: MessageCircle, upload: Upload, stop: Square, sparkles: Sparkles, image: ImagePlus,
 } satisfies Record<string, IconNode>;
 
 export type IconName = keyof typeof ICONS;

@@ -22,7 +22,43 @@
 .map-toggles select { width: auto; height: 28px; font-size: 12px; padding-left: 10px; }
 #map { height: 420px; background: var(--bg); }
 :root[data-theme="dark"] #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
-.map-status { position: absolute; left: 10px; bottom: 10px; z-index: 500; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12px; pointer-events: none; }
+/* The status pill in the map's corner; clicked, it opens up and to the right into a panel of what the lookups do. */
+.map-status { position: absolute; left: 10px; bottom: 10px; z-index: 1100; } /* above the map's own controls */
+.ms-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px 4px 10px; font: inherit; font-size: 12px; cursor: pointer; box-shadow: var(--shadow); transition: color .15s, border-color .15s; }
+.ms-pill:hover { color: var(--ink); border-color: var(--line-strong); }
+.ms-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); animation: ms-pulse 1.4s ease-in-out infinite; }
+@keyframes ms-pulse { 50% { opacity: .3; } }
+.ms-open { width: 12px; height: 12px; transition: transform .25s; }
+.map-status.open .ms-open { transform: rotate(45deg); }
+.ms-panel {
+  position: absolute; left: 0; bottom: calc(100% + 8px); width: min(380px, calc(100vw - 60px)); max-height: 420px; overflow: auto;
+  background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-pop); padding: 10px 12px 12px;
+  transform-origin: bottom left; transform: scale(.35, .1); opacity: 0; pointer-events: none;
+  clip-path: inset(70% 60% 0 0 round 14px);
+  transition: transform .28s cubic-bezier(.2, .9, .3, 1.05), opacity .18s ease, clip-path .3s cubic-bezier(.2, .9, .3, 1);
+}
+.map-status.open .ms-panel { transform: none; opacity: 1; pointer-events: auto; clip-path: inset(0 0 0 0 round 14px); }
+.ms-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.ms-close { width: 26px; height: 26px; }
+.ms-down { display: flex; gap: 6px; align-items: flex-start; font-size: 12px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 8px; padding: 6px 8px; margin: 4px 0 6px; }
+.ms-down .i { flex: none; margin-top: 2px; }
+.ms-sec { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 0 4px; }
+.ms-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.ms-row:last-child { border-bottom: 0; }
+.ms-row.muted { color: var(--muted); }
+.ms-lane { flex: none; font-size: 10.5px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
+.ms-q { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ms-q, .ms-q b, .ms-q small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ms-q b { font-weight: 600; }
+.ms-q small { color: var(--muted); font-size: 11px; }
+.ms-ms { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ms-r { flex: none; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; }
+.ms-r .i { width: 11px; height: 11px; }
+.ms-r.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.ms-r.none { color: var(--muted); background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.ms-r.moved { color: var(--accent); background: var(--accent-soft); }
+.ms-r.err { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
+@media (prefers-reduced-motion: reduce) { .ms-panel { transition: opacity .15s; } .ms-dot { animation: none; } }
 .map-wrap { position: relative; }
 .map-search { position: absolute; top: 10px; left: 54px; right: 10px; max-width: 380px; z-index: 800; cursor: default; }
 .map-search input { background: var(--panel); box-shadow: var(--shadow); padding: 7px 10px; }

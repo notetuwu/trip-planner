@@ -276,7 +276,7 @@ textarea.ideas { min-height: 72px; field-sizing: content; max-height: 360px; }
 .cp-head { display: flex; align-items: center; gap: 8px; padding: 14px 12px 10px 18px; border-bottom: 1px solid var(--line); }
 .cp-head h2 { margin: 0; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
 .cp-head h2 .i { color: var(--accent); }
-.cp-head #cpModel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+
 .chat-panel .cp-log { flex: 1; min-height: 0; max-height: none; padding: 14px 16px; gap: 12px; }
 .chat-panel .rc-msg { font-size: 13px; max-width: 94%; }
 .chat-panel .rc-msg.ai { background: transparent; border: 0; padding: 2px 2px; max-width: 100%; }
@@ -489,3 +489,60 @@ button.refine:hover { border-color: var(--accent); }
 /* A change card's setup changes, and older cards (the conversation moved on) toned down. */
 .cp-ops { margin: 4px 0 4px; padding-left: 16px; font-size: 12.5px; }
 .cp-change.old { opacity: .7; border-left-color: var(--line-strong); }
+/* The model's thinking above an answer in the trip chat: folded "Thought for 12s", open and live while it thinks. */
+.cp-think { margin: 0 0 8px; }
+.cp-think summary { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; font-size: 12px; color: var(--muted); padding: 2px 8px 2px 6px; border-radius: 8px; }
+.cp-think summary::-webkit-details-marker { display: none; }
+.cp-think summary::after { content: "›"; font-size: 13px; transition: transform .15s; }
+.cp-think[open] summary::after { transform: rotate(90deg); }
+.cp-think summary:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.cp-think summary .i { width: 12px; height: 12px; color: var(--accent); }
+.pending .cp-think:not([open]) summary .i, .pending .cp-think[open] summary .i { animation: bob 1.4s ease-in-out infinite; }
+.cp-think-body { margin: 6px 0 2px 2px; padding: 2px 0 2px 12px; border-left: 2px solid var(--line-strong); color: var(--muted); font-size: 12.5px; max-height: 260px; overflow: auto; }
+.cp-think-body p, .cp-think-body ul { margin: 0 0 6px; }
+.cp-log .cp-think-body b { display: inline; font-size: inherit; margin: 0; }
+/* The chat's own model menu in its header. */
+.cp-head .cp-model { flex: 1; min-width: 0; width: auto; height: 28px; padding: 0 24px 0 8px; font-size: 12px; border-radius: 8px; background-color: transparent; color: var(--muted); }
+.cp-head .cp-model:hover, .cp-head .cp-model:focus { color: var(--ink); }
+/* Where a compacted chat's summary ends: a marker to open and read it. */
+.cp-summary { align-self: stretch; margin: 2px 0; border-top: 1px dashed var(--line-strong); border-bottom: 1px dashed var(--line-strong); padding: 6px 0; }
+.cp-summary summary { cursor: pointer; list-style: none; font-size: 11.5px; font-weight: 600; color: var(--muted); display: flex; align-items: center; justify-content: center; gap: 6px; text-transform: uppercase; letter-spacing: .06em; }
+.cp-summary summary::-webkit-details-marker { display: none; }
+.cp-summary summary .i { width: 12px; height: 12px; }
+
+/* The chat's message box, like Claude's: pictures above, the text, then a toolbar (picture, model, compact, send). */
+.cp-head-fill { flex: 1; }
+.cp-box {
+  display: flex; flex-direction: column; gap: 4px; padding: 8px 8px 6px 12px; cursor: text;
+  background: var(--field); border: 1px solid var(--line-strong); border-radius: 18px; box-shadow: var(--shadow);
+  transition: border-color .15s, box-shadow .15s;
+}
+.cp-box:focus-within, .cp-box.over { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); box-shadow: 0 0 0 3px var(--focus); }
+.cp-box textarea {
+  box-sizing: border-box; width: 100%; min-height: 26px; max-height: 200px; height: 26px; padding: 3px 0; margin: 0; resize: none; overflow-y: auto;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; line-height: 20px; font-size: 13.5px;
+}
+.cp-box textarea:focus, .cp-box textarea:hover { border: 0; box-shadow: none; }
+.cp-tools { display: flex; align-items: center; gap: 4px; margin-left: -4px; }
+.cp-tools-fill { flex: 1; align-self: stretch; }
+.cp-tool { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 30px; min-width: 30px; padding: 0 6px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; margin: 0; }
+.cp-tool:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 7%, transparent); }
+.cp-tool .i { width: 17px; height: 17px; }
+.cp-tool-text { padding: 0 9px; font-weight: 600; }
+.cp-tools .cp-model { flex: 0 1 auto; max-width: 190px; min-width: 0; width: auto; height: 30px; padding: 0 24px 0 9px; font-size: 12px; border: 0; border-radius: 9px; background-color: transparent; color: var(--muted); }
+.cp-tools .cp-model:hover, .cp-tools .cp-model:focus { color: var(--ink); background-color: color-mix(in srgb, var(--ink) 7%, transparent); box-shadow: none; }
+.cp-attach { display: flex; gap: 6px; flex-wrap: wrap; padding: 2px 0 4px; }
+.cp-thumb { position: relative; width: 56px; height: 56px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.cp-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cp-thumb button { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border: 0; border-radius: 50%; padding: 0; display: grid; place-items: center; background: rgba(0, 0, 0, .65); color: #fff; cursor: pointer; }
+.cp-thumb button .i { width: 11px; height: 11px; }
+.cp-pics { align-self: flex-end; display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; max-width: 94%; }
+.cp-pics img { width: 96px; height: 96px; object-fit: cover; border-radius: 12px; border: 1px solid var(--line); }
+
+/* Pictures in the chat: click for big. */
+.cp-thumb img, .cp-pics img { cursor: zoom-in; }
+.lightbox { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; background: rgba(0, 0, 0, .78); opacity: 0; transition: opacity .18s; cursor: zoom-out; }
+.lightbox.show { opacity: 1; }
+.lightbox img { max-width: 92vw; max-height: 88vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); transform: scale(.96); transition: transform .2s; }
+.lightbox.show img { transform: none; }
+.lightbox-x { position: absolute; top: 18px; right: 18px; width: 38px; height: 38px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .15); color: #fff; display: grid; place-items: center; cursor: pointer; }

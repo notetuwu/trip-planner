@@ -105,15 +105,21 @@
   </section>
 
   <aside class="panel chat-panel" id="chatPanel" hidden aria-label="Trip chat">
-    <div class="cp-head"><h2><i data-icon="chat"></i> Trip chat</h2>
-      <span class="hint" id="cpModel"></span>
+    <div class="cp-head"><h2><i data-icon="chat"></i> Trip chat</h2><span class="cp-head-fill"></span>
       <button class="link-btn" id="cpClear" type="button" title="Start the conversation over">Clear</button>
       <button class="icon-btn" id="cpClose" type="button" title="Close the chat"><i data-icon="x"></i></button></div>
     <div id="cpLog" class="rc-log cp-log"></div>
     <form id="cpForm" class="rc-input">
-      <div class="rc-box">
+      <div class="cp-box" id="cpBox">
+        <div class="cp-attach" id="cpAttach" hidden></div>
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
-        <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+        <div class="cp-tools">
+          <label class="cp-tool" title="Add a picture: a place you saw but don't know the name of (you can also paste or drop one)"><i data-icon="image"></i><input type="file" id="cpImage" accept="image/*" multiple hidden></label>
+          <select id="cpModel" class="cp-model" title="The model that answers in the chat (changes are still applied with the planning model)"></select>
+          <button class="cp-tool cp-tool-text" id="cpCompact" type="button" title="Summarize the conversation so far, so long chats stay quick (it also happens by itself)" hidden>Compact</button>
+          <span class="cp-tools-fill"></span>
+          <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+        </div>
       </div>
       <div class="cp-foot"><span class="hint" id="cpLive"></span></div>
     </form>

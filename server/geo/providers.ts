@@ -17,14 +17,14 @@ const nominatimSlot = pacer(1100), photonSlot = pacer(400);
 
 export async function nominatim(endpoint: "search" | "reverse", params: URLSearchParams): Promise<any> {
   await nominatimSlot();
-  const res = await fetch(`https://nominatim.openstreetmap.org/${endpoint}?${params}`, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetch(`https://nominatim.openstreetmap.org/${endpoint}?${params}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(10_000) });
   if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   return res.json();
 }
 
 export async function photon(params: URLSearchParams): Promise<any[]> {
   await photonSlot();
-  const res = await fetch(`https://photon.komoot.io/api/?${params}`, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetch(`https://photon.komoot.io/api/?${params}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(8_000) });
   if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
   return ((await res.json()) as any).features || [];
 }

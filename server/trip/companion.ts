@@ -4,7 +4,7 @@
 // Asked to change the plan ("swap days 3 and 4", "a vegan lunch on day 2"), it says what it will change and hands
 // back the change for the page to offer: re-planning the day concerned, or the whole plan.
 // Nothing from here goes into plan generation: the chat is its own request, with its own prompt.
-import { askModel } from "../ai/ask";
+import { type AskImage, askModel } from "../ai/ask";
 import type { Report } from "../util/progress-stream";
 
 export interface CompanionTurn { role: "me" | "ai"; text: string }
@@ -16,6 +16,10 @@ export interface CompanionRequest {
   today?: string;
   /** How many days the itinerary has (0: none yet, so no changes to offer). */
   days?: number;
+  /** A summary of the conversation before `history` (long chats are compacted). */
+  summary?: string;
+  /** Pictures the traveler attached to this message (base64, without the "data:" prefix). */
+  images?: AskImage[];
 }
 /** A change to the plan the traveler asked for: the days it touches (1-based; empty = all over the plan) and the
  *  instruction for the planner. */
@@ -28,6 +32,8 @@ export interface TripOps {
   fromStay?: string[];
   removeDayTrips?: { stay: string; place: string }[];
   addDayTrips?: { stay: string; place: string; mode: string }[];
+  /** New places for their places (e.g. one recognised in a picture): name, where it is, and whether it's a must-see. */
+  addPlaces?: { name: string; where: string; must: boolean }[];
 }
 
 const MAX_CONTEXT = 60_000, MAX_TURN = 4_000;
@@ -46,6 +52,7 @@ CHANGE: {"days": [3], "request": "the precise instruction for the planner, in En
 - "onTheWay": places to visit on a travel day between two stays instead of as a day trip (this also takes them off the stays' day trips). Use it whenever they want a place "on the way".
 - "fromStay": places to visit from where they sleep.
 - "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}] for the day trips listed under the stays.
+- "addPlaces": [{"name": "the place's real name", "where": "town, country", "must": true}] adds places to their places (for example one you recognised in a picture they sent), as a must-see when they want to go for sure.
 Day trips listed under the stays above stay in the trip until removed here, even if a day's plan changes, so when a place moves from a day trip to somewhere else, remove that day trip too. When only the setup changes and the days are already right, use "days": [] and "request": "".
 Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead.
 ` : `
@@ -62,9 +69,11 @@ ${clip(req.context, MAX_CONTEXT) || "(Nothing planned yet: no stays or itinerary
 - Be concrete and brief: a few sentences or a short list. Suggest a change to the plan when it helps.
 - Plain text with light Markdown only (**bold**, "- " bullets). No tables.
 - Answer in the language the traveler writes in.${req.today ? `\n- Today is ${clip(req.today, 20)}.` : ""}
-${changes}${history ? `\n## The conversation so far\n${history}\n` : ""}
+${changes}${req.summary ? `\n## Earlier in this conversation (summary)\n${clip(req.summary, 8_000)}\n` : ""}${history ? `\n## The conversation so far\n${history}\n` : ""}
 ## The traveler says
-${clip(req.question, MAX_TURN)}`;
+${clip(req.question, MAX_TURN)}${req.images?.length ? `
+
+They attached ${req.images.length} picture${req.images.length > 1 ? "s" : ""}. Work out what ${req.images.length > 1 ? "they show" : "it shows"}: the place's name and where it is, as precisely as you can, and say how sure you are (and what gives it away). If you can't tell, say what you see and what would help. If they want it in the trip, add it with "addPlaces" (and change the days too if they ask).` : ""}`;
 }
 
 /** Strips what some models wrap answers in (a code fence, a leading "You:") and the CHANGE line (also half-written). */
@@ -86,6 +95,13 @@ export function parseChange(text: string, days = 0): PlanChange | null {
   } catch { return null; }
 }
 
+/** At most 4 pictures of the usual kinds, each up to about 6 MB. */
+export function cleanImages(images: unknown): AskImage[] {
+  if (!Array.isArray(images)) return [];
+  return images.filter((i: any) => i && /^image\/(jpeg|png|webp|gif)$/.test(i.type) && typeof i.data === "string" && i.data.length < 8_000_000 && /^[A-Za-z0-9+/=]+$/.test(i.data.slice(0, 200)))
+    .slice(0, 4).map((i: any) => ({ type: i.type, data: i.data }));
+}
+
 /** Only well-formed setup changes (names as short strings, known travel modes); null when there are none. */
 export function tripOps(t: any): TripOps | null {
   if (!t || typeof t !== "object") return null;
@@ -96,25 +112,51 @@ export function tripOps(t: any): TripOps | null {
     onTheWay: names(t.onTheWay), fromStay: names(t.fromStay),
     removeDayTrips: (Array.isArray(t.removeDayTrips) ? t.removeDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place) })).filter((x: any) => x.place).slice(0, 20),
     addDayTrips: (Array.isArray(t.addDayTrips) ? t.addDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place), mode: MODES.includes(x?.mode) ? x.mode : "car" })).filter((x: any) => x.place && x.stay).slice(0, 20),
+    addPlaces: (Array.isArray(t.addPlaces) ? t.addPlaces : []).map((x: any) => ({ name: name(x?.name), where: name(x?.where), must: x?.must !== false })).filter((x: any) => x.name).slice(0, 10),
   };
   for (const k of Object.keys(ops) as (keyof TripOps)[]) if (!ops[k]!.length) delete ops[k];
   return Object.keys(ops).length ? ops : null;
 }
 
+/** Compacting a long chat: the earlier turns (and the summary before them) into a short summary to carry on from. */
+export function compactPrompt(turns: CompanionTurn[], summary = "") {
+  const text = turns.map((t) => `${t.role === "me" ? "Traveler" : "Companion"}: ${clip(t.text, MAX_TURN)}`).join("\n\n");
+  return `Below is the start of a conversation between travelers and their travel companion about their trip${summary ? ", after a summary of what came before it" : ""}. Summarize it so the conversation can carry on without it: what they asked and decided, their preferences and worries, which changes to the plan were applied, undone or not applied, and anything still open. Short "- " bullets, at most about 15, with the specific names, days and numbers. Only the summary, no introduction.
+${summary ? `\n## Summary of what came before\n${clip(summary, 8_000)}\n` : ""}
+## The conversation
+${text}`;
+}
+
+export async function compactChat(req: { model: string; turns?: CompanionTurn[]; summary?: string }, report: Report, signal?: AbortSignal) {
+  const turns = (Array.isArray(req.turns) ? req.turns : []).slice(-200);
+  if (!turns.length) return { summary: req.summary || "" };
+  report({ type: "status", text: "Summarizing the earlier conversation…" });
+  const summary = cleanAnswer(await askModel(req.model, compactPrompt(turns, req.summary), (n) => report({ type: "tokens", n }), {
+    signal, nudge: "Write the summary right away.",
+  }));
+  if (!summary) throw new Error("The model didn't write a summary.");
+  return { summary: summary.slice(0, 8_000) };
+}
+
 export async function askCompanion(req: CompanionRequest, report: Report, signal?: AbortSignal) {
   report({ type: "status", text: "Thinking…" });
-  const answer = await askModel(req.model, companionPrompt(req), (n) => report({ type: "tokens", n }), {
-    signal,
+  // How long it thought: from the first thought to the first word of the answer.
+  let thinking = "", thinkFrom = 0, thinkTo = 0;
+  const images = cleanImages(req.images);
+  const answer = await askModel(req.model, companionPrompt({ ...req, images }), (n) => report({ type: "tokens", n }), {
+    signal, text: true, images,
     nudge: "Answer the traveler right away, briefly.",
     // The answer so far goes out as it's written (as "reasoning", the channel the page already shows live).
-    onText: (reply, thinking) => {
-      if (reply.trim()) report({ type: "reasoning", text: cleanAnswer(reply) });
-      else if (thinking) report({ type: "status", text: "Thinking…" });
+    onText: (reply, thought) => {
+      if (thought && thought !== thinking) { thinking = thought; thinkFrom ||= Date.now(); report({ type: "thinking", text: thought }); }
+      if (reply.trim()) { if (thinkFrom && !thinkTo) thinkTo = Date.now(); report({ type: "reasoning", text: cleanAnswer(reply) }); }
+      else if (thought) report({ type: "status", text: "Thinking…" });
     },
     onRetry: (message) => report({ type: "status", text: message }),
   });
   const text = cleanAnswer(answer);
   const change = req.days ? parseChange(answer, req.days) : null;
   if (!text && !change) throw new Error("The model didn't answer. Try again, or pick a different model.");
-  return { answer: text || "I'll change that.", ...(change ? { change } : {}) };
+  const thought = thinking.trim() ? { thinking: thinking.trim().slice(-20_000), thoughtSecs: Math.max(1, Math.round(((thinkTo || Date.now()) - thinkFrom) / 1000)) } : {};
+  return { answer: text || "I'll change that.", ...(change ? { change } : {}), ...thought };
 }

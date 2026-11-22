@@ -100,35 +100,79 @@ export function countryCode(name: string) {
  * instead of holding up its lane while it waits.
  */
 type Lane = "nominatim" | "photon";
-interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean; lane: Lane; tried: Lane[]; errored?: boolean }
+interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean; lane: Lane; tried: Lane[]; errored?: boolean; answered?: boolean }
 const geoQueue: GeoJob[] = [];
 const busy: Record<Lane, boolean> = { nominatim: false, photon: false };
 /** Being looked up right now (out of the queue meanwhile, so the page asking again doesn't queue it twice). */
 const inFlight = new Set<string>();
 const other = (l: Lane): Lane => (l === "nominatim" ? "photon" : "nominatim");
-export const startLane = (j: { first: boolean; stop: boolean }): Lane => (j.first || j.stop ? "nominatim" : "photon");
+/** A service that keeps failing (down, or unreachable from here) is left out for a while: its jobs go to the other. */
+const failures: Record<Lane, number> = { nominatim: 0, photon: 0 };
+const downUntil: Record<Lane, number> = { nominatim: 0, photon: 0 };
+const isDown = (l: Lane) => Date.now() < downUntil[l];
+export const startLane = (j: { first: boolean; stop: boolean }): Lane => {
+  const best: Lane = j.first || j.stop ? "nominatim" : "photon";
+  return isDown(best) && !isDown(other(best)) ? other(best) : best;
+};
+
+/** What the lookups did lately, for the panel over the map ("what's it doing?"). */
+export interface GeoEvent { at: number; q: string; lane: Lane; result: "found" | "none" | "error" | "moved"; name?: string; error?: string; ms: number }
+const events: GeoEvent[] = [];
+const logEvent = (e: GeoEvent) => { events.push(e); if (events.length > 80) events.splice(0, events.length - 80); };
+/** The lookups right now: what each lane is on, what's waiting, which service is left out, and what happened lately. */
+export function geocodeStatus() {
+  return {
+    queued: geoQueue.length,
+    waiting: geoQueue.slice(0, 8).map((j) => ({ q: j.q, lane: j.lane })),
+    now: [...current.entries()].map(([lane, j]) => ({ lane, q: j.q, since: j.since })),
+    down: (["nominatim", "photon"] as Lane[]).filter(isDown).map((lane) => ({ lane, until: downUntil[lane] })),
+    events: events.slice(-40).reverse(),
+  };
+}
+const current = new Map<Lane, { q: string; since: number }>();
 
 async function runLane(lane: Lane) {
   if (busy[lane]) return;
   busy[lane] = true;
   for (let i; (i = geoQueue.findIndex((j) => j.lane === lane)) >= 0;) {
     const job = geoQueue.splice(i, 1)[0];
+    // This service is left out for now: the job goes straight to the other one (if that one hasn't had it yet).
+    if (isDown(lane)) {
+      if (!job.tried.includes(other(lane)) && !isDown(other(lane))) { job.lane = other(lane); geoQueue.push(job); runLane(job.lane); continue; }
+      // Both had their go (or the other is down too): keep what's known, try again another time otherwise.
+      if (job.answered) { geoCache.data[job.key] = null; geoCache.save(); }
+      continue;
+    }
     inFlight.add(job.key);
-    let hit: GeoHit | null = null;
+    current.set(lane, { q: job.q, since: Date.now() });
+    const t0 = Date.now();
+    let hit: GeoHit | null = null, failed = "";
     try { hit = lane === "nominatim" ? await byNominatim(job.q, job.cc, job.near, job.stop) : await byPhoton(job.q, job.cc, job.near); }
-    catch (e) { job.errored = true; console.error(`Geocode (${lane}) failed:`, job.q, errMsg(e)); }
+    catch (e) { failed = errMsg(e); }
+    current.delete(lane);
     inFlight.delete(job.key);
     job.tried.push(lane);
-    if (!hit && !job.tried.includes(other(lane))) {
-      // Not found here: the other lane tries it, keeping its place among the others there.
+    if (failed) {
+      job.errored = true;
+      // Three failures in a row: the service is down or unreachable from here; leave it out for 10 minutes.
+      if (++failures[lane] >= 3 && !isDown(lane)) {
+        downUntil[lane] = Date.now() + 10 * 60e3;
+        console.error(`Geocode: ${lane} keeps failing (${failed}); using only the other service for 10 minutes.`);
+      } else if (failures[lane] < 3) console.error(`Geocode (${lane}) failed:`, job.q, failed);
+    } else { failures[lane] = 0; job.answered = true; }
+    const moving = !hit && !job.tried.includes(other(lane)) && !isDown(other(lane));
+    logEvent({ at: Date.now(), q: job.q, lane, ms: Date.now() - t0, result: failed ? "error" : hit ? "found" : moving ? "moved" : "none", ...(hit ? { name: hit.label || hit.name } : {}), ...(failed ? { error: failed } : {}) });
+    if (moving) {
+      // Not found here (or failed): the other lane tries it, keeping its place among the others there.
       job.lane = other(lane);
       const at = geoQueue.findIndex((j) => j.lane === job.lane && !j.first && job.first);
       geoQueue.splice(at < 0 ? geoQueue.length : at, 0, job);
       runLane(job.lane);
       continue;
     }
-    // "Not found" after an error (a service down) isn't remembered, so it's tried again next time.
-    if (hit || !job.errored) { geoCache.data[job.key] = hit; geoCache.save(); }
+    // Remember the answer, including "not found" when a service did answer; only when every try failed is nothing kept,
+    // so it's tried again later (instead of coming back on every check forever).
+    if (hit || job.answered) { geoCache.data[job.key] = hit; geoCache.save(); }
   }
   busy[lane] = false;
 }

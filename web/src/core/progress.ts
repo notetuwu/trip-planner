@@ -2,7 +2,7 @@
 // model's token count — then the result. A ticking timer keeps the line alive while the model thinks.
 import { apiFetch } from "./dom";
 
-export interface Live { status: string; tokens: number; seconds: number; reasoning: string }
+export interface Live { status: string; tokens: number; seconds: number; reasoning: string; thinking?: string }
 
 /** `signal` cancels it (the server notices the closed connection and stops too). */
 export async function streamRequest<T>(url: string, body: unknown, onUpdate: (live: Live) => void, signal?: AbortSignal): Promise<T> {
@@ -29,6 +29,7 @@ export async function streamRequest<T>(url: string, body: unknown, onUpdate: (li
         if (ev.type === "status") live.status = ev.text;
         if (ev.type === "tokens") live.tokens = ev.n;
         if (ev.type === "reasoning") live.reasoning = ev.text;
+        if (ev.type === "thinking") live.thinking = ev.text;
         onUpdate(live);
       }
     }
