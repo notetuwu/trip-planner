@@ -63,12 +63,19 @@ describe("checking a planned route against the map", () => {
     expect(stays[0].dayTrips).toEqual([]);
     expect(stays[1].dayTrips!.map((t) => t.place)).toEqual(["Neuschwanstein"]);
   });
-  it("makes a sight they named between two stays a stop on that travel day", () => {
-    // Vaduz on a day trip from Lucerne, though it lies on the drive from Lucerne to Bregenz.
-    const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Vaduz", why: "Liechtenstein", lat: 47.14, lng: 9.52 }]), stay("Bregenz", 47.5, 9.75, 2)];
-    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays, "a day trip to vaduz");
-    expect(stays[0].dayTrips).toEqual([]);
-    expect(via.get(1)?.map((v) => v.place)).toEqual(["Vaduz"]);
+  it("keeps Hallstatt a day trip from Salzburg (on a straight line it looks on the way to Venice; by road it isn't)", () => {
+    const stays = [stay("Salzburg", 47.8, 13.04, 4, [{ place: "Hallstatt, Austria", why: "", lat: 47.562, lng: 13.649 }]), stay("Venice", 45.44, 12.33, 3)];
+    const via = placeTrips([[48.1, 11.6], [47.8, 13.04], [45.44, 12.33], [48.1, 11.6]], stays, "hallstatt as a day trip");
+    expect(via.size).toBe(0);
+    expect(stays[0].dayTrips!.map((t) => t.place)).toEqual(["Hallstatt, Austria"]);
+  });
+  it("puts a stop on the drive home on the last leg", () => {
+    // Munich Airport on the drive from Salzburg back home. On a straight line it's "on the way" from home to Venice too,
+    // but the model listed it for the drive home.
+    const stays = [stay("Venice", 45.44, 12.33, 3), stay("Salzburg", 47.8, 13.04, 4, [{ place: "Munich Airport", why: "drop-off", way: true, home: true, lat: 48.354, lng: 11.786 }])];
+    const via = placeTrips([[50.6, 12.2], [45.44, 12.33], [47.8, 13.04], [50.6, 12.2]], stays);
+    expect([...via.keys()]).toEqual([2]);
+    expect(via.get(2)!.map((v) => v.place)).toEqual(["Munich Airport"]);
   });
 });
 
@@ -119,5 +126,14 @@ describe("day trips the map can't find", () => {
     const stays = [stay("Reutte", 47.49, 10.72, 1), stay("Zell am See", 47.32, 12.8, 2, [{ place: "Grossglockner High Alpine Road", why: "" }])];
     placeTrips([[48.1, 11.6], [47.49, 10.72], [47.32, 12.8], [48.1, 11.6]], stays);
     expect(stays.map((s) => (s.dayTrips || []).map((t) => t.place))).toEqual([[], ["Grossglockner High Alpine Road"]]);
+  });
+});
+describe("must-sees marked on the way", () => {
+  it("are stops on the way even when the model made them a day trip from a nearby stay", () => {
+    // Burg Hohenwerfen as a day trip from Salzburg (36 km), though they marked it "on the way" (Venice → Salzburg).
+    const stays = [stay("Venice", 45.44, 12.33, 3), stay("Salzburg", 47.8, 13.04, 4, [{ place: "Burg Hohenwerfen, Austria", why: "", lat: 47.483, lng: 13.189 }])];
+    const via = placeTrips([[48.1, 11.6], [45.44, 12.33], [47.8, 13.04], [48.1, 11.6]], stays, "castles", [[47.4832, 13.1889]]);
+    expect(via.get(1)?.map((v) => v.place)).toEqual(["Burg Hohenwerfen, Austria"]);
+    expect(stays.flatMap((s) => s.dayTrips || [])).toEqual([]);
   });
 });

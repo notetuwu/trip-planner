@@ -66,3 +66,6 @@ export function warmNearby() {
 /** Google Maps for a stay: its hotel when one is given, else the town. */
 export const stayMapsUrl = (s: Stay) =>
   `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.hotel ? `${s.hotel}, ${s.city}` : s.city)}`;
+
+/** A place's name for comparing: lower case, without accents or a trailing ", Country" ("Burg Hohenwerfen, Austria" → "burg hohenwerfen"). */
+export const sameName = (name: string) => name.split(",")[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();

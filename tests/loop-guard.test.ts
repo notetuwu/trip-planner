@@ -45,3 +45,21 @@ dayTrips or onTheWay, so I don't need to list it in those fields. I will proceed
     expect(isLooping(`{"stays": [${stays.join(", ")}]}`)).toBe(false);
   });
 });
+
+describe("a long itinerary is not a loop", () => {
+  it("lets through 19 days with the same breakfast, hotel and fields every day", () => {
+    const stop = (time: string, place: string, d: string, extra = "") =>
+      `{"time": "${time}", "place": "${place}", "fromList": false, "description": "${d}", "cost": 0, "transport": "Walk, 5 min", "lat": 47.7982, "lng": 13.0433, "kind": "meal"${extra}}`;
+    const days = Array.from({ length: 19 }, (_, k) => `{"date": "2027-09-${String(6 + k).padStart(2, "0")}", "city": "Salzburg", "title": "Day ${k + 1} around the old town", "estimatedCost": ${80 + k}, "items": [
+      ${stop("08:00", "Breakfast at the hotel", "Breakfast at the hotel before heading out; included in the room rate, so nothing extra to pay here.")},
+      ${stop("09:30", `Museum number ${k}`, `A museum worth an hour or two, number ${k}, with its own story.`, `, "booking": "optional"`)},
+      ${stop("12:30", "Lunch around the Marktplatz", "Lunch around the Marktplatz: pick whatever looks good; plenty of cafés and bakeries in the old town.")},
+      ${stop("19:00", "Dinner at the hotel restaurant", "Dinner at the hotel restaurant, which does regional dishes; book a table in the morning to be safe.")}
+    ], "notes": "No closures today."}`);
+    const json = `{"planningNotes": "Short notes.", "days": [${days.join(", ")}], "tips": ["Buy the vignette online.", "Carry some cash."]}`;
+    const feed = loopGuard();
+    let hit = false;
+    for (const piece of json.match(/.{1,9}/gs)!) hit ||= feed(piece);
+    expect(hit).toBe(false);
+  });
+});

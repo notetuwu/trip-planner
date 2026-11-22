@@ -27,7 +27,10 @@ export function showProgress(o: { who: string; doing: string; local: boolean; ex
     </div>
     ${thoughtsHtml("", { live: true })}
     ${promptHtml([])}`;
-  const el = (k: string) => out.querySelector<HTMLElement>(`[data-${k}]`)!;
+  // While it fills the itinerary area, other redraws (weather, map lookups) leave it alone; see renderItinerary.
+  if (!o.into) out.dataset.generating = "1";
+  // An element of the view, or a stand-in if it's gone (replaced meanwhile): an update must never break the planning.
+  const el = (k: string) => out.querySelector<HTMLElement>(`[data-${k}]`) || document.createElement("div");
   el("gen-cancel").onclick = o.onCancel;
   const status = (s: string) => { el("gen-status").textContent = s; };
 
@@ -93,5 +96,5 @@ export function showProgress(o: { who: string; doing: string; local: boolean; ex
     }
   }
 
-  return { onEvent, collected, stop: () => clearInterval(timer) };
+  return { onEvent, collected, stop: () => { clearInterval(timer); if (!o.into) delete out.dataset.generating; } };
 }

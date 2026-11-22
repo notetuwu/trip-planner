@@ -130,6 +130,25 @@ test("with automatic fixing on, the plan comes back already fixed", async () => 
   assert.equal(await page.eval(`window.__e2e.requests.length`), 2, "no extra fix round after showing it");
 });
 
+test("a redraw while the plan is generated or fixed (weather, map lookups, an edit) doesn't break it", async () => {
+  await trip({ ...PADUA_MILANO, autoFix: true });
+  await page.eval(`window.__e2e.delay = 1200; window.__e2e.answer = (b) => b.fix
+    ? { summary: "Swapped.", totalEstimatedCost: 0, days: [day("2027-09-17", "Milano", [stop("13:00", "Luini")])] }
+    : { summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")]),
+        day("2027-09-17", "Milano", [stop("13:00", "Caffe Pedrocchi")])] }`);
+  // Redraws of the itinerary area while it plans and while it checks (like weather or lookups arriving).
+  const redraw = () => page.eval(`document.querySelector('.stay [data-k="hotel"]').dispatchEvent(new Event("change", { bubbles: true }))`);
+  await page.eval(`document.querySelector("#generate").click()`);
+  for (let i = 0; i < 3; i++) { await page.sleep(300); await redraw(); }
+  await page.waitFor(`window.__e2e.requests.length === 1 && /Checking the plan/.test(document.querySelector("[data-gen-status]")?.textContent || "")`, 15000, "the checks");
+  await redraw(); await page.sleep(200); await redraw();
+  await page.waitFor(`window.__e2e.requests.length === 2 && !!document.querySelector("#output .loading")`, 30000, "the fix round, still showing progress");
+  await redraw();
+  await page.waitFor(`planner.state().itinerary?.days[1]?.items[0].place === "Luini" && !!document.querySelector("#output .day")`, 30000, "the fixed plan");
+  assert.equal(await page.eval(`!!document.querySelector("#output .error")`), false, "no error instead of the plan");
+  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-v2")).itinerary.days[1].items[0].place`), "Luini", "and it's saved");
+});
+
 test("stops on the way are added between two stays, dates move, and Undo puts it back", async () => {
   await trip({ stays: [{ city: "Tunis", start: "2027-07-05", nights: 3, hotel: "" }, { city: "Cape Town", start: "2027-07-08", nights: 2, hotel: "", travel: "car", manualStart: true }],
     list: "", listChosen: true, autoFix: false });
@@ -268,6 +287,15 @@ test("a must-see that isn't from a place list can be removed with its x, and Und
   assert.equal(await page.eval(`planner.state().customPlaces.length + "|" + (planner.state().marks["Caffe Pedrocchi"] || "")`), "0|");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must", "Undo puts it back");
+});
+
+test("setting a must-see to 'on the way' takes it off the stays' day trips", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 3, hotel: "", dayTrips: [{ place: "Caffe Pedrocchi, Italy", mode: "car" }] }],
+    list: "", listChosen: true, autoFix: false, customPlaces: [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775, custom: true }], marks: { "Caffe Pedrocchi": "must" } });
+  await page.eval(`document.querySelector('.chip[data-t="Caffe Pedrocchi"] [data-how]').click()`);
+  assert.equal(await page.eval(`planner.state().how["Caffe Pedrocchi"]`), "way");
+  assert.deepEqual(await page.eval(`planner.state().stays[0].dayTrips`), [], "no longer a day trip");
+  assert.match(await page.eval(`document.querySelector("#toast").textContent`), /no longer a day trip from Padua/);
 });
 
 test("a must-see kept from a list that isn't selected has an x too", async () => {

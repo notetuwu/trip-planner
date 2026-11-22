@@ -27,17 +27,21 @@ export function isLooping(text: string): boolean {
     const top = Math.max(...counts.values());
     if (top >= 10 && top >= sentences.length / 2) return true;
   }
-  // The same stretch of text repeating without sentence breaks: the last 80 characters occur 6+ times in the tail.
-  const occurs = (piece: string, times: number) => {
-    let n = 0, i = -1;
-    while ((i = text.indexOf(piece, i + 1)) !== -1) if (++n >= times) return true;
-    return false;
-  };
-  const end = text.slice(-80);
-  if (end.trim().length < 20) return false;
-  if (occurs(end, 6)) return true;
-  // A long block gone over again and again ("One last check… This is consistent. I will output the JSON."): the last
-  // 300 characters, word for word, for the third time. Real answers don't repeat that much text exactly.
-  const long = text.slice(-300);
-  return long.trim().length >= 150 && occurs(long, 3);
+  // The same block over and over, back to back: a short one ("Is it a fortress? No. ") 4+ times, or a long round of
+  // "final checks" 3 times. Only back to back: a long itinerary repeats plenty of text (the same breakfast at the hotel
+  // every morning, the same fields on every stop), but with other things in between.
+  return repeatsAtEnd(text, 80, 4) || repeatsAtEnd(text, 300, 3);
+}
+
+/** The text ends with one block repeated `times` times in a row; the block is found from the last `win` characters. */
+export function repeatsAtEnd(text: string, win: number, times: number): boolean {
+  const end = text.slice(-win);
+  if (end.trim().length < Math.min(20, win / 2) || text.length < win * 2) return false;
+  const prev = text.lastIndexOf(end, text.length - win - 1);
+  if (prev < 0) return false;
+  const period = text.length - win - prev;
+  if (period < 1 || period * times > text.length) return false;
+  const block = text.slice(-period);
+  for (let k = 2; k <= times; k++) if (text.slice(-k * period, -(k - 1) * period) !== block) return false;
+  return true;
 }

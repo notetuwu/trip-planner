@@ -8,14 +8,14 @@ import { type Stay, save, session, setListPlaces, state } from "../core/state";
 import { renderChips } from "../places/chips";
 import { modelLabel } from "../generate/models";
 import { geocodeStays } from "../geo/geocode";
-import { placeLoc } from "../geo/locate";
+import { placeLoc, sameName } from "../geo/locate";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { fillFields } from "./fields";
 import { modeName } from "./modes";
 import { chainDates, renderStays } from "./stays";
 import { renderTripTitle } from "./title";
-import type { TravelMode } from "../../../shared/types";
+import type { Place, TravelMode } from "../../../shared/types";
 
 interface PlannedStay { city: string; country: string; nights: number; travel: TravelMode; why: string; dayTrips?: { place: string; why: string }[] }
 interface WayStop { place: string; why: string; lat: number; lng: number }
@@ -127,7 +127,7 @@ const routeLine = (plan: RoutePlan) => plan.stays.map((s, k) => {
     plan.legs[k]?.via?.length ? `on the way there: ${plan.legs[k].via!.map((v) => v.place).join(", ")}` : "",
   ].filter(Boolean).join("; ");
   return `${s.city} (${s.nights} night${s.nights > 1 ? "s" : ""}${extra ? `; ${extra}` : ""})`;
-}).join(" → ");
+}).join(" → ") + (plan.legs.at(-1)?.via?.length && plan.legs.length > plan.stays.length ? ` → home (on the way: ${plan.legs.at(-1)!.via!.map((v) => v.place).join(", ")})` : "");
 
 /** The chat column; `pending` is the model's answer while it's being written (its reasoning so far). */
 function renderChat(pending?: string) {
@@ -222,6 +222,12 @@ async function plan_(change = false) {
   }
 }
 
+/** A place they starred and marked "on the way" ("Burg Hohenwerfen, Austria" matches "Burg Hohenwerfen"). */
+function markedWay(place: string) {
+  const n = sameName(place);
+  return Object.entries(state.how || {}).some(([title, how]) => how === "way" && state.marks[title] === "must" && sameName(title) === n);
+}
+
 /** Replaces the trip's stays with the plan: the start (no night there), the stays, and the end. */
 function use(plan: RoutePlan) {
   const before = {
@@ -233,7 +239,7 @@ function use(plan: RoutePlan) {
     { city: plan.start, start: plan.startDate, nights: 0, hotel: "" },
     ...plan.stays.map((s): Stay => ({
       city: s.country ? `${s.city}, ${s.country}` : s.city, start: "", nights: s.nights, hotel: "", travel: s.travel,
-      ...(s.dayTrips?.length ? { dayTrips: s.dayTrips.map((t) => ({ place: t.place, mode: s.travel || "car" })) } : {}),
+      ...(s.dayTrips?.some((t) => !markedWay(t.place)) ? { dayTrips: s.dayTrips.filter((t) => !markedWay(t.place)).map((t) => ({ place: t.place, mode: s.travel || "car" })) } : {}),
     })),
     { city: plan.end, start: "", nights: 0, hotel: "", travel: lastTravel },
   ];
@@ -243,11 +249,14 @@ function use(plan: RoutePlan) {
   if (pref && !state.notes.includes(pref)) state.notes = `${state.notes ? `${state.notes}\n` : ""}Stays: ${pref}`;
   // Sights on the way become must-sees planned as stops on that travel day.
   for (const v of plan.legs.flatMap((l) => l.via || [])) {
-    if (!session.places.some((p) => p.title === v.place) && !state.customPlaces.some((p) => p.title === v.place)) {
-      state.customPlaces.push({ title: v.place, note: v.why, lat: v.lat, lng: v.lng, custom: true, url: `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}` });
-    }
-    state.marks[v.place] = "must";
-    (state.how ||= {})[v.place] = "way";
+    // The same place already in a list or the trip (by name, or within about 1 km: "Burg Hohenwerfen" for
+    // "Burg Hohenwerfen, Austria"): mark that one rather than adding a second copy.
+    const near = (p: Place) => { const l = placeLoc(p); return !!l && Math.abs(l.lat - v.lat) < 0.01 && Math.abs(l.lng - v.lng) < 0.015; };
+    const same = [...session.places, ...state.customPlaces].find((p) => p.title === v.place || near(p));
+    const title = same?.title || v.place;
+    if (!same) state.customPlaces.push({ title, note: v.why, lat: v.lat, lng: v.lng, custom: true, url: `https://www.google.com/maps/search/?api=1&query=${v.lat},${v.lng}` });
+    state.marks[title] = "must";
+    (state.how ||= {})[title] = "way";
   }
   const refresh = () => {
     save(); setListPlaces(session.listPlaces); fillFields(); renderStays(); renderTripTitle(); renderChips(); renderItinerary(); geocodeStays(); drawMap({ fit: true });

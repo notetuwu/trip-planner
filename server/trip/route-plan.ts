@@ -38,7 +38,7 @@ export interface RouteRequest {
   mustSee?: { name: string; lat?: number; lng?: number; how?: "way" | "stay" }[];
 }
 /** `way`: they asked to see it on the way, so it becomes a stop on a travel day rather than a day trip. */
-export interface PlannedDayTrip { place: string; why: string; way?: boolean; lat?: number; lng?: number }
+export interface PlannedDayTrip { place: string; why: string; way?: boolean; home?: boolean; lat?: number; lng?: number }
 export interface PlannedStay { city: string; country: string; nights: number; travel: Mode; why: string; dayTrips?: PlannedDayTrip[]; lat?: number; lng?: number }
 /** A sight between two stays, visited on the travel day. */
 export interface WayStop { place: string; why: string; lat: number; lng: number }
@@ -107,12 +107,6 @@ export function reasoningSoFar(reply: string, thinking: string) {
 const norm = (t: string) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 /** The town's own name ("Lindau, Germany" → "lindau") appears in what they wrote. */
 const named = (city: string, text: string) => { const c = norm(city.split(",")[0]); return !!c && ` ${norm(text)} `.includes(` ${c} `); };
-/**
- * Any part of a place ("Vaduz, Liechtenstein", "Swiss valley (Schwazer Land)") appears in what they wrote, other than
- * a country they're staying in anyway ("Austria" in "Hohenwerfen Castle, Werfen, Austria" doesn't mean they named it).
- */
-const mentioned = (place: string, text: string, ignore: Set<string>) =>
-  place.split(/[,()]/).some((part) => part.trim().length > 2 && !ignore.has(norm(part)) && named(part, text));
 
 /**
  * Two stays within `km` of each other are one stay: keeps the one they named in the description (else the one with
@@ -137,12 +131,13 @@ export function mergeClose(stays: PlannedStay[], description: string, maxKm = 30
  * day too when they named it themselves (and it isn't right by a stay), or when it's far from every stay but hardly a
  * detour; every other day trip goes from the closest stay (one with 2+ nights if that's hardly further). `points` are the start, the stays and the end; returns the stops on the way by leg.
  */
-export function placeTrips(points: LatLng[], stays: PlannedStay[], description = ""): Map<number, WayStop[]> {
+export function placeTrips(points: LatLng[], stays: PlannedStay[], description = "", wayAt: LatLng[] = []): Map<number, WayStop[]> {
+  // A starred place they marked "on the way" is a stop on the way, whatever list the model put it in.
+  for (const s of stays) for (const t of s.dayTrips || []) if (t.lat != null && wayAt.some((w) => km(w, [t.lat!, t.lng!]) < 2)) t.way = true;
   const trips = stays.flatMap((s) => (s.dayTrips || []).map((t) => ({ t, from: s })));
   for (const s of stays) s.dayTrips = [];
   const via = new Map<number, WayStop[]>();
   const located = stays.filter((s) => s.lat != null);
-  const stayCountries = new Set(stays.map((s) => norm(s.country)).filter(Boolean));
   for (const { t, from } of trips) {
     // Not found on the map: it stays where the model put it.
     if (t.lat == null || !located.length) { if (!t.way) (from.dayTrips ||= []).push(t); continue; }
@@ -153,12 +148,17 @@ export function placeTrips(points: LatLng[], stays: PlannedStay[], description =
     let leg = -1, best = Infinity, tight = false;
     for (let k = 0; k < points.length - 1; k++) {
       const ab = km(points[k], points[k + 1]), detour = km(points[k], at) + km(at, points[k + 1]) - ab;
-      if ((t.way || (ab > 30 && detour < Math.max(15, ab * 0.25))) && detour < best) { best = detour; leg = k; tight = detour < Math.max(15, ab * 0.2); }
+      // Straight lines flatter detours (Hallstatt looks "on the way" from Salzburg to Venice; by road it isn't), so
+      // "hardly a detour" means really small: 15 km, or a tenth of a long leg.
+      if ((t.way || (ab > 30 && detour < Math.max(15, ab * 0.25))) && detour < best) { best = detour; leg = k; tight = detour < Math.max(15, ab * 0.1); }
     }
     // A long way there and back from any stay, but hardly out of the way on a drive they make anyway (Neuschwanstein
     // between Innsbruck and the Allgäu): a stop on that drive, even if the model suggested it.
     const farButOnTheWay = dist(nearest) > 45 && tight; // 45 km in a straight line is often 1-2 h by road in the mountains
-    if (leg >= 0 && (t.way || (dist(nearest) > 25 && (farButOnTheWay || mentioned(t.place, description, stayCountries))))) {
+    // A day trip stays a day trip (the model was told what they asked for, "day trip" or "on the way"), unless it's a
+    // long way from every stay and hardly off a drive they make anyway.
+    if (t.home) { leg = points.length - 2; } // listed for the drive home: that leg, whatever a straight line suggests
+    if (leg >= 0 && (t.way || farButOnTheWay)) {
       via.set(leg, [...(via.get(leg) || []), { place: t.place, why: t.why, lat: t.lat, lng: t.lng! }]);
       continue;
     }
@@ -207,7 +207,7 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
 They're shaping this route with you, step by step. The conversation so far (each route you suggested, then what they said about it):
 ${conv.map((t, k) => `Route ${k + 1}: ${t.route}${t.said ? `\nThey said: "${t.said}"` : ""}`).join("\n")}
 
-Now change Route ${conv.length} (the one on their screen) for what they just said. Start from it: keep its stays, nights, order, day trips and stops on the way, and change only what their newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Everything they said earlier still applies unless their newest message takes it back. Don't start over with a different route.
+Now change Route ${conv.length} (the one on their screen) for what they just said. Start from it: keep its stays, nights, order, day trips and stops on the way, and change only what their newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Everything they said earlier still applies unless their newest message takes it back: a place they moved (to a day trip, to the way, out of the route) stays where they put it. Don't start over with a different route.
 `;
 
   const must = (Array.isArray(req.mustSee) ? req.mustSee : []).slice(0, 40)
@@ -238,9 +238,9 @@ Choose the stays in travel order, between the start and the end (not the start o
 Mind what beds cost: tiny, famous places with few and pricey places to stay (Hallstatt, for example) are usually better as a day trip from a nearby town that's easier on the budget (Hallstatt from Salzburg or Bad Ischl), unless they ask to stay there or their budget is generous.
 The route must flow${roundTrip ? " as one loop" : " in one direction"}: each stay moves on from the last, and it never returns to a region it already left (no back and forth, no doubling back across a country). Group the stays by region and visit each region once.
 Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of the stay closest to it (one with 2+ nights). Only add day trips they asked for or that clearly fit what they want; most stays have none. Use real place names that a map can find (a town or a sight, with its country).
-On the way: a place they ask to see on the way ("X on the way", "stop at X on the drive", "pass through X") is never a stay: put it in "onTheWay" of the stay they arrive at after passing it. Only for places they mention that way; leave it empty otherwise.
+On the way: a place they ask to see or stop at on the way ("X on the way", "stop at X on the drive", "pass through X", "drop someone off at X"), in the description or in the chat, is never a stay and never a day trip: put it in "onTheWay" of the stay they arrive at after passing it, or in "onTheWayHome" when it's on the drive from the last stay to the end. Only for places they mention that way; leave these empty otherwise.
 Reply with only JSON:
-{"reasoning": "first, think it through in a few short sentences: ${now?.said ? "what you change in the route on their screen and why, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
+{"reasoning": "first, think it through in a few short sentences: ${now?.said ? "what you change in the route on their screen and why, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}], "onTheWayHome": [{"place": "town or sight, country", "why": "a few words"}]}`;
 
   const trips = (list: unknown, way: boolean): PlannedDayTrip[] => (Array.isArray(list) ? list : [])
     .map((t: any) => (typeof t === "string" ? { place: t, why: "" } : { place: String(t?.place || ""), why: String(t?.why || "") }))
@@ -259,6 +259,8 @@ Reply with only JSON:
       dayTrips: [...trips(s.dayTrips, false), ...trips(s.onTheWay, true)],
     }));
   if (!stays.length) throw new Error("The model didn't come back with a route. Try again, or describe the trip a bit more.");
+  // Stops on the drive home: placed on the leg they fit best (that's the last one when they're on the way home).
+  stays.at(-1)!.dayTrips = [...(stays.at(-1)!.dayTrips || []), ...trips(parsed?.onTheWayHome, true).map((t) => ({ ...t, home: true }))];
   fitNights(stays, nights);
 
   // Where everything is, then the real road distance and time of each leg travelled by road.
@@ -296,7 +298,11 @@ Reply with only JSON:
       if (c && (!ref || km(c, ref) <= (t.way ? 400 : 200))) { t.lat = c[0]; t.lng = c[1]; t.place = q; break; }
     }
   }
-  const via = coords.every(Boolean) ? placeTrips(coords as LatLng[], stays, req.description || "") : new Map<number, WayStop[]>();
+  // What they've said counts as naming a place: the description and their replies in the chat.
+  const said = [req.description || "", ...conv.map((t) => t.said)].join("\n");
+  const wayAt = (Array.isArray(req.mustSee) ? req.mustSee : [])
+    .filter((m) => m?.how === "way" && Number.isFinite(m.lat) && Number.isFinite(m.lng)).map((m): LatLng => [+m.lat!, +m.lng!]);
+  const via = coords.every(Boolean) ? placeTrips(coords as LatLng[], stays, said, wayAt) : new Map<number, WayStop[]>();
   const legs: PlannedLeg[] = [];
   for (let k = 1; k < places.length; k++) {
     const travel = k < places.length - 1 ? stays[k - 1].travel : (mode || stays.at(-1)!.travel);

@@ -2,7 +2,10 @@
 import { $, $$, esc, toast } from "../core/dom";
 import type { MustSeeHow } from "../../../shared/types";
 import { type Mark, groupSize, keepPlace, save, session, setListPlaces, state, whoFor } from "../core/state";
-import { placeLoc } from "../geo/locate";
+import { distKm, placeLoc, sameName } from "../geo/locate";
+import { geo, geoKey } from "../geo/geocode";
+import { renderItinerary } from "../itinerary/render";
+import { renderStays } from "../trip/stays";
 import { drawMap } from "../map/draw";
 import { placeMarkers } from "../map/map";
 import { mustSeeRoute } from "./route";
@@ -69,6 +72,22 @@ export function flashChip(title: string) {
 
 const NEXT_MARK: Record<string, Mark | undefined> = { "": "must", must: "skip", skip: undefined };
 
+/** Takes a place off the stays' day trips (by name, or within about 2 km); returns the stays it was taken from. */
+function dropDayTrip(title: string): string[] {
+  const n = sameName(title), p = session.places.find((x) => x.title === title), at = p && placeLoc(p);
+  const from: string[] = [];
+  for (const s of state.stays) {
+    const keep = (s.dayTrips || []).filter((t) => {
+      const g = t.place ? geo[geoKey(t.place)] : null;
+      const same = sameName(t.place) === n || (!!at && !!g && distKm(at, g) < 2);
+      if (same) from.push(s.city.split(",")[0]);
+      return !same;
+    });
+    if (keep.length !== (s.dayTrips || []).length) s.dayTrips = keep;
+  }
+  return from;
+}
+
 /** Removes a place that isn't in the selected list (picked on the map, added by the route planner, or kept from another list), with Undo. */
 function removePlace(title: string) {
   const before = { customPlaces: [...state.customPlaces], kept: [...(state.kept || [])], marks: { ...state.marks }, how: { ...(state.how || {}) }, who: { ...state.who } };
@@ -91,7 +110,11 @@ export function initChips() {
       const next = NEXT_HOW[state.how?.[h] || ""];
       state.how = { ...state.how };
       if (next) state.how[h] = next; else delete state.how[h];
-      save(); renderChips(); return;
+      // On the way now: it's no longer a day trip from a stay too (that would draw a second line and plan it twice).
+      const from = next === "way" ? dropDayTrip(h) : [];
+      save(); renderChips();
+      if (from.length) { renderStays(); drawMap(); renderItinerary(); toast(`“${h}” is now a stop on the way, no longer a day trip from ${from.join(", ")}`); }
+      return;
     }
     const w = target.dataset.who;
     if (w != null) {

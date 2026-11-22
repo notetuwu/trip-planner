@@ -76,6 +76,8 @@ function wire(out: HTMLElement) {
 export function renderItinerary(error?: string) {
   const it = state.itinerary, meta = state.meta || {};
   const out = $("#output");
+  // A plan is being generated there: redraws meanwhile (weather arriving, countries found) would wipe the progress view.
+  if (out.dataset.generating) return;
   const errorHtml = error ? `<div class="error">${esc(error)}</div>` : "";
   if (!it) {
     out.innerHTML = errorHtml + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.</div>`;

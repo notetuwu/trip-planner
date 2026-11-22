@@ -122,6 +122,7 @@ export async function runGeneration(change: Change = {}) {
     }
     session.weather = {};
     save();
+    view.stop();
     renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix }); geocodeItems(); loadWeather();
     if (redo) {
       document.getElementById(`day-${redo.day}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
@@ -129,6 +130,7 @@ export async function runGeneration(change: Change = {}) {
     } else if (fix) toast(`Fixed ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""}`);
   } catch (err) {
     setInlineProgress(null);
+    view.stop();
     renderItinerary((err as Error).name === "AbortError" ? (fix ? "Fixing cancelled; the plan is as it was." : "Cancelled.") : (err as Error).message);
   } finally {
     view.stop(); btn.disabled = false; running = false;
