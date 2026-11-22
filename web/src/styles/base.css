@@ -122,6 +122,25 @@ select {
 }
 select option, select optgroup { background: var(--panel); color: var(--ink); }
 input[type="date"]::-webkit-calendar-picker-indicator { opacity: .6; cursor: pointer; }
-input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+/* Checkboxes: one drawn box everywhere (the browser's own is tiny and inherits the text-field styles). */
+input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none; flex: none; width: 18px; height: 18px; padding: 0; margin: 0;
+  display: inline-grid; place-content: center; vertical-align: -4px; cursor: pointer;
+  background: var(--field); border: 1.5px solid var(--line-strong); border-radius: 5px;
+  transition: background-color .15s, border-color .15s, box-shadow .15s, transform .1s;
+}
+input[type="checkbox"]::before {
+  content: ""; width: 12px; height: 12px; background: var(--accent-ink);
+  -webkit-mask: var(--tick) center / contain no-repeat; mask: var(--tick) center / contain no-repeat;
+  transform: scale(0); transition: transform .14s cubic-bezier(.3, 1.6, .5, 1);
+}
+input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+input[type="checkbox"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:hover, label:hover > input[type="checkbox"] { border-color: var(--accent); }
+input[type="checkbox"]:focus { box-shadow: none; }
+input[type="checkbox"]:focus-visible { box-shadow: 0 0 0 3px var(--focus); }
+input[type="checkbox"]:active { transform: scale(.9); }
+input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
+:root { --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
 .row { display: grid; gap: 10px; grid-template-columns: repeat(var(--cols, 2), 1fr); margin-bottom: 10px; }
 .hint { font-size: 12px; color: var(--muted); font-weight: 400; }

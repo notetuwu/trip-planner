@@ -8,8 +8,16 @@
 .day-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .day-chip.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .map-toggles { display: flex; gap: 10px; font-size: 12px; color: var(--muted); }
-.map-toggles label { display: inline-flex; align-items: center; gap: 4px; margin: 0; cursor: pointer; }
-.map-toggles input { width: auto; margin: 0; accent-color: var(--accent); }
+/* Places / Routes: small toggle pills that light up when on. */
+.map-toggles label {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; user-select: none;
+  height: 28px; padding: 0 10px 0 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--field);
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+.map-toggles label:hover { border-color: var(--line-strong); }
+.map-toggles label:has(input:checked) { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); color: var(--ink); }
+.map-toggles input { width: 15px; height: 15px; border-radius: 4px; }
+.map-toggles input::before { width: 10px; height: 10px; }
 .map-toggles { align-items: center; }
 .map-toggles select { width: auto; height: 28px; font-size: 12px; padding-left: 10px; }
 #map { height: 420px; background: var(--bg); }

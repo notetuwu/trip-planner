@@ -5,11 +5,21 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+let found: { bin: string | null; at: number } | null = null;
+
+/** Remembered: found once for good, not found for half a minute (it may be installed meanwhile). */
 export function findClaude(): string | null {
+  if (found && (found.bin || Date.now() - found.at < 30_000)) return found.bin;
+  found = { bin: lookUp(), at: Date.now() };
+  return found.bin;
+}
+
+function lookUp(): string | null {
   if (process.env.CLAUDE_BIN) return process.env.CLAUDE_BIN;
   try {
     const cmd = process.platform === "win32" ? "where" : "which";
-    const out = execFileSync(cmd, ["claude"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/).filter(Boolean);
+    // Hidden: the app has no console of its own, so a console program would flash up a cmd window.
+    const out = execFileSync(cmd, ["claude"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], windowsHide: true, timeout: 5000 }).split(/\r?\n/).filter(Boolean);
     const exe = out.find((p) => /\.exe$/i.test(p)) || out[0];
     if (exe) return exe;
   } catch { /* not on the PATH */ }
@@ -18,8 +28,8 @@ export function findClaude(): string | null {
   const usual = process.platform === "win32"
     ? [path.join(home, ".local", "bin", "claude.exe"), path.join(home, ".claude", "local", "claude.exe")]
     : [path.join(home, ".local", "bin", "claude"), path.join(home, ".claude", "local", "claude"), "/opt/homebrew/bin/claude", "/usr/local/bin/claude"];
-  const found = usual.find((p) => fs.existsSync(p));
-  if (found) return found;
+  const usualHit = usual.find((p) => fs.existsSync(p));
+  if (usualHit) return usualHit;
   // The VS Code extension ships its own binary (newest version wins).
   const extDir = path.join(os.homedir(), ".vscode", "extensions");
   try {

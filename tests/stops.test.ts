@@ -84,11 +84,18 @@ describe("stops on the way and odd place names", () => {
     expect(via.get(1)?.map((v) => v.place)).toEqual(["Vaduz, Liechtenstein"]);
     expect(stays.flatMap((s) => s.dayTrips || [])).toEqual([]);
   });
-  it("keeps a day trip the model came up with as a day trip, even when it's on the way", () => {
+  it("keeps a nearby day trip the model came up with as a day trip, even when it's on the way", () => {
+    // 35 km from Lucerne, just off the drive to Bregenz: an easy day out from the stay.
+    const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Lakeside village", why: "", lat: 47.15, lng: 8.75 }]), stay("Bregenz", 47.5, 9.75, 2)];
+    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays, "mountains and lakes");
+    expect(via.size).toBe(0);
+    expect(stays.flatMap((s) => s.dayTrips || []).map((t) => t.place)).toEqual(["Lakeside village"]);
+  });
+  it("moves Vaduz off Lucerne (90 km) to Bregenz, the stay it's close to (43 km)", () => {
     const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Vaduz", why: "", lat: 47.14, lng: 9.52 }]), stay("Bregenz", 47.5, 9.75, 2)];
     const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays, "mountains and lakes");
     expect(via.size).toBe(0);
-    expect(stays.flatMap((s) => s.dayTrips || []).map((t) => t.place)).toEqual(["Vaduz"]);
+    expect(stays.map((s) => (s.dayTrips || []).map((t) => t.place))).toEqual([[], ["Vaduz"]]);
   });
 });
 describe("which day trips they named", () => {
@@ -97,5 +104,13 @@ describe("which day trips they named", () => {
     stays[0].dayTrips = [{ place: "Hohenwerfen Castle, Werfen, Austria", why: "", lat: 47.68, lng: 13.345 } as any];
     const via = placeTrips([[48.1, 11.6], [47.56, 13.65], [47.8, 13.04], [48.1, 11.6]], stays, "take her to austria");
     expect(via.size).toBe(0);
+  });
+});
+describe("far day trips that are on the way", () => {
+  it("makes a far sight hardly off the drive a stop on the way, even if they didn't name it", () => {
+    // Neuschwanstein as a day trip from Innsbruck (58 km in a straight line, 112 km by road), though it's on the drive from Innsbruck to the Allgäu.
+    const stays = [stay("Innsbruck", 47.27, 11.39, 3, [{ place: "Neuschwanstein Castle", why: "", lat: 47.557, lng: 10.75 }]), stay("Lindau", 47.55, 9.68, 3)];
+    const via = placeTrips([[48.1, 11.6], [47.27, 11.39], [47.55, 9.68], [48.1, 11.6]], stays, "impressive castles");
+    expect(via.get(1)?.map((v) => v.place)).toEqual(["Neuschwanstein Castle"]);
   });
 });

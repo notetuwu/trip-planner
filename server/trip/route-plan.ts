@@ -123,9 +123,9 @@ export function mergeClose(stays: PlannedStay[], description: string, maxKm = 30
 
 /**
  * Where each day trip really belongs, now that everything is on the map. Places they asked to see on the way go on the
- * leg they add the least detour to. A day trip they named themselves that lies on the way between two places (and not
- * right by a stay) becomes a stop on that travel day too; every other day trip goes from the closest stay (one with 2+
- * nights if that's hardly further). `points` are the start, the stays and the end; returns the stops on the way by leg.
+ * leg they add the least detour to. A day trip that lies on the way between two places becomes a stop on that travel
+ * day too when they named it themselves (and it isn't right by a stay), or when it's far from every stay but hardly a
+ * detour; every other day trip goes from the closest stay (one with 2+ nights if that's hardly further). `points` are the start, the stays and the end; returns the stops on the way by leg.
  */
 export function placeTrips(points: LatLng[], stays: PlannedStay[], description = ""): Map<number, WayStop[]> {
   const trips = stays.flatMap((s) => s.dayTrips || []);
@@ -139,12 +139,15 @@ export function placeTrips(points: LatLng[], stays: PlannedStay[], description =
     const dist = (s: PlannedStay) => km(at, [s.lat!, s.lng!]);
     const nearest = located.reduce((a, b) => (dist(b) < dist(a) ? b : a));
     const roomy = located.filter((s) => s.nights >= 2).reduce<PlannedStay | null>((a, b) => (!a || dist(b) < dist(a) ? b : a), null);
-    let leg = -1, best = Infinity;
+    let leg = -1, best = Infinity, tight = false;
     for (let k = 0; k < points.length - 1; k++) {
       const ab = km(points[k], points[k + 1]), detour = km(points[k], at) + km(at, points[k + 1]) - ab;
-      if ((t.way || (ab > 30 && detour < Math.max(15, ab * 0.25))) && detour < best) { best = detour; leg = k; }
+      if ((t.way || (ab > 30 && detour < Math.max(15, ab * 0.25))) && detour < best) { best = detour; leg = k; tight = detour < Math.max(15, ab * 0.2); }
     }
-    if (leg >= 0 && (t.way || (dist(nearest) > 25 && mentioned(t.place, description, stayCountries)))) {
+    // A long way there and back from any stay, but hardly out of the way on a drive they make anyway (Neuschwanstein
+    // between Innsbruck and the Allgäu): a stop on that drive, even if the model suggested it.
+    const farButOnTheWay = dist(nearest) > 45 && tight; // 45 km in a straight line is often 1-2 h by road in the mountains
+    if (leg >= 0 && (t.way || (dist(nearest) > 25 && (farButOnTheWay || mentioned(t.place, description, stayCountries))))) {
       via.set(leg, [...(via.get(leg) || []), { place: t.place, why: t.why, lat: t.lat, lng: t.lng! }]);
       continue;
     }

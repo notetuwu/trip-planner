@@ -36,9 +36,15 @@
 .sources li { font-size: 12px; word-break: break-all; }
 .raw-thinking { white-space: pre-wrap; color: var(--muted); font-size: 12px; border-left: 2px solid var(--line); padding-left: 10px; margin-bottom: 12px; }
 .raw-thinking b { display: block; color: var(--ink); margin-bottom: 4px; }
-label.check { display: block; position: relative; padding-left: 24px; font-size: 13px; font-weight: 600; color: var(--ink); margin: 0 0 10px; cursor: pointer; line-height: 1.45; }
-label.check .hint { display: block; font-weight: 400; margin-top: 1px; }
-label.check input { position: absolute; left: 0; top: 2px; width: 15px; height: 15px; margin: 0; accent-color: var(--accent); }
+/* An option row: the box, the label, and its explanation underneath; the whole row is the click target. */
+label.check {
+  display: grid; grid-template-columns: 18px minmax(0, 1fr); column-gap: 10px; align-items: start;
+  font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.45; cursor: pointer;
+  margin: 0 -8px 4px; padding: 7px 8px; border-radius: 8px; transition: background-color .15s;
+}
+label.check:hover { background: var(--hover); }
+label.check input { grid-row: 1 / span 2; margin-top: 1px; }
+label.check .hint { grid-column: 2; display: block; font-weight: 400; margin-top: 1px; }
 .model-hint { margin: -4px 0 10px; }
 label.check.off { opacity: .5; }
 .stale { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--accent-soft); color: var(--accent); border-radius: 10px; padding: 10px 12px; margin-bottom: 16px; font-weight: 500; }
@@ -86,8 +92,7 @@ label.check.off { opacity: .5; }
 .book-ahead ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
 .book-ahead li { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 7px 12px; font-size: 13px; }
 .book-ahead li.essential { border-left: 3px solid var(--accent); }
-.book-ahead label { display: flex; gap: 8px; align-items: baseline; cursor: pointer; margin: 0; font-size: 13px; color: var(--ink); min-width: 0; }
-.book-ahead label input { width: auto; flex: none; margin: 0; accent-color: var(--accent); }
+.book-ahead label { display: flex; gap: 10px; align-items: center; cursor: pointer; margin: 0; font-size: 13px; color: var(--ink); min-width: 0; }
 .book-ahead label .ev-date { color: var(--accent); font-weight: 600; font-size: 12px; min-width: 84px; }
 .book-ahead input:checked ~ b { text-decoration: line-through; color: var(--muted); }
 .book-ahead .when { color: var(--muted); font-size: 12px; }
@@ -112,8 +117,10 @@ label.check.off { opacity: .5; }
 .packing-groups { display: grid; gap: 4px 18px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-top: 4px; }
 .packing ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 3px; }
 .packing li { display: flex; align-items: center; gap: 6px; font-size: 13px; }
-.packing label { display: flex; gap: 8px; align-items: baseline; margin: 0; color: var(--ink); font-weight: 400; cursor: pointer; }
-.packing label input { flex: none; width: 15px; height: 15px; transform: translateY(2px); }
+.packing label { display: flex; gap: 10px; align-items: flex-start; margin: 0 -6px; padding: 3px 6px; border-radius: 6px; color: var(--ink); font-weight: 400; cursor: pointer; line-height: 1.45; transition: background-color .15s; }
+.packing label:hover { background: var(--hover); }
+.packing label input { margin-top: 0; }
+.packing input + span { transition: color .15s; }
 .packing input:checked + span { text-decoration: line-through; color: var(--muted); }
 .packing .icon-btn { width: 22px; height: 22px; font-size: 14px; }
 .pack-add { display: flex; gap: 6px; margin-top: 6px; }

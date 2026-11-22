@@ -78,6 +78,17 @@ export async function launch() {
       await waitFor(() => page.eval("document.readyState === 'complete' && !!window.planner"), 20000, "the page to load");
     },
     waitFor: (expr, ms, what) => waitFor(() => page.eval(expr), ms, what || expr),
+    /** Saves a PNG of the page, or of an element (CSS selector) scrolled into view. */
+    async screenshot(file, selector) {
+      let clip;
+      if (selector) {
+        const r = await page.eval(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); e.scrollIntoView({ block: "center" });
+          const b = e.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height }; })()`);
+        clip = { ...r, scale: 1 };
+      }
+      const msg = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip } : {}) });
+      fs.writeFileSync(file, Buffer.from(msg.result.data, "base64"));
+    },
     sleep,
   };
 
