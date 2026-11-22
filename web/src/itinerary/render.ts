@@ -22,6 +22,7 @@ import { icon } from "../core/icons";
 import { checksSettled, planProblems } from "../generate/autofix";
 import { setMapStatus } from "../map/status";
 import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
+import { groupsFromText } from "../../../shared/groups";
 
 /** The stays' "Planner decides" menus say what the current plan picked ("Planner decides (train)"). */
 function showPlannedModes() {
@@ -94,7 +95,8 @@ export function renderItinerary(error?: string) {
   // A plan is being generated there: redraws meanwhile (weather arriving, countries found) would wipe the progress view.
   if (out.dataset.generating) return;
   showPlannedModes();
-  if (it && orderSplitRuns(it.days)) save();
+  // Splits written only into the text get their groups (plans from before this was read on the server too).
+  if (it && (groupsFromText(it.days) || orderSplitRuns(it.days))) { orderSplitRuns(it.days); save(); }
   const errorHtml = error ? `<div class="error">${esc(error)}</div>` : "";
   if (!it) {
     out.innerHTML = errorHtml + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.</div>`;

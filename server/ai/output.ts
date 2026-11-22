@@ -1,5 +1,6 @@
 // Helpers for model output: token counts, tidying itineraries, and pulling JSON out of replies.
 import type { Itinerary } from "../../shared/types";
+import { groupsFromText } from "../../shared/groups";
 import type { OnEvent } from "./types";
 
 /** Reports generated tokens to the browser, at most ~5 times a second (forced for exact counts). */
@@ -31,6 +32,7 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
     d.estimatedCost = Number(d.estimatedCost) || d.items.reduce((n: number, x: any) => n + (Number(x.cost) || 0), 0);
     d.city = String(d.city ?? ""); d.title = String(d.title ?? d.city); d.date = String(d.date ?? "");
   }
+  groupsFromText(it.days);
   it.totalEstimatedCost = Number(it.totalEstimatedCost) || it.days.reduce((n: number, d: any) => n + d.estimatedCost, 0);
   it.summary = String(it.summary ?? "");
   if (Array.isArray(it.tips)) it.tips = it.tips.map((t: any) => String(t ?? "").trim()).filter(Boolean);
