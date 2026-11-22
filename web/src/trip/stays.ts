@@ -59,14 +59,28 @@ function stayHtml(s: Stay, i: number) {
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
           <div class="day-trip" data-ti="${ti}">
-            <span class="dt-label">${icon("dayTrip")} Day trip</span>
-            <input data-dt="place" value="${esc(t.place)}" placeholder="e.g. Venice">
-            <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode)}</select>
-            <button class="icon-btn" data-act="deltrip" title="Remove day trip">${icon("x")}</button>
+            <div class="dt-top">
+              <span class="dt-label">${icon("dayTrip")} Day trip</span>
+              <input data-dt="place" value="${esc(t.place)}" placeholder="e.g. Venice">
+              <button class="icon-btn" data-act="deltrip" title="Remove day trip">${icon("x")}</button>
+            </div>
+            <div class="dt-opts">
+              <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode)}</select>
+              ${peopleSelect(t.people)}
+            </div>
           </div>`).join("")}
         <button class="link-btn" data-act="addtrip">＋ Day trip${s.nights < 2 ? ` <span class="muted">(needs a full day, so 2+ nights)</span>` : ""}</button>
       </div>
     </div>`;
+}
+
+/** Who goes on a day trip: everyone, or part of the group (then the others get their own plan that day). */
+function peopleSelect(people?: number) {
+  const n = Number(state.travelers) || 1;
+  if (n < 2) return "";
+  const opts = [0, ...Array.from({ length: n - 1 }, (_, k) => k + 1)];
+  return `<select data-dt="people" title="How many of you go; the others get their own plan that day">${opts.map((v) =>
+    `<option value="${v || ""}"${(people && people < n ? people : 0) === v ? " selected" : ""}>${v ? `${v} of ${n}` : "Everyone"}</option>`).join("")}</select>`;
 }
 
 export function renderStays() {
@@ -83,7 +97,9 @@ function onChange(e: Event) {
   const stay = state.stays[+box.dataset.i!], k = el.dataset.k, dt = el.dataset.dt;
   if (dt) {
     const t = stay.dayTrips![+el.closest<HTMLElement>(".day-trip")!.dataset.ti!];
-    if (dt === "mode") t.mode = el.value as TravelMode; else t.place = el.value.trim();
+    if (dt === "mode") t.mode = el.value as TravelMode;
+    else if (dt === "people") t.people = +el.value || undefined;
+    else t.place = el.value.trim();
     if (dt === "place" && t.place) geocodeStays();
     el.blur();
     save(); renderStays(); drawMap(); renderItinerary();

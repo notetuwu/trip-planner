@@ -32,9 +32,13 @@ function dayHome(d: Day): Loc | null {
 const staysOn = (d: Day) => state.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0))
   .map(stayLoc).filter((l): l is GeoHit => !!l);
 
-/** Where a day happens: the towns it names plus the stays it touches. */
+/** On a full day of a stay, the places of its day trips (Hiroshima from Osaka): stops there aren't in the wrong town. */
+const dayTripsOn = (d: Day) => state.stays.filter((s) => s.start && d.date > s.start && d.date < addDays(s.start, Number(s.nights) || 0))
+  .flatMap((s) => (s.dayTrips || []).filter((t) => t.place).map((t) => geo[geoKey(t.place)])).filter(usable);
+
+/** Where a day happens: the towns it names, the stays it touches and their day trips. */
 function dayRefs(d: Day): Loc[] {
-  return [...dayTowns(d), ...staysOn(d)];
+  return [...dayTowns(d), ...staysOn(d), ...dayTripsOn(d)];
 }
 
 /** The day's towns for messages: the ones it names, plus the stays it touches ("Lucerne / Bregenz"). */

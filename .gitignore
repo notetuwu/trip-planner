@@ -19,3 +19,5 @@ Thumbs.db
 
 # Packaged app (npm run package)
 /release/
+
+current-trip.json

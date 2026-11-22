@@ -26,6 +26,7 @@ function autoHow(title: string): { label: string; tip: string } {
   const where = r?.leg ? `${r.leg.from} → ${r.leg.to}, about +${r.leg.detourKm} km` : "";
   if (!r) return { label: "Auto", tip: "Where it is isn't known yet." };
   if (r.onWay) return { label: "Auto: on the way", tip: `It lies on the way (${where}), so it becomes a stop on that travel day.` };
+  if (r.onTrip && r.trip) return { label: `Auto: on the way to ${r.trip.to.split(",")[0]}`, tip: `It lies on the way of the day trip ${r.trip.from} → ${r.trip.to} (about +${r.trip.detourKm} km), so it becomes a stop on that day.` };
   const base = r.base ? r.base.city.split(",")[0] : "";
   return {
     label: base ? `Auto: from ${base}` : "Auto: from a stay",

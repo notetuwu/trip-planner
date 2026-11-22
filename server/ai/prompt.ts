@@ -88,6 +88,7 @@ ${nearby}
 - On travel days between cities, the transfer is its own item with departure time, duration, operator or route and price. Name it "<from> → <to> (<mode>)", e.g. "Padua → Milan (car)". Plan around check-out (about 10:00) and check-in (about 15:00).${hasChosenModes(trip) ? `
 - Where the stays above say how the travelers get somewhere ("chosen by the travelers"), use exactly that mode; don't swap it for another. By car: the route and main roads, driving time, distance, tolls or vignettes, fuel and parking costs, and a worthwhile stop on the way if there is one. By train or bus: a real connection with operator, departure time, duration and fare, and whether to book ahead. Day trips with a chosen mode are their own outbound and return items ("Milan → Rome (train)", later "Rome → Milan (train)").` : ""}
 - Road distances and driving times given with the stays come from a routing service: trust them over your own idea of geography or borders. If a drive is longer than one travel day allows, don't pretend it fits: say so plainly in the planning notes and plan that day around the drive (and suggest how to make it work, e.g. extra nights on the way).
+- A planned day trip that "only N of the M travelers" take is a split day: those N go on the trip while the others spend the day elsewhere (another such day trip, if the stay has one that the rest of the group takes, on the same day; otherwise a day of their own near the stay). Use "group"/"people" on every item while they're apart, give each group its own meals, and bring them back together in the evening if that's sensible. Day trips the travelers set up here are part of the plan: never drop one for being far away.
 - Day trips and other long excursions (anything more than about 30-45 minutes away from where you sleep) go on full days only, never on a travel day: changing cities and doing a day trip on the same day is exhausting. Travel days get the transfer plus light sightseeing near the hotel or a stop on the way that lies directly on the route. For example, with 2 nights in Padua the one full day there is the day for Venice. If a must-see day trip fits no full day, say so in the notes (or list it in "unused") rather than squeezing it into a travel day.
 
 ## Trip-wide extras
@@ -97,6 +98,7 @@ ${nearby}
 - "sources": the URLs you relied on most.` : ""}
 
 ## Output rules
+- "city" on each day: the town(s) it happens in; on day trips and split days name every town visited, e.g. "Osaka / Onomichi / Hiroshima".
 - "destination": the country or countries of the trip. "localCurrency": the local currency's ISO code.${t.language ? `
 - Write all text for the travelers (planning notes, summary, titles, descriptions, notes, tips, events) in ${t.language}. Keep the names of places as they are known locally (and exactly as listed above for saved places); the JSON keys stay in English.` : ""}
 - One entry in "days" for every calendar day from the first arrival to the final departure day, with dates in YYYY-MM-DD.

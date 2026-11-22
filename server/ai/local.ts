@@ -6,7 +6,7 @@ import { parseModelId, serverName } from "./local-models";
 import { planWithOllama } from "./local-ollama";
 import { planWithOpenAi } from "./local-openai";
 import { localOutput } from "./local-output";
-import { normalizeItinerary, parseJsonLoose } from "./output";
+import { normalizeItinerary, parseJsonLoose, addMissingMustSees } from "./output";
 import { buildPrompt } from "./prompt";
 import type { Runner } from "./types";
 
@@ -51,12 +51,14 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
     throw new Error(`${model} didn't return a usable itinerary. ${why} Try again, a bigger model, or fewer saved places.`
       + (out.content.trim() ? `\n\nIts answer began:\n${out.content.slice(0, 600)}` : out.thinking ? `\n\nEnd of its thinking:\n…${out.thinking.slice(-600)}` : ""));
   }
+  if (!trip.redoDay && !trip.fix && !trip.edit) addMissingMustSees(itinerary, trip.mustSee || []);
   let reasoning = String(itinerary.planningNotes || "").trim();
   delete itinerary.planningNotes;
   if (research?.notes) {
     reasoning += `\n\n**Research findings**\n\n${research.notes}`;
     const found = [...new Set([...research.urls, ...(research.notes.match(/https?:\/\/[^\s)\]]+/g) || [])])];
-    if (!itinerary.sources?.length) itinerary.sources = found;
+    // The model's own list first (it often names only a few), then every page that was read.
+    itinerary.sources = [...new Set([...(itinerary.sources || []), ...found])];
   }
   return {
     itinerary, reasoning, thinking: out.thinking.trim().slice(0, 20000), durationMs: Date.now() - t0,

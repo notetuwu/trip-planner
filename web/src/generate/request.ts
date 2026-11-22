@@ -24,7 +24,7 @@ export function tripRequest(change: Change = {}): TripRequest {
     stays: state.stays.map((s) => ({
       city: s.city, start: s.start, nights: s.nights, hotel: s.hotel, country: stayLoc(s)?.country, cc: stayLoc(s)?.cc,
       lat: stayLoc(s)?.lat, lng: stayLoc(s)?.lng,
-      travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "" })),
+      travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "", people: t.people })),
     })),
     research: state.research !== false,
     mustSee: marked("must"),

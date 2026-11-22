@@ -32,3 +32,20 @@ describe("must-sees on the route", () => {
     expect(line).toMatch(/\[MUST SEE - lies on the way between Padua and Milano/);
   });
 });
+
+describe("on the way of a day trip", () => {
+  const osaka = { city: "Osaka", start: "2026-11-02", nights: 6, lat: 34.6937, lng: 135.5023, trips: [{ place: "Hiroshima", lat: 34.3853, lng: 132.4553 }] };
+  const hakone = { city: "Hakone", start: "2026-11-08", nights: 2, lat: 35.2324, lng: 139.1069 };
+  it("makes Onomichi a stop on the day trip to Hiroshima", () => {
+    const r = routeFor({ lat: 34.4089, lng: 133.2050 }, [osaka, hakone]);
+    expect(r.onTrip).toBe(true);
+    expect(r.onWay).toBe(false);
+    expect(r.trip).toMatchObject({ from: "Osaka", to: "Hiroshima" });
+    expect(routeNote(r)).toContain("stop on that day trip");
+    expect(routeNote({ ...r, how: "way" })).toContain("stop on the day trip from Osaka to Hiroshima");
+  });
+  it("leaves places off the day trip's way alone", () => {
+    const r = routeFor({ lat: 35.0116, lng: 135.7681 }, [osaka, hakone]); // Kyoto
+    expect(r.onTrip).toBe(false);
+  });
+});

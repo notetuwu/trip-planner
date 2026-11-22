@@ -7,6 +7,16 @@ import type { NearbyPlace } from "../trip/nearby";
 import { driveNote } from "../trip/drives";
 import { MODE_TEXT, type Trip } from "./types";
 
+/** A date with its weekday ("2026-11-02 (Mon)"), so models don't have to work it out (they often get it wrong). */
+export const withDay = (iso: string) => {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return isNaN(+d) ? iso : `${iso} (${d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })})`;
+};
+
+/** "only 2 of the 4 travelers go" for a day trip part of the group takes. */
+const tripWho = (trip: Trip, people?: number) =>
+  people && people < (Number(trip.travelers) || 1) ? `only ${people} of the ${trip.travelers} travelers go` : "";
+
 export function placeLines(trip: Trip, places: Place[]) {
   return places.map((p) => {
     const extra = [p.note, p.tags, p.comment, p.address].filter(Boolean).join(" | ");
@@ -30,13 +40,13 @@ export function stayLines(trip: Trip) {
     const full = s.start ? Array.from({ length: Math.max(0, nights - 1) }, (_, k) => addDays(s.start, k + 1)) : [];
     const days = !s.start ? "" : nights === 0
       ? " (passing through, no overnight stay)"
-      : `; travel days: ${s.start} (arrival) and ${addDays(s.start, nights)} (departure); full days: ${full.length ? full.join(", ") : "none"}`;
+      : `; travel days: ${withDay(s.start)} arrival and ${withDay(addDays(s.start, nights))} departure; full days: ${full.length ? full.map(withDay).join(", ") : "none"}`;
     const prev = trip.stays[i - 1];
     const drive = driveNote(trip, i);
     const travel = prev && s.travel && MODE_TEXT[s.travel] ? `\n   Getting here from ${prev.city}: ${MODE_TEXT[s.travel]} (chosen by the travelers)${drive ? `; ${drive}` : ""}` : "";
     const trips = (s.dayTrips || []).filter((t) => t.place)
-      .map((t) => `\n   Planned day trip: ${t.place}${MODE_TEXT[t.mode] ? `, ${MODE_TEXT[t.mode]} there and back (chosen by the travelers)` : ""}, on one of the full days`).join("");
-    return `${i + 1}. ${s.city}${s.country ? ` (${s.country})` : ""}: arrive ${s.start}, ${nights} night(s)${s.hotel ? `, staying at/near ${s.hotel}` : ""}${days}${travel}${trips}`;
+      .map((t) => `\n   Planned day trip: ${t.place}${MODE_TEXT[t.mode] ? `, ${MODE_TEXT[t.mode]} there and back (chosen by the travelers)` : ""}, on one of the full days${tripWho(trip, t.people) ? `; ${tripWho(trip, t.people)} (a split day, see the rules below)` : ""}`).join("");
+    return `${i + 1}. ${s.city}${s.country ? ` (${s.country})` : ""}: arrive ${withDay(s.start)}, ${nights} night(s)${s.hotel ? `, staying at/near ${s.hotel}` : ""}${days}${travel}${trips}`;
   }).join("\n");
 }
 
@@ -46,7 +56,7 @@ export const hasChosenModes = (trip: Trip) =>
 
 export function holidayLines(trip: Trip) {
   return (trip.holidays || []).map((h) =>
-    `- ${h.date} ${h.cc}: ${h.name}${h.localName && h.localName !== h.name ? ` (${h.localName})` : ""}${h.counties?.length ? ` - regional only: ${h.counties.join(", ")}` : " - nationwide"}`,
+    `- ${withDay(h.date)} ${h.cc}: ${h.name}${h.localName && h.localName !== h.name ? ` (${h.localName})` : ""}${h.counties?.length ? ` - regional only: ${h.counties.join(", ")}` : " - nationwide"}`,
   ).join("\n");
 }
 
@@ -70,8 +80,8 @@ export function nearbySection(trip: Trip, compact = false) {
 
 /** One-line trip description for the research prompt. */
 export function tripLine(trip: Trip) {
-  return trip.stays.map((s, i) => `${s.city}${s.country ? ` (${s.country})` : ""} from ${s.start}, ${s.nights} night(s)`
+  return trip.stays.map((s, i) => `${s.city}${s.country ? ` (${s.country})` : ""} from ${withDay(s.start)}, ${s.nights} night(s)`
     + `${i && s.travel && MODE_TEXT[s.travel] ? `, arriving ${MODE_TEXT[s.travel]}${driveNote(trip, i) ? ` (${driveNote(trip, i)})` : ""}` : ""}`
-    + (s.dayTrips || []).filter((t) => t.place).map((t) => `, day trip to ${t.place}${MODE_TEXT[t.mode] ? ` ${MODE_TEXT[t.mode]}` : ""}`).join(""),
+    + (s.dayTrips || []).filter((t) => t.place).map((t) => `, day trip to ${t.place}${MODE_TEXT[t.mode] ? ` ${MODE_TEXT[t.mode]}` : ""}${tripWho(trip, t.people) ? ` (${tripWho(trip, t.people)})` : ""}`).join(""),
   ).join("; ");
 }

@@ -27,7 +27,7 @@ function stayLegs(): StayLeg[] {
     for (const t of s.dayTrips || []) {
       const g = t.place ? geo[geoKey(t.place)] : null;
       // A day trip found hundreds of km away is a wrong match for its name, not somewhere to go and back in a day.
-      if (g && distKm(here, g) < 300) legs.push({ i, from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
+      if (g && distKm(here, g) < 400) legs.push({ i, from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
     }
   });
   return legs;

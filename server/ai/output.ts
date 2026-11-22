@@ -47,6 +47,22 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
   return it;
 }
 
+/** Must-sees the plan left out without saying so go under "Didn't fit", so they don't vanish silently. A must-see
+ *  counts as planned when a stop shares most of its words ("ZEN Chopsticks Workshop" for "ZEN Chopsticks Making
+ *  Workshop Gion Kyoto"). */
+export function addMissingMustSees(it: any, mustSee: string[]) {
+  const words = (s: unknown) => simpleName(s).split(" ").filter((w) => w.length >= 3 || /[^\x00-\x7f]/.test(w));
+  const stops = (it.days || []).flatMap((d: any) => (d.items || []).map((x: any) => new Set(words(x.place))));
+  const listed = (it.unused || []).map((u: any) => simpleName(u?.place));
+  const missing = mustSee.filter((title) => {
+    const w = words(title);
+    if (!w.length || listed.includes(simpleName(title))) return false;
+    const need = Math.min(w.length, Math.max(1, Math.ceil(w.length / 2)));
+    return !stops.some((s: Set<string>) => w.filter((x) => s.has(x)).length >= need);
+  });
+  if (missing.length) it.unused = [...(it.unused || []), ...missing.map((place) => ({ place, reason: "A must-see that isn't in the plan, and the model didn't say why. Ask for it in the trip chat." }))];
+}
+
 /** A place name for comparing: lowercase, without details in brackets or punctuation. */
 const simpleName = (s: unknown) => String(s ?? "").toLowerCase().replace(/[({[].*$/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 

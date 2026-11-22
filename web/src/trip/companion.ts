@@ -64,7 +64,7 @@ export function tripContext(full = true): string {
   if (stays.length) {
     out.push("", "Stays:");
     for (const x of stays) {
-      const trips = (x.dayTrips || []).map((d) => `${d.place} (${d.mode})`).join(", ");
+      const trips = (x.dayTrips || []).map((d) => `${d.place} (${[d.mode, d.people ? `${d.people} of ${s.travelers} go` : ""].filter(Boolean).join(", ")})`).join(", ");
       out.push(`- ${x.city}: ${x.start ? `${fmtDate(x.start)} (${x.start}) to ${addDays(x.start, x.nights)}, ` : ""}${x.nights} night${x.nights === 1 ? "" : "s"}`
         + `${x.hotel ? `, staying at ${x.hotel}` : ""}${x.travel ? `, getting there by ${x.travel}` : ""}${trips ? `; day trips: ${trips}` : ""}`);
     }

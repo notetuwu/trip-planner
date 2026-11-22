@@ -16,6 +16,9 @@
   background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
 }
 .day-trip .dt-label { font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.day-trip { flex-direction: column; align-items: stretch; }
+.day-trip .dt-top, .day-trip .dt-opts { display: flex; gap: 6px; align-items: center; }
+.day-trip .dt-opts select { flex: 1 1 0; max-width: none; min-width: 0; }
 .day-trip input { flex: 1; min-width: 0; height: 30px; font-size: 12.5px; background: var(--panel); }
 .day-trip select { width: auto; max-width: 150px; height: 30px; font-size: 12px; background-color: var(--panel); }
 .day-trip .dt-label { display: inline-flex; align-items: center; gap: 4px; }

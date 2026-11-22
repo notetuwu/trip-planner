@@ -43,6 +43,8 @@ export type TravelMode = "" | "car" | "train" | "bus" | "flight" | "ferry" | "bi
 export interface DayTrip {
   place: string;
   mode: TravelMode;
+  /** How many of the travelers go, when only part of the group does (the others spend the day elsewhere). */
+  people?: number;
 }
 
 /** A stay as sent to the server: the city plus what the browser worked out about it. */
@@ -119,6 +121,10 @@ export interface MustSeeRoute {
   leg?: { from: string; to: string; date?: string; detourKm: number; legKm: number };
   /** The nearest stay with a night there. */
   base?: { city: string; km: number };
+  /** The day trip (from a stay to its day-trip place) it adds the least detour to. */
+  trip?: { from: string; to: string; detourKm: number; legKm: number };
+  /** Lies on the way of that day trip closely enough to be a stop on it (Onomichi on the way to Hiroshima). */
+  onTrip?: boolean;
   /** Lies on the way closely enough to be a stop on the travel day. */
   onWay: boolean;
 }

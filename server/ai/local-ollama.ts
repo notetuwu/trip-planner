@@ -104,7 +104,7 @@ Continue the itinerary from the day after ${last}${end ? ` to the end of the tri
       if (more && Array.isArray(more.days)) {
         const seen = new Set(done.days.map((d) => d.date));
         const days = [...done.days, ...more.days.filter((d: any) => !seen.has(d.date))];
-        const merged = { ...done.head, ...more, summary: done.head.summary || more.summary, planningNotes: [done.head.planningNotes, more.planningNotes].filter(Boolean).join("\n\n"), days,
+        const merged = { ...done.head, ...more, summary: done.head.summary || more.summary, planningNotes: [done.head.planningNotes, more.planningNotes && `**The remaining days** (the model stopped after ${done.days.length} days and was asked for the rest)\n\n${more.planningNotes}`].filter(Boolean).join("\n\n"), days,
           totalEstimatedCost: days.reduce((n: number, d: any) => n + (Number(d.estimatedCost) || 0), 0) };
         output.out.content = JSON.stringify(merged);
         onEvent({ type: "progress", days: days.length });
