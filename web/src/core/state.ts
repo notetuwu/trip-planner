@@ -80,7 +80,7 @@ export interface AppState {
   /** Brainstorming notes (Ideas & notes): for the travelers and the trip chat, not sent with a plan. */
   ideas?: string;
   /** The trip chat so far. */
-  chat?: { role: "me" | "ai"; text: string; change?: { days: number[]; request: string; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
+  chat?: { role: "me" | "ai"; text: string; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[] }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
 }
 
 const STORE_KEY = "trip-planner-v2";

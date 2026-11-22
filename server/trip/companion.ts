@@ -19,7 +19,16 @@ export interface CompanionRequest {
 }
 /** A change to the plan the traveler asked for: the days it touches (1-based; empty = all over the plan) and the
  *  instruction for the planner. */
-export interface PlanChange { days: number[]; request: string }
+export interface PlanChange { days: number[]; request: string; trip?: TripOps }
+/** Changes to the trip's setup (not the day-by-day plan): how must-sees are fitted in, and the stays' day trips. */
+export interface TripOps {
+  /** Visit on a travel day between stays (this also takes them off the stays' day trips). */
+  onTheWay?: string[];
+  /** Visit from where they sleep. */
+  fromStay?: string[];
+  removeDayTrips?: { stay: string; place: string }[];
+  addDayTrips?: { stay: string; place: string; mode: string }[];
+}
 
 const MAX_CONTEXT = 60_000, MAX_TURN = 4_000;
 const clip = (s: unknown, n: number) => String(s ?? "").slice(0, n);
@@ -31,8 +40,14 @@ export function companionPrompt(req: CompanionRequest) {
   const changes = days ? `
 ## Changing the plan
 The travelers can change their ${days}-day itinerary through you. When their message asks for a change to it (or says yes to a change you suggested), write one or two sentences on what will change, then end your reply with one last line exactly like this:
-CHANGE: {"days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation"}
-"days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip). Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead.
+CHANGE: {"days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation", "trip": {"onTheWay": [], "fromStay": [], "removeDayTrips": [], "addDayTrips": []}}
+"days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
+"trip" changes the trip's setup, which the day-by-day plan is made from (leave it out when nothing there changes):
+- "onTheWay": places to visit on a travel day between two stays instead of as a day trip (this also takes them off the stays' day trips). Use it whenever they want a place "on the way".
+- "fromStay": places to visit from where they sleep.
+- "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}] for the day trips listed under the stays.
+Day trips listed under the stays above stay in the trip until removed here, even if a day's plan changes, so when a place moves from a day trip to somewhere else, remove that day trip too. When only the setup changes and the days are already right, use "days": [] and "request": "".
+Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead.
 ` : `
 There's no itinerary yet: if they ask to change the plan, tell them to generate one first (or what to put in the form).
 `;
@@ -64,10 +79,26 @@ export function parseChange(text: string, days = 0): PlanChange | null {
   try {
     const c = JSON.parse(m[1]);
     const request = String(c.request || "").trim().slice(0, 2000);
-    if (!request) return null;
+    const trip = tripOps(c.trip);
+    if (!request && !trip) return null;
     const list = (Array.isArray(c.days) ? c.days : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 1 && (!days || d <= days));
-    return { days: [...new Set<number>(list)].sort((a, b) => a - b), request };
+    return { days: request ? [...new Set<number>(list)].sort((a, b) => a - b) : [], request, ...(trip ? { trip } : {}) };
   } catch { return null; }
+}
+
+/** Only well-formed setup changes (names as short strings, known travel modes); null when there are none. */
+export function tripOps(t: any): TripOps | null {
+  if (!t || typeof t !== "object") return null;
+  const name = (v: unknown) => (typeof v === "string" ? v.trim().slice(0, 120) : "");
+  const names = (v: unknown) => (Array.isArray(v) ? v.map(name).filter(Boolean).slice(0, 20) : []);
+  const MODES = ["car", "train", "bus", "walk", "bike", "ferry", "flight"];
+  const ops: TripOps = {
+    onTheWay: names(t.onTheWay), fromStay: names(t.fromStay),
+    removeDayTrips: (Array.isArray(t.removeDayTrips) ? t.removeDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place) })).filter((x: any) => x.place).slice(0, 20),
+    addDayTrips: (Array.isArray(t.addDayTrips) ? t.addDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place), mode: MODES.includes(x?.mode) ? x.mode : "car" })).filter((x: any) => x.place && x.stay).slice(0, 20),
+  };
+  for (const k of Object.keys(ops) as (keyof TripOps)[]) if (!ops[k]!.length) delete ops[k];
+  return Object.keys(ops).length ? ops : null;
 }
 
 export async function askCompanion(req: CompanionRequest, report: Report, signal?: AbortSignal) {

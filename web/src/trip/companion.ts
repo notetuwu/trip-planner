@@ -1,15 +1,20 @@
 // The trip chat: a panel beside the plan (Chat in the header) for questions about the trip on screen and for changes
 // to it. Questions are answered by the selected model from the stays, the itinerary, the must-sees and the ideas notes.
-// Asked for a change, it says what it will change and offers it: Apply re-plans that day (one day) or revises the plan
-// (several days), and Undo puts the plan back. The conversation is kept with the trip (and saved with it).
+// Asked for a change, it says what it will change and offers it: Apply changes the days it touches (or revises the whole
+// plan) and the trip's setup (must-sees on the way or from a stay, the stays' day trips). Only the latest message has
+// buttons; Undo on it puts back everything applied since the first change of the series. The conversation is kept with
+// the trip (and saved with it).
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
-import type { Itinerary } from "../../../shared/types";
+import type { MustSeeHow } from "../../../shared/types";
 import { $, esc } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
 import { icon } from "../core/icons";
 import { streamRequest } from "../core/progress";
-import { save, session, state } from "../core/state";
+import { type AppState, keepPlace, save, session, setListPlaces, state } from "../core/state";
+import { sameName } from "../geo/locate";
+import { applyHow, renderChips } from "../places/chips";
+import { renderStays } from "./stays";
 import { geocodeItems } from "../geo/item-loc";
 import { runGeneration } from "../generate/run";
 import { mdLite } from "../itinerary/panels";
@@ -18,12 +23,17 @@ import { drawMap } from "../map/draw";
 import { map } from "../map/map";
 
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
-interface PlanChange { days: number[]; request: string; status?: ChangeState }
+interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[] }
+interface PlanChange { days: number[]; request: string; trip?: TripOps; status?: ChangeState }
 type Turn = { role: "me" | "ai"; text: string; change?: PlanChange };
 
 let running: AbortController | null = null;
-/** The plan before each applied change (by message index), for Undo. Only while the page is open. */
-const before = new Map<number, Itinerary>();
+/** What a change touches, to put back on Undo. */
+type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept">;
+/** The changes applied one after another since the last Undo (by message index), and the trip from before the first:
+ *  Undo on the latest puts all of them back. Only while the page is open. */
+let chain: { snap: Snapshot; cards: number[] } | null = null;
+const capture = (): Snapshot => structuredClone({ itinerary: state.itinerary, stays: state.stays, marks: state.marks, how: state.how, kept: state.kept });
 
 const panel = () => $<HTMLElement>("#chatPanel");
 const box = () => $<HTMLTextAreaElement>("#cpQ");
@@ -45,7 +55,8 @@ export function tripContext(full = true): string {
         + `${x.hotel ? `, staying at ${x.hotel}` : ""}${x.travel ? `, getting there by ${x.travel}` : ""}${trips ? `; day trips: ${trips}` : ""}`);
     }
   }
-  const must = session.places.filter((p) => s.marks[p.title] === "must").map((p) => p.title);
+  const HOW: Record<string, string> = { way: "on the way between stays", stay: "from where they sleep" };
+  const must = session.places.filter((p) => s.marks[p.title] === "must").map((p) => `${p.title}${s.how?.[p.title] ? ` (${HOW[s.how[p.title]]})` : ""}`);
   const skip = session.places.filter((p) => s.marks[p.title] === "skip").map((p) => p.title);
   if (must.length) out.push("", `Must-see places: ${must.join("; ")}`);
   if (skip.length) out.push(`Places they don't want: ${skip.join("; ")}`);
@@ -72,29 +83,55 @@ export function tripContext(full = true): string {
 const chat = (): Turn[] => state.chat || [];
 const dayList = (days: number[]) => days.length === 1 ? `day ${days[0]}` : days.length ? `days ${days.slice(0, -1).join(", ")} and ${days.at(-1)}` : "the whole plan";
 
-/** What the change card says and offers, by where it's at. */
-function changeCard(c: PlanChange, k: number) {
-  const what = c.days.length ? `Changes ${dayList(c.days)} only, and only what you asked for; the other days stay exactly as they are.`
-    : "Revises the whole plan, changing only what you asked for.";
+/** What the model is told about an earlier change, so it can build on it ("and day 4 too", or one that wasn't applied). */
+function changeNote(c: PlanChange) {
+  const what = [c.request, ...opsLines(c.trip)].filter(Boolean).join("; ");
+  const st = c.status === "applied" ? "applied" : c.status === "undone" ? "applied, then undone: the trip is as before it"
+    : "offered but not applied (the traveler moved on; include it again if they still want it)";
+  return `Change ${st}: ${what}`;
+}
+
+/** The setup changes in words. */
+function opsLines(t?: TripOps) {
+  if (!t) return [];
+  return [
+    ...(t.onTheWay || []).map((p) => `${p}: on the way between stays (no day trip)`),
+    ...(t.fromStay || []).map((p) => `${p}: from where you sleep`),
+    ...(t.removeDayTrips || []).map((x) => `No day trip to ${x.place}${x.stay ? ` from ${x.stay}` : ""}`),
+    ...(t.addDayTrips || []).map((x) => `Day trip to ${x.place} from ${x.stay} (${x.mode})`),
+  ];
+}
+
+/** The change card: what it changes, and (on the latest message only) Apply / Undo. Older cards just say how it went. */
+function changeCard(c: PlanChange, k: number, latest: boolean) {
+  const lines = opsLines(c.trip);
+  const what = c.request
+    ? (c.days.length ? `Changes ${dayList(c.days)} only, and only what you asked for; the other days stay exactly as they are.` : "Revises the whole plan, changing only what you asked for.")
+    : "Changes the trip's setup; the day plans stay as they are.";
   const status = c.status || "offered";
-  const actions = status === "offered" ? `<button type="button" class="btn solid" data-apply="${k}">${icon("check")} Apply</button><button type="button" class="link-btn" data-skip="${k}">Not now</button>`
+  const inChain = chain?.cards.includes(k) ? chain.cards.length : 0;
+  const actions = !latest
+    ? (status === "applying" ? `<span class="hint">Changing the plan…</span>`
+      : `<span class="hint">${status === "applied" ? `${icon("check")} Applied` : status === "undone" ? "Undone" : "Not applied"}</span>`)
+    : status === "offered" || status === "skipped" ? `<button type="button" class="btn solid" data-apply="${k}">${icon("check")} Apply</button>${status === "offered" ? `<button type="button" class="link-btn" data-skip="${k}">Not now</button>` : `<span class="hint">Not applied.</span>`}`
     : status === "applying" ? `<span class="hint">Changing the plan… (progress in the itinerary)</span>`
-    : status === "applied" ? `<span class="ok-text">${icon("check")} Done</span>${before.has(k) ? `<button type="button" class="link-btn" data-undo="${k}">Undo</button>` : ""}`
+    : status === "applied" ? `<span class="ok-text">${icon("check")} Done</span>${inChain ? `<button type="button" class="link-btn" data-undo="${k}">${inChain > 1 ? `Undo all ${inChain} changes` : "Undo"}</button>` : ""}`
     : status === "failed" ? `<span class="hint">Didn't work out.</span><button type="button" class="link-btn" data-apply="${k}">Try again</button>`
-    : status === "undone" ? `<span class="hint">Undone: the plan is as it was.</span>`
-    : `<span class="hint">Not applied.</span><button type="button" class="link-btn" data-apply="${k}">Apply</button>`;
-  return `<div class="cp-change"><div class="cp-change-what">${icon("route")} <span><b>${esc(c.request)}</b><br><span class="hint">${what}</span></span></div><div class="cp-change-act">${actions}</div></div>`;
+    : `<span class="hint">Undone: the trip is as it was.</span>`;
+  return `<div class="cp-change${latest ? "" : " old"}"><div class="cp-change-what">${icon("route")} <span>${c.request ? `<b>${esc(c.request)}</b>` : ""}${lines.length ? `<ul class="cp-ops">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>` : ""}<span class="hint">${what}</span></span></div><div class="cp-change-act">${actions}</div></div>`;
 }
 
 function render(pending?: string) {
   const log = $("#cpLog");
+  const turns = chat(), last = turns.length - 1;
+  // Buttons only on the very last message: once they write again, the conversation moves on from there.
   const bubble = (t: Turn, k: number) => t.role === "me" ? `<div class="rc-msg me">${esc(t.text)}</div>`
-    : `<div class="rc-msg ai">${mdLite(t.text)}${t.change ? changeCard(t.change, k) : ""}</div>`;
+    : `<div class="rc-msg ai">${mdLite(t.text)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}</div>`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
     : ["Is this route realistic?", "What's the weather like then?", "What should we not miss?", "What should we pack?"];
-  log.innerHTML = chat().map(bubble).join("")
+  log.innerHTML = turns.map(bubble).join("")
     + (pending != null ? `<div class="rc-msg ai pending">${pending ? mdLite(pending) : `<span class="typing"><i></i><i></i><i></i></span>`}</div>` : "")
     || `<div class="cp-empty"><div class="cp-empty-icon">${icon("chat")}</div>
         <p><b>Ask anything about your trip</b></p>
@@ -103,7 +140,7 @@ function render(pending?: string) {
   log.querySelectorAll<HTMLButtonElement>("[data-q]").forEach((b) => { b.onclick = () => { box().value = b.dataset.q!; ask(); }; });
   log.querySelectorAll<HTMLButtonElement>("[data-apply]").forEach((b) => { b.onclick = () => apply(+b.dataset.apply!); });
   log.querySelectorAll<HTMLButtonElement>("[data-skip]").forEach((b) => { b.onclick = () => setStatus(+b.dataset.skip!, "skipped"); });
-  log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(+b.dataset.undo!); });
+  log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(); });
   log.scrollTop = log.scrollHeight;
   idle();
 }
@@ -113,27 +150,70 @@ function setStatus(k: number, status: ChangeState) {
   if (t?.change) { t.change.status = status; save(); render(); }
 }
 
-/** Applies a change: the days it touches are changed (only what was asked; the other days stay exactly as they are),
- *  or the whole plan is revised when the change is all over it. */
+/** The place in the trip a name means ("Burg Hohenwerfen, Austria" → "Burg Hohenwerfen"), or the name itself. */
+function placeTitle(name: string) {
+  const n = sameName(name), ps = session.places;
+  return (ps.find((p) => p.title === name) || ps.find((p) => sameName(p.title) === n)
+    || ps.find((p) => { const m = sameName(p.title); return m.length > 3 && (m.includes(n) || n.includes(m)); }))?.title || name;
+}
+const sameStay = (city: string, name: string) => { const a = sameName(city), b = sameName(name); return !b || a === b || a.startsWith(b) || b.startsWith(a); };
+const samePlace = (a: string, b: string) => { const x = sameName(a), y = sameName(b); return x === y || (y.length > 3 && x.includes(y)) || (x.length > 3 && y.includes(x)); };
+
+/** The setup changes: must-sees on the way or from a stay (a must-see then, if it wasn't), the stays' day trips. */
+function applyOps(t: TripOps) {
+  const fit = (name: string, how: MustSeeHow) => {
+    const title = placeTitle(name), p = session.places.find((x) => x.title === title);
+    if (p && state.marks[title] !== "must") { state.marks[title] = "must"; keepPlace(p); }
+    applyHow(title, how);
+    // Also by its name as written, in case the day trip was entered differently.
+    if (how === "way") for (const s of state.stays) s.dayTrips = (s.dayTrips || []).filter((d) => !samePlace(d.place, name) && !samePlace(d.place, title));
+  };
+  for (const name of t.onTheWay || []) fit(name, "way");
+  for (const name of t.fromStay || []) fit(name, "stay");
+  for (const r of t.removeDayTrips || []) for (const s of state.stays) {
+    if (sameStay(s.city, r.stay)) s.dayTrips = (s.dayTrips || []).filter((d) => !samePlace(d.place, r.place));
+  }
+  for (const a of t.addDayTrips || []) {
+    const s = state.stays.find((x) => sameStay(x.city, a.stay));
+    if (s && !(s.dayTrips || []).some((d) => samePlace(d.place, a.place))) s.dayTrips = [...(s.dayTrips || []), { place: a.place, mode: a.mode as never }];
+  }
+}
+
+/** After the setup or the plan changed (or went back): redraw everything that shows them. */
+function refreshAll() {
+  setListPlaces(session.listPlaces);
+  save();
+  renderStays(); renderChips(); renderItinerary(); drawMap({ fit: false }); geocodeItems();
+}
+
+/** Applies a change: the setup first, then the days it touches (only what was asked; the other days stay exactly as they
+ *  are), or the whole plan when it's all over it. Undo later goes back to before the first change of the series. */
 async function apply(k: number) {
   const c = chat()[k]?.change, it = state.itinerary;
   if (!c || !it) return;
-  const snapshot = structuredClone(it);
+  const now = capture(), snap = chain?.snap ?? now;
   setStatus(k, "applying");
-  const days = c.days.filter((d) => d >= 1 && d <= it.days.length).map((d) => d - 1);
-  const ok = await runGeneration(days.length ? { edit: { itinerary: it, days, request: c.request } } : { revise: { itinerary: it, request: c.request } });
-  if (ok) before.set(k, snapshot);
+  if (c.trip) { applyOps(c.trip); refreshAll(); }
+  let ok = true;
+  if (c.request) {
+    const days = c.days.filter((d) => d >= 1 && d <= it.days.length).map((d) => d - 1);
+    ok = await runGeneration(days.length ? { edit: { itinerary: state.itinerary!, days, request: c.request } } : { revise: { itinerary: state.itinerary!, request: c.request } });
+    // The plan couldn't be changed: the setup goes back too, so nothing is half done.
+    if (!ok && c.trip) { Object.assign(state, now); refreshAll(); }
+  }
+  if (ok) chain = { snap, cards: [...(chain?.cards || []), k] };
   setStatus(k, ok ? "applied" : "failed");
 }
 
-function undo(k: number) {
-  const it = before.get(k);
-  if (!it) return;
-  state.itinerary = it;
-  before.delete(k);
-  save();
-  renderItinerary(); drawMap({ fit: false }); geocodeItems();
-  setStatus(k, "undone");
+/** Puts back everything applied since the first change of the series. */
+function undo() {
+  if (!chain) return;
+  Object.assign(state, structuredClone(chain.snap));
+  const cards = chain.cards;
+  chain = null;
+  refreshAll();
+  for (const k of cards) { const t = chat()[k]; if (t?.change) t.change.status = "undone"; }
+  save(); render();
 }
 
 /** The send button, or while it answers, a stop button in its place (like Claude Code's). */
@@ -160,7 +240,7 @@ async function ask() {
   if (!question || running) return;
   const live = $("#cpLive");
   // What came before, with the changes that were applied, so "undo that" or "and day 4 too" make sense.
-  const history = chat().slice(-12).map((t) => ({ role: t.role, text: t.change ? `${t.text}\n(Change offered: ${t.change.request}; ${t.change.status || "offered"})` : t.text }));
+  const history = chat().slice(-12).map((t) => ({ role: t.role, text: t.change ? `${t.text}\n(${changeNote(t.change)})` : t.text }));
   state.chat = [...chat(), { role: "me" as const, text: question }].slice(-MAX_TURNS);
   save();
   box().value = ""; fit();
@@ -217,7 +297,7 @@ export function initCompanion() {
   box().addEventListener("input", () => { fit(); idle(); });
   box().addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); } });
   $("#chatPanel .rc-box").onclick = (e) => { if (e.target === e.currentTarget) box().focus(); };
-  $("#cpClear").onclick = () => { if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; before.clear(); save(); render(); } };
+  $("#cpClear").onclick = () => { if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; chain = null; save(); render(); } };
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.
   for (const t of chat()) if (t.change?.status === "applying") t.change.status = "offered";
@@ -235,6 +315,6 @@ export function initCompanion() {
 export function refreshCompanion() {
   $<HTMLTextAreaElement>("#ideas").value = state.ideas || "";
   $<HTMLDetailsElement>("#ideasFold").open = !!state.ideas?.trim();
-  before.clear();
+  chain = null;
   if (!panel().hidden) render();
 }

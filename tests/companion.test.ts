@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { cleanAnswer, companionPrompt, parseChange } from "../server/trip/companion";
 
+
 describe("trip chat", () => {
   it("puts the trip, the recent conversation and the question in the prompt", () => {
     const history = Array.from({ length: 20 }, (_, k) => ({ role: (k % 2 ? "ai" : "me") as "me" | "ai", text: `turn ${k}` }));
@@ -31,5 +32,15 @@ describe("trip chat", () => {
     expect(parseChange('CHANGE: {"days": [], "request": "More museums"}', 5)).toEqual({ days: [], request: "More museums" });
     expect(parseChange('CHANGE: {"days": [2]}', 5)).toBeNull();
     expect(parseChange("No change here.", 5)).toBeNull();
+  });
+  it("reads setup changes (on the way, day trips), also without a change to the days", () => {
+    const c = parseChange('Done.\nCHANGE: {"days": [], "request": "", "trip": {"onTheWay": ["Burg Hohenwerfen"], "removeDayTrips": [{"stay": "Salzburg", "place": "Burg Hohenwerfen"}], "addDayTrips": [{"stay": "Salzburg", "place": "Hallstatt", "mode": "boat"}], "fromStay": []}}', 18);
+    expect(c).toEqual({ days: [], request: "", trip: {
+      onTheWay: ["Burg Hohenwerfen"], removeDayTrips: [{ stay: "Salzburg", place: "Burg Hohenwerfen" }], addDayTrips: [{ stay: "Salzburg", place: "Hallstatt", mode: "car" }],
+    } });
+    expect(parseChange('CHANGE: {"days": [2], "request": "", "trip": {}}', 5)).toBeNull();
+  });
+  it("tells the model how to change the setup", () => {
+    expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain('"onTheWay": places to visit on a travel day between two stays');
   });
 });

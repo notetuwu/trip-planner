@@ -532,6 +532,40 @@ test("a place's popup on the map stays open while the map redraws (lookups and r
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
 });
 
+test("the chat can set a place on the way (taking it off the stay's day trips); Undo puts it back; old cards lose their buttons", async () => {
+  const plan = { summary: "Plan", totalEstimatedCost: 0, days: [
+    { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] }] };
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 3, hotel: "", dayTrips: [{ place: "Caffe Pedrocchi, Italy", mode: "car" }] }],
+    list: "", listChosen: true, autoFix: false, itinerary: plan, customPlaces: [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775, custom: true }] });
+  await page.eval(`window.__e2e.companion = { answer: "It'll be a stop on the way instead.", change: { days: [], request: "", trip: { onTheWay: ["Caffe Pedrocchi"] } } }`);
+  await page.eval(`document.querySelector("#chatBtn").click(); (() => { const q = document.querySelector("#cpQ"); q.value = "Pedrocchi on the way please"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the offered change");
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Caffe Pedrocchi: on the way between stays/);
+  await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-undo]")`, 10000, "applied");
+  assert.deepEqual(await page.eval(`planner.state().stays[0].dayTrips`), [], "no longer a day trip");
+  assert.equal(await page.eval(`planner.state().how["Caffe Pedrocchi"]`), "way");
+  assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
+  assert.equal(await page.eval(`window.__e2e.requests.length`), 0, "the days were already right: no new plan asked for");
+  // Writing again: the old card shows how it went, without buttons.
+  await page.eval(`window.__e2e.companion = { answer: "Sure, noted." }; (() => { const q = document.querySelector("#cpQ"); q.value = "thanks"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 2`, 10000, "the second answer");
+  assert.equal(await page.eval(`document.querySelectorAll("#cpLog [data-undo], #cpLog [data-apply]").length`), 0, "no buttons on the old card");
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Applied/);
+  assert.match(await page.eval(`JSON.stringify(window.__e2e.companionAsked.history)`), /Change applied: Caffe Pedrocchi: on the way/);
+  // A further change carries the series: its Undo puts back both.
+  await page.eval(`window.__e2e.companion = { answer: "And a day trip to Venice.", change: { days: [], request: "", trip: { addDayTrips: [{ stay: "Padua", place: "Venice", mode: "train" }] } } };
+    (() => { const q = document.querySelector("#cpQ"); q.value = "add venice as a day trip"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the second change");
+  await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
+  await page.waitFor(`/Undo all 2 changes/.test(document.querySelector("#cpLog [data-undo]")?.textContent || "")`, 10000, "undo for both");
+  assert.equal(await page.eval(`planner.state().stays[0].dayTrips[0].place`), "Venice");
+  await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
+  assert.equal(await page.eval(`planner.state().stays[0].dayTrips[0].place`), "Caffe Pedrocchi, Italy", "back to before the first change");
+  assert.equal(await page.eval(`planner.state().how?.["Caffe Pedrocchi"] || ""`), "");
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {
   await trip({ ...PADUA_MILANO, ideas: "Brenta boat", marks: { "Caffe Pedrocchi": "must" } });
   await page.eval(`window.__exported = null; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__exported = { name: this.download, href: this.href }; }`);

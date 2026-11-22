@@ -153,12 +153,17 @@ function dropDayTrip(title: string): string[] {
   return from;
 }
 
-/** On a must-see: plan it as a stop between stays, from a stay, or let the route decide. */
-function setHow(title: string, next: MustSeeHow | undefined) {
+/** Sets how a must-see is fitted in, without redrawing; returns the stays it was taken off as a day trip (on the way
+ *  now: it's no longer a day trip from a stay too, which would draw a second line and plan it twice). */
+export function applyHow(title: string, next: MustSeeHow | undefined): string[] {
   state.how = { ...state.how };
   if (next) state.how[title] = next; else delete state.how[title];
-  // On the way now: it's no longer a day trip from a stay too (that would draw a second line and plan it twice).
-  const from = next === "way" ? dropDayTrip(title) : [];
+  return next === "way" ? dropDayTrip(title) : [];
+}
+
+/** On a must-see: plan it as a stop between stays, from a stay, or let the route decide. */
+function setHow(title: string, next: MustSeeHow | undefined) {
+  const from = applyHow(title, next);
   save(); renderChips();
   if (from.length) { renderStays(); drawMap(); renderItinerary(); toast(`“${title}” is now a stop on the way, no longer a day trip from ${from.join(", ")}`); }
 }
