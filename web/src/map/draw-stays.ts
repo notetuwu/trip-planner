@@ -46,6 +46,14 @@ function stayLegs(): StayLeg[] {
   return legs;
 }
 
+/** Whether the plan has a day that goes on this day trip (its town or stops name the place): then that day's own
+ *  legs show the way there and back, and the stay's straight day-trip line would only be a second path. */
+function planGoesTo(place: string) {
+  const name = place.split(",")[0].trim().toLowerCase();
+  return !!name && (state.itinerary?.days || []).some((d) =>
+    [d.city, ...d.items.map((x) => x.place)].join(" ").toLowerCase().includes(name));
+}
+
 /** With one day picked: the stays that day touches, the leg travelled that day and the day trips it makes. */
 function dayFilter() {
   const d = session.selectedDay != null ? state.itinerary?.days[session.selectedDay] : null;
@@ -82,6 +90,7 @@ export function drawStays(): LatLng[] {
   const tripsBy = (state.stays.flatMap((s) => (s.dayTrips || []).map((t) => t.place)).filter(Boolean));
   for (const l of stayLegs()) {
     if (only && !only.leg(l)) continue;
+    if (l.trip && l.place && planGoesTo(l.place)) continue;
     const who = l.trip && l.place ? tripGroup(l.place) : { g: "", color: "" };
     const g = who.g, color = who.color || accent;
     // Day trips of different groups often share the tracks out of town: later ones drawn thinner on top.
