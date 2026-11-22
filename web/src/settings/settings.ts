@@ -19,6 +19,7 @@ interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: bo
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
+interface OllamaInstall { phase: "idle" | "running" | "done" | "error"; log: string[]; error: string; started: number; command: string; canRun: boolean }
 interface LanStatus { running: boolean; port: number; since: number; error: string; urls: string[] }
 interface LibModel { name: string; description: string; caps: string[]; sizes: string[]; downloads: number; context: string; updated: string; cloudOnly: boolean }
 interface LibTag { name: string; sizeGb: number; context: string; inputs: string }
@@ -35,6 +36,7 @@ const tagsOf = new Map<string, LibTag[] | "loading" | "error">();
 const opened = new Set<string>();
 let allVariants = false;
 let updates: UpdateState | null = null, checking = false;
+let setup: OllamaInstall | null = null, setupPoll: number | undefined;
 
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(bytes > 10 * 1024 ** 3 ? 0 : 1)} GB`;
 const count = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
@@ -73,6 +75,7 @@ function loadModelsTab() {
 
 async function loadOllama() {
   try { ollama = await api<OllamaInfo>("/api/ollama"); } catch { ollama = null; }
+  if (ollama && !ollama.installed && !setup) setup = await api<OllamaInstall>("/api/ollama/install").catch(() => null);
   renderModels();
   watchPulls();
 }
@@ -259,6 +262,41 @@ function renderUpdates() {
   });
 }
 
+/** Installing Ollama: on Windows the planner runs ollama.com's command and shows what it prints; elsewhere the command
+ *  is shown to run in a terminal (it asks for the administrator password there). */
+function installRow(i: OllamaInstall) {
+  if (!i.canRun) return `<div class="set-row"><div><b>Install from a terminal</b><div class="hint">Ollama's installer asks for your password, so run it in Terminal:</div>
+      <code class="set-path">${esc(i.command)}</code></div>
+      <button type="button" class="btn" id="setCopyCmd">${icon("copy")} Copy</button></div>`;
+  if (i.phase === "running") return `<div class="set-row"><div class="pull"><div class="bar indeterminate"><i></i></div>
+      <div class="hint">Installing Ollama… ${esc(i.log.at(-1) || "downloading the installer")}</div></div></div>`;
+  if (i.phase === "error") return `<div class="set-row"><div class="pull err">${icon("warn")} ${esc(i.error)}${i.log.length ? `<div class="hint">${esc(i.log.slice(-3).join(" · "))}</div>` : ""}</div>
+      <a class="btn" href="https://ollama.com/download" target="_blank" rel="noopener">Download instead${ext()}</a></div>`;
+  return `<div class="set-row"><div class="hint">Runs Ollama's own install command (<code>${esc(i.command)}</code>), which downloads and installs it from ollama.com.</div></div>`;
+}
+
+async function installOllama() {
+  if (!setup || !confirm(`Install Ollama now?
+
+This runs the command from ollama.com:
+${setup.command}
+
+It downloads Ollama (a large download) and installs it for your user.`)) return;
+  try { setup = await api<OllamaInstall>("/api/ollama/install", { method: "POST" }); }
+  catch (e) { toast((e as Error).message); return; }
+  renderModels();
+  clearInterval(setupPoll);
+  setupPoll = window.setInterval(async () => {
+    const now = await api<OllamaInstall>("/api/ollama/install").catch(() => null);
+    if (!now) return;
+    setup = now;
+    if (now.phase === "running") { if (dialog().open) renderModels(); return; }
+    clearInterval(setupPoll);
+    if (now.phase === "done") { toast("Ollama is installed"); setup = null; await loadOllama(); refreshModels(); }
+    else renderModels();
+  }, 1500);
+}
+
 function renderModels() {
   const main = document.querySelector<HTMLElement>("#setMain");
   if (!main || tab !== "models") return;
@@ -347,7 +385,9 @@ function renderModels() {
     <div class="set-card">
       <div class="set-row"><div><b class="status">${status}</b>
         <div class="hint">${o?.running ? "Models run on your own computer: free and private." : o?.installed ? "The planner tries to start it; you can also open Ollama from the Start menu (or Applications on a Mac)." : "Ollama runs AI models on your own computer. Install it, then come back here to add a model."}</div></div>
-        ${o && !o.installed ? `<a class="btn solid" href="https://ollama.com/download" target="_blank" rel="noopener">Download Ollama${ext()}</a>` : ""}</div>
+        ${o && !o.installed && !setup?.canRun ? `<a class="btn solid" href="https://ollama.com/download" target="_blank" rel="noopener">Download Ollama${ext()}</a>` : ""}
+        ${o && !o.installed && setup?.canRun && setup.phase !== "running" ? `<button type="button" class="btn solid" id="setInstallOllama">${icon("download")} Install Ollama</button>` : ""}</div>
+      ${o && !o.installed && setup ? installRow(setup) : ""}
       <div class="set-row"><div><b>${icon("cpu")} Graphics card</b><div class="hint">${gpu ? `${esc(gpu.name)} · ${gpu.memGb} GB${gpu.unified ? " shared memory" : ""}` : "Not detected (an NVIDIA card is read with nvidia-smi). Models still run, more slowly, on the processor."}</div></div></div>
     </div>
     ${o?.models.length ? `<div class="set-card"><b class="card-title">Installed</b>${mine}</div>` : ""}
@@ -381,6 +421,8 @@ function renderModels() {
     try { await api("/api/ollama/pull", { method: "POST", body: JSON.stringify({ name }) }); await loadOllama(); }
     catch (e) { toast((e as Error).message); }
   };
+  document.querySelector<HTMLButtonElement>("#setInstallOllama")?.addEventListener("click", installOllama);
+  document.querySelector<HTMLButtonElement>("#setCopyCmd")?.addEventListener("click", () => navigator.clipboard.writeText(setup?.command || "").then(() => toast("Copied the command")));
   $$<HTMLButtonElement>("#setMain [data-pull]").forEach((b) => { b.onclick = () => startPull(b.dataset.pull!); });
   $("#setPullGo").onclick = () => { const n = $<HTMLInputElement>("#setPullName").value.trim(); if (n) startPull(n); };
   $<HTMLInputElement>("#setPullName").onkeydown = (e) => { if (e.key === "Enter") $("#setPullGo").click(); };

@@ -7,7 +7,7 @@ import type { OnEvent, Trip } from "../ai/types";
 import { addDays } from "../config";
 import { MAX_LOOKUPS, RESEARCH_CTX, type RoundContext, type ToolCall, chatRound } from "./chat-round";
 import { tune } from "../settings";
-import { fetchPage } from "./fetch-page";
+import { UrlGuard, fetchPage } from "./fetch-page";
 import { webSearch } from "./search";
 
 /** Re-planning one day needs only a few lookups about that day. */
@@ -24,7 +24,7 @@ ${request ? `The travelers ask: ${request}\n` : ""}Currently planned that day: $
 Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}.
 
 Look up only what this day needs: opening hours and closing days on ${d.date} of places they might visit that day, events that day in ${d.city}, and getting around. Don't research other days or cities.
-You can make up to ${limit} tool calls. Prefer official websites. Short search queries work best. Never guess web addresses: only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the day itself.`;
+You can make up to ${limit} tool calls. Prefer official websites. Short search queries work best. Only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read (made-up addresses are refused), and say what you're after with looking_for. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the day itself.`;
 }
 
 function researchPrompt(trip: Trip, places: Place[]) {
@@ -40,7 +40,7 @@ Trip: ${tripLine(trip)}.
 Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}. Notes: ${trip.notes || "none"}.
 ${must.length ? `Must-see places: ${must.join(", ")}.` : ""}
 
-You can make up to ${lookupLimit(trip)} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets. Short search queries work best. Never guess web addresses: only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read (follow those links to reach opening-hours or ticket pages). When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the itinerary itself.`;
+You can make up to ${lookupLimit(trip)} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets; say what you're after with looking_for (e.g. "opening hours in September"), so long pages come back cut to those parts. Short search queries work best. Only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read (made-up addresses are refused; follow those links to reach opening-hours or ticket pages). PDFs (timetables, price lists) can be read too. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the itinerary itself.`;
 }
 
 interface ResearchOptions extends Omit<RoundContext, "messages"> { trip: Trip; places: Place[]; onEvent: OnEvent }
@@ -58,6 +58,10 @@ export async function localResearch(o: ResearchOptions): Promise<{ notes: string
   });
   const urls: string[] = [];
   let lookups = 0;
+  // Addresses the model has seen (search results, links on pages it read, the travelers' own places): only those, or
+  // other pages of those sites, get fetched.
+  const guard = new UrlGuard();
+  for (const p of o.places) if (p.url) guard.saw(p.url);
   onEvent({ type: "status", text: o.trip.redoDay ? "Researching this day online…" : "Researching online…" });
 
   const runTool = async (c: ToolCall) => {
@@ -65,13 +69,19 @@ export async function localResearch(o: ResearchOptions): Promise<{ notes: string
     if (c.name === "web_search" && c.args.query) {
       lookups++;
       onEvent({ type: "search", query: c.args.query });
-      return webSearch(c.args.query).catch((e) => `Search failed: ${e.message}`);
+      const found = await webSearch(c.args.query).catch((e) => `Search failed: ${e.message}`);
+      guard.saw(found);
+      return found;
     }
     if (c.name === "fetch_page" && c.args.url) {
+      // A made-up address costs no lookup, but isn't fetched.
+      if (!guard.allowed(c.args.url)) return "That address hasn't come up in a search or on a page you read, so it wasn't fetched. Search for the page first, or follow a link from a page you've read.";
       lookups++;
       onEvent({ type: "fetch", url: c.args.url });
       urls.push(c.args.url);
-      return fetchPage(c.args.url).catch((e) => `Fetch failed: ${e.message}`);
+      const page = await fetchPage(c.args.url, { lookingFor: c.args.looking_for || "" }).catch((e) => `Fetch failed: ${e.message}`);
+      guard.saw(page);
+      return page;
     }
     return "Unknown tool or missing argument.";
   };
@@ -93,7 +103,7 @@ export async function localResearch(o: ResearchOptions): Promise<{ notes: string
     if (!calls.length) return { notes: content.replace(/<think>[\s\S]*?<\/think>/g, "").trim(), urls };
     for (const c of calls) {
       const result = await runTool(c);
-      onEvent({ type: "prompt", label: `Result of ${c.name}(${c.args.query || c.args.url || ""})`, text: result });
+      onEvent({ type: "prompt", label: `Result of ${c.name}(${c.args.query || c.args.url || ""}${c.args.looking_for ? `, looking for: ${c.args.looking_for}` : ""})`, text: result });
       messages.push(kind === "ollama" ? { role: "tool", tool_name: c.name, content: result } : { role: "tool", tool_call_id: c.id, content: result });
     }
   }

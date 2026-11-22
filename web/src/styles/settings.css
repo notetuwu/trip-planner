@@ -310,3 +310,6 @@ textarea.ideas { min-height: 72px; field-sizing: content; max-height: 360px; }
   .companion-dialog { inset: auto 8px 72px 8px; width: auto; height: calc(100dvh - 90px); }
 }
 @media print { .companion-fab, .companion-dialog { display: none !important; } }
+/* Installing Ollama: no percentage to show, so the bar sweeps. */
+.pull .bar.indeterminate i { width: 35%; animation: sweep 1.3s ease-in-out infinite; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }

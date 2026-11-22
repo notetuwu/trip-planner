@@ -47,7 +47,7 @@ describe("phone access on the home network", () => {
   });
   it("keeps keys, updates, settings and model downloads on the computer", () => {
     const c = `tp_lan=${lanToken()}`;
-    for (const p of ["/api/keys/anthropic", "/api/update/install", "/api/settings", "/api/lan", "/api/ollama/pull", "/api/open"]) {
+    for (const p of ["/api/keys/anthropic", "/api/update/install", "/api/settings", "/api/lan", "/api/ollama/pull", "/api/ollama/install", "/api/open"]) {
       const r = ask(p, c);
       expect([p, r.status, r.handled]).toEqual([p, 403, false]);
     }

@@ -11,7 +11,7 @@ It uses **Claude** through your own [Claude Code](https://claude.com/claude-code
 - **Any destination.** The country is worked out from your stays. Stay dates chain together automatically, and each stay is located on the map.
 - **Your places first.** Import a Google Maps list (by share link or Takeout CSV), add places by name or by clicking the map, and mark them as must-see or skip. In groups, a must-see can be marked for only some travellers, and the planner can split the group for it.
 - **Real places, not invented ones.** Before planning, sights and restaurants around each stay are pulled from OpenStreetMap and given to the model. Stops are pinned at their exact location, and doubtful ones are flagged.
-- **Online research.** The model can look up opening hours, prices, events and connections while it plans. Claude and API models use their provider's own web search, and local models get a search and page-fetch loop run by the server.
+- **Online research.** The model can look up opening hours, prices, events and connections while it plans. Claude and API models use their provider's own web search, and local models get a search and page-reading loop run by the server that works like Claude's web fetch: pages keep their headings, lists and tables, the opening hours, events and prices sites publish as structured data are read, long pages are cut to what the model is looking for, PDFs are read, and only addresses from searches or pages already read are fetched.
 - **Opening hours checked.** Stops that are real OpenStreetMap places with listed hours are checked against the day and time they're planned for, including public holidays, with a warning such as "Closed on Monday" or "Closes at 17:00".
 - **Booking in one place.** Stops with tickets or tours get a link to one big booking platform for the whole trip (Klook for trips in East and Southeast Asia, GetYourGuide elsewhere) instead of a different site per attraction. A "Book ahead" checklist collects everything that sells out or needs a slot, with how far ahead to book; tick items off as you book them.
 - **Public holidays and events.** Official holidays for your dates (from date.nager.at), plus the festivals and closures the model finds.
@@ -25,7 +25,7 @@ It uses **Claude** through your own [Claude Code](https://claude.com/claude-code
 - **Ideas & notes.** A scratchpad for brainstorming (places someone recommended, links, things to decide), saved with the trip and read by the trip chat.
 - **Share a trip.** Export saves the trip as a file (stays, plan, must-sees, notes); someone else imports it into their planner. Saved trips' files import too.
 - **Use it on your phone.** Settings → Phone serves the planner on your home network behind a secret link (with a QR code): same saved trips, lists and models, and the open trip stays in step between the computer and the phone.
-- **Local models made easy.** Settings → Local models shows Ollama's status and your graphics card, suggests models that fit it, and installs or deletes them with download progress.
+- **Local models made easy.** Settings → Local models installs Ollama itself on Windows (running ollama.com's install command; on macOS and Linux it gives you the command to paste), shows its status and your graphics card, suggests current models from the Ollama library that fit it, and installs or deletes them with download progress.
 
 ## Download
 

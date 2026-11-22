@@ -5,15 +5,15 @@ import { lines } from "../util/http";
 
 export const MAX_LOOKUPS = Number(process.env.RESEARCH_MAX_LOOKUPS) || 30;
 /** One fixed context size for the whole conversation (changing it makes Ollama reload the model). It holds every
- *  search result and page the model reads, at most ~1k tokens each. */
-export const RESEARCH_CTX = Math.min(Number(process.env.OLLAMA_NUM_CTX) || 65536, Math.ceil((MAX_LOOKUPS * 1100 + 8000) / 4096) * 4096);
+ *  search result (~500 tokens) and page (~1.5-2k tokens) the model reads. */
+export const RESEARCH_CTX = Math.min(Number(process.env.OLLAMA_NUM_CTX) || 65536, Math.ceil((MAX_LOOKUPS * 1500 + 8000) / 4096) * 4096);
 
 const TOOLS = [
   { type: "function", function: { name: "web_search", description: "Search the web. Returns result titles, URLs and snippets.", parameters: { type: "object", required: ["query"], properties: { query: { type: "string" } } } } },
-  { type: "function", function: { name: "fetch_page", description: "Read a web page as plain text (first few thousand characters).", parameters: { type: "object", required: ["url"], properties: { url: { type: "string" } } } } },
+  { type: "function", function: { name: "fetch_page", description: "Read a web page or PDF (from search results or a page's links). Returns its text with headings, lists and tables, any opening hours/events/prices the site publishes as structured data, and the site's links. Long pages are cut to the parts about looking_for.", parameters: { type: "object", required: ["url"], properties: { url: { type: "string" }, looking_for: { type: "string", description: "What you want from the page, e.g. \"opening hours in September\" or \"ticket prices\"" } } } } },
 ];
 
-export interface ToolCall { id?: string; name: string; args: { query?: string; url?: string } }
+export interface ToolCall { id?: string; name: string; args: { query?: string; url?: string; looking_for?: string } }
 export interface RoundContext {
   kind: "ollama" | "openai";
   base: string;

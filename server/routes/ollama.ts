@@ -1,5 +1,7 @@
 // Settings → Local models: what Ollama has installed and running, downloading a model (in the background, with its
-// progress, so it carries on when the settings are closed), cancelling, and deleting a model.
+// progress, so it carries on when the settings are closed), cancelling, and deleting a model. On Windows it can also
+// install Ollama itself, by running the command ollama.com gives (elsewhere that command needs a terminal for sudo).
+import { spawn } from "node:child_process";
 import { ensureOllama, gpuInfo, ollamaInstalled } from "../ai/ollama-start";
 import { OLLAMA_URL } from "../ai/local-models";
 import { libraryTags, recommend, searchLibrary } from "../ai/ollama-library";
@@ -45,6 +47,33 @@ async function pull(name: string) {
   }
 }
 
+/** The install command ollama.com shows for this system. */
+export const INSTALL_COMMAND = process.platform === "win32" ? "irm https://ollama.com/install.ps1 | iex" : "curl -fsSL https://ollama.com/install.sh | sh";
+
+interface Install { phase: "idle" | "running" | "done" | "error"; log: string[]; error: string; started: number }
+const install: Install = { phase: "idle", log: [], error: "", started: 0 };
+
+/** Runs Ollama's own Windows install command in the background (hidden window), keeping the last lines it prints. */
+function installOllama() {
+  if (install.phase === "running") return;
+  Object.assign(install, { phase: "running", log: [], error: "", started: Date.now() });
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", INSTALL_COMMAND], { windowsHide: true });
+  const keep = (chunk: Buffer) => {
+    for (const line of chunk.toString("utf8").split(/\r?\n/)) if (line.trim()) install.log.push(line.trim().slice(0, 300));
+    install.log.splice(0, Math.max(0, install.log.length - 30));
+  };
+  child.stdout.on("data", keep);
+  child.stderr.on("data", keep);
+  child.on("error", (e) => { install.phase = "error"; install.error = errMsg(e); });
+  child.on("close", async (code) => {
+    if (install.phase !== "running") return;
+    // Installed: start it (the installer usually does) and wait until it answers.
+    if (code === 0 && (ollamaInstalled() || await ensureOllama())) { await ensureOllama(); install.phase = "done"; return; }
+    install.phase = "error";
+    install.error = code === 0 ? "The installer finished, but Ollama wasn't found. Try the download from ollama.com." : `The installer stopped (exit code ${code}).`;
+  });
+}
+
 export async function handleOllama(req: Req, res: Res, path: string) {
   const body = req.method === "GET" ? null : await readJson(req);
   const name = String(body?.name || "").trim();
@@ -65,6 +94,14 @@ export async function handleOllama(req: Req, res: Res, path: string) {
       })).sort((a: any, b: any) => a.name.localeCompare(b.name)),
       pulls: [...pulls.values()].map(pullView),
     });
+    return;
+  }
+  if (path === "/api/ollama/install") {
+    if (req.method === "POST") {
+      if (process.platform !== "win32") { sendJson(res, 400, { error: `Run this in a terminal: ${INSTALL_COMMAND}` }); return; }
+      installOllama();
+    }
+    sendJson(res, 200, { ...install, command: INSTALL_COMMAND, canRun: process.platform === "win32" });
     return;
   }
   if (req.method === "GET" && path === "/api/ollama/pulls") { sendJson(res, 200, [...pulls.values()].map(pullView)); return; }
