@@ -43,7 +43,7 @@ async function poll() {
     setMapStatus(pending ? `Locating ${pending} place${pending > 1 ? "s" : ""}…` : "");
     clearTimeout(notify);
     notify = window.setTimeout(() => listeners.forEach((fn) => fn()), 300);
-    if (pending) timer = window.setTimeout(poll, 2500);
+    if (pending) timer = window.setTimeout(poll, 1500);
   } catch { setMapStatus("Can't reach the server for geocoding"); }
 }
 

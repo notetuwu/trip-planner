@@ -363,18 +363,19 @@ button.refine:hover { border-color: var(--accent); }
   background: repeating-linear-gradient(-45deg, rgba(255, 255, 255, .22) 0 6px, transparent 6px 12px);
   background-size: 17px 17px; animation: stripes .7s linear infinite;
 }
-.pull:not(.ok):not(.err) .bar:not(.indeterminate)::after {
-  content: ""; position: absolute; inset: 0; width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .28), transparent);
-  animation: shine 2.2s ease-in-out infinite;
+/* The sweep of light runs over the filled part only (not the empty track), at an even speed, end to end. */
+.pull:not(.ok):not(.err) .bar:not(.indeterminate) i::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 60%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .35), transparent);
+  animation: shine 1.8s linear infinite;
 }
 @keyframes stripes { to { background-position: 17px 0; } }
-@keyframes shine { from { transform: translateX(-120%); } to { transform: translateX(300%); } }
+@keyframes shine { from { transform: translateX(-100%); } to { transform: translateX(170%); } }
 .pull-status { display: inline-flex; align-items: center; gap: 6px; }
 .dl-arrow { display: inline-flex; color: var(--accent); animation: bob 1.1s ease-in-out infinite; }
 @keyframes bob { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(2px); } }
 .pull.ok .pop { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; place-items: center; justify-content: center; align-items: center; background: color-mix(in srgb, var(--ok) 20%, transparent); animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @media (prefers-reduced-motion: reduce) {
-  .pull .bar i::before, .pull .bar::after, .dl-arrow, .pull.ok .pop, .pull .bar.indeterminate i { animation: none !important; }
+  .pull .bar i::before, .pull .bar i::after, .dl-arrow, .pull.ok .pop, .pull .bar.indeterminate i { animation: none !important; }
 }

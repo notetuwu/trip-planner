@@ -1,4 +1,4 @@
-// Geocoding with a disk cache and a queue: results trickle in at about one per second, and the page polls for them.
+// Geocoding with a disk cache and a queue in two lanes (Nominatim and Photon, side by side); the page polls for results.
 import type { GeoHit, GeoQuery, LatLng, ReverseHit } from "../../shared/types";
 import { errMsg } from "../config";
 import { diskCache } from "../util/disk-cache";
@@ -38,6 +38,11 @@ export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = fals
  * is found in the right village rather than anywhere in the country.
  */
 export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
+  return (await byNominatim(q, cc, near, stop)) || byPhoton(q, cc, near);
+}
+
+/** Nominatim: exact towns (the place, not the middle of its municipality), and for stops their website and names. */
+async function byNominatim(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
   const params = new URLSearchParams({ q, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en" });
   if (stop) { params.set("extratags", "1"); params.set("namedetails", "1"); } // its website and all its names
   if (cc) params.set("countrycodes", cc);
@@ -47,8 +52,12 @@ export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, s
     params.set("bounded", "1");
   }
   const hit = bestHit(await nominatim("search", params));
-  if (hit) return nominatimHit(hit);
-  // Fall back to Photon, also with the name cut before " - ", " | " or "(" (e.g. "Store - Shibuya Main Store").
+  return hit ? nominatimHit(hit) : null;
+}
+
+/** Photon: better at fuzzy shop and sight names; also tried with the name cut before " - ", " | " or "(" (e.g.
+ *  "Store - Shibuya Main Store"). */
+async function byPhoton(q: string, cc?: string, near?: LatLng | null): Promise<GeoHit | null> {
   const ccs = (cc || "").split(",").filter(Boolean);
   const km = (f: any) => {
     if (!near) return 0;
@@ -84,19 +93,44 @@ export function countryCode(name: string) {
   return countries.get(name.trim().toLowerCase()) || "";
 }
 
-interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean }
+/**
+ * Two lanes that work side by side, each at its service's pace: Nominatim (one a second) and Photon (faster). A job
+ * starts in the lane that answers it best (stays and stops: Nominatim, for exact towns and stops' websites; saved
+ * places: Photon, which is quick and good with shop and sight names) and moves to the other lane if not found there,
+ * instead of holding up its lane while it waits.
+ */
+type Lane = "nominatim" | "photon";
+interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean; lane: Lane; tried: Lane[]; errored?: boolean }
 const geoQueue: GeoJob[] = [];
-let geoBusy = false;
+const busy: Record<Lane, boolean> = { nominatim: false, photon: false };
+/** Being looked up right now (out of the queue meanwhile, so the page asking again doesn't queue it twice). */
+const inFlight = new Set<string>();
+const other = (l: Lane): Lane => (l === "nominatim" ? "photon" : "nominatim");
+export const startLane = (j: { first: boolean; stop: boolean }): Lane => (j.first || j.stop ? "nominatim" : "photon");
 
-async function runGeoQueue() {
-  if (geoBusy) return;
-  geoBusy = true;
-  while (geoQueue.length) {
-    const { q, cc, near, key, stop } = geoQueue.shift()!;
-    try { geoCache.data[key] = await geocodeOne(q, cc, near, stop); geoCache.save(); }
-    catch (e) { console.error("Geocode failed:", q, errMsg(e)); }
+async function runLane(lane: Lane) {
+  if (busy[lane]) return;
+  busy[lane] = true;
+  for (let i; (i = geoQueue.findIndex((j) => j.lane === lane)) >= 0;) {
+    const job = geoQueue.splice(i, 1)[0];
+    inFlight.add(job.key);
+    let hit: GeoHit | null = null;
+    try { hit = lane === "nominatim" ? await byNominatim(job.q, job.cc, job.near, job.stop) : await byPhoton(job.q, job.cc, job.near); }
+    catch (e) { job.errored = true; console.error(`Geocode (${lane}) failed:`, job.q, errMsg(e)); }
+    inFlight.delete(job.key);
+    job.tried.push(lane);
+    if (!hit && !job.tried.includes(other(lane))) {
+      // Not found here: the other lane tries it, keeping its place among the others there.
+      job.lane = other(lane);
+      const at = geoQueue.findIndex((j) => j.lane === job.lane && !j.first && job.first);
+      geoQueue.splice(at < 0 ? geoQueue.length : at, 0, job);
+      runLane(job.lane);
+      continue;
+    }
+    // "Not found" after an error (a service down) isn't remembered, so it's tried again next time.
+    if (hit || !job.errored) { geoCache.data[job.key] = hit; geoCache.save(); }
   }
-  geoBusy = false;
+  busy[lane] = false;
 }
 
 /** Answers what's cached right away and queues the rest; the page asks again for those. */
@@ -109,17 +143,18 @@ export function geocodeBatch(queries: GeoQuery[]) {
     const key = geoKey(q, cc, near, !!stop);
     if (key in geoCache.data) { results[key] = geoCache.data[key]; continue; }
     pending++;
+    if (inFlight.has(key)) continue;
     const queued = geoQueue.findIndex((x) => x.key === key);
-    const job = { q: String(q).trim(), cc, near, key, first: !!first, stop: !!stop };
+    const job: GeoJob = { q: String(q).trim(), cc, near, key, first: !!first, stop: !!stop, lane: startLane({ first: !!first, stop: !!stop }), tried: [] };
     // Stays and itinerary stops jump ahead of the (often long) saved-places backlog, but stay in the order they
     // were asked for among themselves (a day's town must be found before the stops searched around it).
     if (first && !geoQueue[queued]?.first) {
-      if (queued >= 0) geoQueue.splice(queued, 1);
+      if (queued >= 0) { job.lane = geoQueue[queued].tried.length ? geoQueue[queued].lane : job.lane; job.tried = geoQueue[queued].tried; geoQueue.splice(queued, 1); }
       const at = geoQueue.findIndex((x) => !x.first);
       geoQueue.splice(at < 0 ? geoQueue.length : at, 0, job);
     } else if (queued < 0) geoQueue.push(job);
   }
-  runGeoQueue();
+  runLane("nominatim"); runLane("photon");
   return { results, pending, queued: geoQueue.length };
 }
 

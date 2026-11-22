@@ -181,8 +181,10 @@ export function geocodeItems() {
       const known = poiFor(x.place, d) || (listed && placeLoc(listed));
       // Paid places are looked up even when their spot is known, for their website (ticket links).
       const paid = Number(x.cost) > 0 || !!x.booking;
-      if (!known || paid || itemLoc(x, d, byTitle)?.elsewhere) {
-        for (const q of itemQueries(x, d)) qs.push({ q, cc: countryCodes(), near: nearOf(home), first: true, stop: true });
+      const elsewhere = !!itemLoc(x, d, byTitle)?.elsewhere;
+      if (!known || paid || elsewhere) {
+        // Stops whose spot is already known (looked up only for their website) wait behind the ones still to place.
+        for (const q of itemQueries(x, d)) qs.push({ q, cc: countryCodes(), near: nearOf(home), first: !known || elsewhere, stop: true });
       }
     }
   }

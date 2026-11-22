@@ -105,10 +105,16 @@ main {
   body.app .map-wrap { flex: 1; min-height: 0; }
   body.app #map { height: 100%; }
 }
-/* The chat column: beside the map and the plan on a computer; over everything on a phone. */
-@media (min-width: 901px) {
-  body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(320px, 380px); grid-template-areas: "settings map chat" "settings output chat"; }
+/* The chat: a column beside the map and the plan where there's room for it (1180px and up); a drawer over the right
+   of the page on smaller screens, so the plan keeps its width; over everything on a phone. */
+@media (min-width: 1180px) {
+  body.chat-open main { grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(300px, 360px); grid-template-areas: "settings map chat" "settings output chat"; }
   body.app.chat-open .chat-panel { align-self: stretch; }
+}
+@media (min-width: 901px) and (max-width: 1179px) {
+  .chat-panel { position: fixed; top: calc(var(--head, 80px) + 6px); right: 16px; bottom: 16px; width: min(400px, calc(100vw - 32px)); z-index: 1500;
+    box-shadow: var(--shadow-pop), 0 0 0 1px var(--line); animation: drawer-in .18s ease-out; }
+  @keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } }
 }
 @media (min-width: 1500px) {
   body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "settings output map chat"; }

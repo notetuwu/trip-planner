@@ -1,24 +1,29 @@
 // OpenStreetMap geocoders: Nominatim (search and reverse) and Photon (better at fuzzy shop and sight names).
-// Both are free public services; all calls share one slot per 1.1 s.
+// Both are free public services, each paced on its own: Nominatim allows one request a second (we use 1.1 s), Photon
+// asks for fair use (we use 0.4 s). Separate paces let the two work side by side.
 import type { GeoHit } from "../../shared/types";
 import { USER_AGENT } from "../config";
 
-let nextSlot = 0;
-async function waitForSlot() {
-  const wait = Math.max(0, nextSlot - Date.now());
-  nextSlot = Math.max(Date.now(), nextSlot) + 1100;
-  await new Promise((r) => setTimeout(r, wait));
+/** One request at a time per service, at least `gap` ms apart. */
+function pacer(gap: number) {
+  let next = 0;
+  return async () => {
+    const wait = Math.max(0, next - Date.now());
+    next = Math.max(Date.now(), next) + gap;
+    await new Promise((r) => setTimeout(r, wait));
+  };
 }
+const nominatimSlot = pacer(1100), photonSlot = pacer(400);
 
 export async function nominatim(endpoint: "search" | "reverse", params: URLSearchParams): Promise<any> {
-  await waitForSlot();
+  await nominatimSlot();
   const res = await fetch(`https://nominatim.openstreetmap.org/${endpoint}?${params}`, { headers: { "User-Agent": USER_AGENT } });
   if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   return res.json();
 }
 
 export async function photon(params: URLSearchParams): Promise<any[]> {
-  await waitForSlot();
+  await photonSlot();
   const res = await fetch(`https://photon.komoot.io/api/?${params}`, { headers: { "User-Agent": USER_AGENT } });
   if (!res.ok) throw new Error(`Photon HTTP ${res.status}`);
   return ((await res.json()) as any).features || [];

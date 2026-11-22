@@ -185,12 +185,19 @@ async function ask() {
 
 /** Shows or hides the chat column (remembered in this browser); the map is told its size changed. */
 function setOpen(open: boolean) {
+  markHeader();
   panel().hidden = !open;
   document.body.classList.toggle("chat-open", open);
   $("#chatBtn").setAttribute("aria-pressed", String(open));
   localStorage.setItem(OPEN_KEY, open ? "1" : "");
   requestAnimationFrame(() => map?.invalidateSize());
   if (open) { render(); fit(); }
+}
+
+/** Where the header ends, for the chat drawer on smaller screens to start just below it. */
+function markHeader() {
+  const h = document.querySelector("header")?.getBoundingClientRect().bottom || 80;
+  document.documentElement.style.setProperty("--head", `${Math.round(h)}px`);
 }
 
 /** Opens the chat (with `text` in the box, if given) and puts the cursor there. */
@@ -209,9 +216,10 @@ export function initCompanion() {
   box().addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); } });
   $("#chatPanel .rc-box").onclick = (e) => { if (e.target === e.currentTarget) box().focus(); };
   $("#cpClear").onclick = () => { if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; before.clear(); save(); render(); } };
-  panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth <= 900) setOpen(false); });
+  panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.
   for (const t of chat()) if (t.change?.status === "applying") t.change.status = "offered";
+  window.addEventListener("resize", () => { if (!panel().hidden) { markHeader(); map?.invalidateSize(); } });
   if (localStorage.getItem(OPEN_KEY)) setOpen(true);
 
   // Ideas & notes.
