@@ -168,8 +168,10 @@
     <h3>Chat</h3>
     <div id="rpChat" class="rc-log"></div>
     <form id="rpChatForm" class="rc-input">
-      <input id="rpWhy" maxlength="400" autocomplete="off" placeholder="What should change? e.g. a bit more Italy" disabled>
-      <button class="btn solid" id="rpSend" disabled>Send</button>
+      <div class="rc-box">
+        <textarea id="rpWhy" rows="1" maxlength="1500" placeholder="Reply to change the route…" disabled></textarea>
+        <button class="rc-send" id="rpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+      </div>
     </form>
   </aside>
   </div>

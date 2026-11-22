@@ -84,7 +84,11 @@ function showPlan(plan: RoutePlan, turn?: Omit<Turn, "route" | "title">) {
 
 // The plan on screen and the chat about it, kept (also across restarts) until they start over.
 const KEY = "trip-planner-route";
-const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ plan: shown, chat })); } catch { /* storage full */ } };
+const FIELDS = ["rpStart", "rpEnd", "rpDate", "rpDays", "rpHours", "rpMode", "rpWhat", "rpStays"];
+const remember = () => {
+  const form = Object.fromEntries(FIELDS.map((id) => [id, $<HTMLInputElement>(`#${id}`).value]));
+  try { localStorage.setItem(KEY, JSON.stringify({ plan: shown, chat, form })); } catch { /* storage full */ }
+};
 
 function startOver() {
   chat.length = 0; shown = null;
@@ -97,8 +101,15 @@ function restore() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "null");
     if (!saved?.plan?.stays) return;
+    // What they filled in, so changing the route works after a restart too.
+    for (const [id, v] of Object.entries(saved.form || {})) {
+      const el = document.querySelector<HTMLInputElement>(`#${id}`);
+      if (el && typeof v === "string" && v) el.value = v;
+    }
     chat.push(...(Array.isArray(saved.chat) ? saved.chat.filter((t: Turn) => t && typeof t.route === "string") : []));
     showPlan(saved.plan);
+    // Saved before the chat existed: the route on screen becomes its first message, so there's something to reply to.
+    if (!chat.length) { chat.push({ route: routeLine(saved.plan), title: saved.plan.title, fresh: true }); renderChat(); }
   } catch { /* nothing saved */ }
 }
 
@@ -135,17 +146,28 @@ function idle() {
   const busy = !!running;
   $("#rpGo").textContent = shown ? "New route" : "Plan the route";
   $<HTMLButtonElement>("#rpGo").disabled = busy;
-  $<HTMLInputElement>("#rpWhy").disabled = busy || !shown;
-  $<HTMLButtonElement>("#rpSend").disabled = busy || !shown;
+  const why = $<HTMLTextAreaElement>("#rpWhy");
+  why.disabled = busy || !shown;
+  $<HTMLButtonElement>("#rpSend").disabled = busy || !shown || !why.value.trim();
   $<HTMLButtonElement>("#rpCancel").hidden = !busy;
+}
+
+/** The reply box grows with what's typed, up to its maximum height (then it scrolls). */
+function fitBox() {
+  const why = $<HTMLTextAreaElement>("#rpWhy");
+  why.style.height = "auto";
+  why.style.height = `${Math.min(why.scrollHeight, 200)}px`;
 }
 
 /** A reply in the chat: the route on screen gets changed for it. */
 function send() {
-  const why = $<HTMLInputElement>("#rpWhy"), text = why.value.trim(), last = chat.at(-1);
-  if (!text || !shown || !last || running) return;
-  last.said = text;
-  why.value = "";
+  const why = $<HTMLTextAreaElement>("#rpWhy"), text = why.value.trim();
+  if (!text || !shown || running) return;
+  // The form must be complete to plan (it may have been emptied); say so instead of doing nothing.
+  if (!$<HTMLFormElement>("#routeForm").reportValidity()) { $("#rpLive").textContent = "Fill in the form on the left first."; return; }
+  if (!chat.length) chat.push({ route: routeLine(shown), title: shown.title, fresh: true });
+  chat.at(-1)!.said = text;
+  why.value = ""; fitBox();
   plan_(true);
 }
 
@@ -195,7 +217,7 @@ async function plan_(change = false) {
     running = null;
     // Nothing came back: the route stays as it was, and what they said goes back in the box to send again.
     const last = chat.at(-1);
-    if (change && last?.said) { $<HTMLInputElement>("#rpWhy").value = last.said; delete last.said; }
+    if (change && last?.said) { $<HTMLTextAreaElement>("#rpWhy").value = last.said; delete last.said; fitBox(); }
     if (before) showPlan(before); else { renderChat(); idle(); }
   }
 }
@@ -242,6 +264,12 @@ export function initRoutePlanner() {
   $("#planRoute").onclick = open;
   $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); plan_(); };
   $<HTMLFormElement>("#rpChatForm").onsubmit = (e) => { e.preventDefault(); send(); };
+  const why = $<HTMLTextAreaElement>("#rpWhy");
+  // Like a chat: Enter sends, Shift+Enter starts a new line (not while an input method is composing a character).
+  why.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
+  why.oninput = () => { fitBox(); idle(); };
+  // A click anywhere in the box puts the cursor in the text.
+  $(".rc-box").onclick = (e) => { if (e.target === e.currentTarget) why.focus(); };
   renderChat(); idle();
   restore();
 }

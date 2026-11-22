@@ -146,8 +146,25 @@ details.import .inline { margin-bottom: 8px; }
 .rc-msg.ai.pending { color: var(--muted); white-space: pre-wrap; }
 .rc-msg.me { align-self: flex-end; background: var(--accent-soft); border-bottom-right-radius: 3px; font-size: 13px; }
 .rc-new { align-self: center; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-.rc-input { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
-.rc-input input { height: 34px; }
+/* The reply box: grows with the text (up to about 8 lines), the send button inside it. */
+.rc-input { padding: 8px 14px 14px; }
+.rc-box {
+  display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; cursor: text;
+  background: var(--field); border: 1px solid var(--line-strong); border-radius: 18px; box-shadow: var(--shadow);
+  transition: border-color .15s, box-shadow .15s;
+}
+.rc-box:focus-within { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); box-shadow: 0 0 0 3px var(--focus); }
+.rc-box textarea {
+  flex: 1; min-height: 24px; max-height: 200px; height: 24px; padding: 4px 0; margin: 0; resize: none; overflow-y: auto;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; line-height: 1.5; font-size: 13.5px;
+}
+.rc-box textarea:focus, .rc-box textarea:hover { border: 0; box-shadow: none; }
+.rc-send {
+  flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; font-size: 16px;
+  border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-ink); cursor: pointer; transition: opacity .15s, transform .1s;
+}
+.rc-send:active:not(:disabled) { transform: scale(.94); }
+.rc-send:disabled { opacity: .35; cursor: default; }
 @media (max-width: 760px) {
   .route-main { grid-template-columns: 1fr; overflow: auto; }
   .route-body { overflow: visible; }

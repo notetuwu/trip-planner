@@ -187,8 +187,13 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
   assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "New route");
   // Replies in the chat change the route on screen: the model gets each route and what was said about it.
-  const reply = (text) => page.eval(`(() => { document.querySelector("#rpWhy").value = ${JSON.stringify(text)}; document.querySelector("#rpSend").click(); })()`);
-  await reply("less driving");
+  // Typed like a person: the send button only works once there's text; Enter sends too.
+  const type = (text) => page.eval(`(() => { const t = document.querySelector("#rpWhy"); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new Event("input")); })()`);
+  const reply = async (text) => { await type(text); await page.eval(`document.querySelector("#rpSend").click()`); };
+  assert.ok(await page.eval(`document.querySelector("#rpSend").disabled`), "nothing to send yet");
+  await type("less driving");
+  assert.equal(await page.eval(`document.querySelector("#rpSend").disabled`), false);
+  await page.eval(`document.querySelector("#rpWhy").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))`);
   await page.waitFor(`window.__e2e.routeAsked.conversation.length === 1 && !document.querySelector("#rpUse").hidden`);
   let again = await page.eval(`window.__e2e.routeAsked.conversation`);
   assert.match(again[0].route, /Milano \(2 nights\) → Lucerne \(2 nights; day trips: Vaduz; on the way there: Lugano\)/);
@@ -223,6 +228,26 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.me").length`), 3, "the chat is still there");
   await page.eval(`document.querySelector("#routeResult [data-fresh]").click()`);
   assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpChat .rc-msg").length + "|" + !!localStorage.getItem("trip-planner-route") + "|" + document.querySelector("#rpWhy").disabled`), "Plan the route|0|false|true");
+});
+
+test("a route saved before the chat existed can still be changed; an empty form says so instead of doing nothing", async () => {
+  await page.eval(`localStorage.setItem("trip-planner-route", JSON.stringify({ tries: ["x"], reasons: ["y"], plan: { title: "Old one", summary: "", start: "Padua", end: "Padua",
+    startDate: "2027-09-01", nights: 2, stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "" }], legs: [{ from: "Padua", to: "Milano", tooLong: false }, { from: "Milano", to: "Padua", tooLong: false }] } }));
+    location.reload()`).catch(() => {});
+  await page.waitFor("document.readyState === 'complete' && !!window.planner");
+  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await page.eval(`window.__e2e.route = { title: "Changed", summary: "", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 2,
+    stays: [{ city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "" }], legs: [{ from: "Padua", to: "Lucerne", tooLong: false }, { from: "Lucerne", to: "Padua", tooLong: false }] }`);
+  await page.eval(`document.querySelector("#planRoute").click()`);
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.ai").length`), 1, "the old route is the chat's first message");
+  const send = (text) => page.eval(`(() => { const t = document.querySelector("#rpWhy"); t.value = ${JSON.stringify(text)}; t.dispatchEvent(new Event("input")); document.querySelector("#rpSend").click(); })()`);
+  await send("more lakes");
+  assert.match(await page.eval(`document.querySelector("#rpLive").textContent`), /Fill in the form/, "says what's missing");
+  await page.eval(`document.querySelector("#rpWhat").value = "lakes"`);
+  await page.eval(`document.querySelector("#rpSend").click()`);
+  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 2`);
+  assert.deepEqual(await page.eval(`window.__e2e.routeAsked.conversation.map((t) => [t.route, t.said])`), [["Milano (2 nights)", "more lakes"]]);
+  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-route")).form.rpWhat`), "lakes", "the form is saved with the route");
 });
 
 test("trains follow the tracks: a train leg and a train day trip ask for train routes; stays link to Google Maps", async () => {
