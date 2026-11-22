@@ -13,6 +13,21 @@ export const withDay = (iso: string) => {
   return isNaN(+d) ? iso : `${iso} (${d.toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" })})`;
 };
 
+/** The travelers' own words ("Anything else"), as requirements: fixed dates, bookings they already have, things to
+ *  skip, and questions to answer. Models tended to skim them as one line among the constraints. */
+export function requestsSection(trip: { notes?: string }) {
+  const notes = String(trip.notes || "").trim();
+  if (!notes) return "";
+  return `## The travelers' own requests (follow these exactly)
+${notes}
+
+How to treat them:
+- Anything tied to a date or time ("on the 14th", "Monday when we land", "between the 9th and 13th") goes exactly then.
+- Things they say they have already booked go on the booked date and time; don't give them "booking" or "bookAhead" (write "already booked" in the description instead).
+- Things they say they skip or don't want never appear, not even as a generic stop (e.g. no hotel breakfast if they skip it).
+- Questions they ask are answered in the planning notes or the tips.`;
+}
+
 /** "only 2 of the 4 travelers go" for a day trip part of the group takes. */
 const tripWho = (trip: Trip, people?: number) =>
   people && people < (Number(trip.travelers) || 1) ? `only ${people} of the ${trip.travelers} travelers go` : "";

@@ -14,7 +14,7 @@ import { openKeys } from "../generate/keys";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 
-interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string }
+interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
 interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
@@ -207,6 +207,8 @@ function renderPlanning() {
     </div>
     <div class="set-card">
       <b class="card-title">Local models</b>
+      <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Small tasks suit local models much better; it takes about as long or a bit longer. Re-planning a day and fixes are always one request.</div></div>
+        <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step")}</div></div>
       <div class="set-row"><div><b>Thinking</b><div class="hint">Models that can think first plan more carefully; off answers straight away (much faster, sometimes sloppier).</div></div>
         <div class="segs">${seg("thinking", "on", "On")}${seg("thinking", "off", "Off")}</div></div>
       <div class="set-row"><div><b>Creativity</b> <span class="hint" id="tuneTempVal">${t.temperature.toFixed(1)}</span><div class="hint">Low sticks to the obvious choices and the format; high varies more (and slips more often). 0.4 suits most models.</div></div>

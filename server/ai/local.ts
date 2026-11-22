@@ -8,9 +8,13 @@ import { planWithOpenAi } from "./local-openai";
 import { localOutput } from "./local-output";
 import { normalizeItinerary, parseJsonLoose, addMissingMustSees } from "./output";
 import { buildPrompt } from "./prompt";
+import { planInSteps } from "./local-steps";
+import { tune } from "../settings";
 import type { Runner } from "./types";
 
 export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<RunResult> => {
+  // Settings → Planning: a whole new plan step by step (re-planning a day, fixes and changes stay single requests).
+  if (tune().localPlan === "steps" && !trip.redoDay && !trip.fix && !trip.edit && !trip.revise) return planInSteps(trip, places, onEvent, abort);
   const { kind, base, model } = parseModelId(trip.model);
   const t0 = Date.now();
   const output = localOutput(onEvent);

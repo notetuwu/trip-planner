@@ -45,9 +45,11 @@ export interface Tune {
   pages: "found" | "known" | "any";
   /** Research: the search engine (automatic: Brave or SearXNG when set up, else DuckDuckGo, then Wikipedia). */
   search: "auto" | "brave" | "searxng";
+  /** Local models: plan in one go (one big prompt) or step by step (outline, research, then each day on its own). */
+  localPlan: "whole" | "steps";
 }
 
-export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m", pages: "known", search: "auto" };
+export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m", pages: "known", search: "auto", localPlan: "whole" };
 
 /** Only valid values; anything else falls back to what it was (or the default). */
 function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
@@ -63,6 +65,7 @@ function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
     keepAlive: pick("keepAlive", (v) => ["5m", "30m", "2h", "-1"].includes(v as string)),
     pages: pick("pages", (v) => ["found", "known", "any"].includes(v as string)),
     search: pick("search", (v) => ["auto", "brave", "searxng"].includes(v as string)),
+    localPlan: pick("localPlan", (v) => ["whole", "steps"].includes(v as string)),
   };
 }
 

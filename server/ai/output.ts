@@ -49,6 +49,18 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
   return it;
 }
 
+/** Stops the travelers' notes say are already booked ("we have a teamLab Borderless booking on the 14th") lose
+ *  "booking"/"bookAhead", so the plan doesn't tell them to book again. Matched on a distinctive word of the stop. */
+export function dropBookedAgain(it: any, notes: string | undefined) {
+  const said = String(notes || "").split(/(?<=[.!?\n])\s+|\balso\b/i).filter((s) => /\b(booked|booking|bookings|reserved|reservation|have tickets|got tickets)\b/i.test(s)).join(" ").toLowerCase();
+  if (!said) return;
+  const common = new Set("the and for with near park temple shrine museum tour tours tokyo osaka kyoto day trip booking store cafe restaurant".split(" "));
+  for (const d of it.days || []) for (const x of d.items || []) {
+    const words = String(x.place || "").toLowerCase().replace(/\(.*?\)/g, "").split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !common.has(w));
+    if (words.some((w) => said.includes(w))) { delete x.booking; delete x.bookAhead; }
+  }
+}
+
 /** Must-sees the plan left out without saying so go under "Didn't fit", so they don't vanish silently. A must-see
  *  counts as planned when a stop shares most of its words ("ZEN Chopsticks Workshop" for "ZEN Chopsticks Making
  *  Workshop Gion Kyoto"). */

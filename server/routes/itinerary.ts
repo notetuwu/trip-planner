@@ -11,6 +11,7 @@ import { errMsg } from "../config";
 import { reverseGeocode } from "../geo/search";
 import { getList } from "../lists/store";
 import { tripHolidays } from "../trip/holidays";
+import { dropBookedAgain } from "../ai/output";
 import { stayDaylight } from "../trip/daylight";
 import { roadRoutes } from "../trip/drives";
 import { nearbyPlaces } from "../trip/nearby";
@@ -94,6 +95,7 @@ export async function handleItinerary(req: Req, res: Res) {
     send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
     const run = runnerFor(String(trip.model || ""));
     const result = await run(trip, places, send, abort.signal);
+    dropBookedAgain(result.itinerary, trip.notes); // things they already booked aren't "book ahead"
     await verifyWebsites(result.itinerary, (text) => send({ type: "status", text }));
     console.log(`Done in ${(result.durationMs / 1000).toFixed(0)}s`);
     send({ type: "done", ...result });
