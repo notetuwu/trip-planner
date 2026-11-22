@@ -2,7 +2,8 @@
 // fortress? No. …") until they run out of room. This spots that in the streamed text so the request can be stopped
 // early and retried another way, instead of burning minutes of GPU time.
 
-const TAIL = 6000;
+// Long enough to hold a few rounds of a long loop (one round of "let me check everything again" can be 2,000+ characters).
+const TAIL = 20000;
 const CHECK_EVERY = 400;
 
 /** Feed it the streamed text; returns true once the recent text is mostly one repeated piece. */
@@ -27,9 +28,16 @@ export function isLooping(text: string): boolean {
     if (top >= 10 && top >= sentences.length / 2) return true;
   }
   // The same stretch of text repeating without sentence breaks: the last 80 characters occur 6+ times in the tail.
+  const occurs = (piece: string, times: number) => {
+    let n = 0, i = -1;
+    while ((i = text.indexOf(piece, i + 1)) !== -1) if (++n >= times) return true;
+    return false;
+  };
   const end = text.slice(-80);
   if (end.trim().length < 20) return false;
-  let n = 0, i = -1;
-  while ((i = text.indexOf(end, i + 1)) !== -1) if (++n >= 6) return true;
-  return false;
+  if (occurs(end, 6)) return true;
+  // A long block gone over again and again ("One last check… This is consistent. I will output the JSON."): the last
+  // 300 characters, word for word, for the third time. Real answers don't repeat that much text exactly.
+  const long = text.slice(-300);
+  return long.trim().length >= 150 && occurs(long, 3);
 }

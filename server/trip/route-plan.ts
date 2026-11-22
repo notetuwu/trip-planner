@@ -246,6 +246,7 @@ Reply with only JSON:
     .filter((t) => t.place).slice(0, 3);
   const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n }), {
     signal, onText: (reply, thinking) => { const text = reasoningSoFar(reply, thinking); if (text) report({ type: "reasoning", text }); },
+    onRetry: (text) => report({ type: "status", text }),
   }));
   const stays: PlannedStay[] = (Array.isArray(parsed?.stays) ? parsed.stays : [])
     .filter((s: any) => s && typeof s.city === "string" && s.city.trim())

@@ -10,6 +10,7 @@ import { lines } from "../util/http";
 import { findClaude } from "./claude-bin";
 import { parseCloudId } from "./cloud-models";
 import { parseModelId } from "./local-models";
+import { loopGuard } from "./loop-guard";
 import { BASE } from "./responses";
 
 const TIMEOUT = 6 * 60_000;
@@ -18,15 +19,38 @@ export interface AskOptions {
   signal?: AbortSignal;
   /** The reply so far and the model's own thinking so far (where it shows any). */
   onText?: (reply: string, thinking: string) => void;
+  /** Told when the model got stuck repeating itself and is asked once more. */
+  onRetry?: (message: string) => void;
 }
 
+/**
+ * Asks, watching for the model going round in circles (the same block of thinking over and over until it runs out of
+ * time): then it's stopped and asked once more, more directly and with settings against repeating; a second loop ends
+ * with an error instead of minutes of spinning.
+ */
 export async function askModel(modelId: string, prompt: string, onProgress: OnProgress = () => {}, opts: AskOptions = {}): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const loop = new AbortController(), looping = loopGuard();
+    const signal = opts.signal ? AbortSignal.any([opts.signal, loop.signal]) : loop.signal;
+    const asked = attempt ? `${prompt}\n\nAnswer with the JSON right away. Keep any thinking short and don't go over the same points again.` : prompt;
+    try {
+      return await askOnce(modelId, asked, onProgress, { ...opts, signal }, attempt > 0, (piece) => { if (piece && looping(piece)) loop.abort(new Error("loop")); });
+    } catch (e) {
+      if (!loop.signal.aborted || opts.signal?.aborted) throw e;
+      if (attempt) throw new Error("The model kept going round in circles instead of answering, even when asked again. Try again, or pick a different model.");
+      opts.onRetry?.("The model got stuck repeating itself; asking again, more directly…");
+    }
+  }
+}
+
+async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, opts: AskOptions, retry: boolean, onPiece: (piece: string) => void): Promise<string> {
   const signal = opts.signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT), opts.signal]) : AbortSignal.timeout(TIMEOUT);
   let tokens = 0, reply = "", thinking = "";
   const tick = (piece = "", thought = "") => {
     reply += piece; thinking += thought;
     onProgress(++tokens);
     opts.onText?.(reply, thinking);
+    onPiece(piece || thought);
   };
 
   if (modelId.startsWith("local|")) {
@@ -34,7 +58,11 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
     if (kind === "ollama") {
       const chat = (noThink: boolean) => fetch(`${base}/api/chat`, {
         method: "POST", signal,
-        body: JSON.stringify({ model, stream: true, format: "json", ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt }], options: { num_ctx: 16384, temperature: 0.4 } }),
+        body: JSON.stringify({
+          model, stream: true, format: "json", ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt }],
+          // Asked again after a loop: a little more randomness and a penalty on repeating, to get it out of the rut.
+          options: { num_ctx: 16384, temperature: retry ? 0.7 : 0.4, ...(retry ? { repeat_penalty: 1.15 } : {}) },
+        }),
       });
       // Thinking off where the model has it (much faster for a small task); models without it reject the option.
       let res = await chat(true);
@@ -50,7 +78,7 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
       }
       return text;
     }
-    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick);
+    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick, retry);
   }
 
   if (modelId.startsWith("api|")) {
@@ -85,10 +113,10 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
 }
 
 /** An OpenAI-compatible chat endpoint (LM Studio, llama.cpp…), streamed. */
-async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void) {
+async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false) {
   const res = await fetch(url, {
     method: "POST", signal, headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ model, temperature: 0.4, stream: true, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model, temperature: retry ? 0.7 : 0.4, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content: prompt }] }),
   });
   if (!res.ok) throw new Error(`${url}: ${(await res.text()).slice(0, 300)}`);
   let text = "";

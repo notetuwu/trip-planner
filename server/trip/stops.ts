@@ -87,7 +87,7 @@ Reply with only JSON: {"stops": [{"city": "...", "country": "...", "nights": 1, 
 
   try {
     report({ type: "status", text: `Choosing towns for ${towns.length} night${towns.length > 1 ? "s" : ""} on the way…` });
-    const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n }), { signal }));
+    const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n }), { signal, onRetry: (text) => report({ type: "status", text }) }));
     const stops = (Array.isArray(parsed?.stops) ? parsed.stops : [])
       .filter((s: any) => s && typeof s.city === "string" && s.city.trim() && !sameTown(s.city, req.from.city) && !sameTown(s.city, req.to.city))
       .slice(0, 40)
