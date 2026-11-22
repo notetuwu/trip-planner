@@ -6,17 +6,19 @@ import { addDays, fmtDate, fmtDist, fmtDur } from "../core/format";
 import { session, state } from "../core/state";
 import { geo, geoKey } from "../geo/geocode";
 import { distKm, stayLoc, stayMapsUrl } from "../geo/locate";
-import { cleanStop, groupColors, modeIcon, modeName, plannedMode, splitGroup } from "../trip/modes";
+import { cleanStop, dayGroupColors, modeIcon, modeName, plannedMode, splitGroup } from "../trip/modes";
 
-/** The split group that goes on a day trip (its stops or transfers name the place), for colouring its line. */
-function tripGroup(place: string): string {
+/** The colour (--track-N) of the split group that goes on a day trip (its stops or transfers name the place), as on
+ *  that day; "" when everyone goes. */
+function tripGroup(place: string): { g: string; color: string } {
   const name = place.split(",")[0].trim().toLowerCase();
-  if (!name) return "";
-  for (const d of state.itinerary?.days || []) for (const x of d.items) {
+  if (!name) return { g: "", color: "" };
+  const days = state.itinerary?.days || [];
+  for (let di = 0; di < days.length; di++) for (const x of days[di].items) {
     const g = splitGroup(x);
-    if (g && cleanStop(x.place).toLowerCase().includes(name)) return g;
+    if (g && cleanStop(x.place).toLowerCase().includes(name)) return { g, color: cssVar(`--track-${dayGroupColors(days[di].items, di)[g]}`) };
   }
-  return "";
+  return { g: "", color: "" };
 }
 import { hoverBand } from "./legs";
 import { focusStay } from "../trip/stays";
@@ -77,11 +79,13 @@ export function drawStays(): LatLng[] {
   });
 
   const driven: { mode: RouteMode; from: LatLng; to: LatLng }[] = [];
-  const groups = groupColors(state.itinerary?.days || []);
+  const tripsBy = (state.stays.flatMap((s) => (s.dayTrips || []).map((t) => t.place)).filter(Boolean));
   for (const l of stayLegs()) {
     if (only && !only.leg(l)) continue;
-    const g = l.trip && l.place ? tripGroup(l.place) : "";
-    const color = g && g in groups ? cssVar(`--track-${groups[g]}`) || accent : accent;
+    const who = l.trip && l.place ? tripGroup(l.place) : { g: "", color: "" };
+    const g = who.g, color = who.color || accent;
+    // Day trips of different groups often share the tracks out of town: later ones drawn thinner on top.
+    const wide = g ? Math.max(0, tripsBy.length - 1 - tripsBy.indexOf(l.place!)) * 3 : 0;
     // By road, or by train along the tracks; ferries and flights stay straight lines.
     const how: RouteMode | null = l.mode === "car" || l.mode === "bus" ? "car" : l.mode === "train" ? "train" : null;
     const byRoad = !!how;
@@ -99,7 +103,7 @@ export function drawStays(): LatLng[] {
     const line = r ? r.c : pts;
     const vis = L.polyline(line, {
       // Day trips of different groups often share the tracks out of town: earlier groups wider underneath.
-      color, weight: (r ? 3 : l.trip ? 1.5 : 2) + (g && g in groups ? (Math.max(...Object.values(groups)) - groups[g]) * 3 : 0),
+      color, weight: (r ? 3 : l.trip ? 1.5 : 2) + wide,
       opacity: l.trip && !g ? .55 : g ? .9 : .75, interactive: false,
       dashArray: r ? undefined : l.mode === "flight" ? "2 8" : "6 6",
     }).addTo(layers.stays);

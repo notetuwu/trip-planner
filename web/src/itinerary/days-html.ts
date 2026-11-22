@@ -4,7 +4,7 @@ import { esc } from "../core/dom";
 import { dayColor, fmtDate, money } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
-import { groupColors, splitGroup } from "../trip/modes";
+import { dayGroupColors, splitGroup } from "../trip/modes";
 import { bookLink } from "./book-ahead";
 import { directionsUrl } from "./directions";
 import { tipHtml } from "./tips";
@@ -65,8 +65,8 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
 
 export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {
   let html = "", lastCity: string | null = null;
-  const trackColor = groupColors(it.days);
   it.days.forEach((d, i) => {
+    const trackColor = dayGroupColors(d.items, i);
     if (d.city !== lastCity) { html += `<div class="city-band">${esc(d.city)}</div>`; lastCity = d.city; }
     const w = session.weather[d.date];
     html += `<div class="day ${session.selectedDay === i ? "selected" : ""}" id="day-${i}" data-i="${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">

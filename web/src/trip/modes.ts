@@ -72,11 +72,14 @@ export function plannedMode(from: string, to: string): TravelMode {
   return "";
 }
 
-/** Each split group's colour (0-3, the --track-N colours), in order of appearance over the trip, so a group has the
- *  same colour in the plan and on the map. */
-export function groupColors(days: { items: ItineraryItem[] }[]): Record<string, number> {
+// The --track-N colour that looks like each day colour (by index in DAY_COLORS): blue, amber, purple, teal.
+const CLASH: Record<number, number> = { 1: 3, 2: 0, 3: 2, 4: 1, 5: 3, 7: 0, 8: 1, 9: 3 };
+/** A day's split groups' colours (0-3, the --track-N colours), in order of appearance, skipping the one that looks
+ *  like the day's own colour; the same in the plan and on the map. */
+export function dayGroupColors(items: ItineraryItem[], dayIndex: number): Record<string, number> {
+  const free = [0, 1, 2, 3].filter((t) => t !== CLASH[dayIndex % 10]);
   const out: Record<string, number> = {};
-  for (const d of days) for (const x of d.items) { const g = splitGroup(x); if (g) out[g] ??= Object.keys(out).length % 4; }
+  for (const x of items) { const g = splitGroup(x); if (g && !(g in out)) out[g] = free[Object.keys(out).length % free.length]; }
   return out;
 }
 

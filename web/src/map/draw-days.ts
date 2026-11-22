@@ -5,11 +5,11 @@ import { $, esc } from "../core/dom";
 import { dayColor, fmtDate } from "../core/format";
 import { session } from "../core/state";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
-import { groupColors, splitGroup } from "../trip/modes";
+import { dayGroupColors, splitGroup } from "../trip/modes";
 import { cssVar } from "./map";
 
 /** While the group is split, its stops and routes take the group's colour (as in the plan); otherwise the day's. */
-let groups: Record<string, number> = {};
+let groups: Record<string, number> = {}; // the day being drawn's
 const colorFor = (x: ItineraryItem, di: number) => {
   const g = splitGroup(x);
   return g && g in groups ? cssVar(`--track-${groups[g]}`) || dayColor(di) : dayColor(di);
@@ -59,8 +59,8 @@ function drawLegs(d: Day, di: number, byTitle: ByTitle) {
 /** Draws the selected day (or all days); returns the stops' positions for fitting the map. */
 export function drawDays(days: Day[], byTitle: ByTitle): LatLng[] {
   const bounds: LatLng[] = [];
-  groups = groupColors(days);
   days.forEach((d, di) => {
+    groups = dayGroupColors(d.items, di);
     if (session.selectedDay != null && session.selectedDay !== di) return;
     drawStops(d, di, byTitle, bounds);
     if ($<HTMLInputElement>("#showRoutes").checked) drawLegs(d, di, byTitle);
