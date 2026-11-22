@@ -33,6 +33,19 @@ export function isLooping(text: string): boolean {
   return repeatsAtEnd(text, 80, 4) || repeatsAtEnd(text, 300, 3);
 }
 
+/** For the itinerary JSON (not the thinking): it's held to a schema and full of similar stops, so only a long block
+ *  repeated back to back five times counts as a loop (a real runaway ends at the context limit anyway). */
+export function jsonLoopGuard() {
+  let tail = "", sinceCheck = 0;
+  return (piece: string): boolean => {
+    tail = (tail + piece).slice(-TAIL);
+    sinceCheck += piece.length;
+    if (sinceCheck < 2000 || tail.length < 4000) return false;
+    sinceCheck = 0;
+    return repeatsAtEnd(tail, 400, 5);
+  };
+}
+
 /** The text ends with one block repeated `times` times in a row; the block is found from the last `win` characters. */
 export function repeatsAtEnd(text: string, win: number, times: number): boolean {
   const end = text.slice(-win);

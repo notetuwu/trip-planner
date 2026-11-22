@@ -301,8 +301,6 @@ textarea.ideas { min-height: 72px; field-sizing: content; max-height: 360px; }
 .cp-change-act { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12.5px; }
 .cp-change-act .btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
 .chat-panel .rc-input { border-top: 1px solid var(--line); padding: 10px 12px 8px; }
-.cp-foot { display: flex; align-items: center; gap: 8px; min-height: 16px; padding: 4px 4px 0; font-size: 12px; }
-.cp-foot .hint { flex: 1; }
 /* "Ask for changes" under the plan: opens the chat. */
 button.refine { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
 button.refine b { color: var(--ink); }
@@ -553,9 +551,23 @@ button.refine:hover { border-color: var(--accent); }
 .cp-msg-tools { margin-top: 6px; opacity: 0; transition: opacity .15s; }
 .rc-msg.ai.last:hover .cp-msg-tools, .cp-msg-tools:focus-within { opacity: 1; }
 @media (hover: none) { .cp-msg-tools { opacity: 1; } }
-.cp-msg-tools .link-btn, .cp-foot .link-btn { font-size: 12px; color: var(--muted); }
-.cp-msg-tools .link-btn:hover, .cp-foot .link-btn:hover { color: var(--accent); }
+.cp-msg-tools .link-btn, .cp-notice .link-btn { font-size: 12px; color: var(--muted); }
+.cp-msg-tools .link-btn:hover, .cp-notice .link-btn:hover { color: var(--accent); }
 
 .lightbox-bar { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 14px; background: rgba(20, 20, 20, .85); cursor: default; max-width: 92vw; }
 .lightbox-bar .hint { color: #ddd; font-size: 12.5px; }
 .lightbox-bar .hint:empty { display: none; }
+
+/* What the chat is doing, inside the reply being written; notes (errors with Retry, a summary) at the end of the log.
+   The message box keeps the same margin all round. */
+.cp-status { margin-top: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cp-notice { align-self: stretch; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 2px 2px; }
+.chat-panel .rc-input { padding: 12px; }
+
+/* Settings: an input with its Save button, and a note between rows. */
+.set-inline { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.set-inline input { flex: 1; min-width: 0; }
+.set-note { margin: 4px 0 2px; font-size: 12px; }
+.set-row > div:has(> .set-inline) { flex: 1; min-width: 0; }
+.set-warn { color: var(--warn); margin-top: 6px; }
+.cp-change-what > span > .hint { display: block; margin-top: 3px; }

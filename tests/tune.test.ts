@@ -53,4 +53,13 @@ describe("planning options", () => {
     expect(settings.keepAlive("-1")).toBe(-1);
     expect(settings.keepAlive("30m")).toBe("30m");
   });
+  it("research: which pages may be opened and the search engine; the Brave key and SearXNG address", () => {
+    const s = settings.writeSettings({ braveKey: "  key123  ", searxngUrl: "http://192.168.1.20:8080/", tune: { pages: "any", search: "bogus" } as any });
+    expect(s.tune.pages).toBe("any");
+    expect(s.tune.search).toBe("auto");
+    expect(s.braveKey).toBe("key123");
+    expect(s.searxngUrl).toBe("http://192.168.1.20:8080");
+    expect(settings.writeSettings({ searxngUrl: "not a url" }).searxngUrl).toBe("http://192.168.1.20:8080");
+    expect(settings.writeSettings({ tune: { pages: "found", search: "brave" } }).tune).toMatchObject({ pages: "found", search: "brave" });
+  });
 });

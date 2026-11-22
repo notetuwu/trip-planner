@@ -5,7 +5,7 @@ import { icon } from "../core/icons";
 
 /** The model's planning notes are light Markdown: paragraphs, "- " bullets, **bold**, # headings. */
 export function mdLite(text: string | undefined) {
-  const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
   const bullet = /^\s*(?:[-*•]|\d+[.)]) /;
   return String(text || "").trim().split(/\n\s*\n/).map((block) => {
     // Some models put several bullets on one line ("- a - b - c"); give each its own line.

@@ -14,8 +14,8 @@ import { openKeys } from "../generate/keys";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 
-interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string }
-interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune }
+interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string }
+interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
@@ -193,6 +193,17 @@ function renderPlanning() {
       <b class="card-title">Researching online</b>
       <div class="set-row"><div><b>Web lookups</b><div class="hint">With "Research online" on: the most searches and page reads per plan. More finds more (opening hours, prices, events) but takes longer.</div></div>
         <select id="tuneLookups">${[5, 10, 20, 30, 45].map((n) => opt(n, `Up to ${n}`, t.lookups)).join("")}</select></div>
+      <p class="hint set-note">These apply to local models: the planner searches and reads pages for them. Claude and API models use their provider's own web search.</p>
+      <div class="set-row"><div><b>Opening web pages</b><div class="hint">Which pages the model may read. "Found" ones came up in a search or are linked from a page it read; letting it open pages it knows (an official site it remembers) helps when searches come back thin. Pages on this computer or your home network are never opened.</div></div>
+        <select id="tunePages">${opt("found", "Only pages it found", t.pages)}${opt("known", "Found, plus up to 6 it knows", t.pages)}${opt("any", "Any public page", t.pages)}</select></div>
+      <div class="set-row"><div><b>Search engine</b><div class="hint">Automatic uses Brave or SearXNG when set up, otherwise DuckDuckGo (which often shows a bot check after a few searches), then Wikipedia and Wikivoyage.</div></div>
+        <div class="segs">${seg("search", "auto", "Automatic")}${seg("search", "brave", "Brave")}${seg("search", "searxng", "SearXNG")}</div></div>
+      ${t.search === "brave" ? `<div class="set-row"><div><b>Brave Search API key</b> ${settings?.braveKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Reliable web search; the free plan covers a good number of searches a month. Get a key at <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api${ext()}</a>. It stays on this computer.</div>
+          <div class="set-inline"><input id="braveKey" type="password" autocomplete="off" placeholder="${settings?.braveKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="braveSave">Save</button>${settings?.braveKeySet ? `<button type="button" class="link-btn" id="braveClear">Remove</button>` : ""}</div>
+          ${settings?.braveKeySet ? "" : `<div class="hint set-warn">Until a key is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
+      ${t.search === "searxng" ? `<div class="set-row"><div><b>SearXNG server</b><div class="hint">SearXNG is a free search engine you run yourself (e.g. with Docker on this PC or a home server): it asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. Turn on its JSON format, then enter its address, e.g. http://192.168.1.20:8080.</div>
+          <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl || "")}"><button type="button" class="btn" id="searxngSave">Save</button></div>
+          ${settings?.searxngUrl ? "" : `<div class="hint set-warn">Until an address is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
     </div>
     <div class="set-card">
       <b class="card-title">Local models</b>
@@ -209,6 +220,14 @@ function renderPlanning() {
   });
   $<HTMLSelectElement>("#tuneLang").onchange = (e) => saveTune({ language: (e.target as HTMLSelectElement).value });
   $<HTMLSelectElement>("#tuneLookups").onchange = (e) => saveTune({ lookups: Number((e.target as HTMLSelectElement).value) });
+  $<HTMLSelectElement>("#tunePages").onchange = (e) => saveTune({ pages: (e.target as HTMLSelectElement).value });
+  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string }, done: string) => {
+    settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify(part) });
+    toast(done); renderPlanning();
+  };
+  document.querySelector<HTMLButtonElement>("#braveSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#braveKey").value.trim(); if (k) saveSearch({ braveKey: k }, "Saved the Brave key"); });
+  document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
+  document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
   $<HTMLSelectElement>("#tuneKeep").onchange = (e) => saveTune({ keepAlive: (e.target as HTMLSelectElement).value });
   const temp = $<HTMLInputElement>("#tuneTemp");
   temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };

@@ -6,16 +6,16 @@ import { appBrowser, openWindow } from "../launcher";
 import { newToken, readSettings, writeSettings } from "../settings";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 
-/** The settings as the page sees them (never the phone link's secret: that's only in the phone link itself). */
+/** The settings as the page sees them (never the phone link's secret, nor the Brave key: only whether it's set). */
 const view = () => {
-  const { lanToken: _secret, ...s } = readSettings();
-  return { ...s, packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
+  const { lanToken: _secret, braveKey, ...s } = readSettings();
+  return { ...s, braveKeySet: !!(braveKey || process.env.BRAVE_API_KEY), packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
 };
 
 export async function handleSettings(req: Req, res: Res) {
   if (req.method === "POST") {
     const body = await readJson(req);
-    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx, checkUpdates: body?.checkUpdates, tune: body?.tune && typeof body.tune === "object" ? body.tune : undefined });
+    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx, checkUpdates: body?.checkUpdates, braveKey: body?.braveKey, searxngUrl: body?.searxngUrl, tune: body?.tune && typeof body.tune === "object" ? body.tune : undefined });
     if (body?.reopen && PACKAGED) openWindow(`http://localhost:${PORT}`, ROOT, s.window);
     sendJson(res, 200, view());
     return;

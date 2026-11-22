@@ -42,17 +42,46 @@ export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, s
 }
 
 /** Nominatim: exact towns (the place, not the middle of its municipality), and for stops their website and names. */
+/**
+ * The name cut before extras saved places often carry ("GREEN BOWL 北浜 | COFFEE & SALAD", "LAMP LAMP produced by
+ * SAMPLEWORKS 渋谷PARCO", "Steak Sample (Main shop)"), for when the whole name isn't found. Shorter guesses (only the
+ * Japanese part, only the first words) were tried and gave wrong places, so there's just this one.
+ */
+export function nameVariants(q: string): string[] {
+  const [name, ...rest] = q.split(",");
+  const where = rest.length ? `,${rest.join(",")}` : "";
+  const cut = name.replace(/\s*(\||｜|\s[-–—]\s|\(|（|\bproduced by\b|・).*$/i, "").trim();
+  return cut && cut !== name.trim() ? [`${cut}${where}`] : [];
+}
+
+/** A found place's name shares a real word with the name looked up (so a cut-down name doesn't land on a stranger). */
+export function sameWord(found: string, wanted: string) {
+  const words = (wanted.split(",")[0].toLowerCase().match(/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}ー々]{2,}|[\p{L}\p{N}]{4,}/gu) || []);
+  const f = found.toLowerCase();
+  return words.some((w) => f.includes(w));
+}
+
 async function byNominatim(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
-  const params = new URLSearchParams({ q, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en" });
-  if (stop) { params.set("extratags", "1"); params.set("namedetails", "1"); } // its website and all its names
-  if (cc) params.set("countrycodes", cc);
-  if (near) {
-    const [lat, lng] = near, d = 0.6; // roughly 50-65 km around the point
-    params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
-    params.set("bounded", "1");
+  const ask = async (text: string) => {
+    const params = new URLSearchParams({ q: text, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en" });
+    if (stop) { params.set("extratags", "1"); params.set("namedetails", "1"); } // its website and all its names
+    if (cc) params.set("countrycodes", cc);
+    if (near) {
+      const [lat, lng] = near, d = 0.6; // roughly 50-65 km around the point
+      params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
+      params.set("bounded", "1");
+    }
+    return bestHit(await nominatim("search", params));
+  };
+  // The name as given, then other ways of writing it (see nameVariants). A shorter form only counts when it finds an
+  // actual place (a shop, sight, park…), not a district or town that happens to share a word of the name.
+  const first = await ask(q);
+  if (first) return nominatimHit(first);
+  for (const text of nameVariants(q)) {
+    const hit = await ask(text);
+    if (hit && !["place", "boundary", "highway"].includes(hit.category || hit.class) && sameWord(String(hit.name || hit.display_name || ""), text)) return nominatimHit(hit);
   }
-  const hit = bestHit(await nominatim("search", params));
-  return hit ? nominatimHit(hit) : null;
+  return null;
 }
 
 /** Photon: better at fuzzy shop and sight names; also tried with the name cut before " - ", " | " or "(" (e.g.

@@ -64,5 +64,31 @@ export function parseJsonLoose(text: string): any {
   return a >= 0 && b > a ? JSON.parse(s.slice(a, b + 1)) : null;
 }
 
+/**
+ * The days already finished in a half-written itinerary (cut off or stopped mid-way), with the fields before them
+ * (summary, planning notes…), so a retry can keep them and write only the rest. Null when no day is complete.
+ */
+export function partialDays(json: string): { head: Record<string, unknown>; days: any[] } | null {
+  const m = /"days"\s*:\s*\[/.exec(json);
+  if (!m) return null;
+  let depth = 0, inStr = false, esc = false, start = -1, lastEnd = -1;
+  const days: any[] = [];
+  for (let i = m.index + m[0].length; i < json.length; i++) {
+    const ch = json[i];
+    if (inStr) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') inStr = true;
+    else if (ch === "{") { if (depth++ === 0) start = i; }
+    else if (ch === "}") {
+      if (--depth === 0 && start >= 0) {
+        try { days.push(JSON.parse(json.slice(start, i + 1))); lastEnd = i; } catch { break; }
+      }
+    } else if (ch === "]" && depth === 0) break;
+  }
+  if (!days.length) return null;
+  let head: Record<string, unknown> = {};
+  try { head = JSON.parse(`${json.slice(json.indexOf("{"), lastEnd + 1)}]}`); delete head.days; } catch { /* only the days, then */ }
+  return { head, days };
+}
+
 /** Counts "date" keys in streamed itinerary JSON: each one starts another day. */
 export const daysWritten = (json: string) => (json.match(/"date"\s*:/g) || []).length;

@@ -34,7 +34,10 @@ let pictures: Picture[] = [];
 const fullSize = new Map<string, string>();
 
 /** While it answers: the answer so far, and its thinking so far (with when it started). */
-interface Pending { text: string; thinking: string; since: number; until: number; answering: boolean }
+interface Pending { text: string; thinking: string; since: number; until: number; answering: boolean; status?: string }
+/** A short note at the end of the conversation (a summary being written, an error with Retry); not kept with the chat. */
+let notice = "";
+function setNotice(html: string) { notice = html; render(); }
 
 let running: AbortController | null = null;
 /** What a change touches, to put back on Undo. */
@@ -158,7 +161,9 @@ function render(pending?: Pending) {
   log.innerHTML = turns.map(bubble).join("")
     + (pending != null ? `<div class="rc-msg ai pending">${pending.thinking
       ? thinkingHtml(pending.thinking, pending.answering ? `Thought for ${Math.max(1, Math.round(((pending.until || Date.now()) - pending.since) / 1000))}s` : "Thinking…", !pending.answering) : ""}${pending.text
-      ? mdLite(pending.text) : pending.answering || !pending.thinking ? `<span class="typing"><i></i><i></i><i></i></span>` : ""}</div>` : "")
+      ? mdLite(pending.text) : pending.answering || !pending.thinking ? `<span class="typing"><i></i><i></i><i></i></span>` : ""}${pending.status
+      ? `<div class="cp-status">${esc(pending.status)}</div>` : ""}</div>` : "")
+    + (notice && pending == null ? `<div class="cp-notice">${notice}</div>` : "")
     || `<div class="cp-empty"><div class="cp-empty-icon">${icon("chat")}</div>
         <p><b>Ask anything about your trip</b></p>
         <p class="hint">${hasPlan ? "What's on a day, where to eat, what to book, how to get around. Or ask for a change (“swap days 3 and 4”) and apply it from here." : "Questions about the places, the season or the route. Once there's a plan, you can change it from here too."}</p>
@@ -273,7 +278,7 @@ async function addPictures(files: File[]) {
       const [big, small] = await Promise.all([shrink(f, 1600, 0.85), shrink(f, 240, 0.7)]);
       pictures.push({ type: "image/jpeg", data: big.data, thumb: small.dataUrl });
       fullSize.set(small.dataUrl, big.dataUrl);
-    } catch { $("#cpLive").textContent = `Couldn't read ${f.name} as a picture.`; }
+    } catch { setNotice(esc(`Couldn't read ${f.name} as a picture.`)); }
   }
   renderPictures();
   box().focus();
@@ -295,16 +300,15 @@ async function compact(upTo: number) {
   const from = state.chatSummarized || 0;
   if (upTo <= from || compacting) return;
   compacting = true;
-  const live = $("#cpLive");
-  live.textContent = "Summarizing the earlier conversation…";
+  setNotice("Summarizing the earlier conversation…");
   try {
     const { summary } = await streamRequest<{ summary: string }>("/api/companion/compact", {
       model: chatModel(), turns: chat().slice(from, upTo).map(turnText), summary: state.chatSummary || "",
-    }, (l) => { live.textContent = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""}`; });
+    }, (l) => { setNotice(esc(`${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""}`)); });
     state.chatSummary = summary; state.chatSummarized = upTo;
     save();
-    live.textContent = "";
-  } catch (e) { live.textContent = `Couldn't summarize: ${(e as Error).message}`; }
+    notice = "";
+  } catch (e) { notice = esc(`Couldn't summarize: ${(e as Error).message}`); }
   finally { compacting = false; render(); }
 }
 let compacting = false;
@@ -366,7 +370,7 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
   const question = typed || (sent.length ? "What is this place?" : "");
   if (!question || running || compacting) return;
   if (!again) { pictures = []; renderPictures(); }
-  const live = $("#cpLive");
+  notice = "";
   // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
   if (chat().length - (state.chatSummarized || 0) > COMPACT_AT) await compact(chat().length - KEEP_RECENT);
   // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
@@ -381,15 +385,15 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
     const { answer, change, thinking, thoughtSecs } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number }>("/api/companion", {
       model: chatModel(), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
     }, (l) => {
-      live.textContent = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""} · ${l.seconds} s`;
+      const status = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""} · ${l.seconds} s`;
+      if (status !== pending.status) { pending.status = status; render(pending); }
       if (l.thinking && l.thinking !== pending.thinking) { pending.since ||= Date.now(); pending.thinking = l.thinking; render(pending); }
       if (l.reasoning && l.reasoning !== pending.text) { if (!pending.answering) pending.until = Date.now(); pending.answering = true; pending.text = l.reasoning; render(pending); }
     }, running.signal);
     state.chat = [...chat(), { role: "ai" as const, text: answer, ...(thinking ? { thinking, thoughtSecs } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}) }];
-    live.textContent = "";
   } catch (e) {
     const err = e as Error;
-    live.innerHTML = `${esc(err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`)} <button type="button" class="link-btn" data-retry>${icon("refresh")} Retry</button>`;
+    notice = `${esc(err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`)} <button type="button" class="link-btn" data-retry>${icon("refresh")} Retry</button>`;
   } finally {
     running = null;
     save();
@@ -453,7 +457,6 @@ export function initCompanion() {
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
     if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   };
-  $("#cpLive").addEventListener("click", (e) => { if ((e.target as HTMLElement).closest("[data-retry]")) retry(); });
   $("#cpLog").addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest("[data-retry]")) { retry(); return; }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");

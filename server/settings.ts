@@ -16,6 +16,9 @@ export interface Settings {
   numCtx: number;
   /** Look for a new version by itself (every hour); off: only Settings → Updates → Check now asks. */
   checkUpdates: boolean;
+  /** Research for local models: a Brave Search API key, and a SearXNG server's address (see Settings → Planning). */
+  braveKey: string;
+  searxngUrl: string;
   tune: Tune;
 }
 
@@ -37,9 +40,14 @@ export interface Tune {
   temperature: number;
   /** Local models: how long Ollama keeps the model loaded after a plan ("5m", "30m", "2h", "-1" = until Ollama stops). */
   keepAlive: string;
+  /** Research: which pages may be opened: only ones found (searches, links on pages read), those plus a few the model
+   *  knows itself, or any public page. */
+  pages: "found" | "known" | "any";
+  /** Research: the search engine (automatic: Brave or SearXNG when set up, else DuckDuckGo, then Wikipedia). */
+  search: "auto" | "brave" | "searxng";
 }
 
-export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m" };
+export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m", pages: "known", search: "auto" };
 
 /** Only valid values; anything else falls back to what it was (or the default). */
 function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
@@ -53,6 +61,8 @@ function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
     thinking: pick("thinking", (v) => v === "on" || v === "off"),
     temperature: Math.round(Number(pick("temperature", (v) => v !== "" && Number.isFinite(Number(v)) && Number(v) >= 0 && Number(v) <= 1)) * 100) / 100,
     keepAlive: pick("keepAlive", (v) => ["5m", "30m", "2h", "-1"].includes(v as string)),
+    pages: pick("pages", (v) => ["found", "known", "any"].includes(v as string)),
+    search: pick("search", (v) => ["auto", "brave", "searxng"].includes(v as string)),
   };
 }
 
@@ -69,6 +79,8 @@ export function readSettings(): Settings {
     lanToken: typeof saved.lanToken === "string" && saved.lanToken.length >= 16 ? saved.lanToken : "",
     numCtx: CTX.includes(Number(saved.numCtx)) ? Number(saved.numCtx) : 0,
     checkUpdates: saved.checkUpdates !== false,
+    braveKey: typeof saved.braveKey === "string" ? saved.braveKey : "",
+    searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
     tune: cleanTune(saved.tune),
   };
 }
@@ -84,6 +96,8 @@ export function writeSettings(next: Partial<Omit<Settings, "tune">> & { tune?: P
     lanToken: typeof next.lanToken === "string" ? next.lanToken : now.lanToken,
     numCtx: next.numCtx != null && CTX.includes(Number(next.numCtx)) ? Number(next.numCtx) : now.numCtx,
     checkUpdates: typeof next.checkUpdates === "boolean" ? next.checkUpdates : now.checkUpdates,
+    braveKey: typeof next.braveKey === "string" ? next.braveKey.trim().slice(0, 200) : now.braveKey,
+    searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
     tune: next.tune ? cleanTune(next.tune, now.tune) : now.tune,
   };
   fs.mkdirSync(ROOT, { recursive: true });
