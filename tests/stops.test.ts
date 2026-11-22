@@ -63,11 +63,39 @@ describe("checking a planned route against the map", () => {
     expect(stays[0].dayTrips).toEqual([]);
     expect(stays[1].dayTrips!.map((t) => t.place)).toEqual(["Neuschwanstein"]);
   });
-  it("makes a sight between two stays a stop on that travel day", () => {
+  it("makes a sight they named between two stays a stop on that travel day", () => {
     // Vaduz on a day trip from Lucerne, though it lies on the drive from Lucerne to Bregenz.
     const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Vaduz", why: "Liechtenstein", lat: 47.14, lng: 9.52 }]), stay("Bregenz", 47.5, 9.75, 2)];
-    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays);
+    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays, "a day trip to vaduz");
     expect(stays[0].dayTrips).toEqual([]);
     expect(via.get(1)?.map((v) => v.place)).toEqual(["Vaduz"]);
+  });
+});
+
+import { nameForms } from "../server/trip/route-plan";
+describe("stops on the way and odd place names", () => {
+  it("tries the name in brackets and the name without them, keeping the country", () => {
+    expect(nameForms("Swiss Valley (Schwazer Land), Austria")).toEqual(["Swiss Valley (Schwazer Land), Austria", "Schwazer Land, Austria", "Swiss Valley, Austria"]);
+    expect(nameForms("Vaduz, Liechtenstein")).toEqual(["Vaduz, Liechtenstein"]);
+  });
+  it("puts a place they asked to see on the way on the leg with the least detour", () => {
+    const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Vaduz, Liechtenstein", why: "", way: true, lat: 47.14, lng: 9.52 }]), stay("Bregenz", 47.5, 9.75, 2)];
+    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays);
+    expect(via.get(1)?.map((v) => v.place)).toEqual(["Vaduz, Liechtenstein"]);
+    expect(stays.flatMap((s) => s.dayTrips || [])).toEqual([]);
+  });
+  it("keeps a day trip the model came up with as a day trip, even when it's on the way", () => {
+    const stays = [stay("Lucerne", 47.05, 8.31, 3, [{ place: "Vaduz", why: "", lat: 47.14, lng: 9.52 }]), stay("Bregenz", 47.5, 9.75, 2)];
+    const via = placeTrips([[47.37, 8.54], [47.05, 8.31], [47.5, 9.75], [47.37, 8.54]], stays, "mountains and lakes");
+    expect(via.size).toBe(0);
+    expect(stays.flatMap((s) => s.dayTrips || []).map((t) => t.place)).toEqual(["Vaduz"]);
+  });
+});
+describe("which day trips they named", () => {
+  it("doesn't count the country they're staying in as naming a sight", () => {
+    const stays = [{ ...stay("Hallstatt", 47.56, 13.65, 3), country: "Austria" }, { ...stay("Salzburg", 47.8, 13.04, 2), country: "Austria" }];
+    stays[0].dayTrips = [{ place: "Hohenwerfen Castle, Werfen, Austria", why: "", lat: 47.68, lng: 13.345 } as any];
+    const via = placeTrips([[48.1, 11.6], [47.56, 13.65], [47.8, 13.04], [48.1, 11.6]], stays, "take her to austria");
+    expect(via.size).toBe(0);
   });
 });

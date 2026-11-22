@@ -5,7 +5,7 @@ import { esc } from "../core/dom";
 import { addDays, fmtDate, fmtDist, fmtDur } from "../core/format";
 import { session, state } from "../core/state";
 import { geo, geoKey } from "../geo/geocode";
-import { stayLoc } from "../geo/locate";
+import { distKm, stayLoc } from "../geo/locate";
 import { modeIcon, modeName } from "../trip/modes";
 import { hoverBand } from "./legs";
 import { cssVar, layers } from "./map";
@@ -24,7 +24,8 @@ function stayLegs(): StayLeg[] {
     if (prev) legs.push({ from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}`, via: viaStops(i, byTitle) });
     for (const t of s.dayTrips || []) {
       const g = t.place ? geo[geoKey(t.place)] : null;
-      if (g) legs.push({ from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
+      // A day trip found hundreds of km away is a wrong match for its name, not somewhere to go and back in a day.
+      if (g && distKm(here, g) < 300) legs.push({ from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
     }
   });
   return legs;
