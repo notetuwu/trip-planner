@@ -1,8 +1,8 @@
 // Saved trips, stored as files in saves/ by the server: save, load, start a new trip, delete. Also Export / Import:
 // the trip as a file to share (someone else imports it into their planner) or keep a copy of.
-import type { SaveSummary } from "../../../shared/types";
+import type { ListSummary, PlaceList, SaveSummary } from "../../../shared/types";
 import { $, api, esc } from "../core/dom";
-import { type AppState, save, session, setListPlaces, setState, state } from "../core/state";
+import { type AppState, save, session, setListPlaces, setState, state, tickedLists } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
 import { geocodeItems } from "../geo/item-loc";
 import { syncResearch } from "../generate/models";
@@ -40,14 +40,18 @@ export async function applyState(next: Partial<AppState>) {
 const FORMAT = "trip-planner-trip";
 declare const __APP_VERSION__: string;
 
-/** The trip as a file: everything on screen, minus what only matters on this computer (the prompt sent, raw thinking). */
-export function exportTrip() {
+/** The trip as a file: everything on screen, minus what only matters on this computer (the prompt sent, raw thinking),
+ *  plus the ticked place lists, so the planner on the other end has the same saved places to plan from. */
+export async function exportTrip() {
   const { meta, ...trip } = state;
   const lean = meta ? (({ prompt: _p, thinking: _t, ...m }) => m)(meta) : null;
   // Must-see places from a place list the other person doesn't have go along as kept copies.
   const kept = [...(trip.kept || [])];
   for (const p of session.listPlaces) if (trip.marks[p.title] === "must" && !kept.some((k) => k.title === p.title)) kept.push(p);
-  const file = { format: FORMAT, version: __APP_VERSION__, exportedAt: new Date().toISOString(), trip: { ...trip, kept, meta: lean } };
+  const lists = (await Promise.all(tickedLists().map((n) => api<PlaceList>("/api/lists/" + encodeURIComponent(n)).catch(() => null))))
+    .filter((l): l is PlaceList => !!l)
+    .map(({ name, title, source, places }) => ({ name, title, source, places: places.map(({ title, note, url, tags, comment, address, lat, lng }) => ({ title, note, url, tags, comment, address, lat, lng })) }));
+  const file = { format: FORMAT, version: __APP_VERSION__, exportedAt: new Date().toISOString(), trip: { ...trip, kept, meta: lean }, lists };
   const name = (picker().value || state.stays.map((s) => s.city).filter(Boolean).slice(0, 3).join("-") || "trip")
     .replace(/[\/:*?"<>|]+/g, "").trim().slice(0, 60) || "trip";
   const a = document.createElement("a");
@@ -58,23 +62,39 @@ export function exportTrip() {
   status(`Exported "${a.download}". Send it to someone and they can import it.`);
 }
 
-/** Reads a trip file (an export, or a saved trip's file) into a trip, or says what's wrong with it. */
-export function parseTripFile(text: string): Partial<AppState> {
+/** Reads a trip file (an export, or a saved trip's file) into a trip and the place lists it brought, or says what's
+ *  wrong with it. */
+export function parseTripFile(text: string): Partial<AppState> & { bundledLists?: PlaceList[] } {
   let data: any;
   try { data = JSON.parse(text); } catch { throw new Error("That isn't a trip file (it can't be read)."); }
   const trip = data?.format === FORMAT ? data.trip : data; // saved trips (saves/*.json) are the bare trip
   if (!trip || typeof trip !== "object" || !Array.isArray(trip.stays)) throw new Error("That isn't a trip file (no stays in it).");
-  return trip;
+  const bundledLists = Array.isArray(data?.lists) ? data.lists.filter((l: any) => l && typeof l.name === "string" && Array.isArray(l.places)) : [];
+  return { ...trip, bundledLists };
+}
+
+/** Adds the lists a trip file brought that aren't here yet (a list of the same name here is kept as it is); returns
+ *  the names of the trip's lists that are available now. */
+async function addBundledLists(bundled: PlaceList[], wanted: string[]) {
+  const have = new Set((await api<ListSummary[]>("/api/lists").catch(() => [])).map((l) => l.name));
+  for (const l of bundled) {
+    if (have.has(l.name)) continue;
+    try { await api("/api/lists/" + encodeURIComponent(l.name), { method: "PUT", body: JSON.stringify({ title: l.title, source: l.source, places: l.places }) }); have.add(l.name); }
+    catch { /* left out; its must-sees came along as kept places */ }
+  }
+  return wanted.filter((n) => have.has(n));
 }
 
 export async function importTrip(file: File) {
   try {
-    const trip = parseTripFile(await file.text());
+    const { bundledLists = [], ...trip } = parseTripFile(await file.text());
     const what = trip.stays?.map((s) => s.city).filter(Boolean).join(", ") || "an empty trip";
     if (!confirm(`Open the trip in "${file.name}" (${what})? It's added to your saved trips and replaces the trip on screen; save that first if you want to keep it.`)) return;
     picker().value = "";
-    // Their place list isn't here: start without one (their must-sees came along in the file).
-    await applyState({ ...trip, list: "", lists: [], listChosen: true });
+    // Their place lists come along in the file: add the missing ones here and keep them ticked (files from before
+    // that start without lists; their must-sees came along as kept places).
+    const lists = await addBundledLists(bundledLists, trip.lists || (trip.list ? [trip.list] : []));
+    await applyState({ ...trip, list: lists[0] || "", lists, listChosen: true });
     // Keep it in the saved trips right away, named after the file (with a number if that name is taken).
     const base = file.name.replace(/(\.trip)?\.json$/i, "").replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Imported trip";
     const taken = new Set((await api<SaveSummary[]>("/api/saves").catch(() => [])).map((x) => x.name.toLowerCase()));

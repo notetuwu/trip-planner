@@ -607,6 +607,7 @@ test("export a trip to a file and import it again (replacing the trip on screen)
   await trip({ ...PADUA_MILANO, ideas: "Brenta boat", marks: { "Caffe Pedrocchi": "must" } });
   await page.eval(`window.__exported = null; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__exported = { name: this.download, href: this.href }; }`);
   await page.eval(`document.querySelector("#exportTrip").click()`);
+  await page.waitFor(`!!window.__exported`, 5000, "the exported file");
   const file = await page.eval(`(async () => ({ name: window.__exported.name, text: await (await fetch(window.__exported.href)).text() }))()`);
   assert.match(file.name, /Padua-Milano\.trip\.json$/);
   const data = JSON.parse(file.text);
@@ -624,6 +625,16 @@ test("export a trip to a file and import it again (replacing the trip on screen)
   await page.eval(`planner.importTrip(new File(["not json"], "bad.json"))`);
   await page.waitFor(`/isn't a trip file/.test(document.querySelector("#saveStatus").textContent)`, 5000, "the error");
   assert.equal(await page.eval(`planner.state().stays[0].city`), "Padua", "a bad file changes nothing");
+});
+
+test("an imported trip brings its place lists along", async () => {
+  const file = { format: "trip-planner-trip", trip: { ...PADUA_MILANO, lists: ["Shared ideas"], list: "Shared ideas" },
+    lists: [{ name: "Shared ideas", title: "Shared ideas", places: [{ title: "Orto Botanico di Padova", lat: 45.3994, lng: 11.8807 }] }] };
+  await page.eval(`window.confirm = () => true; planner.importTrip(new File([${JSON.stringify(JSON.stringify(file))}], "with-list.trip.json"))`);
+  await page.waitFor(`(planner.state().lists || []).includes("Shared ideas")`, 10000, "the list ticked");
+  const list = await page.eval(`fetch("/api/lists/Shared%20ideas").then((r) => r.json())`);
+  assert.equal(list.places[0].title, "Orto Botanico di Padova");
+  await page.eval(`fetch("/api/lists/Shared%20ideas", { method: "DELETE" })`);
 });
 
 test("no errors in the page", () => {

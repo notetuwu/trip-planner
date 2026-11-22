@@ -65,10 +65,21 @@ function townSoFar(x: ItineraryItem, d: Day, towns: Town[]): Town | null {
     const ends = transferEnds(y);
     if (!ends) continue;
     const to = bare(ends[1]);
-    at = towns.find((t) => bare(t.name) && (to.includes(bare(t.name)) || bare(t.name).includes(to))) || at;
+    const named = towns.find((t) => bare(t.name) && (to.includes(bare(t.name)) || bare(t.name).includes(to)));
+    if (named) { at = named; continue; }
+    // A station or spot rather than a town ("Saga-Arashiyama Station"): where it is, named after the nearest of the
+    // day's towns for lookups ("…, Kyoto").
+    const spot = geo[geoKey(cleanDest(ends[1]), countryCodes())];
+    if (spot && typeof spot.lat === "number") { // any result will do here, even the bus stop outside the station
+      const near = towns.reduce<Town | null>((b, t) => (!b || distKm(t.loc, spot) < distKm(b.loc, spot) ? t : b), null);
+      at = { name: near && distKm(near.loc, spot) < 40 ? near.name : ends[1], loc: spot };
+    }
   }
   return at;
 }
+
+/** A transfer's destination for looking it up: without "(JR)" and the like. */
+const cleanDest = (s: string) => s.replace(/\s*\([^)]*\)/g, "").trim();
 
 /** Where a stop is looked for: the town its name mentions ("Lunch in Onomichi"); else where the day's transfers have
  *  taken it (Kyoto after "Osaka → Kyoto"); for a split group's stop, the town that group spends the day in (Miyajima
@@ -243,6 +254,8 @@ export function geocodeItems() {
   const byTitle = byTitleMap(), qs = [];
   for (const d of it.days) {
     for (const seg of daySegments(d)) qs.push({ q: seg, cc: countryCodes(), first: true });
+    // Where transfers end (a station such as "Saga-Arashiyama Station"), so the stops after them are looked up there.
+    for (const x of d.items) { const ends = transferEnds(x); if (ends) qs.push({ q: cleanDest(ends[1]), cc: countryCodes(), first: true }); }
     for (const x of d.items) {
       const town = itemTown(x, d);
       if (!town) continue;
