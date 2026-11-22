@@ -64,7 +64,7 @@ export async function checkForUpdates() {
 }
 
 /** A little after start (so it doesn't compete with loading the trip), then every 30 minutes while open and when you
- *  come back to the window after a while. This only asks the app; the app asks GitHub at most every few hours. */
+ *  come back to the window after a while. This only asks the app; the app asks GitHub at most once an hour. */
 let lastCheck = 0;
 
 declare const __APP_VERSION__: string;

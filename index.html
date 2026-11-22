@@ -37,11 +37,7 @@
     <button class="secondary" id="addStay">+ Add stay</button>
 
     <h2>Places <small id="listMeta"></small></h2>
-    <div class="inline">
-      <select id="listSelect"><option value="">No place list</option></select>
-      <button class="btn" id="syncList" title="Re-import this list from its source"><i data-icon="refresh"></i> Sync</button>
-      <button class="btn" id="delList" title="Remove this list"><i data-icon="trash"></i></button>
-    </div>
+    <div class="list-picker" id="listPicker"></div>
     <details class="import">
       <summary>+ Import places</summary>
       <label for="gmUrl">Google Maps list link</label>
@@ -133,7 +129,7 @@
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
         <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
       </div>
-      <div class="cp-foot"><span class="hint" id="cpLive"></span><button class="link-btn" id="cpCancel" type="button" hidden>Stop</button></div>
+      <div class="cp-foot"><span class="hint" id="cpLive"></span></div>
     </form>
   </aside>
 </main>
@@ -197,7 +193,6 @@
   </aside>
   </div>
   <div class="route-foot"><span class="hint" id="rpLive"></span>
-    <button class="btn" id="rpCancel" type="button" hidden>Cancel</button>
     <button class="btn" id="rpGo" form="routeForm" type="submit">Plan the route</button>
     <button class="btn solid" id="rpUse" type="button" hidden>Use these stays</button></div>
 </dialog>

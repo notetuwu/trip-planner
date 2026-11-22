@@ -14,7 +14,8 @@ export interface LibraryTag { name: string; sizeGb: number; context: string; inp
 export interface Recommendation { model: string; tag: string; sizeGb: number; context: string; caps: string[]; description: string; downloads: number }
 
 const BASE = "https://ollama.com";
-const tagCache = diskCache<{ at: number; tags: LibraryTag[] }>("ollama-tags.json");
+// v2: sizes from ranges ("19GB - 25GB") are read for this computer; the older file kept the first number of the range.
+const tagCache = diskCache<{ at: number; tags: LibraryTag[] }>("ollama-tags-v2.json");
 const searchCache = new Map<string, { at: number; models: LibraryModel[] }>();
 
 async function page(path: string) {
@@ -45,14 +46,31 @@ export function parseSearch(html: string): LibraryModel[] {
 }
 
 /** A model's tags with their download size and context window ("qwen3.8:27b · 18GB · 256K context window"). */
+const toGb = (n: string, unit = "GB") => Number(n) * (unit === "MB" ? 1 / 1024 : unit === "TB" ? 1024 : 1);
+/** Whether this computer gets the Mac (MLX) build of a model, which ollama.com lists as the smaller size. */
+const MLX = process.platform === "darwin" && process.arch === "arm64";
+
+/**
+ * A tag's download size. Tags with builds for several platforms show a range ("19GB - 25GB"): the smaller one is the
+ * Mac (MLX) build, the larger what Windows and Linux download (GGUF), so pick the one for this computer.
+ */
+export function tagSize(info: string, mac = MLX): number | null {
+  const range = info.match(/([\d.]+)\s*(GB|MB|TB)?\s*[-–]\s*([\d.]+)\s*(GB|MB|TB)\b/);
+  if (range) {
+    const a = toGb(range[1], range[2] || range[4]), b = toGb(range[3], range[4]);
+    return mac ? Math.min(a, b) : Math.max(a, b);
+  }
+  const one = info.match(/([\d.]+)\s*(GB|MB|TB)\b/);
+  return one ? toGb(one[1], one[2]) : null;
+}
+
 export function parseTags(html: string, model: string): LibraryTag[] {
   const out = new Map<string, LibraryTag>();
   const re = new RegExp(`href="/library/(${model.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:[^"]+)"[^>]*>(.*?)</a>`, "gs");
   for (const m of html.matchAll(re)) {
     const info = text(m[2]);
-    const size = info.match(/([\d.]+)\s*(GB|MB|TB)\b/);
-    if (!size || out.has(m[1])) continue;
-    const gb = Number(size[1]) * (size[2] === "MB" ? 1 / 1024 : size[2] === "TB" ? 1024 : 1);
+    const gb = tagSize(info);
+    if (gb == null || out.has(m[1])) continue;
     out.set(m[1], {
       name: m[1], sizeGb: Math.round(gb * 10) / 10, context: info.match(/([\d.]+[KM]) context window/)?.[1] || "",
       inputs: info.match(/((?:Text|Image|Audio|Video)(?:, (?:Text|Image|Audio|Video))*) input/)?.[1] || "",

@@ -14,7 +14,7 @@ export interface Settings {
   lanToken: string;
   /** Context size for local models (tokens); 0 = decide per trip. */
   numCtx: number;
-  /** Look for a new version by itself (every few hours); off: only Settings → Updates → Check now asks. */
+  /** Look for a new version by itself (every hour); off: only Settings → Updates → Check now asks. */
   checkUpdates: boolean;
   tune: Tune;
 }

@@ -48,7 +48,10 @@ export interface AppState {
   model: string;
   interests: string;
   notes: string;
+  /** The first ticked place list (older trips had only this one). */
   list: string;
+  /** The ticked place lists: their places are all considered for the plan. */
+  lists?: string[];
   /** The user picked a list (or none) themselves, so don't default to the first one. */
   listChosen: boolean;
   marks: Record<string, Mark>;
@@ -146,6 +149,14 @@ export const keptElsewhere = () => {
   const inList = new Set(session.listPlaces.map((p) => p.title));
   return (state.kept || []).filter((p) => !inList.has(p.title) && state.marks[p.title] === "must");
 };
+
+/** The ticked place lists (older trips: their one list). */
+export const tickedLists = () => state.lists ?? (state.list ? [state.list] : []);
+export function setTickedLists(names: string[]) {
+  state.lists = [...new Set(names)];
+  state.list = state.lists[0] || "";
+  state.listChosen = true;
+}
 
 export const groupSize = () => Math.max(1, +state.travelers || 1);
 /** How many travelers want a must-see place (defaults to everyone). */

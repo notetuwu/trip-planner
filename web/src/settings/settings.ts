@@ -242,7 +242,7 @@ function renderUpdates() {
           ${u?.available ? `<button type="button" class="btn" id="updCheck" ${checking || waiting ? "disabled" : ""}>${icon("refresh")} Check now</button>` : ""}
         </div></div>
       ${u?.available ? `<div class="set-row"><div><label class="inline-check"><input type="checkbox" id="updAuto" ${u.auto ? "checked" : ""}> <b>Check automatically</b></label>
-        <div class="hint">Every few hours while the app runs, a bar at the top offers a new version. GitHub only allows a few requests per home connection, so it asks sparingly.</div></div></div>` : ""}
+        <div class="hint">Every hour while the app runs (and when it starts), a bar at the top offers a new version. It backs off when GitHub says to wait, so your home connection never gets blocked.</div></div></div>` : ""}
     </div>
     <p class="hint">On Windows, Update now downloads the new version (checked against GitHub's checksum), installs it and restarts; your data stays where it is. On macOS and Linux it opens the download page.</p>`;
   document.querySelector<HTMLButtonElement>("#updCheck")?.addEventListener("click", async () => {
@@ -316,18 +316,24 @@ function renderModels() {
     const pct = p.total ? Math.round((p.completed / p.total) * 100) : 0;
     const secs = (Date.now() - p.started) / 1000, rate = secs > 2 && p.completed ? p.completed / secs : 0;
     return p.error ? `<div class="pull err">${icon("warn")} ${esc(p.error)}</div>`
-      : p.done ? `<div class="pull ok">${icon("check")} Installed</div>`
-      : `<div class="pull"><div class="bar"><i style="width:${pct}%"></i></div>
-          <div class="hint">${esc(p.status)}${p.total ? ` · ${gb(p.completed)} of ${gb(p.total)} (${pct}%)` : ""}${rate ? ` · ${(rate / 1024 ** 2).toFixed(0)} MB/s` : ""}
-          <button type="button" class="link-btn" data-cancel="${esc(p.name)}">Cancel</button></div></div>`;
+      : p.done ? `<div class="pull ok"><span class="pop">${icon("check")}</span> Installed</div>`
+      // Status and percentage, the bar, then size and speed with Cancel: each on its own line, so nothing wraps.
+      : `<div class="pull">
+          <div class="pull-head"><span class="pull-status"><span class="dl-arrow">${icon("download")}</span>${esc(p.status)}</span>${p.total ? `<b>${pct}%</b>` : ""}</div>
+          <div class="bar${p.total ? "" : " indeterminate"}"><i style="width:${p.total ? Math.max(pct, 1) : 35}%"></i></div>
+          <div class="pull-foot"><span>${p.total ? `${gb(p.completed)} of ${gb(p.total)}` : ""}${rate ? ` · ${(rate / 1024 ** 2).toFixed(0)} MB/s` : ""}</span>
+            <button type="button" class="link-btn" data-cancel="${esc(p.name)}">Cancel</button></div></div>`;
   };
   const action = (name: string) => {
     const p = pullOf(name);
-    if (p && (!p.done || p.error)) return progress(p);
+    if (p && !p.done) return progress(p);
     if (installed.has(name)) return `<span class="ok-text">${icon("check")} Installed</span>`;
+    // Cancelled or failed: say so, next to the button to start it again.
+    const cancelled = p?.error === "Cancelled";
+    const note = p?.error ? `<span class="pull-note${cancelled ? "" : " err"}" title="${esc(p.error)}">${cancelled ? "Download cancelled" : `${icon("warn")} ${esc(p.error)}`}</span>` : "";
     // The same model under another tag ("qwen3.8:latest" for "qwen3.8:27b") is probably what they have already.
-    const like = (o?.models || []).find((m) => base(m.name) === base(name));
-    return `${like ? `<span class="hint have">You have ${esc(like.name)}</span>` : ""}<button type="button" class="btn" data-pull="${esc(name)}" ${o?.running ? "" : "disabled"}>${icon("download")} Install</button>`;
+    const like = !note && (o?.models || []).find((m) => base(m.name) === base(name));
+    return `${note}${like ? `<span class="hint have">You have ${esc(like.name)}</span>` : ""}<button type="button" class="btn" data-pull="${esc(name)}" ${o?.running ? "" : "disabled"}>${icon(p?.error && !cancelled ? "refresh" : "download")} ${p?.error && !cancelled ? "Try again" : "Install"}</button>`;
   };
   const capBadges = (caps: string[]) => caps.filter((c) => ["tools", "thinking", "vision"].includes(c)).map((c) => `<span class="cap">${esc(c)}</span>`).join("");
 
@@ -364,7 +370,7 @@ function renderModels() {
       <button type="button" class="lib-head" data-open="${esc(m.name)}">
         <div class="m-name"><code>${esc(m.name)}</code> ${capBadges(m.caps)}
           <div class="hint">${esc(m.description)}</div>
-          <div class="hint">${m.sizes.map(esc).join(", ")}${m.context ? ` · ${esc(m.context)} context` : ""}${m.downloads ? ` · ${count(m.downloads)} downloads` : ""}${m.updated ? ` · updated ${esc(m.updated)}` : ""}</div></div>
+          <div class="hint">${[m.sizes.map(esc).join(", "), m.context ? `${esc(m.context)} context` : "", m.downloads ? `${count(m.downloads)} downloads` : "", m.updated ? `updated ${esc(m.updated)}` : ""].filter(Boolean).join(" · ")}</div></div>
         <span class="chev">${opened.has(m.name) ? "−" : "+"}</span>
       </button>
       ${opened.has(m.name) ? `<div class="lib-tags">${tagRows(m)}</div>` : ""}
@@ -399,15 +405,16 @@ function renderModels() {
     </div>
     <div class="set-card">
       <b class="card-title">Find models</b>
-      <div class="lib-search">
-        <input id="libQuery" placeholder="Search ollama.com, e.g. qwen, gemma, llama" value="${esc(query)}">
+      <div class="lib-search"><span class="lib-search-icon">${icon("search")}</span>
+        <input id="libQuery" type="search" placeholder="Search ollama.com: qwen, gemma, llama…" value="${esc(query)}"></div>
+      <div class="lib-filters">
         <div class="segs">${capSeg("tools", "Can plan")}${capSeg("thinking", "Thinking")}${capSeg("vision", "Vision")}${capSeg("", "All")}</div>
+        <label class="inline-check"><input type="checkbox" id="libVariants" ${allVariants ? "checked" : ""}> All variants</label>
       </div>
-      <p class="hint">"Can plan" are models that use tools, which the planner needs for its best results. Open a model to see its sizes.
-        <label class="inline-check"><input type="checkbox" id="libVariants" ${allVariants ? "checked" : ""}> Show all variants (quantizations)</label></p>
+      <p class="hint lib-hint">"Can plan" models use tools, which the planner needs for its best results. Open a model to see its sizes; "All variants" also lists the quantizations (q8_0, bf16…).</p>
       ${searching ? `<p class="hint">Searching…</p>` : searchError ? `<p class="hint">${icon("warn")} ${esc(searchError)}</p>` : results && !local.length ? `<p class="hint">Nothing that runs locally matches.</p>` : resultRows}
       <div class="pull-other"><input id="setPullName" placeholder="Or a model by its exact name, e.g. llama3.3:70b or hf.co/user/repo"><button type="button" class="btn" id="setPullGo" ${o?.running ? "" : "disabled"}>${icon("download")} Install</button></div>
-      ${others.map((p) => `<div class="model-row"><div class="m-name"><code>${esc(p.name)}</code></div><div class="m-act">${progress(p)}</div></div>`).join("")}
+      ${others.map((p) => `<div class="model-row"><div class="m-name"><code>${esc(p.name)}</code></div><div class="m-act">${action(p.name)}</div></div>`).join("")}
     </div>
     <div class="set-card">
       <div class="set-row"><div><b>Context size</b><div class="hint">How much a local model can read and write at once. Automatic sizes it for each trip; a fixed size uses that much every time (more needs more graphics memory, and the model's own limit still applies).</div></div>

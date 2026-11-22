@@ -134,9 +134,15 @@ function undo(k: number) {
   setStatus(k, "undone");
 }
 
+/** The send button, or while it answers, a stop button in its place (like Claude Code's). */
 function idle() {
-  $<HTMLButtonElement>("#cpSend").disabled = !!running || !box().value.trim();
-  $<HTMLButtonElement>("#cpCancel").hidden = !running;
+  const send = $<HTMLButtonElement>("#cpSend"), busy = !!running;
+  if (send.classList.contains("stop") !== busy) {
+    send.classList.toggle("stop", busy);
+    send.innerHTML = icon(busy ? "stop" : "arrowUp");
+    send.title = busy ? "Stop" : "Send (Enter) · new line with Shift+Enter";
+  }
+  send.disabled = !busy && !box().value.trim();
   const model = $<HTMLSelectElement>("#model").selectedOptions[0]?.textContent?.trim() || "";
   $("#cpModel").textContent = model ? `· ${model}` : "";
 }
@@ -198,11 +204,10 @@ export function openChat(text?: string) {
 export function initCompanion() {
   $("#chatBtn").onclick = () => (panel().hidden ? openChat() : setOpen(false));
   $("#cpClose").onclick = () => setOpen(false);
-  $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); ask(); };
+  $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else ask(); };
   box().addEventListener("input", () => { fit(); idle(); });
   box().addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); } });
   $("#chatPanel .rc-box").onclick = (e) => { if (e.target === e.currentTarget) box().focus(); };
-  $("#cpCancel").onclick = () => running?.abort();
   $("#cpClear").onclick = () => { if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; before.clear(); save(); render(); } };
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth <= 900) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.

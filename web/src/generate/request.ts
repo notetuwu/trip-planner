@@ -1,6 +1,6 @@
 // The trip as sent to POST /api/itinerary.
 import type { TripRequest } from "../../../shared/types";
-import { groupSize, keptElsewhere, state, whoFor } from "../core/state";
+import { groupSize, keptElsewhere, state, tickedLists, whoFor } from "../core/state";
 import { stayLoc } from "../geo/locate";
 import { mustSeeRoutes } from "../places/route";
 import { fieldValues } from "../trip/fields";
@@ -12,7 +12,8 @@ export function tripRequest(change: Change = {}): TripRequest {
   const marked = (m: string) => Object.keys(state.marks).filter((t) => state.marks[t] === m);
   return {
     ...fieldValues(),
-    list: state.list,
+    list: tickedLists()[0] || "",
+    lists: tickedLists(),
     extraPlaces: [
       ...state.customPlaces.map(({ title, note, address, lat, lng }) => ({ title, note, address, lat, lng, picked: true })),
       // Must-sees kept from another place list than the one selected now.

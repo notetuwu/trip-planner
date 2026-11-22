@@ -148,8 +148,14 @@ function idle() {
   $<HTMLButtonElement>("#rpGo").disabled = busy;
   const why = $<HTMLTextAreaElement>("#rpWhy");
   why.disabled = busy || !shown;
-  $<HTMLButtonElement>("#rpSend").disabled = busy || !shown || !why.value.trim();
-  $<HTMLButtonElement>("#rpCancel").hidden = !busy;
+  // While it plans, the send button is a stop button (like Claude Code's), for a new route as well as a change.
+  const sendBtn = $<HTMLButtonElement>("#rpSend");
+  if (sendBtn.classList.contains("stop") !== busy) {
+    sendBtn.classList.toggle("stop", busy);
+    sendBtn.innerHTML = icon(busy ? "stop" : "arrowUp");
+    sendBtn.title = busy ? "Stop planning" : "Send (Enter) · new line with Shift+Enter";
+  }
+  sendBtn.disabled = !busy && (!shown || !why.value.trim());
 }
 
 /** The reply box grows with what's typed, up to its maximum height (then it scrolls). */
@@ -182,7 +188,6 @@ async function plan_(change = false) {
   const from = Math.max(0, chat.map((t) => !!t.fresh).lastIndexOf(true));
   const conversation = change ? chat.slice(from).slice(-8).map(({ route, said }) => ({ route, said })) : [];
   running = new AbortController();
-  $<HTMLButtonElement>("#rpCancel").onclick = () => running?.abort();
   $<HTMLButtonElement>("#rpUse").hidden = true;
   const before = shown;
   $("#routeResult").innerHTML = "";
@@ -272,7 +277,7 @@ function use(plan: RoutePlan) {
 export function initRoutePlanner() {
   $("#planRoute").onclick = open;
   $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); plan_(); };
-  $<HTMLFormElement>("#rpChatForm").onsubmit = (e) => { e.preventDefault(); send(); };
+  $<HTMLFormElement>("#rpChatForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else send(); };
   const why = $<HTMLTextAreaElement>("#rpWhy");
   // Like a chat: Enter sends, Shift+Enter starts a new line (not while an input method is composing a character).
   why.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };

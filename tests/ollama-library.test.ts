@@ -1,6 +1,6 @@
 // Reading Ollama's library pages (search results and a model's tags), with markup shaped like ollama.com's.
 import { describe, expect, it } from "vitest";
-import { headroomGb, mainTags, parseSearch, parseTags } from "../server/ai/ollama-library";
+import { headroomGb, mainTags, parseSearch, parseTags, tagSize } from "../server/ai/ollama-library";
 
 const badge = (colour: string, t: string) => `<span  class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium ${colour} sm:text-[13px]">${t}</span>`;
 const item = (name: string, caps: string[], sizes: string[], o: { cloud?: boolean; downloads?: string } = {}) => `
@@ -36,5 +36,15 @@ describe("Ollama's library", () => {
   it("leaves room for the context: an 18 GB model fits a 24 GB card, not a 20 GB one", () => {
     expect(18 + headroomGb(18) <= 24).toBe(true);
     expect(18 + headroomGb(18) <= 20).toBe(false);
+  });
+});
+
+describe("tag sizes", () => {
+  it("picks this computer's build from a range: the larger (GGUF) elsewhere, the smaller (MLX) on a Mac", () => {
+    expect(tagSize("14b60fc91804 • 19GB - 25GB • 1M context window", false)).toBe(25);
+    expect(tagSize("14b60fc91804 • 19GB - 25GB • 1M context window", true)).toBe(19);
+    expect(tagSize("abc • 800MB - 1.2GB • 32K context window", false)).toBe(1.2);
+    expect(tagSize("abc • 18GB • 256K context window", false)).toBe(18);
+    expect(tagSize("no size here")).toBeNull();
   });
 });

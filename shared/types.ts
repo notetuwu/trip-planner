@@ -130,7 +130,10 @@ export interface TripRequest {
   model: string;
   interests: string;
   notes: string;
+  /** The first ticked place list (older servers read only this). */
   list: string;
+  /** All the ticked place lists: their places are merged. */
+  lists?: string[];
   extraPlaces: Place[];
   stays: TripStay[];
   research: boolean;

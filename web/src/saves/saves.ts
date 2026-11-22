@@ -74,7 +74,7 @@ export async function importTrip(file: File) {
     if (!confirm(`Open the trip in "${file.name}" (${what})? It replaces the trip on screen; save that first if you want to keep it.`)) return;
     picker().value = "";
     // Their place list isn't here: start without one (their must-sees came along in the file).
-    await applyState({ ...trip, list: "", listChosen: true });
+    await applyState({ ...trip, list: "", lists: [], listChosen: true });
     status(`Imported "${file.name}". Save it to keep it in your saved trips.`);
   } catch (e) { status((e as Error).message); }
 }

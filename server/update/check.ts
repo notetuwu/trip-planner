@@ -1,6 +1,6 @@
 // Is there a newer release on GitHub? Only the packaged app asks, and sparingly: GitHub limits requests per home
 // connection (shared with every phone and computer on it, so a chatty app gets the whole household blocked from
-// github.com). The answer is kept for 6 hours (Settings → Updates → Check now asks straight away, at most once a
+// github.com). The answer is kept for an hour (Settings → Updates → Check now asks straight away, at most once a
 // minute), "nothing changed" answers carry the last ETag (GitHub doesn't count those), and after a refusal it waits
 // until GitHub says it may ask again. It never falls back to loading github.com pages when the API refused.
 // TRIP_PLANNER_NO_UPDATES=1 or Settings → Updates turns the automatic check off. Also works out how this copy can update itself.
@@ -57,7 +57,8 @@ interface Release { tag: string; url: string; assets: { name: string; url: strin
 /** GitHub refused (rate limit): don't ask again before `until`, and don't try github.com pages either. */
 class Refused extends Error { constructor(msg: string, readonly until: number) { super(msg); } }
 
-const AUTO_EVERY = 6 * 3600e3, MANUAL_GAP = 60e3, FAIL_WAIT = 30 * 60e3;
+// Hourly: "nothing new" answers to the ETag aren't counted by GitHub, so that's at most 24 counted requests a day.
+const AUTO_EVERY = 3600e3, MANUAL_GAP = 60e3, FAIL_WAIT = 30 * 60e3;
 let etag = "", lastRelease: Release | null = null;
 
 /** The latest release from GitHub's API (with file sizes and checksums). */
@@ -104,7 +105,7 @@ const available = () => PACKAGED && !process.env.TRIP_PLANNER_NO_UPDATES && VERS
 export const updateState = (): UpdateState => ({ info: cached, error, waitUntil, auto: readSettings().checkUpdates, available: available() });
 
 /** The latest release. `force` (Check now) asks GitHub unless it did in the last minute or asked to wait; otherwise
- *  the answer from the last 6 hours is used, and nothing is asked at all when the automatic check is off. */
+ *  the answer from the last hour is used, and nothing is asked at all when the automatic check is off. */
 export async function checkForUpdate(force = false): Promise<UpdateInfo | null> {
   if (!available()) return null;
   const now = Date.now();

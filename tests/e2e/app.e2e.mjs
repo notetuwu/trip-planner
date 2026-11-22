@@ -52,6 +52,11 @@ const STUBS = `(() => {
     const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "reasoning", text: "Lakes first, then the loop home." }, { type: "done", result }]
       .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
     if (url.includes("/api/current")) return json({ at: 0 });
+    // Place lists: scripted by the test through window.__e2e.lists ({ name: places }); absent: the real (empty) ones.
+    const lists = window.__e2e.lists;
+    const listPath = url.split("?")[0].split("/api/lists")[1];
+    if (lists && listPath === "") return json(Object.entries(lists).map(([name, places]) => ({ name, count: places.length, source: { type: "csv" } })));
+    if (lists && listPath && listPath.lastIndexOf("/") === 0) { const name = decodeURIComponent(listPath.slice(1)); return json({ name, places: lists[name] || [], source: { type: "csv" } }); }
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
     if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream(window.__e2e.companion || { answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
@@ -205,7 +210,7 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /Day trip: Vaduz/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /On the way: Lugano/);
   assert.match(await page.eval(`document.querySelector("#rpChat .rc-msg.ai").textContent`), /Lakes first, then the loop home\./, "the chat shows the route with what the model says about it");
-  assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
+  assert.ok(!(await page.eval(`document.querySelector("#rpSend").classList.contains("stop")`)), "the stop button only while planning");
   assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "New route");
   // Replies in the chat change the route on screen: the model gets each route and what was said about it.
   // Typed like a person: the send button only works once there's text; Enter sends too.
@@ -475,6 +480,25 @@ test("asking the chat for a change offers it; Apply re-plans that day, Undo puts
   assert.equal(await page.eval(`planner.state().itinerary.days[1].items[0].place`), "Orto Botanico");
   assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Undone/);
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
+test("several place lists can be ticked: their places are all considered for the plan", async () => {
+  await page.eval(`window.__e2e.lists = {
+    "Italy": [{ title: "Basilica di Sant'Antonio", lat: 45.401, lng: 11.881 }, { title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775 }],
+    "Food": [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775 }, { title: "Mercato sotto il Salone", lat: 45.407, lng: 11.875 }],
+  }`);
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], lists: ["Italy"], listChosen: true, autoFix: false });
+  await page.waitFor(`document.querySelectorAll("#listPicker .list-row").length === 2`, 5000, "the lists");
+  await page.waitFor(`document.querySelectorAll("#chips .chip").length === 2`, 5000, "one list's places");
+  await page.eval(`(() => { const b = document.querySelector('[data-list="Food"]'); b.checked = true; b.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(`document.querySelectorAll("#chips .chip").length === 3`, 5000, "both lists' places (Caffe Pedrocchi once)");
+  assert.deepEqual(await page.eval(`planner.state().lists`), ["Italy", "Food"]);
+  assert.equal(await page.eval(`document.querySelector("#listMeta").textContent`), "2 lists");
+  await page.eval(`window.__e2e.answer = () => ({ summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("10:00", "Basilica")])] })`);
+  await page.eval(`document.querySelector("#generate").click()`);
+  await page.waitFor(`window.__e2e.requests.length === 1`, 10000, "the request");
+  assert.deepEqual(await page.eval(`window.__e2e.requests[0].lists`), ["Italy", "Food"]);
+  await page.eval(`window.__e2e.lists = null`);
 });
 
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {

@@ -32,7 +32,32 @@ function runnerFor(model: string): Runner {
   return runClaude;
 }
 
-/** The selected list's places plus the ones picked on the map. */
+const FAR_KM = 200;
+const km = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => {
+  const r = Math.PI / 180, x = (b.lng - a.lng) * r * Math.cos(((a.lat + b.lat) / 2) * r), y = (b.lat - a.lat) * r;
+  return Math.hypot(x, y) * 6371;
+};
+
+/**
+ * The places of every ticked list (merged; a place on two lists counts once), then only the ones the trip can reach:
+ * with several lists (say one for Japan and one for the Alps) the far-away ones would only bloat the prompt. Places
+ * more than 200 km from every stay go, unless they're must-sees or their location isn't known.
+ */
+export function mergeListPlaces(lists: Place[][], stays: { lat?: number; lng?: number }[], mustSee: string[] = []): Place[] {
+  const seen = new Set<string>(), merged: Place[] = [];
+  for (const p of lists.flat()) {
+    const key = p.title.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key); merged.push(p);
+  }
+  const at = stays.filter((s): s is { lat: number; lng: number } => typeof s.lat === "number" && typeof s.lng === "number");
+  if (!at.length) return merged;
+  const must = new Set(mustSee);
+  return merged.filter((p) => must.has(p.title) || typeof p.lat !== "number" || typeof p.lng !== "number"
+    || at.some((s) => km(s, { lat: p.lat!, lng: p.lng! }) <= FAR_KM));
+}
+
+/** The ticked lists' places plus the ones picked on the map. */
 async function tripPlaces(trip: Trip): Promise<Place[]> {
   const extra = Array.isArray(trip.extraPlaces) ? trip.extraPlaces.filter((p) => p?.title) : [];
   // Older map-picked places were saved without an address; look it up so the model knows where they are.
@@ -41,7 +66,9 @@ async function tripPlaces(trip: Trip): Promise<Place[]> {
       p.address = (await reverseGeocode(p.lat, p.lng).catch(() => null))?.short || "";
     }
   }
-  return [...(trip.list ? (await getList(trip.list))?.places || [] : []), ...extra];
+  const names = [...new Set([...(Array.isArray(trip.lists) ? trip.lists : []), trip.list].filter((n): n is string => typeof n === "string" && !!n))].slice(0, 20);
+  const lists = await Promise.all(names.map(async (n) => (await getList(n))?.places || []));
+  return [...mergeListPlaces(lists, trip.stays, trip.mustSee), ...extra];
 }
 
 export async function handleItinerary(req: Req, res: Res) {
