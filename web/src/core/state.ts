@@ -69,6 +69,10 @@ export interface AppState {
   /** Packing list: ticked items, and items the travelers added themselves. */
   packed?: Record<string, boolean>;
   packingExtra?: string[];
+  /** Brainstorming notes (Ideas & notes): for the travelers and the trip chat, not sent with a plan. */
+  ideas?: string;
+  /** The trip chat so far. */
+  chat?: { role: "me" | "ai"; text: string }[];
 }
 
 const STORE_KEY = "trip-planner-v2";

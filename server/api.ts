@@ -21,6 +21,7 @@ import { checkHours } from "./trip/hours";
 import { warmNearby } from "./trip/nearby";
 import { suggestStops } from "./trip/stops";
 import { planRoute } from "./trip/route-plan";
+import { askCompanion } from "./trip/companion";
 import { streamProgress } from "./util/progress-stream";
 import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
@@ -100,6 +101,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const body = await readJson(req);
       if (!body?.start || !body?.model) sendJson(res, 400, { error: "A start and a model are needed" });
       else await busyWhile(() => streamProgress(res, (report, signal) => planRoute(body, report, signal)));
+    }
+    // The trip chat: a question about the trip on screen, answered by the selected model.
+    else if (method === "POST" && path === "/api/companion") {
+      const body = await readJson(req);
+      if (!body?.question || !body?.model) sendJson(res, 400, { error: "A question and a model are needed" });
+      else await busyWhile(() => streamProgress(res, (report, signal) => askCompanion(body, report, signal)));
     }
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);

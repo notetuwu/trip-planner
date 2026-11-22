@@ -21,6 +21,9 @@ It uses **Claude** through your own [Claude Code](https://claude.com/claude-code
 - **Revise.** Ask for changes ("swap days 3 and 4", "add a vegan lunch on day 2"), re-plan a single day with ↻ (optionally saying what to change) while the rest stays as it is, or remove and add stops yourself.
 - **Budget and weather.** Costs per stop and per day against your daily budget, plus a forecast when the trip is close enough.
 - **Take it with you.** "Download for phone" saves one self-contained HTML file with the map, the days and a jump-to-today button. A calendar file (.ics) puts every stop in your phone's calendar. Print/PDF and JSON export are also available.
+- **Trip chat.** "Ask about your trip" opens a chat that answers from your stays, the itinerary, your must-sees and your notes ("what's on Thursday?", "where can we eat near the castle?", "what do we still need to book?"), using the selected model. The conversation is kept with the trip.
+- **Ideas & notes.** A scratchpad for brainstorming (places someone recommended, links, things to decide), saved with the trip and read by the trip chat.
+- **Share a trip.** Export saves the trip as a file (stays, plan, must-sees, notes); someone else imports it into their planner. Saved trips' files import too.
 - **Use it on your phone.** Settings → Phone serves the planner on your home network behind a secret link (with a QR code): same saved trips, lists and models, and the open trip stays in step between the computer and the phone.
 - **Local models made easy.** Settings → Local models shows Ollama's status and your graphics card, suggests models that fit it, and installs or deletes them with download progress.
 

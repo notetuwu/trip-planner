@@ -269,3 +269,44 @@ details.import .inline { margin-bottom: 8px; }
 .tag-row + .tag-row { border-top: 1px dashed var(--line); }
 .tag-row code { font-size: 12.5px; }
 .set-row .status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 600; }
+
+/* Saved trips: Export / Import next to "+ New trip". */
+h2 small .link-btn + .link-btn, h2 small .file-link + .link-btn, h2 small .link-btn + .file-link { margin-left: 10px; }
+.file-link { cursor: pointer; }
+
+/* Ideas & notes: a scratchpad that grows with what's written. */
+textarea.ideas { min-height: 72px; field-sizing: content; max-height: 360px; }
+
+/* The trip chat: a round button at the bottom right, and a panel above it that stays open while you look at the plan. */
+.companion-fab {
+  position: fixed; right: 20px; bottom: 20px; z-index: 2000; display: inline-flex; align-items: center; gap: 8px;
+  padding: 11px 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-ink);
+  font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; box-shadow: var(--shadow-pop);
+}
+.companion-fab .i { width: 18px; height: 18px; }
+.companion-fab:hover { filter: brightness(1.06); }
+.companion-dialog {
+  position: fixed; inset: auto 20px 76px auto; margin: 0; z-index: 2001; width: min(420px, calc(100vw - 24px)); height: min(620px, calc(100vh - 110px));
+  padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop);
+}
+.companion-dialog[open] { display: flex; flex-direction: column; }
+.cp-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px 16px; border-bottom: 1px solid var(--line); }
+.cp-head h2 { margin: 0; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.cp-head #cpModel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.cp-head form { margin: 0; }
+.companion-dialog .cp-log { padding-top: 12px; max-height: none; }
+.cp-log .rc-msg.ai b { display: inline; font-size: inherit; margin: 0; }
+.cp-log .rc-msg.ai p, .cp-log .rc-msg.ai ul { margin: 0 0 6px; }
+.cp-log .rc-msg.ai > :last-child { margin-bottom: 0; }
+.cp-log .rc-msg.ai ul { padding-left: 18px; }
+.cp-starters { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-btn { border: 1px solid var(--line-strong); background: var(--field); color: var(--ink); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.chip-btn:hover { border-color: var(--accent); }
+.cp-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; padding: 4px 4px 0; font-size: 12px; }
+.cp-foot .hint { flex: 1; }
+@media (max-width: 640px) {
+  .companion-fab span { display: none; }
+  .companion-fab { padding: 13px; }
+  .companion-dialog { inset: auto 8px 72px 8px; width: auto; height: calc(100dvh - 90px); }
+}
+@media print { .companion-fab, .companion-dialog { display: none !important; } }

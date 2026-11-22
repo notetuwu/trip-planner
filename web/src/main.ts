@@ -25,10 +25,11 @@ import { dayLegs, routeKey, routes, setOnRouted } from "./map/routes";
 import { initMapSearch } from "./map/search";
 import { initChips, renderChips } from "./places/chips";
 import { initLists, loadList, refreshLists } from "./places/lists";
-import { applyState, initSaves, refreshSaves } from "./saves/saves";
+import { applyState, importTrip, initSaves, refreshSaves } from "./saves/saves";
 import { initFields } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
 import { initRoutePlanner } from "./trip/route-planner";
+import { initCompanion } from "./trip/companion";
 import { initSettings } from "./settings/settings";
 import { initSync } from "./core/sync";
 import { loadPrefs } from "./core/prefs";
@@ -52,12 +53,12 @@ hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
 initSettings(); initSync(); loadPrefs();
-initFields(); initStays(); initRoutePlanner(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
+initFields(); initStays(); initRoutePlanner(); initCompanion(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.
 Object.assign(window, {
-  planner: { state: () => state, session, applyState, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, directionsUrl, offlineHtml },
+  planner: { state: () => state, session, applyState, importTrip, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, directionsUrl, offlineHtml },
 });
 
 // Tells the server this window is open, and when it closes (the packaged app quits after its last window closes).

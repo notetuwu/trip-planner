@@ -54,6 +54,7 @@ const STUBS = `(() => {
     if (url.includes("/api/current")) return json({ at: 0 });
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
+    if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream({ answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
     if (url.includes("/api/itinerary")) {
       const b = body();
       window.__e2e.requests.push(b);
@@ -425,6 +426,47 @@ test("settings open with their tabs: general, local models, phone", async () => 
   await page.eval(`document.querySelector('[data-tab="models"]').click()`);
   await page.waitFor(`/Ollama/.test(document.querySelector("#setMain .status")?.textContent || "")`, 20000, "local models tab");
   await page.eval(`document.querySelector('[data-theme-choice="system"]')?.click(); localStorage.removeItem("trip-planner-theme")`);
+});
+
+test("the trip chat answers from the trip, keeps the conversation, and reads the ideas notes", async () => {
+  await trip({ ...PADUA_MILANO, itinerary: { summary: "Plan", totalEstimatedCost: 0, days: [
+    { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "15:00", place: "Cappella degli Scrovegni", description: "Giotto frescoes" }] },
+    { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] }] } });
+  await page.eval(`(() => { const t = document.querySelector("#ideas"); t.value = "Maybe a boat on the Brenta?"; t.dispatchEvent(new Event("input")); })()`);
+  await page.eval(`document.querySelector("#companionBtn").click()`);
+  assert.ok(await page.eval(`document.querySelector("#companionDialog").open`));
+  await page.eval(`document.querySelector("#cpLog [data-q]").click()`);
+  await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 1`, 10000, "the answer");
+  const asked = await page.eval(`window.__e2e.companionAsked`);
+  assert.match(asked.context, /Day 1 .*Padua/);
+  assert.match(asked.context, /Cappella degli Scrovegni: Giotto frescoes/);
+  assert.match(asked.context, /boat on the Brenta/);
+  assert.match(await page.eval(`document.querySelector("#cpLog .rc-msg.ai").innerHTML`), /<b>day 2<\/b>/);
+  // A follow-up carries the conversation.
+  await page.eval(`(() => { const q = document.querySelector("#cpQ"); q.value = "And day 3?"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 2`, 10000, "the second answer");
+  assert.equal((await page.eval(`window.__e2e.companionAsked.history`)).length, 2);
+  assert.equal(await page.eval(`planner.state().chat.length`), 4);
+  assert.equal(await page.eval(`planner.state().ideas`), "Maybe a boat on the Brenta?");
+});
+
+test("export a trip to a file and import it again (replacing the trip on screen)", async () => {
+  await trip({ ...PADUA_MILANO, ideas: "Brenta boat", marks: { "Caffe Pedrocchi": "must" } });
+  await page.eval(`window.__exported = null; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__exported = { name: this.download, href: this.href }; }`);
+  await page.eval(`document.querySelector("#exportTrip").click()`);
+  const file = await page.eval(`(async () => ({ name: window.__exported.name, text: await (await fetch(window.__exported.href)).text() }))()`);
+  assert.match(file.name, /Padua-Milano\.trip\.json$/);
+  const data = JSON.parse(file.text);
+  assert.equal(data.format, "trip-planner-trip");
+  assert.equal(data.trip.ideas, "Brenta boat");
+  await page.eval(`planner.applyState({ stays: [{ city: "Kyoto", start: "2027-04-01", nights: 2, hotel: "" }], listChosen: true })`);
+  await page.eval(`window.confirm = () => true; planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await page.waitFor(`planner.state().stays[0].city === "Padua"`, 10000, "the imported trip");
+  assert.equal(await page.eval(`document.querySelector("#ideas").value`), "Brenta boat");
+  assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
+  await page.eval(`planner.importTrip(new File(["not json"], "bad.json"))`);
+  await page.waitFor(`/isn't a trip file/.test(document.querySelector("#saveStatus").textContent)`, 5000, "the error");
+  assert.equal(await page.eval(`planner.state().stays[0].city`), "Padua", "a bad file changes nothing");
 });
 
 test("no errors in the page", () => {

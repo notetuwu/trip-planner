@@ -22,6 +22,8 @@ export interface AskOptions {
   onText?: (reply: string, thinking: string) => void;
   /** Told when the model got stuck repeating itself and is asked once more. */
   onRetry?: (message: string) => void;
+  /** What's added to the prompt when it's asked once more (default: answer with the JSON right away). */
+  nudge?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
   for (let attempt = 0; ; attempt++) {
     const loop = new AbortController(), looping = loopGuard();
     const signal = opts.signal ? AbortSignal.any([opts.signal, loop.signal]) : loop.signal;
-    const asked = attempt ? `${prompt}\n\nAnswer with the JSON right away. Keep any thinking short and don't go over the same points again.` : prompt;
+    const asked = attempt ? `${prompt}\n\n${opts.nudge || "Answer with the JSON right away."} Keep any thinking short and don't go over the same points again.` : prompt;
     try {
       return await askOnce(modelId, asked, onProgress, { ...opts, signal }, attempt > 0, (piece) => { if (piece && looping(piece)) loop.abort(new Error("loop")); });
     } catch (e) {

@@ -6,12 +6,24 @@ import { icon } from "../core/icons";
 /** The model's planning notes are light Markdown: paragraphs, "- " bullets, **bold**, # headings. */
 export function mdLite(text: string | undefined) {
   const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const bullet = /^\s*(?:[-*•]|\d+[.)]) /;
   return String(text || "").trim().split(/\n\s*\n/).map((block) => {
     // Some models put several bullets on one line ("- a - b - c"); give each its own line.
     const lines = block.split("\n").flatMap((l) => (/^\s*- /.test(l) ? l.split(/\s+-\s+(?=\S)/).map((p, i) => (i ? `- ${p}` : p)) : [l]));
-    if (lines.every((l) => /^\s*[-*•] /.test(l))) return `<ul>${lines.map((l) => `<li>${inline(l.replace(/^\s*[-*•] /, ""))}</li>`).join("")}</ul>`;
     if (/^#{1,6} /.test(lines[0]) && lines.length === 1) return `<p><b>${inline(lines[0].replace(/^#+ /, ""))}</b></p>`;
-    return `<p>${lines.map(inline).join("<br>")}</p>`;
+    // Runs of bullet lines become lists; the lines between them paragraphs ("On day 2:" then the bullets).
+    let html = "", para: string[] = [], items: string[] = [];
+    const flush = () => {
+      if (para.length) html += `<p>${para.map((l) => inline(l.replace(/^#+ /, ""))).join("<br>")}</p>`;
+      if (items.length) html += `<ul>${items.map((l) => `<li>${inline(l.replace(bullet, ""))}</li>`).join("")}</ul>`;
+      para = []; items = [];
+    };
+    for (const l of lines) {
+      if (bullet.test(l)) { if (para.length) { const p = para; para = []; html += `<p>${p.map(inline).join("<br>")}</p>`; } items.push(l); }
+      else { if (items.length) flush(); para.push(l); }
+    }
+    flush();
+    return html;
   }).join("");
 }
 

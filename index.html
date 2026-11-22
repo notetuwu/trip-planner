@@ -21,7 +21,9 @@
 
 <main>
   <section class="panel settings">
-    <h2>Saved trips <small><button class="link-btn" id="newTrip" title="Start a new, empty trip">+ New trip</button></small></h2>
+    <h2>Saved trips <small><button class="link-btn" id="exportTrip" type="button" title="Download this trip as a file, to share it or keep a copy (someone else can import it)"><i data-icon="download"></i> Export</button>
+      <label class="link-btn file-link" title="Open a trip file someone shared (it replaces the trip on screen)"><i data-icon="upload"></i> Import<input type="file" id="importTrip" accept=".json,application/json" hidden></label>
+      <button class="link-btn" id="newTrip" title="Start a new, empty trip">+ New trip</button></small></h2>
     <div class="inline">
       <select id="saveList"><option value="">— Saved trips —</option></select>
       <button class="btn" id="loadSave" title="Load the selected trip">Load</button>
@@ -56,6 +58,9 @@
     <div class="places-tools"><input id="placeFilter" placeholder="Filter places…"></div>
     <div class="chips" id="chips"></div>
     <div class="counts" id="counts"></div>
+
+    <h2>Ideas &amp; notes <small class="hint" id="ideasHint"></small></h2>
+    <textarea id="ideas" class="ideas" rows="3" placeholder="Brainstorm here: places someone recommended, links, things to decide, what to book… Only for you (and the trip chat); the plan uses &quot;Anything else&quot; below."></textarea>
 
     <h2>Budget &amp; style</h2>
     <div class="row" style="--cols:3">
@@ -117,6 +122,23 @@
     <div class="empty"><div class="sun"></div>Your itinerary will appear here.</div>
   </section>
 </main>
+
+<button class="companion-fab" id="companionBtn" type="button" title="Ask anything about your trip"><i data-icon="chat"></i><span>Ask about your trip</span></button>
+
+<dialog id="companionDialog" class="companion-dialog">
+  <div class="cp-head"><h2><i data-icon="chat"></i> Trip chat</h2>
+    <span class="hint" id="cpModel"></span>
+    <button class="link-btn" id="cpClear" type="button" title="Start the conversation over">Clear</button>
+    <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
+  <div id="cpLog" class="rc-log cp-log"></div>
+  <form id="cpForm" class="rc-input">
+    <div class="rc-box">
+      <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask about your trip…"></textarea>
+      <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+    </div>
+    <div class="cp-foot"><span class="hint" id="cpLive"></span><button class="link-btn" id="cpCancel" type="button" hidden>Stop</button></div>
+  </form>
+</dialog>
 
 <div class="toast" id="toast" hidden></div>
 
