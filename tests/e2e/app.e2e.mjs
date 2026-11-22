@@ -595,6 +595,14 @@ test("Retry asks the last message again, replacing its answer", async () => {
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 
+test("a leg left to the planner shows (and draws) the mode the plan picked", async () => {
+  const transfer = { time: "10:00", place: "Padua → Milano (train)", description: "", cost: 20, kind: "transfer", transport: "Frecciarossa, 2 h" };
+  await trip({ ...PADUA_MILANO, stays: [PADUA_MILANO.stays[0], { ...PADUA_MILANO.stays[1], travel: "" }], itinerary: {
+    summary: "", totalEstimatedCost: 20, days: [{ date: "2027-09-16", city: "Padua → Milano", title: "", estimatedCost: 20, items: [transfer] }] } });
+  await page.waitFor(`/Planner decides \\(train\\)/.test(document.querySelector(".stay-leg select").selectedOptions[0].textContent)`, 5000, "the planned mode in the menu");
+  assert.equal(await page.eval(`planner.state().stays[1].travel`), "", "the choice stays with the planner");
+});
+
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {
   await trip({ ...PADUA_MILANO, ideas: "Brenta boat", marks: { "Caffe Pedrocchi": "must" } });
   await page.eval(`window.__exported = null; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__exported = { name: this.download, href: this.href }; }`);
@@ -609,6 +617,10 @@ test("export a trip to a file and import it again (replacing the trip on screen)
   await page.waitFor(`planner.state().stays[0].city === "Padua"`, 10000, "the imported trip");
   assert.equal(await page.eval(`document.querySelector("#ideas").value`), "Brenta boat");
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
+  await page.waitFor(`document.querySelector("#saveList").value === "shared"`, 5000, "the import in the saved trips");
+  // Importing the same file again keeps the first copy and saves a second one.
+  await page.eval(`planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await page.waitFor(`document.querySelector("#saveList").value === "shared 2"`, 5000, "a second copy, not an overwrite");
   await page.eval(`planner.importTrip(new File(["not json"], "bad.json"))`);
   await page.waitFor(`/isn't a trip file/.test(document.querySelector("#saveStatus").textContent)`, 5000, "the error");
   assert.equal(await page.eval(`planner.state().stays[0].city`), "Padua", "a bad file changes nothing");

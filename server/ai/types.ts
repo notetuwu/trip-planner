@@ -5,6 +5,8 @@ import type { NearbyList } from "../trip/nearby";
 /** The trip request plus what the server gathered for it before planning. */
 export interface Trip extends TripRequest {
   holidays?: Holiday[];
+  /** Per stay (by index): sunrise and sunset there, filled in by the server. */
+  daylight?: string[];
   nearby?: NearbyList[];
   researchNotes?: string;
   /** Road routes between consecutive stays travelled by road, by the arriving stay's index (null: no road route). */

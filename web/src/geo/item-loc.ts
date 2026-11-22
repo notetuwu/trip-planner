@@ -145,7 +145,7 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
   const fuzzy: Loc | null = found?.g || null; // something else with a similar name
   const model = typeof x.lat === "number" && typeof x.lng === "number" ? { lat: x.lat, lng: x.lng } : null;
   // Check guesses against the towns the day names, or (until those are located) where you sleep that night.
-  const towns = dayTowns(day);
+  const towns = [...dayTowns(day), ...dayTripsOn(day)];
   const refs: Loc[] = towns.length ? towns : home ? [home] : [];
   const inTown = (l: Loc) => !refs.length || refs.some((t) => distKm(l, t) < 8);
   if (model && inTown(model)) return { ...model, approx: true };

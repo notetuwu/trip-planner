@@ -7,7 +7,7 @@ import { geo, geoKey, geocodeStays } from "../geo/geocode";
 import { stayLoc, stayMapsUrl } from "../geo/locate";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
-import { modeOptions } from "./modes";
+import { modeOptions, plannedMode } from "./modes";
 import { renderTripTitle } from "./title";
 import { ext, icon } from "../core/icons";
 import { bookableMode, hotelUrl, transportUrl } from "../itinerary/travel-links";
@@ -27,7 +27,7 @@ function legHtml(i: number) {
   return `<div class="stay-leg" data-i="${i}">
     <span class="leg-text">${esc(a.city || `Stay ${i}`)} → ${esc(b.city || `Stay ${i + 1}`)}</span>
     ${a.city && b.city && bookableMode(b.travel) ? `<a class="leg-link" href="${esc(transportUrl(a.city, b.city))}" target="_blank" rel="noopener" title="Ways to get from ${esc(a.city)} to ${esc(b.city)} on Rome2Rio, with links to book">Compare${ext()}</a>` : ""}
-    <select data-k="travel" title="How you get from ${esc(a.city || "the previous stay")} to ${esc(b.city || "this stay")}">${modeOptions(b.travel)}</select>
+    <select data-k="travel" title="How you get from ${esc(a.city || "the previous stay")} to ${esc(b.city || "this stay")}">${modeOptions(b.travel, plannedMode(a.city, b.city))}</select>
     ${stayLoc(a) && stayLoc(b) && ["car", "bus", "bike", ""].includes(b.travel || "") ? `<button class="link-btn leg-stops" data-stops="${i}" type="button" title="Add overnight stops along the road between ${esc(a.city)} and ${esc(b.city)}">${icon("plus")} Stops on the way</button>` : ""}
   </div>`;
 }
@@ -65,7 +65,7 @@ function stayHtml(s: Stay, i: number) {
               <button class="icon-btn" data-act="deltrip" title="Remove day trip">${icon("x")}</button>
             </div>
             <div class="dt-opts">
-              <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode)}</select>
+              <select data-dt="mode" title="How you get there and back">${modeOptions(t.mode, plannedMode(s.city, t.place))}</select>
               ${peopleSelect(t.people)}
             </div>
           </div>`).join("")}

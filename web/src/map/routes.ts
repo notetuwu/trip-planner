@@ -4,7 +4,7 @@ import { api } from "../core/dom";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
 import { state } from "../core/state";
-import { chosenMode, splitGroup } from "../trip/modes";
+import { chosenMode, modeOf, splitGroup } from "../trip/modes";
 import { setMapStatus } from "./status";
 import { DRIVE_KM, arrivalStay, isTransfer, viaStops } from "./travel-day";
 
@@ -14,7 +14,8 @@ export const routeKey = (mode: RouteMode, a: LatLng, b: LatLng) => `${mode}:${a[
 
 /** How a leg is drawn: along footpaths, roads or railways, or as a straight line (water, air, short hops). */
 export type LegMode = RouteMode | "straight";
-export interface Leg { xi: number; fromXi: number; mode: LegMode; from: LatLng; to: LatLng }
+/** group: the split group whose leg it is (from or to one of its stops), "" when everyone travels together. */
+export interface Leg { xi: number; fromXi: number; mode: LegMode; from: LatLng; to: LatLng; group?: string }
 
 /** The routed path for a leg: a route, null (none exists or not routable), or undefined (still being routed). */
 export const legRoute = (leg: { mode: LegMode; from: LatLng; to: LatLng }) => (leg.mode === "straight" ? null : routes[routeKey(leg.mode, leg.from, leg.to)]);
@@ -23,7 +24,7 @@ export const legRoute = (leg: { mode: LegMode; from: LatLng; to: LatLng }) => (l
 // length follow the tracks; water, air, cable cars and short rail hops stay straight lines.
 const RAIL = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|u-?bahn|metro|subway|tram|vaporetto|ferry|boat|ship|flight|fly|plane|cable car|funicular|gondola)\b/i;
 const ROAD = /\b(bus|coach|taxi|uber|car|drive|driving|shuttle|transfer)\b/i;
-const TRAIN = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn)\b/i;
+const TRAIN = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|shinkansen|limited express|jr|tgv|frecciarossa|italo|ave)\b/i;
 export const FOOT = /\b(walk|walking|on foot|stroll|hike|zu fu)/i;
 // A real hike can be long; "walk" usually means the last bit from the car park or the station.
 const HIKE = /\b(hike|hiking|trail|trek|wander)/i;
@@ -55,13 +56,18 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   const dayMode = arrive > 0 ? state.stays[arrive].travel || "" : "";
   const groups = [...new Set(d.items.map(splitGroup).filter(Boolean))];
   const paths = groups.length ? groups.map((g) => pts.filter((p) => !splitGroup(p.x) || p.x.group === g)) : [pts];
-  const legs = new Map<number, Leg>();
+  // Keyed by both ends: two groups heading to the same stop (the dinner where they meet again) are two legs.
+  const legs = new Map<string, Leg>();
   for (const path of paths) {
     for (let i = 1; i < path.length; i++) {
       const from: LatLng = [path[i - 1].loc!.lat, path[i - 1].loc!.lng], to: LatLng = [path[i].loc!.lat, path[i].loc!.lng];
       if (drive && (distKm({ lat: from[0], lng: from[1] }, { lat: to[0], lng: to[1] }) > DRIVE_KM || (via.has(path[i - 1].xi) && via.has(path[i].xi)))) continue;
-      const mode = legMode(path[i].x, from, to, dayMode);
-      if (mode) legs.set(path[i].xi, { xi: path[i].xi, fromXi: path[i - 1].xi, mode, from, to });
+      // A transfer between the two stops ("Hiroshima → Shin-Osaka (train)") says how this leg goes.
+      const group = splitGroup(path[i - 1].x) || splitGroup(path[i].x);
+      const between = d.items.slice(path[i - 1].xi + 1, path[i].xi).filter((x) => isTransfer(x) && (!splitGroup(x) || splitGroup(x) === group));
+      const byTransfer = between.map((x) => chosenMode(x) || modeOf(x)).find(Boolean) || "";
+      const mode = legMode(path[i].x, from, to, byTransfer || dayMode);
+      if (mode) legs.set(`${path[i - 1].xi}>${path[i].xi}`, { xi: path[i].xi, fromXi: path[i - 1].xi, mode, from, to, group });
     }
   }
   return [...legs.values()];

@@ -21,6 +21,23 @@ import type { Itinerary } from "../../../shared/types";
 import { icon } from "../core/icons";
 import { checksSettled, planProblems } from "../generate/autofix";
 import { setMapStatus } from "../map/status";
+import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
+
+/** The stays' "Planner decides" menus say what the current plan picked ("Planner decides (train)"). */
+function showPlannedModes() {
+  const label = (from: string, to: string) => { const m = plannedMode(from, to); return m ? `Planner decides (${modeName(m)})` : "Planner decides"; };
+  for (const sel of $$<HTMLSelectElement>(".stay-leg select[data-k=travel]")) {
+    const i = +sel.closest<HTMLElement>(".stay-leg")!.dataset.i!, a = state.stays[i - 1], b = state.stays[i];
+    const opt = sel.querySelector<HTMLOptionElement>('option[value=""]');
+    if (opt && a && b) opt.textContent = label(a.city, b.city);
+  }
+  for (const sel of $$<HTMLSelectElement>(".day-trip select[data-dt=mode]")) {
+    const s = state.stays[+sel.closest<HTMLElement>(".stay")!.dataset.i!];
+    const t = s?.dayTrips?.[+sel.closest<HTMLElement>(".day-trip")!.dataset.ti!];
+    const opt = sel.querySelector<HTMLOptionElement>('option[value=""]');
+    if (opt && s && t) opt.textContent = label(s.city, t.place);
+  }
+}
 
 function clearItinerary() {
   state.itinerary = null; state.meta = null; session.selectedDay = null;
@@ -76,6 +93,8 @@ export function renderItinerary(error?: string) {
   const out = $("#output");
   // A plan is being generated there: redraws meanwhile (weather arriving, countries found) would wipe the progress view.
   if (out.dataset.generating) return;
+  showPlannedModes();
+  if (it && orderSplitRuns(it.days)) save();
   const errorHtml = error ? `<div class="error">${esc(error)}</div>` : "";
   if (!it) {
     out.innerHTML = errorHtml + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.</div>`;

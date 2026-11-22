@@ -12,6 +12,9 @@ const ROUTERS: Record<RouteMode, string[]> = {
   train: ["https://api.transitous.org/api/v5/plan"],
 };
 const MODES = Object.keys(ROUTERS) as RouteMode[];
+// "No train connection" answers from before the router was allowed longer walks to the stations: ask once more.
+// Also train routes from before they marked their stations.
+for (const k of Object.keys(routeCache.data)) if (k.startsWith("train:") && (routeCache.data[k] === null || !routeCache.data[k]!.rail)) delete routeCache.data[k];
 const routeKey = (mode: RouteMode, a: LatLng, b: LatLng) => `${mode}:${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}`;
 
 interface RouteJob { a: LatLng; b: LatLng; key: string }
@@ -42,17 +45,32 @@ const thin = (c: LatLng[], max = 1500) => { if (c.length <= max) return c; const
  * no connection by rail. The timetable doesn't matter for the line on the map, so it asks for the next departures.
  */
 async function fetchRail(base: string, a: LatLng, b: LatLng): Promise<Route | null> {
-  const q = new URLSearchParams({ fromPlace: `${a[0]},${a[1]}`, toPlace: `${b[0]},${b[1]}`, transitModes: "RAIL,SUBURBAN,HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_RAIL,REGIONAL_FAST_RAIL,METRO,SUBWAY,TRAM,FUNICULAR" });
-  const res = await fetch(`${base}?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const j: any = await res.json();
-  const its = (j.itineraries || []).filter((it: any) => it.legs?.some((l: any) => l.mode !== "WALK"));
+  // A town's or hotel's point is often more than the router's default 15-minute walk from a station (Onomichi's is),
+  // which made it answer "no connection": allow 30 minutes, then an hour.
+  let its: any[] = [];
+  for (const walk of [1800, 3600]) {
+    const q = new URLSearchParams({
+      fromPlace: `${a[0]},${a[1]}`, toPlace: `${b[0]},${b[1]}`, maxPreTransitTime: String(walk), maxPostTransitTime: String(walk),
+      transitModes: "RAIL,SUBURBAN,HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_RAIL,REGIONAL_FAST_RAIL,METRO,SUBWAY,TRAM,FUNICULAR",
+    });
+    const res = await fetch(`${base}?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const j: any = await res.json();
+    its = (j.itineraries || []).filter((it: any) => it.legs?.some((l: any) => l.mode !== "WALK"));
+    if (its.length) break;
+  }
   if (!its.length) return null;
   const it = its.reduce((x: any, y: any) => (y.duration < x.duration ? y : x));
-  const c: LatLng[] = it.legs.flatMap((l: any) => (l.legGeometry?.points ? decodePolyline(l.legGeometry.points, l.legGeometry.precision ?? 6) : []));
+  const parts = it.legs.map((l: any) => ({ walk: l.mode === "WALK", pts: (l.legGeometry?.points ? decodePolyline(l.legGeometry.points, l.legGeometry.precision ?? 6) : []) as LatLng[] }));
+  const c: LatLng[] = parts.flatMap((p: { pts: LatLng[] }) => p.pts);
   if (c.length < 2) return null;
   const d = c.slice(1).reduce((n, p, k) => n + kmBetween(c[k], p), 0) * 1000;
-  return { d: Math.round(d), t: Math.round(it.duration), c: thin(c).map(([lat, lng]) => [+lat.toFixed(5), +lng.toFixed(5)]) };
+  const out: LatLng[] = thin(c).map(([lat, lng]) => [+lat.toFixed(5), +lng.toFixed(5)]);
+  // Where the first train leaves and the last one arrives (the walks to and from the stations are the rest).
+  const rides = parts.filter((p: { walk: boolean; pts: LatLng[] }) => !p.walk && p.pts.length);
+  const nearest = (q: LatLng) => out.reduce((best, p, k) => (kmBetween(p, q) < kmBetween(out[best], q) ? k : best), 0);
+  const rail: [number, number] | undefined = rides.length ? [nearest(rides[0].pts[0]), nearest(rides.at(-1).pts.at(-1))] : undefined;
+  return { d: Math.round(d), t: Math.round(it.duration), c: out, ...(rail && rail[1] > rail[0] ? { rail } : {}) };
 }
 
 async function fetchRoute(mode: RouteMode, a: LatLng, b: LatLng): Promise<Route | null> {

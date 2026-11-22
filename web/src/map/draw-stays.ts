@@ -6,7 +6,18 @@ import { addDays, fmtDate, fmtDist, fmtDur } from "../core/format";
 import { session, state } from "../core/state";
 import { geo, geoKey } from "../geo/geocode";
 import { distKm, stayLoc, stayMapsUrl } from "../geo/locate";
-import { modeIcon, modeName } from "../trip/modes";
+import { cleanStop, groupColors, modeIcon, modeName, plannedMode, splitGroup } from "../trip/modes";
+
+/** The split group that goes on a day trip (its stops or transfers name the place), for colouring its line. */
+function tripGroup(place: string): string {
+  const name = place.split(",")[0].trim().toLowerCase();
+  if (!name) return "";
+  for (const d of state.itinerary?.days || []) for (const x of d.items) {
+    const g = splitGroup(x);
+    if (g && cleanStop(x.place).toLowerCase().includes(name)) return g;
+  }
+  return "";
+}
 import { hoverBand } from "./legs";
 import { focusStay } from "../trip/stays";
 import { cssVar, layers } from "./map";
@@ -23,22 +34,37 @@ function stayLegs(): StayLeg[] {
   state.stays.forEach((s, i) => {
     const here = stayLoc(s); if (!here) return;
     const prev = i > 0 ? stayLoc(state.stays[i - 1]) : null;
-    if (prev) legs.push({ i, from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel, label: `${state.stays[i - 1].city} → ${s.city}`, via: viaStops(i, byTitle) });
+    if (prev) legs.push({ i, from: [prev.lat, prev.lng], to: [here.lat, here.lng], mode: s.travel || plannedMode(state.stays[i - 1].city, s.city), label: `${state.stays[i - 1].city} → ${s.city}`, via: viaStops(i, byTitle) });
     for (const t of s.dayTrips || []) {
       const g = t.place ? geo[geoKey(t.place)] : null;
       // A day trip found hundreds of km away is a wrong match for its name, not somewhere to go and back in a day.
-      if (g && distKm(here, g) < 400) legs.push({ i, from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode, label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
+      if (g && distKm(here, g) < 400) legs.push({ i, from: [here.lat, here.lng], to: [g.lat, g.lng], mode: t.mode || plannedMode(s.city, t.place), label: `Day trip: ${s.city} ↔ ${t.place}`, trip: true, place: t.place });
     }
   });
   return legs;
+}
+
+/** With one day picked: the stays that day touches, the leg travelled that day and the day trips it makes. */
+function dayFilter() {
+  const d = session.selectedDay != null ? state.itinerary?.days[session.selectedDay] : null;
+  if (!d) return null;
+  const stays = new Set<number>();
+  state.stays.forEach((s, i) => { if (s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)) stays.add(i); });
+  const text = [d.city, ...d.items.map((x) => x.place)].join(" ").toLowerCase();
+  return {
+    stay: (i: number) => stays.has(i),
+    leg: (l: StayLeg) => l.trip ? stays.has(l.i) && !!l.place && text.includes(l.place.split(",")[0].trim().toLowerCase()) : state.stays[l.i]?.start === d.date,
+  };
 }
 
 /** Draws the stays; returns their pin positions (for fitting the map). */
 export function drawStays(): LatLng[] {
   const accent = cssVar("--accent");
   const pts: LatLng[] = [];
+  const only = dayFilter();
   state.stays.forEach((s, i) => {
     const loc = stayLoc(s); if (!loc) return;
+    if (only && !only.stay(i)) return;
     pts.push([loc.lat, loc.lng]);
     const end = s.start ? addDays(s.start, s.nights) : "";
     L.marker([loc.lat, loc.lng], {
@@ -51,7 +77,11 @@ export function drawStays(): LatLng[] {
   });
 
   const driven: { mode: RouteMode; from: LatLng; to: LatLng }[] = [];
+  const groups = groupColors(state.itinerary?.days || []);
   for (const l of stayLegs()) {
+    if (only && !only.leg(l)) continue;
+    const g = l.trip && l.place ? tripGroup(l.place) : "";
+    const color = g && g in groups ? cssVar(`--track-${groups[g]}`) || accent : accent;
     // By road, or by train along the tracks; ferries and flights stay straight lines.
     const how: RouteMode | null = l.mode === "car" || l.mode === "bus" ? "car" : l.mode === "train" ? "train" : null;
     const byRoad = !!how;
@@ -59,19 +89,23 @@ export function drawStays(): LatLng[] {
     const pts: LatLng[] = [l.from, ...(l.via || []).map((v) => v.loc), l.to];
     const pieces = pts.slice(1).map((to, k) => ({ mode: how || "car", from: pts[k], to }));
     const got = byRoad ? pieces.map((p) => routes[routeKey(p.mode, p.from, p.to)]) : [];
+    // By train, from station to station: getting to the station and on to the sights are the day's own legs.
+    const rail = (g: (typeof got)[number]) => (g?.rail ? g.c.slice(g.rail[0], g.rail[1] + 1) : g!.c);
     const r = byRoad && got.every(Boolean)
-      ? { c: got.flatMap((g) => g!.c), d: got.reduce((n, g) => n + g!.d, 0), t: got.reduce((n, g) => n + g!.t, 0) } : null;
+      ? { c: how === "train" && got.length === 1 ? rail(got[0]) : got.flatMap((g) => g!.c), d: got.reduce((n, g) => n + g!.d, 0), t: got.reduce((n, g) => n + g!.t, 0) } : null;
     if (byRoad) driven.push(...pieces);
     const via = l.via?.length ? ` via ${l.via.map((v) => esc(v.name)).join(", ")}` : "";
     const tip = `${modeIcon(l.mode) || icon("arrowLeftRight")} ${esc(l.label)}${via}${l.mode ? ` · ${modeName(l.mode)}` : ""}${r ? ` · ${fmtDist(r.d)}, ${fmtDur(r.t)}` : ""}`;
     const line = r ? r.c : pts;
     const vis = L.polyline(line, {
-      color: accent, weight: r ? 3 : l.trip ? 1.5 : 2, opacity: l.trip ? .55 : .75, interactive: false,
+      // Day trips of different groups often share the tracks out of town: earlier groups wider underneath.
+      color, weight: (r ? 3 : l.trip ? 1.5 : 2) + (g && g in groups ? (Math.max(...Object.values(groups)) - groups[g]) * 3 : 0),
+      opacity: l.trip && !g ? .55 : g ? .9 : .75, interactive: false,
       dashArray: r ? undefined : l.mode === "flight" ? "2 8" : "6 6",
     }).addTo(layers.stays);
     hoverBand(line, tip, vis).on("click", () => focusStay(l.i, !l.trip)).addTo(layers.stays);
-    if (l.trip) L.circleMarker(l.to, { radius: 5, color: accent, weight: 2, fillColor: "#fff", fillOpacity: 1 })
-      .bindTooltip(`${modeIcon(l.mode) || icon("pin")} Day trip: ${esc(l.place)}`, { direction: "top" }).addTo(layers.stays);
+    if (l.trip) L.circleMarker(l.to, { radius: 5, color, weight: 2, fillColor: "#fff", fillOpacity: 1 })
+      .bindTooltip(`${modeIcon(l.mode) || icon("pin")} Day trip: ${esc(l.place)}${g ? ` · ${esc(g)}` : ""}`, { direction: "top" }).addTo(layers.stays);
   }
   if (driven.length) requestRoutes(driven);
   return pts;

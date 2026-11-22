@@ -71,11 +71,20 @@ export async function importTrip(file: File) {
   try {
     const trip = parseTripFile(await file.text());
     const what = trip.stays?.map((s) => s.city).filter(Boolean).join(", ") || "an empty trip";
-    if (!confirm(`Open the trip in "${file.name}" (${what})? It replaces the trip on screen; save that first if you want to keep it.`)) return;
+    if (!confirm(`Open the trip in "${file.name}" (${what})? It's added to your saved trips and replaces the trip on screen; save that first if you want to keep it.`)) return;
     picker().value = "";
     // Their place list isn't here: start without one (their must-sees came along in the file).
     await applyState({ ...trip, list: "", lists: [], listChosen: true });
-    status(`Imported "${file.name}". Save it to keep it in your saved trips.`);
+    // Keep it in the saved trips right away, named after the file (with a number if that name is taken).
+    const base = file.name.replace(/(\.trip)?\.json$/i, "").replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Imported trip";
+    const taken = new Set((await api<SaveSummary[]>("/api/saves").catch(() => [])).map((x) => x.name.toLowerCase()));
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
+    try {
+      const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
+      await refreshSaves(data.name);
+      status(`Imported "${file.name}" and saved it as "${data.name}".`);
+    } catch { status(`Imported "${file.name}", but it couldn't be saved; use Save to keep it.`); }
   } catch (e) { status((e as Error).message); }
 }
 

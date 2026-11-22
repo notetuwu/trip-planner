@@ -46,7 +46,8 @@ export function stayLines(trip: Trip) {
     const travel = prev && s.travel && MODE_TEXT[s.travel] ? `\n   Getting here from ${prev.city}: ${MODE_TEXT[s.travel]} (chosen by the travelers)${drive ? `; ${drive}` : ""}` : "";
     const trips = (s.dayTrips || []).filter((t) => t.place)
       .map((t) => `\n   Planned day trip: ${t.place}${MODE_TEXT[t.mode] ? `, ${MODE_TEXT[t.mode]} there and back (chosen by the travelers)` : ""}, on one of the full days${tripWho(trip, t.people) ? `; ${tripWho(trip, t.people)} (a split day, see the rules below)` : ""}`).join("");
-    return `${i + 1}. ${s.city}${s.country ? ` (${s.country})` : ""}: arrive ${withDay(s.start)}, ${nights} night(s)${s.hotel ? `, staying at/near ${s.hotel}` : ""}${days}${travel}${trips}`;
+    const light = trip.daylight?.[i] ? `\n   Daylight: ${trip.daylight[i]}` : "";
+    return `${i + 1}. ${s.city}${s.country ? ` (${s.country})` : ""}: arrive ${withDay(s.start)}, ${nights} night(s)${s.hotel ? `, staying at/near ${s.hotel}` : ""}${days}${light}${travel}${trips}`;
   }).join("\n");
 }
 

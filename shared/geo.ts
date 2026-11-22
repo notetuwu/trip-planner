@@ -40,6 +40,8 @@ export interface Route {
   d: number;
   t: number;
   c: LatLng[];
+  /** Train routes: indexes in c of the first and last station, so a stay-to-stay line can end at the stations. */
+  rail?: [number, number];
 }
 
 /** Along footpaths, roads, or the railway (a real train connection, from a public transport router). */
