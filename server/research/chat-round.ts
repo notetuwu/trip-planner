@@ -1,4 +1,5 @@
 // One turn of the research conversation with a local model, with web_search / fetch_page offered as tools.
+import { keepAlive, tune } from "../settings";
 import { loopGuard } from "../ai/loop-guard";
 import { lines } from "../util/http";
 
@@ -32,7 +33,7 @@ export async function chatRound(ctx: RoundContext, allowTools: boolean, noThink 
     const stop = new AbortController(), looping = loopGuard();
     const res = await fetch(`${base}/api/chat`, {
       method: "POST", signal: AbortSignal.any([abort, stop.signal]),
-      body: JSON.stringify({ model, stream: true, messages, ...(noThink ? { think: false } : {}), ...(allowTools ? { tools: TOOLS } : {}), options: { num_ctx: RESEARCH_CTX, temperature: 0.3 } }),
+      body: JSON.stringify({ model, stream: true, messages, ...(noThink ? { think: false } : {}), ...(allowTools ? { tools: TOOLS } : {}), options: { num_ctx: RESEARCH_CTX, temperature: 0.3 }, keep_alive: keepAlive(tune().keepAlive) }),
     });
     if (!res.ok) {
       const err = await res.text();

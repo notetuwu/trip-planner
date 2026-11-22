@@ -15,7 +15,7 @@ const view = () => {
 export async function handleSettings(req: Req, res: Res) {
   if (req.method === "POST") {
     const body = await readJson(req);
-    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx });
+    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx, checkUpdates: body?.checkUpdates, tune: body?.tune && typeof body.tune === "object" ? body.tune : undefined });
     if (body?.reopen && PACKAGED) openWindow(`http://localhost:${PORT}`, ROOT, s.window);
     sendJson(res, 200, view());
     return;

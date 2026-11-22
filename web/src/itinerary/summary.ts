@@ -2,7 +2,8 @@
 import type { Itinerary } from "../../../shared/types";
 import { esc } from "../core/dom";
 import { dayColor, fmtDate, fmtShort, money } from "../core/format";
-import { state } from "../core/state";
+import { staysKey, state } from "../core/state";
+import { sameName } from "../geo/locate";
 import type { ByTitle } from "../geo/item-loc";
 import { bookAheadHtml } from "./book-ahead";
 import { packingHtml } from "./packing";
@@ -11,10 +12,14 @@ import { icon } from "../core/icons";
 import { canShareFiles } from "../export/offline";
 
 /** The stays have changed since this itinerary was made (e.g. a new trip typed over an old one). */
+/** The stays changed since the plan was made (for older plans: it starts on another day, or no day is in a stay's town). */
 function isStale(it: Itinerary) {
-  const cities = new Set(state.stays.map((s) => s.city.trim().toLowerCase()).filter(Boolean));
+  if (state.meta?.staysKey) return state.meta.staysKey !== staysKey();
+  // Towns without their country ("Salzburg, Austria" is "Salzburg"); a day's town may be "Venice → Salzburg".
+  const cities = new Set(state.stays.map((s) => sameName(s.city)).filter(Boolean));
+  const dayTowns = (d: Itinerary["days"][number]) => String(d.city).split(/→|->|\/|,|\s-\s/).map(sameName);
   return (!!state.stays[0]?.start && it.days[0]?.date !== state.stays[0].start)
-    || (cities.size > 0 && !it.days.some((d) => cities.has(String(d.city).trim().toLowerCase())));
+    || (cities.size > 0 && !it.days.some((d) => dayTowns(d).some((t) => cities.has(t))));
 }
 
 function eventsHtml(it: Itinerary) {

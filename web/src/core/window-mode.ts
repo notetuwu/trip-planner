@@ -1,4 +1,4 @@
-// The packaged app opens in its own window or as a browser tab (switch in the header). In its own window, links to
+// The packaged app opens in its own window or as a browser tab (switch in Settings → General). In its own window, links to
 // other sites open in the default browser instead of another app window.
 import { api } from "./dom";
 
@@ -31,29 +31,15 @@ function sendLinksToBrowser() {
   };
 }
 
-interface WindowSettings { window: "app" | "browser"; packaged: boolean; appWindow: boolean }
-
-/** The "Opens in" switch: only in the packaged app, and only when there's a browser that can make an app window. */
-async function windowSwitch() {
-  const s = await api<WindowSettings>("/api/settings").catch(() => null);
-  if (!s?.packaged || !s.appWindow) return;
-  const el = document.createElement("label");
-  el.className = "window-mode";
-  el.title = "How the planner opens when you start it";
-  el.innerHTML = `<span>Opens in</span> <select><option value="app">its own window</option><option value="browser">a browser tab</option></select>`;
-  const select = el.querySelector("select")!;
-  select.value = s.window;
-  select.onchange = async () => {
-    const mode = select.value;
-    const here = inAppWindow ? "app" : "browser";
-    const reopen = mode !== here && confirm(`Switch now? The planner opens ${mode === "app" ? "in its own window" : "in a browser tab"} and this ${here === "app" ? "window" : "tab"} closes.`);
-    await api("/api/settings", { method: "POST", body: JSON.stringify({ window: mode, reopen }) });
-    if (reopen) { window.close(); setTimeout(() => alert("Switched. You can close this tab now."), 800); }
-  };
-  document.querySelector("#appVersion")?.after(el);
+/** Settings → General "Opens in": saves the choice and offers to switch now (reopening the app that way). */
+export async function switchWindowMode(mode: "app" | "browser") {
+  const here = inAppWindow ? "app" : "browser";
+  const reopen = mode !== here && confirm(`Switch now? The planner opens ${mode === "app" ? "in its own window" : "in a browser tab"} and this ${here === "app" ? "window" : "tab"} closes.`);
+  await api("/api/settings", { method: "POST", body: JSON.stringify({ window: mode, reopen }) });
+  if (reopen) { window.close(); setTimeout(() => alert("Switched. You can close this tab now."), 800); }
+  return reopen;
 }
 
 export function initWindowMode() {
   if (inAppWindow) sendLinksToBrowser();
-  windowSwitch();
 }

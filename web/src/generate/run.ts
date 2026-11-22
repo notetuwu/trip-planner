@@ -1,7 +1,8 @@
 // Generate, revise or re-plan one day: sends the trip, reads the server's NDJSON stream, and shows the result.
+import { prefs } from "../core/prefs";
 import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../shared/types";
 import { $, apiFetch, toast } from "../core/dom";
-import { type Meta, save, session, state } from "../core/state";
+import { type Meta, save, session, state, staysKey } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
 import { renderItinerary, setInlineProgress } from "../itinerary/render";
 import { fmtDate } from "../core/format";
@@ -72,17 +73,21 @@ async function request(trip: TripRequest, view: ProgressView, signal: AbortSigna
  *  find (one round), so the plan you get is already fixed. Anything left shows the Fix bar, which runs only on a click. */
 async function fixBeforeShowing(it: Itinerary, view: ProgressView, signal: AbortSignal) {
   if (state.autoFix === false) return;
-  view.onEvent({ type: "status", text: "Checking the plan against the map and opening hours…" });
-  geocodeItems();
-  const settled = await checksSettled(it, 120_000);
-  setMapStatus("");
-  if (!settled || signal.aborted) return;
-  const problems = planProblems(it);
-  if (!problems.length) return;
-  view.onEvent({ type: "status", text: `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found (wrong town or closed)…` });
-  const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
-  try { spliceFixed(it, await request(trip, view, signal), view, problems.length); }
-  catch (e) { if ((e as Error).name === "AbortError") throw e; /* keep the plan as it was; the Fix bar offers it again */ }
+  // Settings → Planning: how many rounds (each checks again what the last fix changed).
+  const rounds = prefs.fixRounds;
+  for (let round = 1; round <= rounds; round++) {
+    view.onEvent({ type: "status", text: `Checking the plan against the map and opening hours${round > 1 ? " again" : ""}…` });
+    geocodeItems();
+    const settled = await checksSettled(it, 120_000);
+    setMapStatus("");
+    if (!settled || signal.aborted) return;
+    const problems = planProblems(it);
+    if (!problems.length) return;
+    view.onEvent({ type: "status", text: `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found (wrong town or closed)${rounds > 1 ? `, round ${round} of ${rounds}` : ""}…` });
+    const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
+    try { spliceFixed(it, await request(trip, view, signal), view, problems.length); }
+    catch (e) { if ((e as Error).name === "AbortError") throw e; return; /* keep the plan as it was; the Fix bar offers it again */ }
+  }
 }
 
 let running = false;
@@ -114,7 +119,7 @@ export async function runGeneration(change: Change = {}) {
       const meta: Meta = {
         costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, ...view.collected,
         tokens: data.tokens, perSec: data.perSec, engine: data.engine, local: isLocal(trip.model), billing: data.billing,
-        searches: data.searches, budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(),
+        searches: data.searches, budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(), staysKey: staysKey(),
       };
       state.meta = meta;
       session.selectedDay = null;

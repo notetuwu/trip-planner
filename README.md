@@ -34,7 +34,7 @@ Get the latest version from the [Releases page](https://github.com/notetuwu/trip
 
 It opens in a window of its own (Edge, Chrome or another Chromium browser in app mode; links you click open in your default browser) and quits when you close it. Prefer a tab in your normal browser? Switch "Opens in" at the top right. Your trips and settings are kept in `%APPDATA%\Trip Planner` on Windows, `~/Library/Application Support/Trip Planner` on macOS and `~/.local/share/trip-planner` on Linux. A log file, `trip-planner.log`, is written there too.
 
-**Updates:** when a newer version is out, a bar at the top says so. On Windows, **Update now** downloads it (checked against the checksum GitHub publishes), installs it and restarts; the window reloads by itself and your data stays where it is. On macOS and Linux it opens the download page. The app asks GitHub once when it starts; set `TRIP_PLANNER_NO_UPDATES=1` to turn that off.
+**Updates:** when a newer version is out, a bar at the top says so. On Windows, **Update now** downloads it (checked against the checksum GitHub publishes), installs it and restarts; the window reloads by itself and your data stays where it is. On macOS and Linux it opens the download page. The app asks GitHub sparingly (every few hours at most, and it backs off when GitHub says to wait, since GitHub limits requests per home connection). **Settings → Updates** shows the version, has **Check now**, and can turn the automatic check off; `TRIP_PLANNER_NO_UPDATES=1` turns it off completely.
 
 The app isn't code-signed yet, so the first start shows a warning. On Windows, "Windows protected your PC": click **More info → Run anyway**. On macOS, right-click the app → **Open** (or allow it under System Settings → Privacy & Security).
 

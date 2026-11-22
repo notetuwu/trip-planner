@@ -33,6 +33,8 @@ export interface Meta {
   budget?: number;
   currency?: string;
   at?: string;
+  /** The stays the plan was made for (town, arrival, nights), to tell when they've changed since. */
+  staysKey?: string;
 }
 
 export type Mark = "must" | "skip";
@@ -144,3 +146,7 @@ export const keptElsewhere = () => {
 export const groupSize = () => Math.max(1, +state.travelers || 1);
 /** How many travelers want a must-see place (defaults to everyone). */
 export const whoFor = (title: string) => Math.min(state.who[title] || groupSize(), groupSize());
+
+/** The stays in short (town, arrival, nights), to compare with the ones a plan was made for. */
+export const staysKey = (stays: Stay[] = state.stays) =>
+  JSON.stringify(stays.filter((s) => s.city.trim()).map((s) => [s.city.trim().toLowerCase(), s.start, +s.nights || 0]));

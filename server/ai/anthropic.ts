@@ -1,6 +1,7 @@
 // Plans with Claude through the Anthropic API (pay per token with your own key). Claude searches the web with the
 // API's own web search and fetch tools, writes its planning notes as text, then hands over the itinerary by calling
 // a tool whose input schema is the itinerary schema.
+import { tune } from "../settings";
 import Anthropic from "@anthropic-ai/sdk";
 import type { RunResult } from "../../shared/types";
 import { getKey } from "../keys";
@@ -28,8 +29,8 @@ function tools(model: string, research: boolean): any[] {
   if (research) {
     const dynamic = DYNAMIC_WEB.test(model);
     out.push(
-      { type: dynamic ? "web_search_20260209" : "web_search_20250305", name: "web_search", max_uses: 25 },
-      { type: dynamic ? "web_fetch_20260209" : "web_fetch_20250910", name: "web_fetch", max_uses: 15, max_content_tokens: 20000 },
+      { type: dynamic ? "web_search_20260209" : "web_search_20250305", name: "web_search", max_uses: tune().lookups },
+      { type: dynamic ? "web_fetch_20260209" : "web_fetch_20250910", name: "web_fetch", max_uses: Math.max(3, Math.round(tune().lookups * 0.6)), max_content_tokens: 20000 },
     );
   }
   return out;

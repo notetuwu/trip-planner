@@ -1,4 +1,5 @@
 // The data sections of the planning prompt: saved places, stays, holidays and nearby real places.
+import { tune } from "../settings";
 import type { Place } from "../../shared/types";
 import { routeNote } from "../../shared/route";
 import { addDays } from "../config";
@@ -57,10 +58,12 @@ export function nearbySection(trip: Trip, compact = false) {
   const lists = (trip.nearby || []).filter((n) => n.sights.length || n.food.length);
   const towns = compact ? [...new Map(lists.map((n) => [n.city.trim().toLowerCase(), n])).values()] : lists;
   const nights = (city: string) => trip.stays.filter((s) => s.city === city).reduce((n, s) => n + (Number(s.nights) || 0), 0);
-  const perTown = Math.max(8, Math.min(30, Math.floor(180 / Math.max(1, towns.length))));
+  // Settings → Planning: fewer places (smaller, faster prompt) or more (more choice).
+  const amount = tune().places, scale = amount === "fewer" ? 0.45 : amount === "more" ? 1.6 : 1;
+  const perTown = Math.round(Math.max(8, Math.min(30, Math.floor(180 / Math.max(1, towns.length)))) * scale);
   return towns.map((n) => {
-    const keep = !compact ? 99 : nights(n.city) === 0 ? 4 : perTown;
-    const sights = n.sights.slice(0, keep), food = n.food.slice(0, compact ? Math.ceil(keep * 0.6) : 99);
+    const keep = !compact ? (amount === "fewer" ? 12 : 99) : nights(n.city) === 0 ? 4 : perTown;
+    const sights = n.sights.slice(0, keep), food = n.food.slice(0, compact || amount === "fewer" ? Math.ceil(keep * 0.6) : 99);
     return `### ${n.city}\nSights:\n${sights.map(poiLine).join("\n") || "(none found)"}\nFood and drink:\n${food.map(poiLine).join("\n") || "(none found)"}`;
   }).join("\n\n");
 }

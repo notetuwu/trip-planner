@@ -3,7 +3,7 @@
 import { api, esc } from "./dom";
 import { ext } from "./icons";
 
-interface UpdateInfo { newer: boolean; current?: string; latest?: string; notesUrl?: string; mode?: "installer" | "portable" | "manual"; error?: string }
+export interface UpdateInfo { newer: boolean; current?: string; latest?: string; notesUrl?: string; mode?: "installer" | "portable" | "manual"; error?: string }
 interface UpdateStatus { phase: "idle" | "downloading" | "installing" | "error"; received: number; total: number; error?: string }
 
 const DISMISSED = "trip-planner-update-dismissed";
@@ -33,7 +33,8 @@ async function reloadWhenBack(from: string) {
   bar(`<span>The update is taking long. Close this window and start Trip Planner again.</span>`);
 }
 
-async function install(info: UpdateInfo) {
+/** Update now (Windows): downloads and installs it, with the progress in the bar at the top. */
+export async function install(info: UpdateInfo) {
   try { await api("/api/update", { method: "POST" }); } catch (e) { bar(`<span>Couldn't update: ${esc((e as Error).message)}</span>`); return; }
   for (;;) {
     const s = await api<UpdateStatus>("/api/update/status").catch(() => null);
@@ -62,8 +63,8 @@ export async function checkForUpdates() {
   };
 }
 
-/** A little after start (so it doesn't compete with loading the trip), then every 5 minutes while open and when you
- *  come back to the window after a while (the app itself asks GitHub at most every 5 minutes). */
+/** A little after start (so it doesn't compete with loading the trip), then every 30 minutes while open and when you
+ *  come back to the window after a while. This only asks the app; the app asks GitHub at most every few hours. */
 let lastCheck = 0;
 
 declare const __APP_VERSION__: string;
@@ -79,6 +80,6 @@ const checkNow = () => { if (!document.getElementById("updateBar")) { lastCheck 
 export const initUpdates = () => {
   showVersion();
   setTimeout(checkNow, 3000);
-  setInterval(checkNow, 5 * 60e3);
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - lastCheck > 5 * 60e3) checkNow(); });
+  setInterval(checkNow, 30 * 60e3);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && Date.now() - lastCheck > 30 * 60e3) checkNow(); });
 };

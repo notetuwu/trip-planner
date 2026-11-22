@@ -375,14 +375,44 @@ test("book ahead links hotels and transport; the packing list fits the countries
   assert.match(packing, /Swimwear/, "the spa in the plan");
 });
 
-test("the theme button cycles system, light and dark", async () => {
-  const seen = [];
-  for (let i = 0; i < 3; i++) {
-    await page.eval(`document.querySelector("#themeBtn").click()`);
-    seen.push(await page.eval(`(localStorage.getItem("trip-planner-theme") || "system") + ":" + document.documentElement.dataset.theme`));
-  }
-  assert.deepEqual(seen.map((s) => s.split(":")[0]), ["light", "dark", "system"]);
-  assert.equal(seen[1].split(":")[1], "dark");
+test("the theme is chosen in Settings (light, dark, system), and the header only has the settings button", async () => {
+  assert.equal(await page.eval(`!!document.querySelector("#themeBtn") || !!document.querySelector("header .window-mode")`), false, "no theme button or window switch in the header");
+  await page.eval(`document.querySelector("#settingsBtn").click()`);
+  await page.waitFor(`!!document.querySelector('[data-theme-choice="light"]')`);
+  const pick = async (c) => { await page.eval(`document.querySelector('[data-theme-choice="${c}"]').click()`); return page.eval(`(localStorage.getItem("trip-planner-theme") || "system") + ":" + document.documentElement.dataset.theme`); };
+  assert.equal(await pick("light"), "light:light");
+  assert.equal(await pick("dark"), "dark:dark");
+  assert.match(await pick("system"), /^system:(light|dark)$/);
+  await page.eval(`document.querySelector("#settingsDialog").close()`);
+});
+
+test("Settings → Planning saves the options, and fix rounds take effect in the page", async () => {
+  await page.eval(`document.querySelector("#settingsBtn").click()`);
+  await page.waitFor(`!!document.querySelector('[data-tab="planning"]')`);
+  await page.eval(`document.querySelector('[data-tab="planning"]').click()`);
+  await page.waitFor(`!!document.querySelector('[data-tune="detail"]')`, 10000, "planning tab");
+  await page.eval(`document.querySelector('[data-tune="detail"][data-v="brief"]').click()`);
+  await page.waitFor(`document.querySelector('[data-tune="detail"][data-v="brief"]').classList.contains("on")`);
+  await page.eval(`document.querySelector('[data-tune="fixRounds"][data-v="2"]').click()`);
+  await page.waitFor(`document.querySelector('[data-tune="fixRounds"][data-v="2"]').classList.contains("on")`);
+  await page.eval(`(() => { const l = document.querySelector("#tuneLang"); l.value = "Deutsch"; l.dispatchEvent(new Event("change")); })()`);
+  await page.sleep(400);
+  const s = await page.eval(`fetch("/api/settings").then((r) => r.json())`);
+  assert.deepEqual([s.tune.detail, s.tune.fixRounds, s.tune.language], ["brief", 2, "Deutsch"]);
+  // Back to the defaults for the other tests.
+  await page.eval(`fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tune: { detail: "normal", fixRounds: 1, language: "" } }) })`);
+  await page.eval(`document.querySelector("#settingsDialog").close()`);
+});
+
+test("'doesn't match your stays' only when the stays changed since the plan (not for 'Padua, Italy' vs 'Padua')", async () => {
+  await trip({ stays: [{ city: "Padua, Italy", start: "2027-09-14", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await page.eval(`window.__e2e.answer = () => ({ summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("10:00", "Basilica")]),
+    day("2027-09-15", "Padua", [stop("10:00", "Orto Botanico")]), day("2027-09-16", "Padua", [stop("10:00", "Caffe Pedrocchi")])] })`);
+  await page.eval(`document.querySelector("#generate").click()`);
+  await page.waitFor(`!!document.querySelector("#output .day")`, 20000, "the plan");
+  assert.equal(await page.eval(`!!document.querySelector("#output .stale")`), false, "no warning for the stays it was made for");
+  await page.eval(`(() => { const n = document.querySelector('.stay [data-k="nights"]'); n.value = "3"; n.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+  assert.ok(await page.eval(`!!document.querySelector("#output .stale")`), "the warning once the stays change");
 });
 
 test("settings open with their tabs: general, local models, phone", async () => {

@@ -1,7 +1,7 @@
 // Planning request to Ollama's /api/chat, with the output forced to the itinerary schema.
 import { lines } from "../util/http";
 import type { LocalOutput } from "./local-output";
-import { readSettings } from "../settings";
+import { keepAlive, readSettings } from "../settings";
 import { loopGuard } from "./loop-guard";
 import { LOCAL_SCHEMA } from "./schema";
 import type { OnEvent, Trip } from "./types";
@@ -23,7 +23,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
   const tripDays = trip.redoDay ? 1 : trip.fix ? new Set(trip.fix.problems.map((p) => p.day)).size : trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
   const promptTokens = Math.ceil(prompt.length / 3);
   // Settings → Local models can fix the context size; otherwise up to OLLAMA_NUM_CTX (or 128k), as much as the trip needs.
-  const fixed = readSettings().numCtx;
+  const fixed = readSettings().numCtx, t = readSettings().tune;
   const cap = fixed ? Math.min(fixed, modelMax || fixed) : Math.min(Number(process.env.OLLAMA_NUM_CTX) || 131072, modelMax || 131072);
   const needed = promptTokens + tripDays * 1000 + 4000 + (canThink ? 16000 : 0);
   const firstCtx = fixed ? cap : Math.min(cap, roundUp(needed));
@@ -34,7 +34,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
     const looping = loopGuard();
     onEvent({
       type: "prompt", label,
-      info: `Sent to Ollama /api/chat · model: ${model} · context ${numCtx.toLocaleString()} tokens · temperature 0.4 · thinking ${think ? "on" : "off"} · `
+      info: `Sent to Ollama /api/chat · model: ${model} · context ${numCtx.toLocaleString()} tokens · temperature ${t.temperature} · thinking ${think ? "on" : "off"} · `
         + "output forced to the JSON schema at the end of the prompt (Ollama's format option). Ollama adds the model's own system prompt, if it has one.",
       text: prompt,
     });
@@ -42,7 +42,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
       method: "POST", signal,
       body: JSON.stringify({
         model, stream: true, format: LOCAL_SCHEMA, ...(withThink ? { think: true } : canThink ? { think: false } : {}),
-        messages: [{ role: "user", content: prompt }], options: { num_ctx: numCtx, temperature: 0.4 },
+        messages: [{ role: "user", content: prompt }], options: { num_ctx: numCtx, temperature: t.temperature }, keep_alive: keepAlive(t.keepAlive),
       }),
     });
     // Some thinking models only take a thinking level, not on/off; then run without it rather than fail.
@@ -71,7 +71,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
     return "ok";
   };
 
-  const first = await run(firstCtx, canThink, "Planning prompt");
+  const first = await run(firstCtx, canThink && t.thinking === "on", "Planning prompt");
   if (first === "ok") return;
   // Out of room (usually from long thinking) or stuck repeating itself: once more without the thinking, with twice
   // the room if it ran out.

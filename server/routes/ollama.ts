@@ -2,6 +2,7 @@
 // progress, so it carries on when the settings are closed), cancelling, and deleting a model.
 import { ensureOllama, gpuInfo, ollamaInstalled } from "../ai/ollama-start";
 import { OLLAMA_URL } from "../ai/local-models";
+import { libraryTags, recommend, searchLibrary } from "../ai/ollama-library";
 import { errMsg } from "../config";
 import { type Req, type Res, lines, readJson, sendJson } from "../util/http";
 
@@ -67,6 +68,25 @@ export async function handleOllama(req: Req, res: Res, path: string) {
     return;
   }
   if (req.method === "GET" && path === "/api/ollama/pulls") { sendJson(res, 200, [...pulls.values()].map(pullView)); return; }
+  // The library on ollama.com: search, a model's sizes, and what fits this computer.
+  if (req.method === "GET" && path === "/api/ollama/library") {
+    const q = new URL(req.url || "/", "http://x").searchParams;
+    try { sendJson(res, 200, await searchLibrary(String(q.get("q") || "").slice(0, 60), String(q.get("cap") || "").replace(/[^a-z]/g, ""))); }
+    catch (e) { sendJson(res, 502, { error: errMsg(e) }); }
+    return;
+  }
+  if (req.method === "GET" && path === "/api/ollama/tags") {
+    const model = String(new URL(req.url || "/", "http://x").searchParams.get("model") || "");
+    if (!/^[\w.\-/]{1,80}$/.test(model)) { sendJson(res, 400, { error: "That isn't a model name." }); return; }
+    try { sendJson(res, 200, await libraryTags(model)); } catch (e) { sendJson(res, 502, { error: errMsg(e) }); }
+    return;
+  }
+  if (req.method === "GET" && path === "/api/ollama/recommend") {
+    const gpu = await gpuInfo();
+    if (!gpu) { sendJson(res, 200, { gpu: null, models: [] }); return; }
+    try { sendJson(res, 200, { gpu, models: await recommend(gpu.memGb, gpu.unified) }); } catch (e) { sendJson(res, 502, { error: errMsg(e) }); }
+    return;
+  }
   // Model names as Ollama writes them: "qwen3.5:9b", "library/model:tag", "hf.co/user/repo:Q4_K_M".
   if (!/^[\w.\-/:]{1,120}$/.test(name)) { sendJson(res, 400, { error: "That isn't a model name." }); return; }
   if (req.method === "POST" && path === "/api/ollama/pull") {

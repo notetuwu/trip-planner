@@ -6,12 +6,13 @@ import { tripLine } from "../ai/prompt-sections";
 import type { OnEvent, Trip } from "../ai/types";
 import { addDays } from "../config";
 import { MAX_LOOKUPS, RESEARCH_CTX, type RoundContext, type ToolCall, chatRound } from "./chat-round";
+import { tune } from "../settings";
 import { fetchPage } from "./fetch-page";
 import { webSearch } from "./search";
 
 /** Re-planning one day needs only a few lookups about that day. */
 const DAY_LOOKUPS = 8;
-const lookupLimit = (trip: Trip) => (trip.redoDay ? Math.min(DAY_LOOKUPS, MAX_LOOKUPS) : MAX_LOOKUPS);
+const lookupLimit = (trip: Trip) => { const most = Math.min(tune().lookups, MAX_LOOKUPS); return trip.redoDay ? Math.min(DAY_LOOKUPS, most) : most; };
 
 function dayResearchPrompt(trip: Trip, limit: number) {
   const { itinerary, day, request } = trip.redoDay!;
@@ -39,7 +40,7 @@ Trip: ${tripLine(trip)}.
 Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}. Notes: ${trip.notes || "none"}.
 ${must.length ? `Must-see places: ${must.join(", ")}.` : ""}
 
-You can make up to ${MAX_LOOKUPS} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets. Short search queries work best. Never guess web addresses: only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read (follow those links to reach opening-hours or ticket pages). When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the itinerary itself.`;
+You can make up to ${lookupLimit(trip)} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets. Short search queries work best. Never guess web addresses: only fetch URLs that appeared in search results or in the "Links on this page" list of a page you read (follow those links to reach opening-hours or ticket pages). When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the itinerary itself.`;
 }
 
 interface ResearchOptions extends Omit<RoundContext, "messages"> { trip: Trip; places: Place[]; onEvent: OnEvent }

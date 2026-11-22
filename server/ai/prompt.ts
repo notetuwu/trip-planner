@@ -1,4 +1,5 @@
 // The planning prompt. Sections with data come from prompt-sections.ts; this file holds the instructions.
+import { tune } from "../settings";
 import type { Place } from "../../shared/types";
 import { holidayLines, hasChosenModes, nearbySection, placeLines, stayLines } from "./prompt-sections";
 import { LOCAL_SCHEMA } from "./schema";
@@ -20,7 +21,15 @@ export interface PromptOptions {
   schema?: boolean;
 }
 
+/** What a stop's description says, by the detail chosen in Settings → Planning. */
+const DETAIL = {
+  brief: "one short sentence on what it is and why go, plus anything they must know (book ahead, closed days).",
+  normal: "what to do there and why it's worth it, with practical details (opening hours, whether to book ahead, best time to go, what to order).",
+  detailed: "a few sentences: what to see and do there and why it's worth it, the highlights not to miss, practical details (opening hours, whether to book ahead, best time to go, how long to allow, what to order), and a local tip.",
+} as const;
+
 export function buildPrompt(trip: Trip, places: Place[], opts: PromptOptions = {}) {
+  const t = tune();
   const json = opts.notes === "json";
   const research = !!opts.webTools && !!trip.research;
   const holidays = holidayLines(trip);
@@ -33,7 +42,7 @@ export function buildPrompt(trip: Trip, places: Place[], opts: PromptOptions = {
   let prompt = `You are an expert local travel planner building a detailed, realistic day-by-day itinerary. Work out the destination country or countries from the stays and the saved places.
 
 ${research
-  ? `Research online while you plan, using web search and web fetch: opening hours and closing days on the actual dates, current ticket prices, festivals and events during the trip, transport options, times and prices between the cities, and anything else that is date-dependent or uncertain. Prefer official websites. Focus on the must-sees, day trips and transfers rather than looking up every café; about 10-25 searches is plenty. Where you could not verify something, say so in the item's description.`
+  ? `Research online while you plan, using web search and web fetch: opening hours and closing days on the actual dates, current ticket prices, festivals and events during the trip, transport options, times and prices between the cities, and anything else that is date-dependent or uncertain. Prefer official websites. Focus on the must-sees, day trips and transfers rather than looking up every café; up to about ${t.lookups} searches. Where you could not verify something, say so in the item's description.`
   : `Use your own knowledge of the destination (geography, opening days, holidays, transit, typical prices, local customs).${!json && !opts.outputTool ? " Do not use tools; just answer." : ""}`}
 
 ${json
@@ -71,7 +80,7 @@ ${nearby}
 - "time": the start time in 24-hour "HH:MM" only, nothing else. Items in chronological order with realistic durations, travel time between them and opening hours respected.
 - "transport": how to get there from the previous stop, with mode or line and minutes, e.g. "Tram 1 from Hauptbahnhof, 12 min" or "Walk, 5 min".
 - "cost": on every item, for the whole group (0 if free): tickets, meals, fares. The day's "estimatedCost" is the sum of its item costs. Don't pad days to reach the budget.
-- "description": what to do there and why it's worth it, with practical details (opening hours, whether to book ahead, best time to go, what to order).
+- "description": ${DETAIL[t.detail]}
 - "kind" on every item: sight, activity, meal, transfer or other. A scenic ride that is an attraction in itself (a cog railway or cable car up a mountain, a boat tour) is an activity, not a transfer.
 - "booking" on everything that costs money to get in (museums, castles, tours, cable cars, timed entry, table reservations), even when you simply pay at the door; omit it only for free places: "essential" when it sells out or needs a timed slot, "recommended" when booking online saves queueing or money, "optional" when tickets are easy to get on the spot. With essential or recommended, "bookAhead" says how far ahead, e.g. "2-3 weeks before" or "the day before". For paid places, "website" is the official ticket page or website (e.g. the operator's own site, not a reseller), only when you know it for certain${research ? " or found it online" : ""}; leave it out rather than guess.
 - Where a place lists its opening hours ("hours …", OpenStreetMap syntax), schedule it while it's open on that weekday.
@@ -88,7 +97,8 @@ ${nearby}
 - "sources": the URLs you relied on most.` : ""}
 
 ## Output rules
-- "destination": the country or countries of the trip. "localCurrency": the local currency's ISO code.
+- "destination": the country or countries of the trip. "localCurrency": the local currency's ISO code.${t.language ? `
+- Write all text for the travelers (planning notes, summary, titles, descriptions, notes, tips, events) in ${t.language}. Keep the names of places as they are known locally (and exactly as listed above for saved places); the JSON keys stay in English.` : ""}
 - One entry in "days" for every calendar day from the first arrival to the final departure day, with dates in YYYY-MM-DD.
 - "place" is only the place's name. For items from the list it must be the exact Title as written above, without the details in brackets or braces.
 - Give every item "lat"/"lng" coordinates (4 decimals) so it can be shown on a map.

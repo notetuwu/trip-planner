@@ -10,6 +10,7 @@ import { lines } from "../util/http";
 import { findClaude } from "./claude-bin";
 import { parseCloudId } from "./cloud-models";
 import { parseModelId } from "./local-models";
+import { keepAlive, tune } from "../settings";
 import { loopGuard } from "./loop-guard";
 import { BASE } from "./responses";
 
@@ -61,7 +62,8 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
         body: JSON.stringify({
           model, stream: true, format: "json", ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt }],
           // Asked again after a loop: a little more randomness and a penalty on repeating, to get it out of the rut.
-          options: { num_ctx: 16384, temperature: retry ? 0.7 : 0.4, ...(retry ? { repeat_penalty: 1.15 } : {}) },
+          options: { num_ctx: 16384, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { repeat_penalty: 1.15 } : {}) },
+          keep_alive: keepAlive(tune().keepAlive),
         }),
       });
       // Thinking off where the model has it (much faster for a small task); models without it reject the option.
@@ -116,7 +118,7 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
 async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false) {
   const res = await fetch(url, {
     method: "POST", signal, headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ model, temperature: retry ? 0.7 : 0.4, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content: prompt }] }),
+    body: JSON.stringify({ model, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content: prompt }] }),
   });
   if (!res.ok) throw new Error(`${url}: ${(await res.text()).slice(0, 300)}`);
   let text = "";
