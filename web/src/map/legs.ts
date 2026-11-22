@@ -25,7 +25,7 @@ export function hoverBand(line: LatLng[], tip: string, vis: L.Polyline) {
 /** Hover text for a day's leg: which day, from where to where, how, and how far. */
 export function legTip(d: Day, leg: Leg, r: Route | null | undefined) {
   const a = d.items[leg.fromXi], b = d.items[leg.xi], t = b.transport || "";
-  const how = leg.mode === "foot" ? `${icon("walk")} walk` : leg.mode === "car" ? `${icon("car")} by road`
+  const how = leg.mode === "foot" ? `${icon("walk")} walk` : leg.mode === "car" ? `${icon("car")} by road` : leg.mode === "train" ? `${icon("train")} by train`
     : /flight|fly|plane/i.test(t) ? `${icon("plane")} flight` : /ferry|boat|ship|vaporetto/i.test(t) ? `${icon("ship")} boat` : `${icon("train")} rail / transit`;
   const dist = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)}` : `${fmtDist(crowMetres(leg.from, leg.to))} straight line`;
   const g = splitGroup(b);
@@ -48,7 +48,7 @@ export function updateLegInfo() {
       const el = $(`[data-leg="${di}-${leg.xi}"]`);
       if (!el) continue;
       const r = legRoute(leg);
-      el.textContent = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)} ${leg.mode === "foot" ? "walk" : "by road"}`
+      el.textContent = r ? `${fmtDist(r.d)} · ${fmtDur(r.t)} ${leg.mode === "foot" ? "walk" : leg.mode === "train" ? "by train" : "by road"}`
         : leg.mode === "straight" || r === null ? `${fmtDist(crowMetres(leg.from, leg.to))} as the crow flies` : "";
     }
   });

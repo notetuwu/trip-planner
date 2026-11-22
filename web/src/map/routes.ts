@@ -12,17 +12,18 @@ import { DRIVE_KM, arrivalStay, isTransfer, viaStops } from "./travel-day";
 export const routes: Record<string, Route | null> = {};
 export const routeKey = (mode: RouteMode, a: LatLng, b: LatLng) => `${mode}:${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}`;
 
-/** How a leg is drawn: along footpaths, along roads, or as a straight line (rail, water, air). */
+/** How a leg is drawn: along footpaths, roads or railways, or as a straight line (water, air, short hops). */
 export type LegMode = RouteMode | "straight";
 export interface Leg { xi: number; fromXi: number; mode: LegMode; from: LatLng; to: LatLng }
 
 /** The routed path for a leg: a route, null (none exists or not routable), or undefined (still being routed). */
 export const legRoute = (leg: { mode: LegMode; from: LatLng; to: LatLng }) => (leg.mode === "straight" ? null : routes[routeKey(leg.mode, leg.from, leg.to)]);
 
-// From the stop's transport text ("Walk, 5 min", "Bus 710", "Railjet to Munich"), else by distance. Public transport
-// on rails or water can't be routed with free services, so those legs stay straight lines.
+// From the stop's transport text ("Walk, 5 min", "Bus 710", "Railjet to Munich"), else by distance. Trains of some
+// length follow the tracks; water, air, cable cars and short rail hops stay straight lines.
 const RAIL = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|u-?bahn|metro|subway|tram|vaporetto|ferry|boat|ship|flight|fly|plane|cable car|funicular|gondola)\b/i;
 const ROAD = /\b(bus|coach|taxi|uber|car|drive|driving|shuttle|transfer)\b/i;
+const TRAIN = /\b(train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn)\b/i;
 export const FOOT = /\b(walk|walking|on foot|stroll|hike|zu fu)/i;
 // A real hike can be long; "walk" usually means the last bit from the car park or the station.
 const HIKE = /\b(hike|hiking|trail|trek|wander)/i;
@@ -33,7 +34,9 @@ function legMode(x: ItineraryItem, a: LatLng, b: LatLng, dayMode = ""): LegMode 
   if (km < 0.03) return null;
   const m = chosenMode(x) || (km > 2 && !(FOOT.test(t) && walkable(t, km)) ? dayMode : "");
   if (m === "car" || m === "bus") return "car";
+  if (m === "train") return km > 5 ? "train" : "straight";
   if (m && m !== "bike") return "straight";
+  if (TRAIN.test(t) && km > 5) return "train";
   if (RAIL.test(t) && km > 2) return "straight";
   if (FOOT.test(t) && walkable(t, km)) return "foot";
   if (ROAD.test(t)) return "car";

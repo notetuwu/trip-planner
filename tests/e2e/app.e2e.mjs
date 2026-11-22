@@ -8,7 +8,7 @@ import { launch } from "./browser.mjs";
 
 const STUBS = `(() => {
   const TOWNS = {
-    padua: [45.4064, 11.8768, "it", "Italy"], milano: [45.4642, 9.19, "it", "Italy"],
+    padua: [45.4064, 11.8768, "it", "Italy"], venice: [45.4408, 12.3155, "it", "Italy"], milano: [45.4642, 9.19, "it", "Italy"],
     lucerne: [47.0502, 8.3093, "ch", "Switzerland"], bregenz: [47.5031, 9.7471, "at", "Austria"],
     osaka: [34.6937, 135.5023, "jp", "Japan"], kyoto: [35.0116, 135.7681, "jp", "Japan"],
     tunis: [36.8065, 10.1815, "tn", "Tunisia"], "cape town": [-33.9249, 18.4241, "za", "South Africa"],
@@ -33,7 +33,10 @@ const STUBS = `(() => {
     }
     if (url.includes("/api/routes")) {
       const routes = {};
-      for (const l of body().legs || []) routes[l.mode + ":" + p5(l.from[0]) + "," + p5(l.from[1]) + ">" + p5(l.to[0]) + "," + p5(l.to[1])] = null;
+      for (const l of body().legs || []) {
+        routes[l.mode + ":" + p5(l.from[0]) + "," + p5(l.from[1]) + ">" + p5(l.to[0]) + "," + p5(l.to[1])] = null;
+        (window.__e2e.routeModes ||= []).push(l.mode);
+      }
       return json({ routes, pending: 0 });
     }
     if (url.includes("/api/hours")) return json((body().checks || []).map(() => ({ status: "unknown", text: "" })));
@@ -189,6 +192,16 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
   assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
+});
+
+test("trains follow the tracks: a train leg and a train day trip ask for train routes; stays link to Google Maps", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 3, hotel: "", dayTrips: [{ place: "Venice", mode: "train" }] },
+    { city: "Milano", start: "2027-09-17", nights: 2, hotel: "", travel: "train" }], list: "", listChosen: true, autoFix: false });
+  await page.waitFor(`(window.__e2e.routeModes || []).filter((m) => m === "train").length >= 2`, 10000, "train routes asked for");
+  const link = await page.eval(`(() => { const a = document.querySelector(".stay a.stay-geo"); return a && [a.href, a.target]; })()`);
+  assert.ok(link, "the location line is a link");
+  assert.match(link[0], /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=Padua/);
+  assert.equal(link[1], "_blank");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {

@@ -33,7 +33,7 @@ export const CACHE_DIR = path.join(ROOT, "cache");
 export const TIMEOUT_MS = 25 * 60 * 1000;
 
 /** Sent to the free OpenStreetMap services, which ask for an identifiable client. */
-export const USER_AGENT = "local-trip-planner/3.0";
+export const USER_AGENT = "local-trip-planner/3 (+https://github.com/notetuwu/trip-planner)";
 /** For sites that only answer browsers (Google lists, DuckDuckGo, web pages read during research). */
 export const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 

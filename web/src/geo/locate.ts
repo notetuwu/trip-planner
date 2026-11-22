@@ -62,3 +62,7 @@ export function warmNearby() {
   warmedFor = sig;
   api("/api/nearby/warm", { method: "POST", body: JSON.stringify({ stays }) }).catch(() => {});
 }
+
+/** Google Maps for a stay: its hotel when one is given, else the town. */
+export const stayMapsUrl = (s: Stay) =>
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.hotel ? `${s.hotel}, ${s.city}` : s.city)}`;

@@ -1,11 +1,11 @@
 // Stays on the map: numbered pins, the legs between them (driven ones along the road), and day trips.
 import * as L from "leaflet";
-import type { LatLng, TravelMode } from "../../../shared/types";
+import type { LatLng, RouteMode, TravelMode } from "../../../shared/types";
 import { esc } from "../core/dom";
 import { addDays, fmtDate, fmtDist, fmtDur } from "../core/format";
 import { session, state } from "../core/state";
 import { geo, geoKey } from "../geo/geocode";
-import { distKm, stayLoc } from "../geo/locate";
+import { distKm, stayLoc, stayMapsUrl } from "../geo/locate";
 import { modeIcon, modeName } from "../trip/modes";
 import { hoverBand } from "./legs";
 import { cssVar, layers } from "./map";
@@ -43,17 +43,19 @@ export function drawStays(): LatLng[] {
       icon: L.divIcon({ className: "", html: `<div class="stay-pin"><b>${i + 1}</b></div>`, iconSize: [30, 30], iconAnchor: [15, 30] }),
       zIndexOffset: 1000,
     }).bindTooltip(esc(s.city), { direction: "right", offset: [12, -16], permanent: session.selectedDay == null })
-      .bindPopup(`<b>${esc(s.city)}</b><div class="pop-meta">${s.start ? `${fmtDate(s.start)} → ${fmtDate(end)} · ` : ""}${s.nights} night${s.nights == 1 ? "" : "s"}</div>${s.hotel ? `<div>${icon("bed")} ${esc(s.hotel)}</div>` : ""}`)
+      .bindPopup(`<b>${esc(s.city)}</b><div class="pop-meta">${s.start ? `${fmtDate(s.start)} → ${fmtDate(end)} · ` : ""}${s.nights} night${s.nights == 1 ? "" : "s"}</div>${s.hotel ? `<div>${icon("bed")} ${esc(s.hotel)}</div>` : ""}<div><a href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener">${icon("pin")} Open in Google Maps</a></div>`)
       .addTo(layers.stays);
   });
 
-  const driven: { mode: "car"; from: LatLng; to: LatLng }[] = [];
+  const driven: { mode: RouteMode; from: LatLng; to: LatLng }[] = [];
   for (const l of stayLegs()) {
-    const byRoad = l.mode === "car" || l.mode === "bus";
+    // By road, or by train along the tracks; ferries and flights stay straight lines.
+    const how: RouteMode | null = l.mode === "car" || l.mode === "bus" ? "car" : l.mode === "train" ? "train" : null;
+    const byRoad = !!how;
     // Through the travel day's stops on the way: one route made of the pieces between them.
     const pts: LatLng[] = [l.from, ...(l.via || []).map((v) => v.loc), l.to];
-    const pieces = pts.slice(1).map((to, k) => ({ mode: "car" as const, from: pts[k], to }));
-    const got = byRoad ? pieces.map((p) => routes[routeKey("car", p.from, p.to)]) : [];
+    const pieces = pts.slice(1).map((to, k) => ({ mode: how || "car", from: pts[k], to }));
+    const got = byRoad ? pieces.map((p) => routes[routeKey(p.mode, p.from, p.to)]) : [];
     const r = byRoad && got.every(Boolean)
       ? { c: got.flatMap((g) => g!.c), d: got.reduce((n, g) => n + g!.d, 0), t: got.reduce((n, g) => n + g!.t, 0) } : null;
     if (byRoad) driven.push(...pieces);

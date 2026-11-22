@@ -42,7 +42,8 @@ export interface Route {
   c: LatLng[];
 }
 
-export type RouteMode = "foot" | "car";
+/** Along footpaths, roads, or the railway (a real train connection, from a public transport router). */
+export type RouteMode = "foot" | "car" | "train";
 
 export interface Poi {
   name: string;

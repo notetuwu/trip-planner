@@ -1,5 +1,6 @@
-// Real roads and paths between stops. Walking via the FOSSGIS router, driving via the OSRM demo (FOSSGIS as backup).
-// Both are free public servers that ask for at most about one request per second, so each mode has its own queue.
+// Real roads, paths and railways between stops. Walking via the FOSSGIS router, driving via the OSRM demo (FOSSGIS as
+// backup), trains via Transitous (a community-run public transport router, see transitous.org). All are free public
+// servers that ask for at most about one request per second, so each mode has its own queue.
 import type { LatLng, Route, RouteMode } from "../../shared/types";
 import { USER_AGENT, errMsg, sleep } from "../config";
 import { diskCache } from "../util/disk-cache";
@@ -8,14 +9,54 @@ const routeCache = diskCache<Route | null>("routes.json");
 const ROUTERS: Record<RouteMode, string[]> = {
   foot: ["https://routing.openstreetmap.de/routed-foot/route/v1/foot"],
   car: ["https://router.project-osrm.org/route/v1/driving", "https://routing.openstreetmap.de/routed-car/route/v1/driving"],
+  train: ["https://api.transitous.org/api/v5/plan"],
 };
+const MODES = Object.keys(ROUTERS) as RouteMode[];
 const routeKey = (mode: RouteMode, a: LatLng, b: LatLng) => `${mode}:${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}`;
 
 interface RouteJob { a: LatLng; b: LatLng; key: string }
-const queues: Record<RouteMode, RouteJob[]> = { foot: [], car: [] };
-const busy: Record<RouteMode, boolean> = { foot: false, car: false };
+const queues: Record<RouteMode, RouteJob[]> = { foot: [], car: [], train: [] };
+const busy: Record<RouteMode, boolean> = { foot: false, car: false, train: false };
+
+/** Decodes a Google-style encoded polyline (`precision` decimal places) into [lat, lng] pairs. */
+export function decodePolyline(s: string, precision = 5): LatLng[] {
+  const out: LatLng[] = [], f = 10 ** precision;
+  let i = 0, lat = 0, lng = 0;
+  const next = () => {
+    let shift = 0, result = 0, b;
+    do { b = s.charCodeAt(i++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    return result & 1 ? ~(result >> 1) : result >> 1;
+  };
+  while (i < s.length) { lat += next(); lng += next(); out.push([lat / f, lng / f]); }
+  return out;
+}
+
+const kmBetween = (a: LatLng, b: LatLng) => {
+  const r = Math.PI / 180, x = (b[1] - a[1]) * Math.cos(((a[0] + b[0]) / 2) * r), y = b[0] - a[0];
+  return Math.hypot(x, y) * 111.2;
+};
+const thin = (c: LatLng[], max = 1500) => { if (c.length <= max) return c; const step = Math.ceil(c.length / max); return c.filter((_, i) => i % step === 0 || i === c.length - 1); };
+
+/**
+ * The quickest train connection (walking to and from the stations included) along the real tracks; null if there's
+ * no connection by rail. The timetable doesn't matter for the line on the map, so it asks for the next departures.
+ */
+async function fetchRail(base: string, a: LatLng, b: LatLng): Promise<Route | null> {
+  const q = new URLSearchParams({ fromPlace: `${a[0]},${a[1]}`, toPlace: `${b[0]},${b[1]}`, transitModes: "RAIL,SUBURBAN,HIGHSPEED_RAIL,LONG_DISTANCE,NIGHT_RAIL,REGIONAL_RAIL,REGIONAL_FAST_RAIL,METRO,SUBWAY,TRAM,FUNICULAR" });
+  const res = await fetch(`${base}?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const j: any = await res.json();
+  const its = (j.itineraries || []).filter((it: any) => it.legs?.some((l: any) => l.mode !== "WALK"));
+  if (!its.length) return null;
+  const it = its.reduce((x: any, y: any) => (y.duration < x.duration ? y : x));
+  const c: LatLng[] = it.legs.flatMap((l: any) => (l.legGeometry?.points ? decodePolyline(l.legGeometry.points, l.legGeometry.precision ?? 6) : []));
+  if (c.length < 2) return null;
+  const d = c.slice(1).reduce((n, p, k) => n + kmBetween(c[k], p), 0) * 1000;
+  return { d: Math.round(d), t: Math.round(it.duration), c: thin(c).map(([lat, lng]) => [+lat.toFixed(5), +lng.toFixed(5)]) };
+}
 
 async function fetchRoute(mode: RouteMode, a: LatLng, b: LatLng): Promise<Route | null> {
+  if (mode === "train") return fetchRail(ROUTERS.train[0], a, b);
   let lastErr: unknown;
   for (const base of ROUTERS[mode]) {
     try {
@@ -71,6 +112,6 @@ export function routeBatch(legs: LegRequest[]) {
     pending++;
     if (!queues[mode].some((x) => x.key === key)) queues[mode].push({ a, b, key });
   }
-  runQueue("foot"); runQueue("car");
+  for (const m of MODES) runQueue(m);
   return { routes, pending };
 }

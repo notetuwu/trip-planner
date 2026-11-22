@@ -6,10 +6,27 @@ import { nominatim, nominatimHit, photon, photonHit } from "./providers";
 
 export type GeoEntry = GeoHit | ReverseHit | null;
 export const geoCache = diskCache<GeoEntry | number>("geocode.json");
-// Cache v2 added the Photon fallback: retry everything v1 couldn't find.
-if (geoCache.data.__v !== 2) {
-  for (const k of Object.keys(geoCache.data)) if (geoCache.data[k] === null) delete geoCache.data[k];
-  geoCache.data.__v = 2;
+// Cache v2 added the Photon fallback: retry everything v1 couldn't find. v3 prefers a town's own point over the middle
+// of its municipality: look up again what was answered with a boundary.
+if (geoCache.data.__v !== 3) {
+  for (const k of Object.keys(geoCache.data)) {
+    const v = geoCache.data[k];
+    if (v === null || (geoCache.data.__v === 2 && typeof v === "object" && (v as GeoHit).kind === "administrative")) delete geoCache.data[k];
+  }
+  geoCache.data.__v = 3;
+}
+
+/**
+ * The best of Nominatim's answers: the first, except that a municipality's boundary gives way to the town of the same
+ * name. A boundary's point is the middle of its area, which for a village like Hallstatt is up in the mountains,
+ * kilometres from the village itself.
+ */
+export function bestHit(hits: any[]) {
+  const [first] = hits;
+  if (!first) return undefined;
+  const cat = (h: any) => h.category || h.class;
+  if (cat(first) === "boundary") return hits.find((h) => cat(h) === "place" && h.name === first.name) || first;
+  return first;
 }
 
 /** The "near" point (rounded to ~10 km) is part of the key only when given, so older cache entries stay valid. */
@@ -21,7 +38,7 @@ export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = fals
  * is found in the right village rather than anywhere in the country.
  */
 export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
-  const params = new URLSearchParams({ q, format: "jsonv2", limit: "1", addressdetails: "1", "accept-language": "en" });
+  const params = new URLSearchParams({ q, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en" });
   if (stop) { params.set("extratags", "1"); params.set("namedetails", "1"); } // its website and all its names
   if (cc) params.set("countrycodes", cc);
   if (near) {
@@ -29,7 +46,7 @@ export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, s
     params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
     params.set("bounded", "1");
   }
-  const [hit] = await nominatim("search", params);
+  const hit = bestHit(await nominatim("search", params));
   if (hit) return nominatimHit(hit);
   // Fall back to Photon, also with the name cut before " - ", " | " or "(" (e.g. "Store - Shibuya Main Store").
   const ccs = (cc || "").split(",").filter(Boolean);

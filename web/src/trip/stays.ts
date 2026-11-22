@@ -4,7 +4,7 @@ import { $, $$, esc } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { type Stay, save, state } from "../core/state";
 import { geo, geoKey, geocodeStays } from "../geo/geocode";
-import { stayLoc } from "../geo/locate";
+import { stayLoc, stayMapsUrl } from "../geo/locate";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { modeOptions } from "./modes";
@@ -52,7 +52,9 @@ function stayHtml(s: Stay, i: number) {
         <div><label>Arrival</label><input type="date" data-k="start" value="${esc(s.start)}"></div>
         <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
       </div>
-      ${geoLine ? `<div class="stay-geo" title="${esc(loc?.label || "")}">${geoLine}</div>` : ""}
+      ${!geoLine ? "" : loc
+        ? `<a class="stay-geo" href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener" title="${esc(`${loc.label}: open in Google Maps`)}">${geoLine}${ext()}</a>`
+        : `<div class="stay-geo">${geoLine}</div>`}
       ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1, loc))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
