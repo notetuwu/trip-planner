@@ -28,6 +28,20 @@ async function download(asset: NonNullable<UpdateInfo["asset"]>): Promise<Buffer
   return data;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Renames, retrying for a while: a virus scanner often holds a freshly written exe for a few seconds (EBUSY/EPERM). */
+async function renameRetrying(from: string, to: string, ms = 20000) {
+  const t0 = Date.now();
+  for (;;) {
+    try { fs.renameSync(from, to); return; }
+    catch (e: any) {
+      if (!["EBUSY", "EPERM", "EACCES"].includes(e?.code) || Date.now() - t0 > ms) throw e;
+      await sleep(500);
+    }
+  }
+}
+
 /** Starts a program on its own, so it keeps running when this one exits. */
 const launch = (file: string, args: string[]) => spawn(file, args, { detached: true, stdio: "ignore" }).unref();
 
@@ -44,10 +58,16 @@ async function install(info: UpdateInfo) {
     const exe = extractFromZip(data, (name) => name.endsWith("/Trip Planner.exe") || name === "Trip Planner.exe");
     if (!exe) throw new Error("The update doesn't contain Trip Planner.exe.");
     const current = process.execPath, dir = path.dirname(current), old = path.join(dir, "Trip Planner.old.exe");
-    fs.writeFileSync(path.join(dir, "Trip Planner.new.exe"), exe);
+    const fresh = path.join(dir, "Trip Planner.new.exe");
+    fs.writeFileSync(fresh, exe);
     fs.rmSync(old, { force: true });
-    fs.renameSync(current, old); // a running exe can be renamed (not overwritten) on Windows
-    fs.renameSync(path.join(dir, "Trip Planner.new.exe"), current);
+    await renameRetrying(current, old); // a running exe can be renamed (not overwritten) on Windows
+    try { await renameRetrying(fresh, current); }
+    catch (e) {
+      // Put this version back under its name, so the shortcut still works, and say what happened.
+      try { fs.renameSync(old, current); fs.rmSync(fresh, { force: true }); } catch { /* left for the next start to sort out */ }
+      throw new Error(`Couldn't replace Trip Planner.exe (${errMsg(e)}); a virus scanner may be holding the new file. Try again in a minute.`);
+    }
     await shutdown();
     launch(current, ["--no-window"]);
   }
@@ -63,9 +83,17 @@ export async function startUpdate(): Promise<UpdateStatus> {
   return status;
 }
 
-/** Removes what the previous portable update left behind (retrying while the old version is still exiting). */
+/** Removes what the previous portable update left behind (retrying while the old version is still exiting). An
+ *  update cut short could leave this copy as "Trip Planner.new.exe" or ".old.exe" with no "Trip Planner.exe": then it
+ *  takes that name again, so shortcuts and the next update work. */
 export function cleanUpAfterUpdate(tries = 5) {
-  const old = path.join(path.dirname(process.execPath), "Trip Planner.old.exe");
+  const dir = path.dirname(process.execPath), main = path.join(dir, "Trip Planner.exe");
+  if (process.platform === "win32" && /^Trip Planner\.(new|old)\.exe$/i.test(path.basename(process.execPath)) && !fs.existsSync(main)) {
+    try { fs.renameSync(process.execPath, main); } catch { /* keep running under this name */ }
+  }
+  // A download that never got swapped in.
+  if (path.basename(process.execPath).toLowerCase() === "trip planner.exe") { try { fs.rmSync(path.join(dir, "Trip Planner.new.exe"), { force: true }); } catch { /* still held */ } }
+  const old = path.join(dir, "Trip Planner.old.exe");
   if (!fs.existsSync(old)) return;
   try { fs.rmSync(old, { force: true }); } catch { if (tries > 1) setTimeout(() => cleanUpAfterUpdate(tries - 1), 3000).unref(); }
 }
