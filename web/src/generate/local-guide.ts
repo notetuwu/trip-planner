@@ -6,7 +6,7 @@ import { ext, icon } from "../core/icons";
 
 /** Models checked to exist in Ollama's library, all with tool use and thinking. need: GPU memory (GB) to run well,
  *  leaving room for the planner's long prompts. */
-const MODELS = [
+export const MODELS = [
   { tag: "qwen3.8:27b", size: 17.7, need: 22, note: "Best results. For 24 GB cards and Macs with 32 GB or more." },
   { tag: "gemma4:12b", size: 8.0, need: 12, note: "Good balance. For 12-16 GB cards." },
   { tag: "qwen3.5:9b", size: 6.6, need: 8, note: "For 8-12 GB cards." },
@@ -14,7 +14,7 @@ const MODELS = [
 ];
 
 /** The biggest model that fits (Macs share memory with everything else, so leave them more room). */
-function suggestion(gpu: GpuInfo | null) {
+export function suggestion(gpu: GpuInfo | null) {
   if (!gpu) return null;
   const usable = gpu.unified ? gpu.memGb * 0.65 : gpu.memGb;
   return MODELS.find((m) => m.need <= usable) || MODELS.at(-1)!;

@@ -51,6 +51,7 @@ const STUBS = `(() => {
     // Streamed helpers: a status line, a token count, then the result (like the real server).
     const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "reasoning", text: "Lakes first, then the loop home." }, { type: "done", result }]
       .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
+    if (url.includes("/api/current")) return json({ at: 0 });
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
     if (url.includes("/api/itinerary")) {
@@ -382,6 +383,18 @@ test("the theme button cycles system, light and dark", async () => {
   }
   assert.deepEqual(seen.map((s) => s.split(":")[0]), ["light", "dark", "system"]);
   assert.equal(seen[1].split(":")[1], "dark");
+});
+
+test("settings open with their tabs: general, local models, phone", async () => {
+  await page.eval(`document.querySelector("#settingsBtn").click()`);
+  await page.waitFor(`document.querySelector("#settingsDialog").open && /Theme/.test(document.querySelector("#setMain").textContent)`, 10000, "general tab");
+  await page.eval(`document.querySelector('[data-theme-choice="dark"]').click()`);
+  assert.equal(await page.eval(`document.documentElement.dataset.theme`), "dark");
+  await page.eval(`document.querySelector('[data-tab="phone"]').click()`);
+  assert.match(await page.eval(`document.querySelector("#setMain").textContent`), /Phone access is off/);
+  await page.eval(`document.querySelector('[data-tab="models"]').click()`);
+  await page.waitFor(`/Ollama/.test(document.querySelector("#setMain .status")?.textContent || "")`, 20000, "local models tab");
+  await page.eval(`document.querySelector('[data-theme-choice="system"]')?.click(); localStorage.removeItem("trip-planner-theme")`);
 });
 
 test("no errors in the page", () => {

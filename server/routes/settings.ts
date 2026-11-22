@@ -1,16 +1,37 @@
-// GET /api/settings: how the app opens (own window or browser tab). POST: change it, and open the app the new way now.
-import { PACKAGED, PORT, ROOT } from "../config";
+// GET /api/settings: how the app opens (own window or browser tab), the local models' context size, where the data
+// is. POST: change them (and open the app the new way now, if asked). /api/lan: phone access, its status, start/stop.
+import { PACKAGED, PORT, ROOT, VERSION } from "../config";
+import { lanStatus, startLan, stopLan } from "../lan";
 import { appBrowser, openWindow } from "../launcher";
-import { readSettings, writeSettings } from "../settings";
+import { newToken, readSettings, writeSettings } from "../settings";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
+
+/** The settings as the page sees them (never the phone link's secret: that's only in the phone link itself). */
+const view = () => {
+  const { lanToken: _secret, ...s } = readSettings();
+  return { ...s, packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
+};
 
 export async function handleSettings(req: Req, res: Res) {
   if (req.method === "POST") {
     const body = await readJson(req);
-    const s = writeSettings({ window: body?.window });
+    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx });
     if (body?.reopen && PACKAGED) openWindow(`http://localhost:${PORT}`, ROOT, s.window);
-    sendJson(res, 200, s);
+    sendJson(res, 200, view());
     return;
   }
-  sendJson(res, 200, { ...readSettings(), packaged: PACKAGED, appWindow: !!appBrowser() });
+  sendJson(res, 200, view());
+}
+
+export async function handleLan(req: Req, res: Res, path: string) {
+  if (req.method === "POST" && path === "/api/lan") {
+    const body = await readJson(req);
+    const on = !!body?.on;
+    writeSettings({ lan: on });
+    sendJson(res, 200, on ? await startLan() : await stopLan());
+    return;
+  }
+  // A new link: phones with the old one have to open the new one.
+  if (req.method === "POST" && path === "/api/lan/new-link") { writeSettings({ lanToken: newToken() }); sendJson(res, 200, lanStatus()); return; }
+  sendJson(res, 200, lanStatus());
 }

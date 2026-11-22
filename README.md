@@ -21,6 +21,8 @@ It uses **Claude** through your own [Claude Code](https://claude.com/claude-code
 - **Revise.** Ask for changes ("swap days 3 and 4", "add a vegan lunch on day 2"), re-plan a single day with ↻ (optionally saying what to change) while the rest stays as it is, or remove and add stops yourself.
 - **Budget and weather.** Costs per stop and per day against your daily budget, plus a forecast when the trip is close enough.
 - **Take it with you.** "Download for phone" saves one self-contained HTML file with the map, the days and a jump-to-today button. A calendar file (.ics) puts every stop in your phone's calendar. Print/PDF and JSON export are also available.
+- **Use it on your phone.** Settings → Phone serves the planner on your home network behind a secret link (with a QR code): same saved trips, lists and models, and the open trip stays in step between the computer and the phone.
+- **Local models made easy.** Settings → Local models shows Ollama's status and your graphics card, suggests models that fit it, and installs or deletes them with download progress.
 
 ## Download
 
@@ -105,6 +107,7 @@ The app is local, but it calls these free public services. Please keep use perso
 - **[Nominatim](https://nominatim.org) and [Photon](https://photon.komoot.io):** finding places on the map
 - **[Overpass API](https://overpass-api.de):** real sights and restaurants around each stay
 - **[OSRM](https://project-osrm.org) and [FOSSGIS routing](https://routing.openstreetmap.de):** walking and driving routes
+- **[Transitous](https://transitous.org):** train connections, to draw train legs along the tracks
 - **[OpenStreetMap tiles](https://www.openstreetmap.org)** (in the app) and **Esri World Street Map** (in the phone export)
 - **[Nager.Date](https://date.nager.at):** public holidays
 - **[Open-Meteo](https://open-meteo.com):** weather forecasts
@@ -115,7 +118,7 @@ The **Google Maps list import** uses an unofficial Google endpoint, the same one
 
 ## How it works
 
-The browser app is written in TypeScript and built with [Vite](https://vite.dev). It uses [Leaflet](https://leafletjs.com) for the map (OpenStreetMap tiles; the "English names" option draws [OpenFreeMap](https://openfreemap.org) with [MapLibre](https://maplibre.org)) and [Lucide](https://lucide.dev) icons (ISC license), and has no UI framework. Light and dark mode follow the system unless you pick one with the button at the top right. The server is a plain Node HTTP server, also in TypeScript. Its only dependencies are the Anthropic SDK and the `opening_hours` parser.
+The browser app is written in TypeScript and built with [Vite](https://vite.dev). It uses [Leaflet](https://leafletjs.com) for the map (OpenStreetMap tiles; the "English names" option draws [OpenFreeMap](https://openfreemap.org) with [MapLibre](https://maplibre.org)) [Lucide](https://lucide.dev) icons (ISC license) and [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) for the phone link's QR code (MIT), and has no UI framework. Light and dark mode follow the system unless you pick one with the button at the top right. The server is a plain Node HTTP server, also in TypeScript. Its only dependencies are the Anthropic SDK and the `opening_hours` parser.
 
 When you generate, the server gathers holidays and nearby places, builds one detailed prompt, and then runs `claude -p` with a JSON schema, calls the Anthropic Messages API or the OpenAI/OpenRouter Responses API, or talks to the local model server directly. Progress streams back to the page as newline-delimited JSON.
 

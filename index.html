@@ -16,7 +16,7 @@
 <header>
   <div class="brand"><span class="logo"><i data-icon="map"></i></span>Trip Planner</div>
   <div class="trip-title" id="tripTitle"></div>
-  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="icon-btn theme-btn" id="themeBtn" type="button"></button></div>
+  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="icon-btn theme-btn" id="themeBtn" type="button"></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
 </header>
 
 <main>
@@ -179,6 +179,12 @@
     <button class="btn" id="rpCancel" type="button" hidden>Cancel</button>
     <button class="btn" id="rpGo" form="routeForm" type="submit">Plan the route</button>
     <button class="btn solid" id="rpUse" type="button" hidden>Use these stays</button></div>
+</dialog>
+
+<dialog id="settingsDialog" class="keys-dialog settings-dialog">
+  <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
+  <h2>Settings</h2>
+  <div id="settingsBody" class="set-body"></div>
 </dialog>
 
 <dialog id="guideDialog" class="keys-dialog guide-dialog">

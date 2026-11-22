@@ -6,7 +6,9 @@ import http from "node:http";
 import path from "node:path";
 import { handleApi, startup } from "./api";
 import { PACKAGED, PORT, ROOT } from "./config";
+import { setAppHandler, startLan } from "./lan";
 import { alreadyRunning, openWindow, quitWhenClosed } from "./launcher";
+import { readSettings } from "./settings";
 import { hasBuiltApp, serveStatic } from "./static";
 import { cleanUpAfterUpdate, onShutdown } from "./update/install";
 
@@ -26,7 +28,7 @@ function logToFile() {
   process.on("uncaughtException", (e) => write("Uncaught:", e?.stack || e));
 }
 
-const server = http.createServer(async (req, res) => {
+const handle = async (req: http.IncomingMessage, res: http.ServerResponse) => {
   // Allow the page to be opened from file:// (origin "null") as well as from this server.
   const origin = req.headers.origin;
   if (origin === "null" || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin || "")) {
@@ -38,7 +40,9 @@ const server = http.createServer(async (req, res) => {
   if (await handleApi(req, res)) return;
   if (req.method === "GET") return serveStatic(new URL(req.url || "/", "http://x").pathname, res);
   res.writeHead(405).end();
-});
+};
+const server = http.createServer(handle);
+setAppHandler(handle);
 
 async function main() {
   // Started again while running: just open another window.
@@ -53,6 +57,7 @@ async function main() {
   startup();
   server.listen(PORT, "127.0.0.1", () => {
     console.log(`Trip planner running at ${url} (data in ${ROOT})`);
+    if (readSettings().lan) startLan(); // phone access was on last time
     if (PACKAGED) {
       if (!noWindow) openWindow(url, ROOT);
       quitWhenClosed(() => { console.log("The app was closed, quitting."); process.exit(0); });

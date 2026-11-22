@@ -4,7 +4,7 @@ import { drawMap } from "../map/draw";
 import { $ } from "./dom";
 import { type IconName, icon } from "./icons";
 
-type Choice = "system" | "light" | "dark";
+export type Choice = "system" | "light" | "dark";
 const KEY = "trip-planner-theme";
 const NEXT: Record<Choice, Choice> = { system: "light", light: "dark", dark: "system" };
 const LOOK: Record<Choice, [IconName, string]> = {
@@ -12,7 +12,7 @@ const LOOK: Record<Choice, [IconName, string]> = {
 };
 const dark = matchMedia("(prefers-color-scheme: dark)");
 
-const choice = (): Choice => { const c = localStorage.getItem(KEY); return c === "light" || c === "dark" ? c : "system"; };
+export const choice = (): Choice => { const c = localStorage.getItem(KEY); return c === "light" || c === "dark" ? c : "system"; };
 
 function apply() {
   const c = choice();
@@ -31,3 +31,6 @@ export function initTheme() {
   $("#themeBtn").onclick = () => { localStorage.setItem(KEY, NEXT[choice()]); apply(); };
   dark.addEventListener("change", apply);
 }
+
+/** Sets the theme (Settings → General). */
+export function setTheme(c: Choice) { localStorage.setItem(KEY, c); apply(); }

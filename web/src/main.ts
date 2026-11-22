@@ -29,6 +29,8 @@ import { applyState, initSaves, refreshSaves } from "./saves/saves";
 import { initFields } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
 import { initRoutePlanner } from "./trip/route-planner";
+import { initSettings } from "./settings/settings";
+import { initSync } from "./core/sync";
 import { renderTripTitle } from "./trip/title";
 
 // New coordinates arrived: redraw, and once the stays' countries are known, look up hotels, place names and
@@ -48,6 +50,7 @@ setOnRouted(() => { drawMap(); updateLegInfo(); });
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
+initSettings(); initSync();
 initFields(); initStays(); initRoutePlanner(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 

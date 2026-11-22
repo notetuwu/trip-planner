@@ -7,6 +7,11 @@ const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/;
 
 /** Why the request is refused, or null when it's fine. */
 export function refuse(req: Req): string | null {
+  // A phone let in by the home-network gate (lan.ts): its pages come from the same address it asks.
+  if ((req as Req & { lan?: boolean }).lan) {
+    const origin = req.headers.origin;
+    return origin && origin !== `http://${req.headers.host}` ? "Requests from other sites are not allowed." : null;
+  }
   if (!LOCAL_HOST.test(req.headers.host || "")) return "This server only answers on localhost.";
   const origin = req.headers.origin;
   if (origin && !LOCAL_ORIGIN.test(origin) && !(origin === "null" && req.method === "GET")) return "Requests from other sites are not allowed.";

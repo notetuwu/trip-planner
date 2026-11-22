@@ -91,8 +91,13 @@ export function setState(next: Partial<AppState>) {
   state = { ...blankTrip(), ...next };
 }
 
+const saveHooks: (() => void)[] = [];
+/** Called after every save (sharing the trip with other windows and devices, see sync.ts). */
+export const onSave = (fn: () => void) => { saveHooks.push(fn); };
+
 export function save() {
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
+  for (const fn of saveHooks) fn();
 }
 
 /** Data for this session only. */

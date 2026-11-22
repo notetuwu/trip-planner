@@ -1,6 +1,7 @@
 // Planning request to Ollama's /api/chat, with the output forced to the itinerary schema.
 import { lines } from "../util/http";
 import type { LocalOutput } from "./local-output";
+import { readSettings } from "../settings";
 import { loopGuard } from "./loop-guard";
 import { LOCAL_SCHEMA } from "./schema";
 import type { OnEvent, Trip } from "./types";
@@ -21,9 +22,11 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
   // Ollama only reserves what's asked for (more costs GPU memory), so ask for about what's needed, within the model's limit.
   const tripDays = trip.redoDay ? 1 : trip.fix ? new Set(trip.fix.problems.map((p) => p.day)).size : trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
   const promptTokens = Math.ceil(prompt.length / 3);
-  const cap = Math.min(Number(process.env.OLLAMA_NUM_CTX) || 131072, modelMax || 131072);
+  // Settings → Local models can fix the context size; otherwise up to OLLAMA_NUM_CTX (or 128k), as much as the trip needs.
+  const fixed = readSettings().numCtx;
+  const cap = fixed ? Math.min(fixed, modelMax || fixed) : Math.min(Number(process.env.OLLAMA_NUM_CTX) || 131072, modelMax || 131072);
   const needed = promptTokens + tripDays * 1000 + 4000 + (canThink ? 16000 : 0);
-  const firstCtx = Math.min(cap, roundUp(needed));
+  const firstCtx = fixed ? cap : Math.min(cap, roundUp(needed));
 
   const run = async (numCtx: number, think: boolean, label: string): Promise<"ok" | "length" | "loop"> => {
     // Stopped by the travelers (abort) or by us when the model starts repeating itself (stop).
