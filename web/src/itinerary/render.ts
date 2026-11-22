@@ -1,4 +1,5 @@
 // Renders the itinerary column and wires up its buttons.
+import { openChat } from "../trip/companion";
 import { $, $$, downloadFile, esc } from "../core/dom";
 import { save, session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
@@ -56,10 +57,7 @@ function wire(out: HTMLElement) {
   for (const b of $$("[data-tool]", out)) b.onclick = tools[b.dataset.tool!];
   out.querySelector('[data-stale="clear"]')?.addEventListener("click", clearItinerary);
   out.querySelector('[data-stale="gen"]')?.addEventListener("click", () => runGeneration());
-  $("#refineBtn").onclick = () => {
-    const request = $<HTMLTextAreaElement>("#refineText").value.trim();
-    if (request && state.itinerary) runGeneration({ revise: { itinerary: state.itinerary, request } });
-  };
+  $("#refineBtn").onclick = () => openChat("");
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
   wireBookAhead(out);
   wirePacking(out, () => renderItinerary());

@@ -46,3 +46,20 @@ Filename: "{app}\Trip Planner.exe"; Description: "Start Trip Planner"; Flags: no
 ; Updates from inside the app run this installer silently: start the new version, without a new window (the open
 ; window reloads itself).
 Filename: "{app}\Trip Planner.exe"; Parameters: "--no-window"; Flags: nowait; Check: WizardSilent
+
+[Code]
+// An earlier copy installed for all users (in Program Files, e.g. by running a setup as administrator) can't be
+// replaced without admin rights, and Setup would reuse its folder ("Error 5: Access is denied"). Then this copy goes
+// to the current user's folder instead, where it can also update itself later. Also for silent in-app updates.
+function InProgramFiles(Dir: String): Boolean;
+var D: String;
+begin
+  D := Uppercase(AddBackslash(Dir));
+  Result := (Pos(Uppercase(AddBackslash(ExpandConstant('{commonpf64}'))), D) = 1) or (Pos(Uppercase(AddBackslash(ExpandConstant('{commonpf32}'))), D) = 1);
+end;
+
+procedure InitializeWizard;
+begin
+  if (not IsAdmin) and InProgramFiles(WizardForm.DirEdit.Text) then
+    WizardForm.DirEdit.Text := ExpandConstant('{localappdata}\Programs\Trip Planner');
+end;

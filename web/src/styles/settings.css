@@ -277,39 +277,51 @@ h2 small .link-btn + .link-btn, h2 small .file-link + .link-btn, h2 small .link-
 /* Ideas & notes: a scratchpad that grows with what's written. */
 textarea.ideas { min-height: 72px; field-sizing: content; max-height: 360px; }
 
-/* The trip chat: a round button at the bottom right, and a panel above it that stays open while you look at the plan. */
-.companion-fab {
-  position: fixed; right: 20px; bottom: 20px; z-index: 2000; display: inline-flex; align-items: center; gap: 8px;
-  padding: 11px 16px; border: 0; border-radius: 999px; background: var(--accent); color: var(--accent-ink);
-  font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; box-shadow: var(--shadow-pop);
+/* The trip chat: a column beside the plan and the map (Chat in the header), full screen on a phone. */
+.chat-toggle {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
 }
-.companion-fab .i { width: 18px; height: 18px; }
-.companion-fab:hover { filter: brightness(1.06); }
-.companion-dialog {
-  position: fixed; inset: auto 20px 76px auto; margin: 0; z-index: 2001; width: min(420px, calc(100vw - 24px)); height: min(620px, calc(100vh - 110px));
-  padding: 0; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop);
-}
-.companion-dialog[open] { display: flex; flex-direction: column; }
-.cp-head { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px 16px; border-bottom: 1px solid var(--line); }
-.cp-head h2 { margin: 0; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.chat-toggle:hover { border-color: var(--line-strong); }
+.chat-toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); }
+.chat-panel { grid-area: chat; display: flex; flex-direction: column; padding: 0; overflow: hidden; min-height: 0; }
+.chat-panel[hidden] { display: none; }
+.cp-head { display: flex; align-items: center; gap: 8px; padding: 14px 12px 10px 18px; border-bottom: 1px solid var(--line); }
+.cp-head h2 { margin: 0; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+.cp-head h2 .i { color: var(--accent); }
 .cp-head #cpModel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
-.cp-head form { margin: 0; }
-.companion-dialog .cp-log { padding-top: 12px; max-height: none; }
+.chat-panel .cp-log { flex: 1; min-height: 0; max-height: none; padding: 14px 16px; gap: 12px; }
+.chat-panel .rc-msg { font-size: 13px; max-width: 94%; }
+.chat-panel .rc-msg.ai { background: transparent; border: 0; padding: 2px 2px; max-width: 100%; }
 .cp-log .rc-msg.ai b { display: inline; font-size: inherit; margin: 0; }
 .cp-log .rc-msg.ai p, .cp-log .rc-msg.ai ul { margin: 0 0 6px; }
 .cp-log .rc-msg.ai > :last-child { margin-bottom: 0; }
 .cp-log .rc-msg.ai ul { padding-left: 18px; }
-.cp-starters { display: flex; flex-wrap: wrap; gap: 6px; }
+.typing { display: inline-flex; gap: 4px; padding: 6px 0; }
+.typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite ease-in-out; }
+.typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+.cp-empty { margin: auto 0; text-align: center; padding: 10px 6px; }
+.cp-empty p { margin: 0 0 6px; }
+.cp-empty-icon { width: 44px; height: 44px; margin: 0 auto 10px; border-radius: 14px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 22px; }
+.cp-starters { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 12px; }
 .chip-btn { border: 1px solid var(--line-strong); background: var(--field); color: var(--ink); border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .chip-btn:hover { border-color: var(--accent); }
-.cp-foot { display: flex; align-items: center; gap: 8px; min-height: 18px; padding: 4px 4px 0; font-size: 12px; }
+/* A change the chat offers: what it is, what it re-plans, and Apply / Undo. */
+.cp-change { margin-top: 8px; border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: 10px; padding: 9px 11px; background: var(--field); display: grid; gap: 8px; }
+.cp-change-what { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; }
+.cp-change-what > .i { color: var(--accent); margin-top: 2px; flex: none; }
+.cp-change-act { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12.5px; }
+.cp-change-act .btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.chat-panel .rc-input { border-top: 1px solid var(--line); padding: 10px 12px 8px; }
+.cp-foot { display: flex; align-items: center; gap: 8px; min-height: 16px; padding: 4px 4px 0; font-size: 12px; }
 .cp-foot .hint { flex: 1; }
-@media (max-width: 640px) {
-  .companion-fab span { display: none; }
-  .companion-fab { padding: 13px; }
-  .companion-dialog { inset: auto 8px 72px 8px; width: auto; height: calc(100dvh - 90px); }
-}
-@media print { .companion-fab, .companion-dialog { display: none !important; } }
+/* "Ask for changes" under the plan: opens the chat. */
+button.refine { display: flex; align-items: center; gap: 10px; width: 100%; margin-top: 16px; padding: 12px 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+button.refine b { color: var(--ink); }
+button.refine .i { color: var(--accent); font-size: 18px; flex: none; }
+button.refine:hover { border-color: var(--accent); }
+@media print { .chat-panel, .chat-toggle { display: none !important; } }
 /* Installing Ollama: no percentage to show, so the bar sweeps. */
 .pull .bar.indeterminate i { width: 35%; animation: sweep 1.3s ease-in-out infinite; }
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(300%); } }

@@ -105,6 +105,19 @@ main {
   body.app .map-wrap { flex: 1; min-height: 0; }
   body.app #map { height: 100%; }
 }
+/* The chat column: beside the map and the plan on a computer; over everything on a phone. */
+@media (min-width: 901px) {
+  body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(320px, 380px); grid-template-areas: "settings map chat" "settings output chat"; }
+  body.app.chat-open .chat-panel { align-self: stretch; }
+}
+@media (min-width: 1500px) {
+  body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "settings output map chat"; }
+}
+@media (max-width: 900px) {
+  .chat-panel { position: fixed; inset: 0; z-index: 2000; border-radius: 0; border: 0; }
+  .chat-toggle span { display: none; }
+  .chat-toggle { width: 34px; padding: 0; justify-content: center; }
+}
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-template-areas: "map" "settings" "output"; grid-template-rows: auto; padding: 10px 16px 40px; }
   header { padding: 12px 16px 4px; }

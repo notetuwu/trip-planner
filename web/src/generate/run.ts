@@ -92,8 +92,9 @@ async function fixBeforeShowing(it: Itinerary, view: ProgressView, signal: Abort
 
 let running = false;
 
-export async function runGeneration(change: Change = {}) {
-  if (running) return;
+/** Generates, revises, re-plans a day or fixes; true when the new plan is shown (false: cancelled, failed or busy). */
+export async function runGeneration(change: Change = {}): Promise<boolean> {
+  if (running) return false;
   const btn = $<HTMLButtonElement>("#generate");
   const trip = tripRequest(change);
   if (change.fix) trip.research = false;
@@ -133,10 +134,12 @@ export async function runGeneration(change: Change = {}) {
       document.getElementById(`day-${redo.day}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       toast(`${fmtDate(redo.itinerary.days[redo.day].date)} is re-planned`);
     } else if (fix) toast(`Fixed ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""}`);
+    return true;
   } catch (err) {
     setInlineProgress(null);
     view.stop();
     renderItinerary((err as Error).name === "AbortError" ? (fix ? "Fixing cancelled; the plan is as it was." : "Cancelled.") : (err as Error).message);
+    return false;
   } finally {
     view.stop(); btn.disabled = false; running = false;
   }

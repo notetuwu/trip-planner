@@ -16,7 +16,7 @@
 <header>
   <div class="brand"><span class="logo"><i data-icon="map"></i></span>Trip Planner</div>
   <div class="trip-title" id="tripTitle"></div>
-  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
+  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="chat-toggle" id="chatBtn" type="button" title="Trip chat: ask anything about the trip, or ask for changes" aria-pressed="false"><i data-icon="chat"></i><span>Chat</span></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
 </header>
 
 <main>
@@ -121,24 +121,23 @@
   <section class="panel" id="output">
     <div class="empty"><div class="sun"></div>Your itinerary will appear here.</div>
   </section>
+
+  <aside class="panel chat-panel" id="chatPanel" hidden aria-label="Trip chat">
+    <div class="cp-head"><h2><i data-icon="chat"></i> Trip chat</h2>
+      <span class="hint" id="cpModel"></span>
+      <button class="link-btn" id="cpClear" type="button" title="Start the conversation over">Clear</button>
+      <button class="icon-btn" id="cpClose" type="button" title="Close the chat"><i data-icon="x"></i></button></div>
+    <div id="cpLog" class="rc-log cp-log"></div>
+    <form id="cpForm" class="rc-input">
+      <div class="rc-box">
+        <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
+        <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+      </div>
+      <div class="cp-foot"><span class="hint" id="cpLive"></span><button class="link-btn" id="cpCancel" type="button" hidden>Stop</button></div>
+    </form>
+  </aside>
 </main>
 
-<button class="companion-fab" id="companionBtn" type="button" title="Ask anything about your trip"><i data-icon="chat"></i><span>Ask about your trip</span></button>
-
-<dialog id="companionDialog" class="companion-dialog">
-  <div class="cp-head"><h2><i data-icon="chat"></i> Trip chat</h2>
-    <span class="hint" id="cpModel"></span>
-    <button class="link-btn" id="cpClear" type="button" title="Start the conversation over">Clear</button>
-    <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
-  <div id="cpLog" class="rc-log cp-log"></div>
-  <form id="cpForm" class="rc-input">
-    <div class="rc-box">
-      <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask about your trip…"></textarea>
-      <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
-    </div>
-    <div class="cp-foot"><span class="hint" id="cpLive"></span><button class="link-btn" id="cpCancel" type="button" hidden>Stop</button></div>
-  </form>
-</dialog>
 
 <div class="toast" id="toast" hidden></div>
 

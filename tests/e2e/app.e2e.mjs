@@ -54,7 +54,7 @@ const STUBS = `(() => {
     if (url.includes("/api/current")) return json({ at: 0 });
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
-    if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream({ answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
+    if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream(window.__e2e.companion || { answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
     if (url.includes("/api/itinerary")) {
       const b = body();
       window.__e2e.requests.push(b);
@@ -433,8 +433,8 @@ test("the trip chat answers from the trip, keeps the conversation, and reads the
     { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "15:00", place: "Cappella degli Scrovegni", description: "Giotto frescoes" }] },
     { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] }] } });
   await page.eval(`(() => { const t = document.querySelector("#ideas"); t.value = "Maybe a boat on the Brenta?"; t.dispatchEvent(new Event("input")); })()`);
-  await page.eval(`document.querySelector("#companionBtn").click()`);
-  assert.ok(await page.eval(`document.querySelector("#companionDialog").open`));
+  await page.eval(`document.querySelector("#chatBtn").click()`);
+  assert.ok(await page.eval(`!document.querySelector("#chatPanel").hidden && document.body.classList.contains("chat-open")`));
   await page.eval(`document.querySelector("#cpLog [data-q]").click()`);
   await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 1`, 10000, "the answer");
   const asked = await page.eval(`window.__e2e.companionAsked`);
@@ -448,6 +448,33 @@ test("the trip chat answers from the trip, keeps the conversation, and reads the
   assert.equal((await page.eval(`window.__e2e.companionAsked.history`)).length, 2);
   assert.equal(await page.eval(`planner.state().chat.length`), 4);
   assert.equal(await page.eval(`planner.state().ideas`), "Maybe a boat on the Brenta?");
+});
+
+test("asking the chat for a change offers it; Apply re-plans that day, Undo puts the plan back", async () => {
+  const plan = { summary: "Plan", totalEstimatedCost: 0, days: [
+    { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] },
+    { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Orto Botanico", description: "" }] }] };
+  await trip({ ...PADUA_MILANO, itinerary: plan });
+  await page.eval(`window.__e2e.companion = { answer: "I'll swap the botanical garden for a market morning.", change: { days: [2], request: "Day 2: replace Orto Botanico with a morning at the market" } };
+    window.__e2e.answer = (b) => ({ summary: "Day", totalEstimatedCost: 0, days: [day("2027-09-15", "Padua", [stop("09:00", "Mercato")])] })`);
+  // "Ask for changes" under the plan opens the chat.
+  await page.eval(`document.querySelector("#refineBtn").click()`);
+  assert.equal(await page.eval(`document.activeElement.id`), "cpQ");
+  await page.eval(`(() => { const q = document.querySelector("#cpQ"); q.value = "Less garden, more food on day 2"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the offered change");
+  assert.equal(await page.eval(`window.__e2e.companionAsked.days`), 2);
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Re-plans day 2/);
+  await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-undo]")`, 15000, "the change applied");
+  const sent = await page.eval(`window.__e2e.requests.at(-1)`);
+  assert.equal(sent.redoDay.day, 1);
+  assert.match(sent.redoDay.request, /morning at the market/);
+  assert.equal(await page.eval(`planner.state().itinerary.days[1].items[0].place`), "Mercato");
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].place`), "Basilica", "the other day stays");
+  await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
+  assert.equal(await page.eval(`planner.state().itinerary.days[1].items[0].place`), "Orto Botanico");
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Undone/);
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {

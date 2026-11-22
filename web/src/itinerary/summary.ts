@@ -68,10 +68,6 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       <button data-tool="json" title="The itinerary as a JSON file">${icon("download")} JSON</button>
       <button data-tool="clear" class="danger" title="Clear this itinerary" aria-label="Clear this itinerary">${icon("trash")}</button>
     </div>
-    <div class="refine">
-      <label for="refineText">Ask for changes</label>
-      <textarea id="refineText" rows="2" placeholder="e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”"></textarea>
-      <div class="refine-actions"><button class="btn solid" id="refineBtn">Revise the plan</button></div>
-    </div>
+    <button type="button" class="refine" id="refineBtn">${icon("chat")}<span><b>Ask for changes</b> in the trip chat, e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”</span></button>
   </div>`;
 }

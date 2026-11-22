@@ -67,9 +67,6 @@ label.check.off { opacity: .5; }
 .toolbar button:hover { background: var(--hover); }
 .toolbar button.danger { margin-left: auto; width: 32px; padding: 0; justify-content: center; color: var(--muted); border-color: transparent; background: none; }
 .toolbar button.danger:hover { color: var(--accent); background: var(--accent-soft); }
-.refine { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
-.refine textarea { min-height: 58px; }
-.refine-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
 /* Collapsible sections (holidays, book ahead): a turning arrow says they open. */
 .fold { margin: 10px 0 4px; }
 .fold > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 4px 0; }
