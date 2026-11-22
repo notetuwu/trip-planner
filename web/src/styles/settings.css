@@ -55,11 +55,6 @@ button.primary:disabled { opacity: .6; cursor: progress; }
 
 .inline { display: flex; gap: 6px; }
 .inline > select, .inline > input { flex: 1; min-width: 0; }
-details.import { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0; }
-details.import summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 500; }
-details.import summary:hover { color: var(--ink); }
-details.import[open] summary { margin-bottom: 8px; }
-details.import .inline { margin-bottom: 8px; }
 .file-btn { position: relative; overflow: hidden; display: inline-block; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
@@ -79,18 +74,18 @@ details.import .inline { margin-bottom: 8px; }
 .chip-x { display: inline-grid; place-items: center; width: 16px; height: 16px; margin: 0 -4px 0 4px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; opacity: .55; cursor: pointer; font-size: 11px; vertical-align: -2px; }
 .chip-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 15%, transparent); }
 @keyframes flash { 0% { box-shadow: 0 0 0 4px var(--accent); } 100% { box-shadow: 0 0 0 0 transparent; } }
-.chip .who {
+.chip .who, .place-row .who {
   display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: 11px;
   border: 1px solid currentColor; opacity: .55; font-variant-numeric: tabular-nums;
 }
-.chip .who:hover { opacity: 1; }
-.chip .how {
+.chip .who:hover, .place-row .who:hover { opacity: 1; }
+.chip .how, .place-row .how {
   display: inline-flex; align-items: center; gap: 3px; margin-left: 4px; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 500;
   border: 1px dashed currentColor; opacity: .55;
 }
-.chip .how:hover { opacity: 1; }
-.chip .how.set { opacity: 1; border-style: solid; }
-.chip .who.part { opacity: 1; background: var(--ok); color: var(--panel); border-color: var(--ok); }
+.chip .how:hover, .place-row .how:hover { opacity: 1; }
+.chip .how.set, .place-row .how.set { opacity: 1; border-style: solid; }
+.chip .who.part, .place-row .who.part { opacity: 1; background: var(--ok); color: var(--panel); border-color: var(--ok); }
 .counts { font-size: 12px; color: var(--muted); margin-top: 6px; }
 .keys-dialog { width: min(520px, 92vw); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); }
 .keys-dialog::backdrop { background: rgba(0, 0, 0, .35); }
@@ -103,20 +98,7 @@ details.import .inline { margin-bottom: 8px; }
 .update-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; padding: 8px 16px; background: var(--accent-soft); color: var(--ink); border-bottom: 1px solid var(--line); font-size: 13px; }
 .update-bar a { color: var(--accent); font-weight: 600; text-decoration: none; }
 .update-bar .btn { padding: 4px 12px; }
-.guide-dialog { width: min(640px, 94vw); }
-.guide-steps { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 14px; }
-.guide-steps li { padding-left: 4px; line-height: 1.5; }
-.guide-steps li::marker { font-weight: 700; color: var(--accent); }
-.guide-actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
-.guide-actions a.btn { text-decoration: none; }
-.guide-status { margin-top: 4px; }
 .ok-text { color: var(--ok); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
-.guide-models { width: 100%; border-collapse: collapse; margin: 10px 0 6px; font-size: 13px; }
-.guide-models td { border-top: 1px solid var(--line); padding: 8px 6px; vertical-align: middle; }
-.guide-models td.num { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-.guide-models tr.pick td { background: var(--ok-soft); }
-.guide-models code { font: 600 12.5px ui-monospace, Consolas, monospace; }
-.guide-models .btn.copy { height: 28px; padding: 0 9px; font-size: 12px; }
 .pick-badge { font-size: 11px; font-weight: 700; color: var(--ok); border: 1px solid var(--ok); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
 .stay-hotels { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--accent); text-decoration: none; }
 .stay-hotels:hover { text-decoration: underline; }
@@ -379,3 +361,127 @@ button.refine:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .pull .bar i::before, .pull .bar i::after, .dl-arrow, .pull.ok .pop, .pull .bar.indeterminate i { animation: none !important; }
 }
+
+/* Per list: suggest its places to the planner (a switch with sparkles), or only send the starred ones. */
+.list-suggest { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--panel); color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: background .15s, color .15s, border-color .15s; }
+.list-suggest .i { width: 13px; height: 13px; }
+.list-suggest:hover { border-color: var(--accent); color: var(--ink); }
+.list-suggest.on { background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, transparent), color-mix(in srgb, #ffb000 16%, transparent)); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent); }
+.list-empty { display: flex; gap: 12px; align-items: center; width: 100%; padding: 14px; border: 1px dashed var(--line-strong); border-radius: 10px; background: transparent; color: var(--ink); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.list-empty > .i { font-size: 20px; color: var(--accent); flex: none; }
+.list-empty:hover { border-color: var(--accent); }
+
+/* Import a place list: from Google Maps or a CSV, and whether all its places go to the planner. */
+.import-dialog { width: min(560px, 94vw); padding: 22px 24px 18px; }
+.import-dialog h2 { margin: 0 0 6px; font-size: 18px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.imp-intro { margin: 0 0 14px; }
+.imp-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; background: var(--field); }
+.imp-card h3 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+.imp-card h3 .i { color: var(--accent); }
+.imp-steps { margin: 0 0 12px; padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+.imp-steps b { color: var(--ink); font-weight: 600; }
+.imp-row { display: flex; gap: 8px; margin: 8px 0; }
+.imp-row input { flex: 1; min-width: 0; height: 40px; }
+.imp-row .btn { height: 40px; padding: 0 18px; }
+.imp-drop { display: flex; align-items: center; justify-content: center; gap: 10px; height: 64px; border: 1.5px dashed var(--line-strong); border-radius: 10px; color: var(--muted); font-size: 13px; cursor: pointer; transition: border-color .15s, background .15s; }
+.imp-drop .i { font-size: 18px; color: var(--accent); }
+.imp-drop:hover, .imp-drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); }
+.imp-all { margin: 4px 0 6px; }
+.import-dialog #importStatus { min-height: 18px; }
+#listMeta:not(:empty) { margin-right: 10px; }
+
+/* Places: a dialog with the lists on the left and the places on the right. */
+.places-dialog { width: min(1480px, 97vw); max-width: none; padding: 0; }
+.places-dialog[open] { display: flex; flex-direction: column; height: 92vh; }
+.pl-head { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px 22px; border-bottom: 1px solid var(--line); }
+.pl-head h2 { margin: 0; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; gap: 8px; align-items: center; }
+.pl-head h2 .i { color: var(--accent); }
+.pl-head #listMeta { flex: 1; margin: 0; }
+.pl-head form { margin: 0; }
+.pl-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr); }
+.pl-lists, .pl-places { min-height: 0; overflow: auto; padding: 16px 20px 20px; }
+.pl-lists { border-right: 1px solid var(--line); }
+.pl-col-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 8px; font-size: 14px; }
+.pl-col-head .counts { margin: 0; font-size: 12px; }
+.pl-help { margin: 0 0 12px; font-size: 12px; line-height: 1.6; }
+.pl-key { display: inline-flex; width: 18px; height: 18px; border-radius: 5px; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); vertical-align: -4px; }
+.pl-key .i { width: 12px; height: 12px; }
+.pl-places .places-tools input { height: 38px; }
+.pl-places .legend { margin: 8px 0 12px; }
+@media (max-width: 760px) {
+  .pl-body { grid-template-columns: 1fr; overflow: auto; }
+  .pl-lists, .pl-places { overflow: visible; }
+  .pl-lists { border-right: 0; border-bottom: 1px solid var(--line); }
+}
+/* The sidebar's summary of Places. */
+.places-summary { display: grid; gap: 8px; margin-bottom: 6px; }
+.ps-facts { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ps-facts .i { color: var(--accent); }
+.ps-must { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ps-label { font-size: 11.5px; font-weight: 700; color: var(--accent); display: inline-flex; gap: 4px; align-items: center; margin-right: 2px; }
+.ps-chip { max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; padding: 3px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line)); }
+
+/* The places in the Places dialog: a table to sort (click a column) and filter (no height limit: the column scrolls). */
+.places-dialog .chips { display: block; max-height: none; overflow: visible; padding: 0; }
+.pl-tools { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pl-tools input { flex: 1; min-width: 200px; }
+.pl-tools select { width: auto; height: 38px; max-width: 200px; }
+.seg-n { font-size: 11px; opacity: .65; margin-left: 2px; font-variant-numeric: tabular-nums; }
+.place-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
+.place-table thead th { position: sticky; top: -16px; z-index: 1; background: var(--panel); text-align: left; font-weight: 600; padding: 0; border-bottom: 1px solid var(--line-strong); white-space: nowrap; }
+.place-table th button { display: inline-flex; align-items: center; gap: 4px; width: 100%; padding: 9px 8px; border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; cursor: pointer; }
+.place-table th button:hover, .place-table th button.on { color: var(--ink); }
+.place-table th .arrow { font-size: 9px; color: var(--accent); }
+.place-table th:not(:has(button)) { padding: 9px 8px; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; }
+.place-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.place-table tbody tr:hover td { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.place-row.must td { background: color-mix(in srgb, var(--ok) 6%, transparent); }
+.place-row.skip td:not(.pt-act) { opacity: .5; }
+.place-row.skip .pt-name span { text-decoration: line-through; }
+.place-row.flash td { animation: flash-bg 1.4s ease-out; }
+@keyframes flash-bg { from { background: color-mix(in srgb, var(--accent) 25%, transparent); } }
+.pt-star { width: 34px; padding-left: 4px !important; }
+.pt-star button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
+.pt-star button:hover { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.place-row.must .pt-star button { color: var(--ok); }
+.place-row.must .pt-star .i { fill: currentColor; }
+.pt-name { min-width: 180px; max-width: 320px; }
+.pt-name span { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-name small { display: block; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-list { color: var(--muted); font-size: 12px; white-space: nowrap; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+.pt-none { color: var(--muted); opacity: .6; font-size: 12px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.pill .i { width: 11px; height: 11px; }
+.pill.must { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.pill.must .i { fill: currentColor; }
+.pill.skip { background: var(--skip-soft); color: var(--skip); }
+.pt-select { height: 30px; width: auto; min-width: 96px; padding: 0 26px 0 9px; font-size: 12.5px; border-radius: 8px; }
+.pt-select.part, .pt-select.set { border-color: color-mix(in srgb, var(--ok) 55%, var(--line)); color: var(--ok); font-weight: 600; }
+.pt-act { white-space: nowrap; text-align: right; }
+.pt-btn { height: 28px; padding: 0 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; opacity: .55; }
+.place-row:hover .pt-btn, .place-row.skip .pt-btn { opacity: 1; }
+.pt-btn:hover { color: var(--ink); border-color: var(--line-strong); }
+@media (hover: none) { .pt-btn { opacity: 1; } }
+.pl-places { overflow-x: auto; }
+.place-row .who, .place-row .how { color: var(--ok); margin-left: 0; height: 22px; cursor: pointer; }
+
+/* The sidebar: the planning options in a card; the ideas scratchpad folded away at the end. */
+.plan-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); }
+.plan-card .check { margin: 0; }
+.plan-card .model-hint:empty { display: none; }
+.notes-fold { margin: 18px 0 4px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; }
+.notes-fold summary { display: flex; align-items: baseline; gap: 8px; padding: 11px 0; cursor: pointer; list-style: none; font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 700; }
+.notes-fold summary::-webkit-details-marker { display: none; }
+.notes-fold summary::before { content: "▸"; font-size: 10px; transition: transform .15s; }
+.notes-fold[open] summary::before { transform: rotate(90deg); }
+.notes-fold summary .hint { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
+.notes-fold[open] { padding-bottom: 12px; }
+/* The places table: compact enough that the How column fits. */
+.pt-name { max-width: 300px; }
+.pt-how .pt-select { min-width: 150px; }
+
+/* A list row: the name on top; where it's from, Suggest, sync and remove below. */
+.list-picker .list-row { flex-wrap: wrap; row-gap: 4px; padding: 8px 8px 6px 10px; }
+.list-row label { flex: 1 1 100%; }
+.list-tools { display: flex; align-items: center; gap: 2px; margin-left: 27px; flex: 1; justify-content: flex-end; }
+.list-tools .list-suggest { margin-right: auto; }

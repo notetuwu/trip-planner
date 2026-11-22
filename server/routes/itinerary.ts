@@ -77,7 +77,7 @@ export async function handleItinerary(req: Req, res: Res) {
   const problem = validateTrip(trip);
   if (problem) return sendJson(res, 400, { error: problem });
   const places = await tripPlaces(trip);
-  console.log(`${trip.redoDay ? `Re-planning day ${trip.redoDay.day + 1} of` : trip.fix ? `Fixing ${trip.fix.problems.length} problem(s) in` : trip.revise ? "Revising" : "Generating"} itinerary: ${trip.stays.map((s) => `${s.city} (${s.nights}n)`).join(" -> ")}`);
+  console.log(`${trip.redoDay ? `Re-planning day ${trip.redoDay.day + 1} of` : trip.edit ? `Changing ${trip.edit.days.length} day(s) of` : trip.fix ? `Fixing ${trip.fix.problems.length} problem(s) in` : trip.revise ? "Revising" : "Generating"} itinerary: ${trip.stays.map((s) => `${s.city} (${s.nights}n)`).join(" -> ")}`);
 
   res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
   const send = (ev: StreamEvent) => { if (!res.destroyed && !res.writableEnded) res.write(JSON.stringify(ev) + "\n"); };

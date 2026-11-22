@@ -288,9 +288,9 @@ test("trains follow the tracks: a train leg and a train day trip ask for train r
 
 test("a must-see that isn't from a place list can be removed with its x, and Undo brings it back", async () => {
   await trip({ ...PADUA_MILANO, marks: { "Caffe Pedrocchi": "must" } });
-  assert.ok(await page.eval(`!!document.querySelector('.chip[data-t="Caffe Pedrocchi"] .chip-x')`), "the x is there");
-  await page.eval(`document.querySelector('.chip[data-t="Caffe Pedrocchi"] .chip-x').click()`);
-  assert.equal(await page.eval(`!!document.querySelector('.chip[data-t="Caffe Pedrocchi"]')`), false, "the chip is gone");
+  assert.ok(await page.eval(`!!document.querySelector('.place-row[data-t="Caffe Pedrocchi"] [data-remove]')`), "the x is there");
+  await page.eval(`document.querySelector('.place-row[data-t="Caffe Pedrocchi"] [data-remove]').click()`);
+  assert.equal(await page.eval(`!!document.querySelector('.place-row[data-t="Caffe Pedrocchi"]')`), false, "the row is gone");
   assert.equal(await page.eval(`planner.state().customPlaces.length + "|" + (planner.state().marks["Caffe Pedrocchi"] || "")`), "0|");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must", "Undo puts it back");
@@ -299,7 +299,7 @@ test("a must-see that isn't from a place list can be removed with its x, and Und
 test("setting a must-see to 'on the way' takes it off the stays' day trips", async () => {
   await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 3, hotel: "", dayTrips: [{ place: "Caffe Pedrocchi, Italy", mode: "car" }] }],
     list: "", listChosen: true, autoFix: false, customPlaces: [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775, custom: true }], marks: { "Caffe Pedrocchi": "must" } });
-  await page.eval(`document.querySelector('.chip[data-t="Caffe Pedrocchi"] [data-how]').click()`);
+  await page.eval(`(() => { const s = document.querySelector('.place-row[data-t="Caffe Pedrocchi"] select[data-how]'); s.value = "way"; s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   assert.equal(await page.eval(`planner.state().how["Caffe Pedrocchi"]`), "way");
   assert.deepEqual(await page.eval(`planner.state().stays[0].dayTrips`), [], "no longer a day trip");
   assert.match(await page.eval(`document.querySelector("#toast").textContent`), /no longer a day trip from Padua/);
@@ -307,8 +307,8 @@ test("setting a must-see to 'on the way' takes it off the stays' day trips", asy
 
 test("a must-see kept from a list that isn't selected has an x too", async () => {
   await trip({ ...PADUA_MILANO, customPlaces: [], marks: { "Rifugio Lagazuoi": "must" }, kept: [{ title: "Rifugio Lagazuoi", lat: 46.53, lng: 12.0 }] });
-  assert.ok(await page.eval(`!!document.querySelector('.chip[data-t="Rifugio Lagazuoi"] .chip-x')`), "the x is there");
-  await page.eval(`document.querySelector('.chip[data-t="Rifugio Lagazuoi"] .chip-x').click()`);
+  assert.ok(await page.eval(`!!document.querySelector('.place-row[data-t="Rifugio Lagazuoi"] [data-remove]')`), "the x is there");
+  await page.eval(`document.querySelector('.place-row[data-t="Rifugio Lagazuoi"] [data-remove]').click()`);
   assert.equal(await page.eval(`(planner.state().kept || []).length + "|" + (planner.state().marks["Rifugio Lagazuoi"] || "")`), "0|");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.equal(await page.eval(`planner.state().kept.length`), 1, "Undo keeps it again");
@@ -455,7 +455,7 @@ test("the trip chat answers from the trip, keeps the conversation, and reads the
   assert.equal(await page.eval(`planner.state().ideas`), "Maybe a boat on the Brenta?");
 });
 
-test("asking the chat for a change offers it; Apply re-plans that day, Undo puts the plan back", async () => {
+test("asking the chat for a change offers it; Apply changes only that day, Undo puts the plan back", async () => {
   const plan = { summary: "Plan", totalEstimatedCost: 0, days: [
     { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] },
     { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Orto Botanico", description: "" }] }] };
@@ -468,12 +468,13 @@ test("asking the chat for a change offers it; Apply re-plans that day, Undo puts
   await page.eval(`(() => { const q = document.querySelector("#cpQ"); q.value = "Less garden, more food on day 2"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
   await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the offered change");
   assert.equal(await page.eval(`window.__e2e.companionAsked.days`), 2);
-  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Re-plans day 2/);
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Changes day 2 only/);
   await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
   await page.waitFor(`!!document.querySelector("#cpLog [data-undo]")`, 15000, "the change applied");
   const sent = await page.eval(`window.__e2e.requests.at(-1)`);
-  assert.equal(sent.redoDay.day, 1);
-  assert.match(sent.redoDay.request, /morning at the market/);
+  assert.deepEqual(sent.edit.days, [1], "only day 2 is sent to be changed");
+  assert.match(sent.edit.request, /morning at the market/);
+  assert.equal(sent.research, false);
   assert.equal(await page.eval(`planner.state().itinerary.days[1].items[0].place`), "Mercato");
   assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].place`), "Basilica", "the other day stays");
   await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
@@ -482,23 +483,53 @@ test("asking the chat for a change offers it; Apply re-plans that day, Undo puts
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 
-test("several place lists can be ticked: their places are all considered for the plan", async () => {
+test("place lists: ticked ones show on the map; suggested ones go to the planner, from the others only the stars", async () => {
   await page.eval(`window.__e2e.lists = {
     "Italy": [{ title: "Basilica di Sant'Antonio", lat: 45.401, lng: 11.881 }, { title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775 }],
     "Food": [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775 }, { title: "Mercato sotto il Salone", lat: 45.407, lng: 11.875 }],
   }`);
   await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], lists: ["Italy"], listChosen: true, autoFix: false });
   await page.waitFor(`document.querySelectorAll("#listPicker .list-row").length === 2`, 5000, "the lists");
-  await page.waitFor(`document.querySelectorAll("#chips .chip").length === 2`, 5000, "one list's places");
+  await page.waitFor(`document.querySelectorAll("#chips .place-row").length === 2`, 5000, "one list's places");
   await page.eval(`(() => { const b = document.querySelector('[data-list="Food"]'); b.checked = true; b.dispatchEvent(new Event("change")); })()`);
-  await page.waitFor(`document.querySelectorAll("#chips .chip").length === 3`, 5000, "both lists' places (Caffe Pedrocchi once)");
+  await page.waitFor(`document.querySelectorAll("#chips .place-row").length === 3`, 5000, "both lists' places (Caffe Pedrocchi once)");
   assert.deepEqual(await page.eval(`planner.state().lists`), ["Italy", "Food"]);
-  assert.equal(await page.eval(`document.querySelector("#listMeta").textContent`), "2 lists");
+  assert.equal(await page.eval(`document.querySelector("#listMeta").textContent`), "2 lists on the map · 2 suggested to the planner");
   await page.eval(`window.__e2e.answer = () => ({ summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("10:00", "Basilica")])] })`);
   await page.eval(`document.querySelector("#generate").click()`);
   await page.waitFor(`window.__e2e.requests.length === 1`, 10000, "the request");
   assert.deepEqual(await page.eval(`window.__e2e.requests[0].lists`), ["Italy", "Food"]);
+  // Suggestions off: the list's places still show on the map, but only the starred ones go to the planner.
+  await page.waitFor(`!document.querySelector("#generate").disabled`, 10000, "generation done");
+  await page.eval(`document.querySelector("#openPlaces").click()`);
+  assert.ok(await page.eval(`document.querySelector("#placesDialog").open`), "Manage places opens the Places dialog");
+  await page.eval(`document.querySelector('[data-suggest="Food"]').click()`);
+  await page.waitFor(`document.querySelector('[data-suggest="Food"]').getAttribute("aria-pressed") === "false"`, 5000, "suggestions off for the list");
+  assert.equal(await page.eval(`document.querySelectorAll("#chips .place-row").length`), 3, "its places still show");
+  await page.eval(`document.querySelector('#chips .place-row[data-t="Mercato sotto il Salone"] [data-star]').click()`);
+  assert.equal(await page.eval(`planner.state().marks["Mercato sotto il Salone"]`), "must");
+  await page.eval(`document.querySelector("#placesDialog").close(); document.querySelector("#generate").click()`);
+  await page.waitFor(`window.__e2e.requests.length === 2`, 10000, "the second request");
+  const req = await page.eval(`window.__e2e.requests[1]`);
+  assert.deepEqual(req.lists, ["Italy"]);
+  assert.deepEqual(req.extraPlaces.map((p) => p.title), ["Mercato sotto il Salone"], "only the starred place of the list without suggestions");
+  assert.match(await page.eval(`document.querySelector("#placesSummary").textContent`), /2 lists on the map \(1 suggested[\s\S]*Mercato sotto il Salone/);
+  await page.eval(`document.querySelector("#placesDialog").close()`);
   await page.eval(`window.__e2e.lists = null`);
+});
+
+test("a place's popup on the map stays open while the map redraws (lookups and routes coming in)", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false,
+    customPlaces: [{ title: "Caffe Pedrocchi", lat: 45.4078, lng: 11.8775, custom: true }] });
+  await page.waitFor(`!!document.querySelector(".leaflet-overlay-pane path.leaflet-interactive")`, 5000, "the place's dot");
+  await page.eval(`document.querySelector(".leaflet-overlay-pane path.leaflet-interactive").dispatchEvent(new MouseEvent("click", { bubbles: true, clientX: 1, clientY: 1 }))`);
+  await page.waitFor(`/Caffe Pedrocchi/.test(document.querySelector(".leaflet-popup")?.textContent || "")`, 5000, "the popup");
+  await page.eval(`planner.drawMap(); planner.drawMap()`);
+  await new Promise((r) => setTimeout(r, 300));
+  assert.match(await page.eval(`document.querySelector(".leaflet-popup")?.textContent || ""`), /Caffe Pedrocchi/, "still open after redraws");
+  // Its buttons still work: Must-see closes it and marks the place.
+  await page.eval(`document.querySelector('.leaflet-popup [data-mark][data-v="must"]').click()`);
+  assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
 });
 
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {

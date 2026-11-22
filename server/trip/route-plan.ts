@@ -25,8 +25,10 @@ export interface RouteRequest {
   stays?: string;
   travelers?: number;
   interests?: string;
-  /** Spending per day for everything (stays included), in `currency`. */
+  /** Spending a day on activities, food and getting around (stays come on top), in `currency`. */
   budget?: number;
+  /** "person": the budget is per person (older pages sent the group's). */
+  budgetPer?: "person";
   currency?: string;
   model: string;
   /**
@@ -230,7 +232,7 @@ End: ${roundTrip ? `back at the start (a round trip)` : to.text}.
 Length: ${days} days, so ${nights} nights away.
 Travel: ${howText}; at most about ${maxHours} h of travel on a travel day.${month ? `
 Season: they travel in ${month}. Suggest only what works then (no skiing or ski jumps outside winter, no closed mountain passes or huts in winter, no summer-only things out of season).` : ""}
-${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}${Number(req.budget) > 0 ? ` Budget: about ${Math.round(Number(req.budget))} ${String(req.currency || "EUR").slice(0, 3)} per day for everything, stays included.` : ""}
+${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}${Number(req.budget) > 0 ? ` Budget: about ${Math.round(Number(req.budget))} ${String(req.currency || "EUR").slice(0, 3)} ${req.budgetPer === "person" ? "per person " : ""}a day for activities, food and getting around (stays come on top).` : ""}
 What they want: ${req.description || "a varied, scenic trip"}
 ${req.stays ? `Kind of places to stay: ${req.stays}` : ""}
 ${mustText}${again}

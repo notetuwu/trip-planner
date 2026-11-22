@@ -2,7 +2,7 @@
 import { prefs } from "../core/prefs";
 import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../shared/types";
 import { $, apiFetch, toast } from "../core/dom";
-import { type Meta, save, session, state, staysKey } from "../core/state";
+import { type Meta, groupBudget, save, session, state, staysKey } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
 import { renderItinerary, setInlineProgress } from "../itinerary/render";
 import { fmtDate } from "../core/format";
@@ -47,14 +47,15 @@ function spliceDay(current: Itinerary, day: number, data: RunResult, view: Progr
 }
 
 /** Swaps the fixed days in (matched by date) and notes what was fixed. */
-function spliceFixed(current: Itinerary, data: RunResult, view: ProgressView, count: number) {
+function spliceFixed(current: Itinerary, data: RunResult, view: ProgressView, count: number, label?: string) {
   for (const fresh of data.itinerary.days || []) {
     const i = current.days.findIndex((d) => d.date === fresh.date);
     if (i >= 0) current.days[i] = { ...fresh, date: current.days[i].date };
   }
   current.totalEstimatedCost = current.days.reduce((n, d) => n + (Number(d.estimatedCost) || 0), 0);
   const meta = state.meta || {};
-  const notes = `\n\n**Fixed ${count} problem${count > 1 ? "s" : ""} the map checks found${data.itinerary.summary ? `:** ${data.itinerary.summary}` : ":**"}`
+  const what = label || `Fixed ${count} problem${count > 1 ? "s" : ""} the map checks found`;
+  const notes = `\n\n**${what}${data.itinerary.summary ? `:** ${data.itinerary.summary}` : ":**"}`
     + (data.reasoning ? `\n\n${data.reasoning}` : "");
   state.meta = { ...meta, reasoning: (meta.reasoning || "") + notes, pois: [...(meta.pois || []), ...view.collected.pois],
     costUsd: meta.costUsd != null || data.costUsd != null ? (meta.costUsd || 0) + (data.costUsd || 0) : undefined };
@@ -97,30 +98,38 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
   if (running) return false;
   const btn = $<HTMLButtonElement>("#generate");
   const trip = tripRequest(change);
-  if (change.fix) trip.research = false;
-  const redo = change.redoDay, fix = change.fix;
+  // Fixes and asked-for changes touch a few stops: no research round (the real places near each stay are in the prompt).
+  if (change.fix || change.edit) trip.research = false;
+  const redo = change.redoDay, fix = change.fix, edit = change.edit;
+  const editDays = edit ? [...new Set(edit.days)].sort((a, b) => a - b) : [];
+  const editWhat = editDays.length === 1 ? fmtDate(edit!.itinerary.days[editDays[0]]?.date || "") : `${editDays.length} days`;
   running = true; btn.disabled = true;
   const abort = new AbortController();
   // A day re-plan or a fix shows its progress inside the itinerary; the rest of the plan stays readable.
-  const box = redo || fix ? document.createElement("div") : undefined;
-  if (box) { box.className = "inline-progress"; setInlineProgress(redo ? { day: redo.day, el: box } : { fix: true, el: box }); }
+  const box = redo || fix || edit ? document.createElement("div") : undefined;
+  if (box) {
+    box.className = "inline-progress";
+    setInlineProgress(redo ? { day: redo.day, el: box } : editDays.length === 1 ? { day: editDays[0], el: box } : { fix: true, el: box });
+  }
   const view = showProgress({ into: box,
     who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),
-    doing: redo ? `re-planning ${fmtDate(redo.itinerary.days[redo.day]?.date || "")}`
+    doing: redo ? `re-planning ${fmtDate(redo.itinerary.days[redo.day]?.date || "")}` : edit ? `changing ${editWhat}`
       : fix ? `fixing ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""} the map checks found (wrong town or closed)` : change.revise ? "revising your trip" : "planning your trip",
-    expectedDays: redo ? 1 : fix ? new Set(fix.problems.map((p) => p.day)).size : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
+    expectedDays: redo ? 1 : edit ? editDays.length : fix ? new Set(fix.problems.map((p) => p.day)).size : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
   });
   try {
     const data = await request(trip, view, abort.signal);
     setInlineProgress(null);
     if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
     else if (fix && state.itinerary) spliceFixed(state.itinerary, data, view, fix.problems.length);
+    // Only the changed days come back; every other day stays exactly as it was.
+    else if (edit && state.itinerary) spliceFixed(state.itinerary, data, view, 0, `Changed ${editWhat}: ${edit.request}`);
     else {
       state.itinerary = data.itinerary;
       const meta: Meta = {
         costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, ...view.collected,
         tokens: data.tokens, perSec: data.perSec, engine: data.engine, local: isLocal(trip.model), billing: data.billing,
-        searches: data.searches, budget: trip.dailyBudget, currency: trip.currency, at: new Date().toISOString(), staysKey: staysKey(),
+        searches: data.searches, budget: groupBudget(), currency: trip.currency, at: new Date().toISOString(), staysKey: staysKey(),
       };
       state.meta = meta;
       session.selectedDay = null;
@@ -129,16 +138,20 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     session.weather = {};
     save();
     view.stop();
-    renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix }); geocodeItems(); loadWeather();
+    renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix && !edit }); geocodeItems(); loadWeather();
     if (redo) {
       document.getElementById(`day-${redo.day}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       toast(`${fmtDate(redo.itinerary.days[redo.day].date)} is re-planned`);
     } else if (fix) toast(`Fixed ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""}`);
+    else if (edit) {
+      document.getElementById(`day-${editDays[0]}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+      toast(`Changed ${editWhat}`);
+    }
     return true;
   } catch (err) {
     setInlineProgress(null);
     view.stop();
-    renderItinerary((err as Error).name === "AbortError" ? (fix ? "Fixing cancelled; the plan is as it was." : "Cancelled.") : (err as Error).message);
+    renderItinerary((err as Error).name === "AbortError" ? (fix || edit ? `${fix ? "Fixing" : "The change was"} cancelled; the plan is as it was.` : "Cancelled.") : (err as Error).message);
     return false;
   } finally {
     view.stop(); btn.disabled = false; running = false;

@@ -199,7 +199,7 @@ async function plan_(change = false) {
     const plan = await streamRequest<RoutePlan>("/api/route-plan", {
       start: val("rpStart"), end: val("rpEnd"), startDate: val("rpDate"), days: +val("rpDays"), mode: val("rpMode"),
       maxHours: +val("rpHours"), description: val("rpWhat"), stays: val("rpStays"),
-      travelers: state.travelers, interests: state.interests, model, budget: state.dailyBudget, currency: state.currency,
+      travelers: state.travelers, interests: state.interests, model, budget: state.dailyBudget, budgetPer: "person", currency: state.currency,
       conversation,
       mustSee: !$("#rpMustRow").hidden && $<HTMLInputElement>("#rpMust").checked ? mustSees() : [],
     }, (l) => {

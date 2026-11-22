@@ -40,6 +40,12 @@ describe("planning options", () => {
     expect(sights(p)).toBe(12);
     expect(p).toContain("up to about 10 searches");
   });
+  it("the budget is per person, with the group's total", () => {
+    settings.writeSettings({ tune: { ...settings.TUNE_DEFAULTS } });
+    const p = buildPrompt({ ...trip, budgetPer: "person", travelers: 2 } as Trip, [], {});
+    expect(p).toContain("150 EUR per person per day, so 300 EUR a day for the group of 2");
+    expect(buildPrompt(trip, [], {})).toContain("150 EUR per day for 2 traveler(s)");
+  });
   it("keeps only valid values", () => {
     settings.writeSettings({ tune: { ...settings.TUNE_DEFAULTS } });
     const s = settings.writeSettings({ tune: { detail: "huge", lookups: 999, temperature: 3, keepAlive: "forever", language: "<script>", fixRounds: "2" } as any });

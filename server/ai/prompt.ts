@@ -53,7 +53,7 @@ ${json
 ${stayLines(trip)}
 
 ## Constraints
-- Daily budget: ${trip.dailyBudget} ${trip.currency} per day for ${trip.travelers} traveler(s), covering activities, food and local transport (accommodation is already paid, intercity transfers count toward the day they happen). It is a ceiling, not a target.
+- Daily budget: ${trip.budgetPer === "person" && trip.travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day, so ${trip.dailyBudget * trip.travelers} ${trip.currency} a day for the group of ${trip.travelers}` : `${trip.dailyBudget} ${trip.currency} per day for ${trip.travelers} traveler(s)`} (costs in the plan are for the whole group), covering activities, food and local transport (accommodation is already paid, intercity transfers count toward the day they happen). It is a ceiling, not a target.
 - Pace: ${trip.pace}
 - Interests / preferences: ${trip.interests || "none given"}
 - Extra notes: ${trip.notes || "none"}
@@ -66,7 +66,7 @@ Plan around these: closed shops and museums, changed transit timetables, crowds,
 ${holidays}
 ` : ""}
 ## Saved places
-${places.length ? `Build the itinerary primarily from these. Places marked [MUST SEE] must be included. Never schedule [SKIP] places. Hotels in the list are accommodation candidates, not activities. Day trips from a base city are fine if reasonable. Add meals and a few unlisted highlights to fill the days; set fromList=false for those.
+${places.length ? `The travelers' own ideas: places they saved and want you to pick from. Prefer them over other ideas and use the ones that fit the route, the days and their interests well; they're options, not requirements, and the plan doesn't have to use them all. Places marked [MUST SEE] must be included. Never schedule [SKIP] places. Hotels in the list are accommodation candidates, not activities. Day trips from a base city are fine if reasonable. Add meals and a few unlisted highlights to fill the days; set fromList=false for those.
 Places marked "[MUST SEE for N of M travelers]" only interest part of the group. You may split the group up for those: the N go there while the others do something else (ideally another place only they want, so split places pair up). Batch split places into as few split sessions as is sensible and bring everyone back together afterwards. While split, give every item a "group" label (e.g. "Group A", "Group B") and "people" count, and list each subgroup's items in time order; items done together have no group. You can also skip splitting and take everyone if that is clearly simpler.
 ${placeLines(trip, places)}` : "No saved places; choose the best things to do yourself (fromList=false)."}
 ${nearby ? `
@@ -115,9 +115,10 @@ ${JSON.stringify(trip.revise.itinerary)}
 ## Requested changes
 ${trip.revise.request}
 
-Apply the requested changes to the current itinerary and return the complete updated itinerary. Keep everything the request doesn't touch as it is. Your planning notes should explain what you changed and why.`;
+Apply the requested changes to the current itinerary and return the complete updated itinerary. Change only what the request asks for: every other day, stop, time, description and cost stays exactly as it is (copy it unchanged), and day trips, travel between stays, where they sleep and anything booked stay as they are unless the request is about them. Your planning notes should say what you changed and why.`;
   }
   if (trip.redoDay) prompt += redoSection(trip.redoDay);
+  if (trip.edit) prompt += editSection(trip.edit);
   if (trip.fix) prompt += fixSection(trip.fix);
   // Servers without schema enforcement only have the prompt to go on.
   if (opts.schema) prompt += `\n\n## JSON schema\n${JSON.stringify(LOCAL_SCHEMA)}`;
@@ -141,6 +142,27 @@ ${problems.map((p) => `- ${itinerary.days[p.day]?.date}: ${p.text}`).join("\n")}
 
 ## Fix only these problems
 For each problem, change only that stop: replace a place that isn't where the day is with a real place near that day's town (from the lists above if possible), and move a stop that's closed at the planned time to a time it's open, or swap it with another stop or a similar place. Keep everything else on those days as it is, including where they sleep and any transfer. If a must-see can't be moved to an open time on its day, keep it and say so in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only the ${days.length} day(s) to fix (${days.map((i) => itinerary.days[i].date).join(", ")}), each complete. "summary" is one sentence on what you fixed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly list what you changed.`;
+}
+
+/** A change the travelers asked for, to some days only: the other days as context (names only), those days in full,
+ *  and the rule to change nothing the request doesn't ask for. Only those days come back. */
+export function editSection({ itinerary, days, request }: NonNullable<Trip["edit"]>) {
+  const these = [...new Set(days)].sort((a, b) => a - b).filter((i) => itinerary.days[i]);
+  const others = itinerary.days.map((x, i) => (these.includes(i) ? `${x.date} ${x.city}: (to change, below)` : `${x.date} ${x.city}: ${x.items.map((it) => it.place).join("; ")}`)).join("\n");
+  const dates = these.map((i) => itinerary.days[i].date).join(", ");
+  return `
+
+## The rest of the trip (already planned, keep as is)
+${others}
+
+## Day${these.length > 1 ? "s" : ""} to change
+${these.map((i) => JSON.stringify(itinerary.days[i])).join("\n")}
+
+## The change the travelers asked for
+${request}
+
+## Change only what they asked for
+Make exactly this change and nothing else. Every stop, time, description and cost the request doesn't touch stays as it is: copy it unchanged. Moving stops between these days, or swapping them, is fine when that's what they asked for (then give each stop the date it moves to). Keep day trips, travel between stays, where they sleep and anything booked as they are, unless the request is about them. Don't add places they already visit on another day. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only these ${these.length} day(s) (${dates}), each complete and with the same dates. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly say what you changed.`;
 }
 
 /** Re-plan one day: the other days as context (names only, to keep it short), the day in full, and what to return. */

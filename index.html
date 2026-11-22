@@ -36,34 +36,15 @@
     <div id="stays"></div>
     <button class="secondary" id="addStay">+ Add stay</button>
 
-    <h2>Places <small id="listMeta"></small></h2>
-    <div class="list-picker" id="listPicker"></div>
-    <details class="import">
-      <summary>+ Import places</summary>
-      <label for="gmUrl">Google Maps list link</label>
-      <div class="inline">
-        <input id="gmUrl" placeholder="https://maps.app.goo.gl/…">
-        <button class="btn solid" id="gmImport">Import</button>
-      </div>
-      <div class="hint">In Google Maps: Saved → open the list → Share → "Anyone with the link". The list re-syncs automatically when it's older than an hour.</div>
-      <div class="hint" style="margin-top:8px">Or upload a CSV (e.g. from Google Takeout → Saved):
-        <span class="btn file-btn">Choose CSV<input type="file" id="csvFile" accept=".csv,text/csv"></span></div>
-      <div class="counts" id="importStatus"></div>
-    </details>
-    <div class="legend">Click a place (here or on the map) once for <i data-icon="star"></i> must-see, again to skip, again to reset. On a must-see, <i data-icon="users"></i> sets how many of you want to go (the planner can split the group) and the route badge sets on the way or from a stay.</div>
-    <div class="places-tools"><input id="placeFilter" placeholder="Filter places…"></div>
-    <div class="chips" id="chips"></div>
-    <div class="counts" id="counts"></div>
+    <h2>Places <small><button class="link-btn" id="openPlaces" type="button" title="Your place lists and places: show them on the map, suggest them to the planner, star must-sees"><i data-icon="pin"></i> Manage places</button></small></h2>
+    <div class="places-summary" id="placesSummary"></div>
 
-    <h2>Ideas &amp; notes <small class="hint" id="ideasHint"></small></h2>
-    <textarea id="ideas" class="ideas" rows="3" placeholder="Brainstorm here: places someone recommended, links, things to decide, what to book… Only for you (and the trip chat); the plan uses &quot;Anything else&quot; below."></textarea>
-
-    <h2>Budget &amp; style</h2>
+    <h2>Travelers &amp; style</h2>
     <div class="row" style="--cols:3">
-      <div><label for="dailyBudget">Daily budget</label><input id="dailyBudget" type="number" min="0" step="10"></div>
+      <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
+      <div><label for="dailyBudget" title="For activities, food and getting around (not where you sleep)">Per person / day</label><input id="dailyBudget" type="number" min="0" step="10"></div>
       <div><label for="currency">Currency</label>
         <select id="currency"></select></div>
-      <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
     </div>
     <div class="row" style="--cols:1">
       <div><label for="pace">Pace</label>
@@ -72,8 +53,12 @@
           <option value="balanced (3-5 stops per day)">Balanced</option>
           <option value="packed (as much as possible, early starts)">Packed</option>
         </select></div>
+      <div><label for="interests">Interests</label><textarea id="interests" rows="2" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
+      <div><label for="notes">Anything else for the plan</label><textarea id="notes" rows="2" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
     </div>
-    <div class="row" style="--cols:1">
+
+    <h2>Planning</h2>
+    <div class="plan-card">
       <div><label for="model">Model <span class="label-tools"><button class="link-btn" id="refreshModels" type="button" title="Look for local model servers again"><i data-icon="refresh"></i> Detect</button><button class="link-btn" id="openKeys" type="button" title="Use Claude, GPT and other models with your own API key"><i data-icon="key"></i> API keys</button></span></label>
         <select id="model">
           <option value="default">CLI default</option>
@@ -81,14 +66,15 @@
           <option value="sonnet">Sonnet</option>
           <option value="haiku">Haiku (fast)</option>
         </select></div>
+      <div class="hint model-hint" id="modelHint"></div>
+      <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
+      <label class="check"><input type="checkbox" id="autoFix"> Fix what the checks find <span class="hint">Stops in the wrong town or closed at the planned time go back to the model before you see the plan.</span></label>
     </div>
-    <div class="hint model-hint" id="modelHint"></div>
-    <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
-    <label class="check"><input type="checkbox" id="autoFix"> Fix what the checks find <span class="hint">Before you get the plan, stops in the wrong town or closed at the planned time go back to the model once.</span></label>
-    <div class="row" style="--cols:1">
-      <div><label for="interests">Interests</label><textarea id="interests" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
-      <div><label for="notes">Anything else</label><textarea id="notes" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
-    </div>
+
+    <details class="notes-fold" id="ideasFold">
+      <summary><span>Ideas &amp; notes</span><span class="hint" id="ideasHint">only for you and the trip chat</span></summary>
+      <textarea id="ideas" class="ideas" rows="3" placeholder="Brainstorm here: places someone recommended, links, things to decide, what to book…"></textarea>
+    </details>
 
     <div class="generate-bar"><button class="primary" id="generate">Generate itinerary</button></div>
   </section>
@@ -197,17 +183,51 @@
     <button class="btn solid" id="rpUse" type="button" hidden>Use these stays</button></div>
 </dialog>
 
+<dialog id="placesDialog" class="keys-dialog places-dialog">
+  <div class="pl-head"><h2><i data-icon="pin"></i> Places</h2><span class="hint" id="listMeta"></span>
+    <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
+  <div class="pl-body">
+    <section class="pl-lists">
+      <div class="pl-col-head"><b>Lists</b><button class="link-btn" id="openImport" type="button" title="Bring in a Google Maps list or a CSV file"><i data-icon="plus"></i> Import a list</button></div>
+      <p class="hint pl-help"><span class="pl-key"><i data-icon="check"></i></span> shows a list on the map. <span class="pl-key"><i data-icon="sparkles"></i></span> lets the planner pick from its places as suggestions; without it, only the places you star go to the planner.</p>
+      <div class="list-picker" id="listPicker"></div>
+    </section>
+    <section class="pl-places">
+      <div class="pl-col-head"><b>Places</b><span class="counts" id="counts"></span></div>
+      <div class="places-tools pl-tools"><input id="placeFilter" type="search" placeholder="Search by name or address…"><select id="placeList" hidden></select><div class="segs" id="placeShow"></div></div>
+      <div class="legend"><i data-icon="star"></i> makes a place a must-see (clicking it on the map does too). For must-sees, set how many of you want to go and how to fit it in. Options are ideas the planner may use; skipped places are never planned. Click a column to sort.</div>
+      <div class="chips" id="chips"></div>
+    </section>
+  </div>
+</dialog>
+
+<dialog id="importDialog" class="keys-dialog import-dialog">
+  <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
+  <h2>Import a place list</h2>
+  <p class="hint imp-intro">Mark everything that looks interesting in Google Maps, save it to a list, and bring it in here. The places show on the map and under Places, ready to star.</p>
+  <section class="imp-card">
+    <h3><i data-icon="map"></i> From Google Maps</h3>
+    <ol class="imp-steps"><li>In Google Maps, open <b>Saved</b> and the list.</li><li>Tap <b>Share</b> and turn on <b>Anyone with the link</b>.</li><li>Copy the link and paste it here.</li></ol>
+    <form class="imp-row" id="gmForm"><input id="gmUrl" type="url" placeholder="https://maps.app.goo.gl/…" autocomplete="off"><button class="btn solid" id="gmImport">Import</button></form>
+    <div class="hint">It re-syncs by itself when it's more than an hour old.</div>
+  </section>
+  <section class="imp-card">
+    <h3><i data-icon="file"></i> From a CSV file</h3>
+    <div class="hint">For example from Google Takeout → Saved, which has one file per list.</div>
+    <div class="imp-row"><input id="csvName" placeholder="List name (default: the file's name)" autocomplete="off"></div>
+    <label class="imp-drop" id="csvDrop"><input type="file" id="csvFile" accept=".csv,text/csv" hidden><i data-icon="upload"></i><span>Choose a CSV file, or drop it here</span></label>
+  </section>
+  <label class="check imp-all"><input type="checkbox" id="impAll" checked> Suggest its places to the planner
+    <span class="hint">The planner may pick from them where they fit (as options, not must-sees). Off: the places only show on the map; just the ones you star go to the planner. You can switch it later with <i data-icon="sparkles"></i> on the list.</span></label>
+  <div class="counts" id="importStatus"></div>
+</dialog>
+
 <dialog id="settingsDialog" class="keys-dialog settings-dialog">
   <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
   <h2>Settings</h2>
   <div id="settingsBody" class="set-body"></div>
 </dialog>
 
-<dialog id="guideDialog" class="keys-dialog guide-dialog">
-  <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
-  <h2>Set up a local model</h2>
-  <div id="guideBody"></div>
-</dialog>
 
 <script type="module" src="/web/src/main.ts"></script>
 </body>

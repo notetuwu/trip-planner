@@ -41,8 +41,11 @@ async function poll() {
     Object.assign(geo, results);
     for (const k of Object.keys(results)) wanted.delete(k);
     setMapStatus(pending ? `Locating ${pending} place${pending > 1 ? "s" : ""}…` : "");
-    clearTimeout(notify);
-    notify = window.setTimeout(() => listeners.forEach((fn) => fn()), 300);
+    // Only when something new came in: a redraw closes open map popups and costs time on big trips.
+    if (Object.keys(results).length) {
+      clearTimeout(notify);
+      notify = window.setTimeout(() => listeners.forEach((fn) => fn()), 300);
+    }
     if (pending) timer = window.setTimeout(poll, 1500);
   } catch { setMapStatus("Can't reach the server for geocoding"); }
 }

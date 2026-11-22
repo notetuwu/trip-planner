@@ -34,7 +34,7 @@ const OPEN_KEY = "trip-planner-chat-open";
 export function tripContext(full = true): string {
   const s = state, it = s.itinerary, out: string[] = [];
   const stays = s.stays.filter((x) => x.city);
-  out.push(`Travelers: ${s.travelers} · budget about ${s.dailyBudget} ${s.currency} a day · pace: ${s.pace}`);
+  out.push(`Travelers: ${s.travelers} · budget about ${s.dailyBudget} ${s.currency} per person a day (${s.dailyBudget * Math.max(1, s.travelers)} for the group; day costs in the plan are for the group) · pace: ${s.pace}`);
   if (s.interests) out.push(`Interests: ${s.interests}`);
   if (s.notes) out.push(`Their notes for the plan: ${s.notes}`);
   if (stays.length) {
@@ -74,7 +74,8 @@ const dayList = (days: number[]) => days.length === 1 ? `day ${days[0]}` : days.
 
 /** What the change card says and offers, by where it's at. */
 function changeCard(c: PlanChange, k: number) {
-  const what = c.days.length === 1 ? `Re-plans day ${c.days[0]}; the other days stay as they are.` : `Revises the plan (${dayList(c.days)}).`;
+  const what = c.days.length ? `Changes ${dayList(c.days)} only, and only what you asked for; the other days stay exactly as they are.`
+    : "Revises the whole plan, changing only what you asked for.";
   const status = c.status || "offered";
   const actions = status === "offered" ? `<button type="button" class="btn solid" data-apply="${k}">${icon("check")} Apply</button><button type="button" class="link-btn" data-skip="${k}">Not now</button>`
     : status === "applying" ? `<span class="hint">Changing the plan… (progress in the itinerary)</span>`
@@ -112,14 +113,15 @@ function setStatus(k: number, status: ChangeState) {
   if (t?.change) { t.change.status = status; save(); render(); }
 }
 
-/** Applies a change: one day is re-planned on its own; anything bigger revises the whole plan. */
+/** Applies a change: the days it touches are changed (only what was asked; the other days stay exactly as they are),
+ *  or the whole plan is revised when the change is all over it. */
 async function apply(k: number) {
   const c = chat()[k]?.change, it = state.itinerary;
   if (!c || !it) return;
   const snapshot = structuredClone(it);
   setStatus(k, "applying");
-  const one = c.days.length === 1 && c.days[0] <= it.days.length;
-  const ok = await runGeneration(one ? { redoDay: { itinerary: it, day: c.days[0] - 1, request: c.request } } : { revise: { itinerary: it, request: c.request } });
+  const days = c.days.filter((d) => d >= 1 && d <= it.days.length).map((d) => d - 1);
+  const ok = await runGeneration(days.length ? { edit: { itinerary: it, days, request: c.request } } : { revise: { itinerary: it, request: c.request } });
   if (ok) before.set(k, snapshot);
   setStatus(k, ok ? "applied" : "failed");
 }
@@ -225,12 +227,14 @@ export function initCompanion() {
   // Ideas & notes.
   const ideas = $<HTMLTextAreaElement>("#ideas");
   ideas.value = state.ideas || "";
+  $<HTMLDetailsElement>("#ideasFold").open = !!state.ideas?.trim(); // folded away while empty
   ideas.addEventListener("input", () => { state.ideas = ideas.value; save(); });
 }
 
 /** After another trip is loaded or imported. */
 export function refreshCompanion() {
   $<HTMLTextAreaElement>("#ideas").value = state.ideas || "";
+  $<HTMLDetailsElement>("#ideasFold").open = !!state.ideas?.trim();
   before.clear();
   if (!panel().hidden) render();
 }

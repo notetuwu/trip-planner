@@ -15,6 +15,8 @@ export interface Place {
   custom?: boolean;
   /** Sent to the model for places picked on the map. */
   picked?: boolean;
+  /** In the page: the list it came from (shown in Places). */
+  from?: string;
 }
 
 export type ListSource = { type: "google"; url: string } | { type: "csv"; file: string } | { type: "upload" };
@@ -123,7 +125,9 @@ export interface MustSeeRoute {
 
 /** Body of POST /api/itinerary. */
 export interface TripRequest {
+  /** Per person when budgetPer is "person" (older pages sent the group's budget). */
   dailyBudget: number;
+  budgetPer?: "person";
   currency: string;
   travelers: number;
   pace: string;
@@ -147,6 +151,8 @@ export interface TripRequest {
   fix?: { itinerary: Itinerary; problems: { day: number; text: string }[] };
   /** Re-plan one day (index into itinerary.days), keeping the rest. */
   redoDay?: { itinerary: Itinerary; day: number; request: string };
+  /** A change the travelers asked for (the trip chat), to these days only (0-based); only they come back, the rest stays. */
+  edit?: { itinerary: Itinerary; days: number[]; request: string };
 }
 
 export type CloudProvider = "anthropic" | "openai" | "openrouter";

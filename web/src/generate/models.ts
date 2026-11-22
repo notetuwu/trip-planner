@@ -4,7 +4,7 @@ import type { CloudModel, CloudProvider, LocalModel, ModelsResponse } from "../.
 import { $, api, esc } from "../core/dom";
 import { save, state } from "../core/state";
 import { openKeys } from "./keys";
-import { openLocalGuide } from "./local-guide";
+import { openSettings } from "../settings/settings";
 
 let localModels: LocalModel[] = [], cloudModels: CloudModel[] = [];
 export let lastModels: ModelsResponse | null = null;
@@ -55,8 +55,9 @@ export async function refreshModels() {
   ].filter(Boolean).join(" ") + " ";
   const guide = document.createElement("button");
   guide.className = "link-btn"; guide.type = "button";
-  guide.textContent = localModels.length ? "Local model guide" : "Set one up";
-  guide.onclick = () => openLocalGuide(async () => { await refreshModels(); return lastModels; });
+  // Settings → Local models installs Ollama and models (with what fits this graphics card).
+  guide.textContent = localModels.length ? "Manage local models" : "Set one up";
+  guide.onclick = () => openSettings("models");
   hint.append(guide);
   return lastModels;
 }

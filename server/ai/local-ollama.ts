@@ -20,7 +20,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
   } catch { /* older Ollama */ }
   // The context window must hold the prompt, the thinking and the whole JSON answer (about 1k tokens per day).
   // Ollama only reserves what's asked for (more costs GPU memory), so ask for about what's needed, within the model's limit.
-  const tripDays = trip.redoDay ? 1 : trip.fix ? new Set(trip.fix.problems.map((p) => p.day)).size : trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
+  const tripDays = trip.redoDay ? 1 : trip.edit ? trip.edit.days.length : trip.fix ? new Set(trip.fix.problems.map((p) => p.day)).size : trip.revise?.itinerary?.days?.length || trip.stays.reduce((n, s) => n + (Number(s.nights) || 0), 0) + 1;
   const promptTokens = Math.ceil(prompt.length / 3);
   // Settings → Local models can fix the context size; otherwise up to OLLAMA_NUM_CTX (or 128k), as much as the trip needs.
   const fixed = readSettings().numCtx, t = readSettings().tune;

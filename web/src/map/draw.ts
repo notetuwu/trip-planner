@@ -8,7 +8,7 @@ import { placeLoc } from "../geo/locate";
 import { renderDayChips } from "./days";
 import { drawDays } from "./draw-days";
 import { drawStays } from "./draw-stays";
-import { cssVar, itemMarkers, layers, map, placeMarkers } from "./map";
+import { cssVar, itemMarkers, layers, map, placeMarkers, popupIsOpen, whenPopupCloses } from "./map";
 import { placePopupHtml } from "./place-popup";
 import { dayLegs, requestRoutes } from "./routes";
 
@@ -32,8 +32,17 @@ function drawPlaces(fitToPlaces: boolean, bounds: LatLng[]) {
   }
 }
 
+let waiting: { fit: boolean } | null = null;
+
 export function drawMap({ fit = false } = {}) {
   if (!map) return;
+  // Redrawing makes every marker anew, which would close the popup someone is reading (and new lookups or routes come
+  // in all the time while a big trip loads): wait until it's closed. Actions in a popup close it first.
+  if (popupIsOpen()) {
+    if (!waiting) whenPopupCloses(() => { const w = waiting; waiting = null; if (w) drawMap(w); });
+    waiting = { fit: fit || !!waiting?.fit };
+    return;
+  }
   for (const layer of Object.values(layers)) layer.clearLayers();
   placeMarkers.clear(); itemMarkers.clear();
   const it = state.itinerary, byTitle = byTitleMap();

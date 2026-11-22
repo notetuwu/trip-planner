@@ -1,7 +1,7 @@
 // Renders the itinerary column and wires up its buttons.
 import { openChat } from "../trip/companion";
 import { $, $$, downloadFile, esc } from "../core/dom";
-import { save, session, state } from "../core/state";
+import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { downloadForPhone, shareForPhone } from "../export/offline";
 import { runGeneration } from "../generate/run";
@@ -83,7 +83,8 @@ export function renderItinerary(error?: string) {
     return;
   }
   const cur = meta.currency || state.currency;
-  const budget = meta.budget || state.dailyBudget;
+  // The group's budget a day: day costs are for everyone.
+  const budget = meta.budget || groupBudget();
   const byTitle = byTitleMap();
   out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
   wire(out);

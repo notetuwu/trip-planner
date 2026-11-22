@@ -52,7 +52,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
     ${packingHtml(it)}
     <div class="stats">
       <div class="stat"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total</span></div>
-      <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day (budget ${money(budget, cur)})</span></div>
+      <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day for ${state.travelers > 1 ? `all ${state.travelers}` : "you"} (budget ${money(budget, cur)}${state.travelers > 1 ? `, ${money(budget / state.travelers, cur)} each` : ""})</span></div>
       <div class="stat"><b>${listedCount}</b><span>saved places used</span></div>
       ${it.localCurrency && it.localCurrency !== cur ? `<div class="stat"><b>${esc(it.localCurrency)}</b><span>local currency</span></div>` : ""}
     </div>

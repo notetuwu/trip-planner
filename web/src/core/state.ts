@@ -41,7 +41,10 @@ export type Mark = "must" | "skip";
 
 export interface AppState {
   stays: Stay[];
+  /** Budget a day, per person (older trips: for the whole group; see `perPerson`). */
   dailyBudget: number;
+  /** "person": dailyBudget is per person (older trips had the group's budget). */
+  budgetPer?: "person";
   currency: string;
   travelers: number;
   pace: string;
@@ -50,8 +53,10 @@ export interface AppState {
   notes: string;
   /** The first ticked place list (older trips had only this one). */
   list: string;
-  /** The ticked place lists: their places are all considered for the plan. */
+  /** The ticked place lists: their places show on the map and under Places. */
   lists?: string[];
+  /** Per list: the planner may pick from its places as suggestions (unset: yes); off: only its starred places go. */
+  listSuggest?: Record<string, boolean>;
   /** The user picked a list (or none) themselves, so don't default to the first one. */
   listChosen: boolean;
   marks: Record<string, Mark>;
@@ -82,7 +87,7 @@ const STORE_KEY = "trip-planner-v2";
 
 export const blankTrip = (): AppState => ({
   stays: [{ city: "", start: "", nights: 3, hotel: "" }],
-  dailyBudget: 150, currency: "EUR", travelers: 1, pace: "balanced (3-5 stops per day)",
+  dailyBudget: 100, budgetPer: "person", currency: "EUR", travelers: 1, pace: "balanced (3-5 stops per day)",
   model: "default", interests: "", notes: "", list: "", listChosen: false, marks: {}, who: {}, customPlaces: [], itinerary: null, meta: null,
 });
 
@@ -93,11 +98,18 @@ function load(): Partial<AppState> | null {
   return null;
 }
 
-export let state: AppState = { ...blankTrip(), ...load() };
+/** Older trips had the group's budget a day; now it's per person (320 for 4 travelers becomes 80). */
+function perPerson(next: Partial<AppState> | null): AppState {
+  const s = { ...blankTrip(), ...next };
+  if (next?.dailyBudget == null || next.budgetPer === "person") return { ...s, budgetPer: "person" };
+  return { ...s, dailyBudget: Math.round((Number(next.dailyBudget) || 0) / Math.max(1, Number(s.travelers) || 1)), budgetPer: "person" };
+}
+
+export let state: AppState = perPerson(load());
 
 /** Replaces the whole trip, starting from a blank one so nothing (like an old itinerary) leaks in. */
 export function setState(next: Partial<AppState>) {
-  state = { ...blankTrip(), ...next };
+  state = perPerson(next);
 }
 
 const saveHooks: (() => void)[] = [];
@@ -117,6 +129,8 @@ export const session = {
   folds: {} as Record<string, boolean>,
   /** Places of the selected list. */
   listPlaces: [] as Place[],
+  /** Titles of the places from lists suggested to the planner (the rest only go when starred). */
+  fullTitles: new Set<string>(),
   /** listPlaces plus the places picked on the map (state.customPlaces). */
   places: [] as Place[],
   /** List summaries from the server. */
@@ -144,11 +158,12 @@ export function keepPlace(p: Place) {
   state.kept = [...(state.kept || []).filter((k) => k.title !== title), { title, note, url, tags, comment, address, lat, lng }];
 }
 
-/** Must-see places kept from place lists that aren't in the current list: sent along like map-picked places. */
-export const keptElsewhere = () => {
-  const inList = new Set(session.listPlaces.map((p) => p.title));
-  return (state.kept || []).filter((p) => !inList.has(p.title) && state.marks[p.title] === "must");
-};
+/** Must-see places kept from place lists that aren't suggested to the planner (hidden, or suggestions off): sent along
+ *  like map-picked places. */
+export const keptElsewhere = () => (state.kept || []).filter((p) => !session.fullTitles.has(p.title) && state.marks[p.title] === "must");
+
+/** Whether the planner may pick from a list's places as suggestions (else only the starred ones go). */
+export const listSuggest = (name: string) => state.listSuggest?.[name] !== false;
 
 /** The ticked place lists (older trips: their one list). */
 export const tickedLists = () => state.lists ?? (state.list ? [state.list] : []);
@@ -157,6 +172,9 @@ export function setTickedLists(names: string[]) {
   state.list = state.lists[0] || "";
   state.listChosen = true;
 }
+
+/** The whole group's budget a day (what day costs are compared with). */
+export const groupBudget = () => (Number(state.dailyBudget) || 0) * groupSize();
 
 export const groupSize = () => Math.max(1, +state.travelers || 1);
 /** How many travelers want a must-see place (defaults to everyone). */

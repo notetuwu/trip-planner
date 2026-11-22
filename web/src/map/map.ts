@@ -12,6 +12,12 @@ export const layers = {
 };
 /** Saved-place dots by title, and itinerary pins by "day-item". */
 export const placeMarkers = new Map<string, L.CircleMarker>();
+/** A popup is open on the map (a redraw would close it: markers are drawn anew). */
+let popupOpen = false;
+export const popupIsOpen = () => popupOpen;
+const afterPopup: (() => void)[] = [];
+/** Runs `fn` once the open popup closes (right away if none is open). */
+export function whenPopupCloses(fn: () => void) { if (popupOpen) afterPopup.push(fn); else fn(); }
 export const itemMarkers = new Map<string, L.Marker>();
 
 /** The map's place names: OpenStreetMap's own map, labelled in the local language and script, or OpenFreeMap's map
@@ -46,7 +52,12 @@ export function initMap() {
   for (const layer of Object.values(layers)) layer.addTo(map);
   // Clicking empty map adds that spot; a click that merely closes an open popup doesn't.
   let popupClosedAt = 0;
-  map.on("popupclose", () => { popupClosedAt = Date.now(); });
+  map.on("popupopen", () => { popupOpen = true; });
+  map.on("popupclose", () => {
+    popupClosedAt = Date.now(); popupOpen = false;
+    // Redraws that waited for the popup (see drawMap) happen now.
+    for (const fn of afterPopup.splice(0)) setTimeout(fn);
+  });
   map.on("click", (e) => {
     if (!$("#mapResults").hidden) { $("#mapResults").hidden = true; return; }
     if (Date.now() - popupClosedAt > 300) openAddPopup(e.latlng);
