@@ -583,6 +583,18 @@ test("a long chat is compacted: the older messages are summarized and the summar
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 
+test("Retry asks the last message again, replacing its answer", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false, chat: [] });
+  await page.eval(`window.__e2e.companion = { answer: "First answer." }; document.querySelector("#chatBtn").click();
+    (() => { const q = document.querySelector("#cpQ"); q.value = "where to eat?"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`planner.state().chat.length === 2`, 10000, "the answer");
+  await page.eval(`window.__e2e.companion = { answer: "Second answer." }; window.__e2e.companionAsked = null; document.querySelector("#cpLog [data-retry]").click()`);
+  await page.waitFor(`planner.state().chat.at(-1)?.text === "Second answer."`, 10000, "the new answer");
+  assert.equal(await page.eval(`planner.state().chat.length`), 2, "replaced, not added");
+  assert.equal(await page.eval(`window.__e2e.companionAsked.question`), "where to eat?");
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
 test("export a trip to a file and import it again (replacing the trip on screen)", async () => {
   await trip({ ...PADUA_MILANO, ideas: "Brenta boat", marks: { "Caffe Pedrocchi": "must" } });
   await page.eval(`window.__exported = null; HTMLAnchorElement.prototype.click = function () { if (this.download) window.__exported = { name: this.download, href: this.href }; }`);

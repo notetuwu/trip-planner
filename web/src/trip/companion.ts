@@ -10,6 +10,7 @@ import type { MustSeeHow } from "../../../shared/types";
 import { $, esc } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
 import { icon } from "../core/icons";
+import { showPicture } from "../core/lightbox";
 import { streamRequest } from "../core/progress";
 import { type AppState, keepPlace, save, session, setListPlaces, state } from "../core/state";
 import { geocodePlaces, sameName } from "../geo/locate";
@@ -32,18 +33,6 @@ let pictures: Picture[] = [];
 /** The full-size picture behind each small copy shown in the chat (only while the page is open). */
 const fullSize = new Map<string, string>();
 
-/** A picture big, over everything; a click or Escape closes it. */
-function showPicture(src: string) {
-  const box = document.createElement("div");
-  box.className = "lightbox";
-  box.innerHTML = `<img src="${esc(fullSize.get(src) || src)}" alt=""><button type="button" class="lightbox-x" title="Close (Esc)">${icon("x")}</button>`;
-  const close = () => { box.classList.remove("show"); setTimeout(() => box.remove(), 180); document.removeEventListener("keydown", onKey); };
-  const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
-  box.onclick = close;
-  document.addEventListener("keydown", onKey);
-  document.body.append(box);
-  requestAnimationFrame(() => box.classList.add("show"));
-}
 /** While it answers: the answer so far, and its thinking so far (with when it started). */
 interface Pending { text: string; thinking: string; since: number; until: number; answering: boolean }
 
@@ -161,7 +150,7 @@ function render(pending?: Pending) {
     ? `<details class="cp-summary"><summary>${icon("file")} Earlier messages summarized</summary><div class="cp-think-body">${mdLite(state.chatSummary)}</div></details>` : "");
   const pics = (t: Turn) => (t.images?.length ? `<div class="cp-pics">${t.images.map((src) => `<img src="${esc(src)}" alt="" data-zoom title="Click to see it big">`).join("")}</div>` : "");
   const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${esc(t.text)}</div>` : ""}${marker(k)}`
-    : `<div class="rc-msg ai">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, opened.has(String(k))).replace('<details class="cp-think"', `<details class="cp-think" data-k="${k}"`) : ""}${mdLite(t.text)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}</div>${marker(k)}`;
+    : `<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, opened.has(String(k))).replace('<details class="cp-think"', `<details class="cp-think" data-k="${k}"`) : ""}${mdLite(t.text)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
@@ -353,19 +342,38 @@ function fit() {
   b.style.height = `${Math.min(b.scrollHeight, 180)}px`;
 }
 
-async function ask() {
-  const question = box().value.trim() || (pictures.length ? "What is this place?" : "");
+/** Retry: the last message asked again (its answer, or the error, replaced). Its pictures go again too: full size while
+ *  the page is open, else the small copy kept with the chat. */
+function retry() {
+  if (running || compacting) return;
+  const turns = chat();
+  let u = turns.length - 1;
+  while (u >= 0 && turns[u].role !== "me") u--;
+  if (u < 0) return;
+  const me = turns[u];
+  const pics: Picture[] = (me.images || []).map((thumb) => {
+    const src = fullSize.get(thumb) || thumb;
+    return { type: "image/jpeg", data: src.split(",")[1] || "", thumb };
+  }).filter((p) => p.data);
+  state.chat = turns.slice(0, u);
+  if (chain && chain.cards.some((k) => k >= u)) chain = null;
+  ask({ text: me.text, pictures: pics });
+}
+
+async function ask(again?: { text: string; pictures: Picture[] }) {
+  const typed = again ? again.text : box().value.trim();
+  const sent = again ? again.pictures : pictures;
+  const question = typed || (sent.length ? "What is this place?" : "");
   if (!question || running || compacting) return;
-  const sent = pictures;
-  pictures = []; renderPictures();
+  if (!again) { pictures = []; renderPictures(); }
   const live = $("#cpLive");
   // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
   if (chat().length - (state.chatSummarized || 0) > COMPACT_AT) await compact(chat().length - KEEP_RECENT);
   // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
   const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - HISTORY)).map(turnText);
-  state.chat = [...chat(), { role: "me" as const, text: box().value.trim() || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}) }];
+  state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}) }];
   save();
-  box().value = ""; fit();
+  if (!again) { box().value = ""; fit(); }
   running = new AbortController();
   const pending: Pending = { text: "", thinking: "", since: 0, until: 0, answering: false };
   render(pending);
@@ -381,7 +389,7 @@ async function ask() {
     live.textContent = "";
   } catch (e) {
     const err = e as Error;
-    live.textContent = err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`;
+    live.innerHTML = `${esc(err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`)} <button type="button" class="link-btn" data-retry>${icon("refresh")} Retry</button>`;
   } finally {
     running = null;
     save();
@@ -443,11 +451,13 @@ export function initCompanion() {
     const k = (e.target as HTMLElement).closest<HTMLElement>("[data-unpic]")?.dataset.unpic;
     if (k != null) { pictures.splice(+k, 1); renderPictures(); return; }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
-    if (img) showPicture(img.getAttribute("src")!);
+    if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   };
+  $("#cpLive").addEventListener("click", (e) => { if ((e.target as HTMLElement).closest("[data-retry]")) retry(); });
   $("#cpLog").addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest("[data-retry]")) { retry(); return; }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
-    if (img) showPicture(img.getAttribute("src")!);
+    if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   });
   $("#cpClear").onclick = () => {
     if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; state.chatSummary = ""; state.chatSummarized = 0; chain = null; save(); render(); }

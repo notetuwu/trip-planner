@@ -46,15 +46,15 @@ export function companionPrompt(req: CompanionRequest) {
   const changes = days ? `
 ## Changing the plan
 The travelers can change their ${days}-day itinerary through you. When their message asks for a change to it (or says yes to a change you suggested), write one or two sentences on what will change, then end your reply with one last line exactly like this:
-CHANGE: {"days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation", "trip": {"onTheWay": [], "fromStay": [], "removeDayTrips": [], "addDayTrips": []}}
+CHANGE: {"days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation"}
 "days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
-"trip" changes the trip's setup, which the day-by-day plan is made from (leave it out when nothing there changes):
+Add "trip" only when the trip's setup changes too (the day-by-day plan is made from it), with just the parts that change, for example: "trip": {"onTheWay": ["Burg Hohenwerfen"]}. Its parts:
 - "onTheWay": places to visit on a travel day between two stays instead of as a day trip (this also takes them off the stays' day trips). Use it whenever they want a place "on the way".
 - "fromStay": places to visit from where they sleep.
 - "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}] for the day trips listed under the stays.
 - "addPlaces": [{"name": "the place's real name", "where": "town, country", "must": true}] adds places to their places (for example one you recognised in a picture they sent), as a must-see when they want to go for sure.
 Day trips listed under the stays above stay in the trip until removed here, even if a day's plan changes, so when a place moves from a day trip to somewhere else, remove that day trip too. When only the setup changes and the days are already right, use "days": [] and "request": "".
-Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead.
+Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead. Always answer in words first: the CHANGE line is never the whole reply.
 ` : `
 There's no itinerary yet: if they ask to change the plan, tell them to generate one first (or what to put in the form).
 `;
@@ -73,17 +73,19 @@ ${changes}${req.summary ? `\n## Earlier in this conversation (summary)\n${clip(r
 ## The traveler says
 ${clip(req.question, MAX_TURN)}${req.images?.length ? `
 
-They attached ${req.images.length} picture${req.images.length > 1 ? "s" : ""}. Work out what ${req.images.length > 1 ? "they show" : "it shows"}: the place's name and where it is, as precisely as you can, and say how sure you are (and what gives it away). If you can't tell, say what you see and what would help. If they want it in the trip, add it with "addPlaces" (and change the days too if they ask).` : ""}`;
+They attached ${req.images.length} picture${req.images.length > 1 ? "s" : ""}. Work out what ${req.images.length > 1 ? "they show" : "it shows"}: the place's name and where it is, as precisely as you can, and say how sure you are (and what gives it away). If you can't tell (or aren't sure), say what you see and what would help, and mention they can click the picture and use "Search with Google" to look it up by image, then tell you the name. If they want it in the trip, add it with "addPlaces" (and change the days too if they ask).` : ""}`;
 }
 
 /** Strips what some models wrap answers in (a code fence, a leading "You:") and the CHANGE line (also half-written). */
 export const cleanAnswer = (text: string) =>
   text.trim().replace(/^```(?:\w+)?\n([\s\S]*?)\n```$/, "$1").replace(/^(You|Assistant|Companion):\s*/i, "")
-    .replace(/\n?[ \t`*]*CHANGE:[\s\S]*$/, "").replace(/\n[ \t]*C(H(A(N(G(E)?)?)?)?)?$/, "").trim();
+    .replace(/\n?[ \t`*]*CHANGE:[\s\S]*$/, "").replace(/\n[ \t]*C(H(A(N(G(E)?)?)?)?)?$/, "")
+    // A change written without "CHANGE:" (the JSON on its own, at the end or as the whole reply) isn't text to show.
+    .replace(/(^|\n)[ \t`]*(json)?\s*\{\s*"(days|request|trip)"[\s\S]*\}[ \t`]*$/, "").trim();
 
 /** The change at the end of a reply, if there's a valid one. */
 export function parseChange(text: string, days = 0): PlanChange | null {
-  const m = text.match(/CHANGE:\s*(\{[\s\S]*\})/);
+  const m = text.match(/CHANGE:\s*(\{[\s\S]*\})/) || text.match(/(?:^|\n)[ \t`]*(?:json)?\s*(\{\s*"(?:days|request|trip)"[\s\S]*\})[ \t`]*$/);
   if (!m) return null;
   try {
     const c = JSON.parse(m[1]);
@@ -156,7 +158,7 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
   });
   const text = cleanAnswer(answer);
   const change = req.days ? parseChange(answer, req.days) : null;
-  if (!text && !change) throw new Error("The model didn't answer. Try again, or pick a different model.");
+  if (!text && !change) throw new Error("The model didn't answer properly (no text, only an empty change). Try again, or pick a different model in the chat's menu.");
   const thought = thinking.trim() ? { thinking: thinking.trim().slice(-20_000), thoughtSecs: Math.max(1, Math.round(((thinkTo || Date.now()) - thinkFrom) / 1000)) } : {};
   return { answer: text || "I'll change that.", ...(change ? { change } : {}), ...thought };
 }

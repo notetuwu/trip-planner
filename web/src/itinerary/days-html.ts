@@ -29,7 +29,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         <button class="del" data-del="${di}-${xi}" title="Remove this stop">${icon("x")}</button>
       </div>
       ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
-      ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${x.transport && links ? " · " : ""}${links}</div>` : ""}
+      ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${links ? `<span class="t-links">${x.transport ? " · " : ""}${links}</span>` : ""}</div>` : ""}
       <div class="leg" data-leg="${di}-${xi}"></div>
       <div class="far-warn" data-far="${di}-${xi}" hidden></div>
       <div class="far-warn" data-hours="${di}-${xi}" hidden></div>

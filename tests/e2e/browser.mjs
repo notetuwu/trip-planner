@@ -91,6 +91,13 @@ export async function launch() {
       const msg = await send("Page.captureScreenshot", { format: "png", ...(clip ? { clip } : {}) });
       fs.writeFileSync(file, Buffer.from(msg.result.data, "base64"));
     },
+    /** Show the page as for print (or back to screen with ""). */
+    media: (type) => send("Emulation.setEmulatedMedia", { media: type }),
+    /** The page printed to PDF with its own @page settings (as Print / PDF would). */
+    async pdf(file) {
+      const msg = await send("Page.printToPDF", { preferCSSPageSize: true, printBackground: false });
+      fs.writeFileSync(file, Buffer.from(msg.result.data, "base64"));
+    },
     sleep,
   };
 

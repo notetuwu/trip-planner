@@ -50,4 +50,11 @@ describe("trip chat", () => {
     expect(p).toContain("- earlier bit");
     expect(p).toContain("which changes to the plan were applied");
   });
+  it("a change written without CHANGE: (the JSON alone) isn't shown as text, and is still read", () => {
+    const bare = '{"days": [], "request": "", "trip": {"onTheWay": [], "fromStay": [], "removeDayTrips": [], "addDayTrips": []}}';
+    expect(cleanAnswer(bare)).toBe("");
+    expect(parseChange(bare, 5)).toBeNull(); // empty: nothing to change
+    expect(cleanAnswer('Sure.\n{"days": [2], "request": "Swap lunch"}')).toBe("Sure.");
+    expect(parseChange('Sure.\n{"days": [2], "request": "Swap lunch"}', 5)).toEqual({ days: [2], request: "Swap lunch" });
+  });
 });

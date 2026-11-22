@@ -47,10 +47,17 @@ const ago = (ms: number) => (ms < 60e3 ? `${Math.max(1, Math.round(ms / 1000))} 
 const clock = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
 async function refresh() {
-  const s = await api<GeoStatus>("/api/geocode/status").catch(() => null);
+  let gone = "";
+  const s = await api<GeoStatus>("/api/geocode/status").catch((e: Error) => { gone = e.message; return null; });
   const panel = root().querySelector<HTMLElement>(".ms-panel");
   if (!panel || !open) return;
-  if (!s) { panel.innerHTML = `<p class="hint">Can't reach the planner for the status.</p>`; return; }
+  if (!s) {
+    // A planner started before an update doesn't know this yet (the page is newer than the server).
+    panel.innerHTML = /not found/i.test(gone)
+      ? `<p class="hint">The planner that's running is older than this page. Restart it (close it and start it again) to see what the lookups are doing.</p>`
+      : `<p class="hint">Can't reach the planner for the status.</p>`;
+    return;
+  }
   const result = (e: GeoEvent) => e.result === "found" ? `<span class="ms-r ok">${icon("check")}</span>`
     : e.result === "none" ? `<span class="ms-r none">${icon("x")}</span>`
     : e.result === "moved" ? `<span class="ms-r moved">${icon("arrowLeftRight")}</span>`

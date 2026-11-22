@@ -56,12 +56,10 @@
 .extras .reason { color: var(--muted); font-size: 12px; }
 
 @media print {
-  body.app { height: auto; overflow: visible; display: block; }
   body.app #output { overflow: visible; }
   header, .settings, .toolbar, .refine, .map-panel, .bars, .stale, .thoughts { display: none; }
   main { display: block; padding: 0; }
   .panel { box-shadow: none; border: 0; }
-  .day { break-inside: avoid; }
 }
 .redo { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 2px; line-height: 1; }
 .redo:hover { color: var(--accent); }

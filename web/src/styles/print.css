@@ -1,0 +1,61 @@
+/* Printing the plan (Print / PDF): a cover with the route and stays, then the days, then booking, holidays, tips and
+   the rest. No buttons or links, nothing split across pages that shouldn't be, and the trip's name and page numbers in
+   the page margins instead of the browser's URL and date (export/print.ts adds the name and the cover). */
+.print-cover { display: none; }
+
+@media print {
+  @page {
+    size: A4;
+    margin: 16mm 14mm 16mm;
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font: 9pt system-ui, sans-serif; color: #777; }
+  }
+  /* Light colours on paper, whatever the screen uses. */
+  :root, :root[data-theme="dark"] {
+    --bg: #fff; --panel: #fff; --field: #fff; --hover: #fff; --ink: #111; --muted: #555; --line: #ddd; --line-strong: #bbb;
+    --accent: #c8102e; --accent-ink: #fff; --accent-soft: #fbe9ec; --ok: #217a49; --ok-soft: #e4f3ea; --warn: #b26a00;
+    --skip: #8a857f; --skip-soft: #eceae6; color-scheme: light;
+  }
+  html, body { background: #fff !important; color: #111; }
+  body.app { height: auto; overflow: visible; display: block; font-size: 10.5pt; }
+  body.app #output { overflow: visible; }
+
+  /* Only the plan. */
+  header, .settings, .map-panel, .chat-panel, .chat-toggle, .update-bar, .toast, dialog,
+  .toolbar, .bars, .refine, .it-search, .fix-bar, .stale, .thoughts, .prompt-panel, .gen-meta, .inline-progress,
+  .del, .redo, .far-warn, .leg:empty, .transport a, .t-links, .dir, .item .book, .tip-links, .extras .sources, .extras div:has(> .sources),
+  .book-ahead input, .book-ahead a, .packing input, .packing button, .packing form, .ext, .split-pill, .weather, .empty { display: none !important; }
+  main { display: block; padding: 0; }
+  .panel { box-shadow: none; border: 0; padding: 0; background: none; }
+  a { color: inherit !important; text-decoration: none !important; }
+  details > summary { list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary::before, details > summary::after { display: none !important; }
+
+  /* The cover: the trip, its dates and travelers, the route of stays, the plan's summary. */
+  .print-cover { display: block; margin-bottom: 8mm; }
+  .print-cover h1 { font-size: 22pt; margin: 0 0 2mm; }
+  .print-cover .pc-line { color: #555; margin: 0 0 5mm; }
+  .print-cover table { width: 100%; border-collapse: collapse; font-size: 10pt; margin-bottom: 4mm; }
+  .print-cover th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .06em; color: #666; border-bottom: 1px solid #bbb; padding: 1.5mm 2mm; }
+  .print-cover td { border-bottom: 1px solid #e3e3e3; padding: 1.5mm 2mm; vertical-align: top; }
+  .print-cover .pc-summary { margin: 4mm 0 0; }
+  .summary > h3, .summary > p { display: none; } /* on the cover instead */
+  .summary .stats { display: flex; gap: 4mm; margin: 0 0 6mm; }
+  .summary .stat { border: 1px solid #ddd; border-radius: 3mm; padding: 2mm 3mm; }
+
+  /* The days: a city's band and a day's heading stay with what follows; a stop never splits across pages. */
+  .city-band { break-after: avoid; margin-top: 6mm; }
+  .day { break-inside: auto; border: 0 !important; box-shadow: none !important; padding: 0 !important; margin: 0 0 5mm; }
+  .day-head { break-after: avoid; border-bottom: 1.5px solid var(--c, #999); padding-bottom: 1mm; margin-bottom: 2mm; }
+  .item, .fork, .day-notes, .extras li, .book-ahead li, .events li, .packing li { break-inside: avoid; }
+  h2, h3, h4 { break-after: avoid; }
+  p, .desc { orphans: 3; widows: 3; }
+  .item .desc { color: #333; }
+
+  /* After the days: booking, holidays, packing, tips, what didn't fit; one column so nothing runs off the page. */
+  .print-after { break-before: page; }
+  .print-after details { display: block; margin: 0 0 6mm; border: 0; padding: 0; }
+  .print-after summary { font-size: 13pt; font-weight: 700; margin-bottom: 2mm; color: #111; }
+  .extras { display: block !important; columns: auto !important; }
+  .extras > div { margin-bottom: 6mm; }
+}

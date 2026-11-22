@@ -30,6 +30,7 @@ import { initFields } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
 import { initRoutePlanner } from "./trip/route-planner";
 import { initCompanion } from "./trip/companion";
+import { initPrint } from "./export/print";
 import { initSettings } from "./settings/settings";
 import { initSync } from "./core/sync";
 import { loadPrefs } from "./core/prefs";
@@ -53,7 +54,7 @@ hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
 initSettings(); initSync(); loadPrefs();
-initFields(); initStays(); initRoutePlanner(); initCompanion(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
+initFields(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.
