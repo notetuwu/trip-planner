@@ -54,7 +54,8 @@ const legText = (l: PlannedLeg, travel: string) => {
   return `<div class="leg${l.tooLong ? " long" : ""}">${icon(l.tooLong ? "warn" : "route")} ${l.hours} h ${esc(how)} from ${esc(l.from)} (${l.km?.toLocaleString()} km)${l.tooLong ? " · longer than you wanted" : ""}</div>`;
 };
 
-function showPlan(plan: RoutePlan) {
+/** Shows a plan; `fresh` when it just came from the model (it's added to the tries), not when restored. */
+function showPlan(plan: RoutePlan, fresh = true) {
   let date = plan.startDate;
   const rows = plan.stays.map((s, k) => {
     const at = date; date = addDays(date, s.nights);
@@ -66,7 +67,7 @@ function showPlan(plan: RoutePlan) {
   const back = plan.legs.at(-1);
   const long = plan.legs.filter((l) => l.tooLong).length;
   $("#routeResult").innerHTML = `<div class="route-result">
-    <h3>${esc(plan.title || "Your route")}</h3><p class="hint">${esc(plan.summary)}</p>
+    <h3>${esc(plan.title || "Your route")} <button class="link-btn route-fresh" data-fresh type="button" title="Forget this route, the earlier tries and your reasons">Start over</button></h3><p class="hint">${esc(plan.summary)}</p>
     <ul class="route-stops">${rows}
       <li class="end"><span class="when">${esc(fmtDate(date))}</span><b>${esc(plan.end)}</b><span class="nights">end</span>${legLine(back, plan.stays.at(-1)?.travel || "")}</li></ul>
     ${long ? `<p class="hint">${icon("warn")} ${long} leg${long > 1 ? "s are" : " is"} longer than your daily limit; try again, or add a night on the way afterwards ("Stops on the way").</p>` : ""}
@@ -75,9 +76,31 @@ function showPlan(plan: RoutePlan) {
   useBtn.hidden = false;
   useBtn.onclick = () => use(plan);
   $("#rpGo").textContent = "Try again";
+  $<HTMLButtonElement>("#routeResult [data-fresh]").onclick = startOver;
   shown = plan;
-  tries.push(routeLine(plan));
-  $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" });
+  if (fresh) { tries.push(routeLine(plan)); remember(); $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" }); }
+}
+
+// The last plan, the tries before it and the reasons, kept (also across restarts) until they start over.
+const KEY = "trip-planner-route";
+const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ plan: shown, tries, reasons })); } catch { /* storage full */ } };
+
+function startOver() {
+  tries.length = 0; reasons.length = 0; shown = null;
+  renderReasons();
+  $("#rpFeedback").hidden = true; $("#rpGo").textContent = "Plan the route"; $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
+  localStorage.removeItem(KEY);
+}
+
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (!saved?.plan?.stays) return;
+    tries.push(...(saved.tries || [])); reasons.push(...(saved.reasons || []));
+    renderReasons();
+    if (reasons.length) $("#rpFeedback").hidden = false;
+    showPlan(saved.plan, false);
+  } catch { /* nothing saved */ }
 }
 
 let running: AbortController | null = null;
@@ -93,7 +116,7 @@ const routeLine = (plan: RoutePlan) => plan.stays.map((s) => `${s.city} (${s.nig
 function renderReasons() {
   $("#rpReasons").innerHTML = reasons.map((r, k) => `<li><span>${esc(r)}</span>
     <button class="icon-btn" type="button" data-k="${k}" title="Remove this reason">${icon("x")}</button></li>`).join("");
-  $("#rpReasons").querySelectorAll<HTMLButtonElement>("button").forEach((b) => { b.onclick = () => { reasons.splice(+b.dataset.k!, 1); renderReasons(); }; });
+  $("#rpReasons").querySelectorAll<HTMLButtonElement>("button").forEach((b) => { b.onclick = () => { reasons.splice(+b.dataset.k!, 1); renderReasons(); remember(); }; });
 }
 
 /** Try again: the first click asks what should be different; the next one (or Enter) plans again with that. */
@@ -178,9 +201,7 @@ function use(plan: RoutePlan) {
     save(); setListPlaces(session.listPlaces); fillFields(); renderStays(); renderTripTitle(); renderChips(); renderItinerary(); geocodeStays(); drawMap({ fit: true });
   };
   refresh();
-  // A new route next time: forget the tries and reasons for this one.
-  tries.length = 0; reasons.length = 0; renderReasons(); shown = null;
-  $("#rpFeedback").hidden = true; $("#rpGo").textContent = "Plan the route"; $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
+  // The plan, tries and reasons stay: reopening shows them, so they can try again from here (or start over).
   $<HTMLDialogElement>("#routeDialog").close();
   toast(`Using the route: ${plan.stays.length} stays, ${plan.nights} nights. Generate the itinerary when you're ready.`, () => {
     Object.assign(state, before); refresh();
@@ -191,4 +212,5 @@ export function initRoutePlanner() {
   $("#planRoute").onclick = open;
   $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); if (shown) tryAgain(); else plan_(); };
   $<HTMLInputElement>("#rpWhy").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tryAgain(); } };
+  restore();
 }

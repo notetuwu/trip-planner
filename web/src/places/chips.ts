@@ -11,6 +11,7 @@ import { icon } from "../core/icons";
 export function renderChips() {
   const q = $<HTMLInputElement>("#placeFilter").value.toLowerCase();
   const n = groupSize();
+  const inList = new Set(session.listPlaces.map((p) => p.title));
   $("#chips").innerHTML = session.places
     .filter((p) => !q || p.title.toLowerCase().includes(q) || (p.note || "").toLowerCase().includes(q))
     .map((p) => {
@@ -18,8 +19,9 @@ export function renderChips() {
       const badge = mark === "must" && n > 1
         ? `<span class="who ${w < n ? "part" : ""}" data-who="${esc(p.title)}" title="How many of you want to go (click to change)">${icon("users")} ${w}/${n}</span>` : "";
       const how = mark === "must" ? howBadge(p.title) : "";
-      // Places picked on the map or added by the route planner aren't in any list: they can be removed outright.
-      const x = p.custom ? `<button class="chip-x" type="button" data-remove="${esc(p.title)}" title="Remove this place">${icon("x")}</button>` : "";
+      // Places outside the selected list (picked on the map, added by the route planner, or must-sees kept from another
+      // list) can be removed outright; places in the list are unmarked by clicking.
+      const x = p.custom || !inList.has(p.title) ? `<button class="chip-x" type="button" data-remove="${esc(p.title)}" title="Remove this place">${icon("x")}</button>` : "";
       return `<span class="chip ${mark}" data-t="${esc(p.title)}" title="${esc(p.note || p.address)}">${mark === "must" ? icon("star", "star") : ""}${esc(p.title)}${badge}${how}${x}</span>`;
     })
     .join("");
@@ -67,10 +69,11 @@ export function flashChip(title: string) {
 
 const NEXT_MARK: Record<string, Mark | undefined> = { "": "must", must: "skip", skip: undefined };
 
-/** Removes a place that isn't from a list (picked on the map, or added by the route planner), with Undo. */
+/** Removes a place that isn't in the selected list (picked on the map, added by the route planner, or kept from another list), with Undo. */
 function removePlace(title: string) {
-  const before = { customPlaces: [...state.customPlaces], marks: { ...state.marks }, how: { ...(state.how || {}) }, who: { ...state.who } };
+  const before = { customPlaces: [...state.customPlaces], kept: [...(state.kept || [])], marks: { ...state.marks }, how: { ...(state.how || {}) }, who: { ...state.who } };
   state.customPlaces = state.customPlaces.filter((p) => p.title !== title);
+  state.kept = (state.kept || []).filter((p) => p.title !== title);
   delete state.marks[title]; delete state.who[title];
   if (state.how) delete state.how[title];
   const refresh = () => { setListPlaces(session.listPlaces); save(); renderChips(); drawMap(); };

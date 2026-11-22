@@ -213,6 +213,13 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
   assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
+  // Reopening after using the route still shows it, the reasons and Try again; Start over clears them.
+  await page.eval(`document.querySelector("#planRoute").click()`);
+  assert.ok(await page.eval(`!!document.querySelector("#routeResult .route-result") && !document.querySelector("#rpUse").hidden`), "the route is still there");
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "Try again");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["a night by a lake"]);
+  await page.eval(`document.querySelector("#routeResult [data-fresh]").click()`);
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpReasons li").length + "|" + !!localStorage.getItem("trip-planner-route")`), "Plan the route|0|false");
 });
 
 test("trains follow the tracks: a train leg and a train day trip ask for train routes; stays link to Google Maps", async () => {
@@ -233,6 +240,15 @@ test("a must-see that isn't from a place list can be removed with its x, and Und
   assert.equal(await page.eval(`planner.state().customPlaces.length + "|" + (planner.state().marks["Caffe Pedrocchi"] || "")`), "0|");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must", "Undo puts it back");
+});
+
+test("a must-see kept from a list that isn't selected has an x too", async () => {
+  await trip({ ...PADUA_MILANO, customPlaces: [], marks: { "Rifugio Lagazuoi": "must" }, kept: [{ title: "Rifugio Lagazuoi", lat: 46.53, lng: 12.0 }] });
+  assert.ok(await page.eval(`!!document.querySelector('.chip[data-t="Rifugio Lagazuoi"] .chip-x')`), "the x is there");
+  await page.eval(`document.querySelector('.chip[data-t="Rifugio Lagazuoi"] .chip-x').click()`);
+  assert.equal(await page.eval(`(planner.state().kept || []).length + "|" + (planner.state().marks["Rifugio Lagazuoi"] || "")`), "0|");
+  await page.eval(`document.querySelector("#toast button").click()`);
+  assert.equal(await page.eval(`planner.state().kept.length`), 1, "Undo keeps it again");
 });
 
 test("re-planning a day shows its progress in that day, keeps the rest, and says when it's done", async () => {
