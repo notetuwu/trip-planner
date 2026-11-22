@@ -133,13 +133,26 @@ details.import .inline { margin-bottom: 8px; }
 .route-dialog[open] { display: flex; flex-direction: column; max-height: 90vh; }
 .route-main { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 36%); min-height: 0; flex: 1 1 auto; }
 .route-body { overflow: auto; padding: 18px 20px 8px; }
-.route-think { overflow: auto; padding: 18px 18px 8px; border-left: 1px solid var(--line); }
-.route-think h3 { margin: 0 0 8px; font-size: 14px; }
-#rpThink { white-space: pre-wrap; font-size: 12.5px; line-height: 1.5; }
+/* The chat column: the routes it suggested (with what it says about them), what they asked, and a box to reply. */
+.route-chat { display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); }
+.route-chat h3 { margin: 0; padding: 16px 18px 8px; font-size: 14px; }
+.rc-log { flex: 1; min-height: 0; overflow: auto; padding: 4px 18px 12px; display: flex; flex-direction: column; gap: 10px; }
+.rc-log > .hint { margin: 0; }
+.rc-msg { font-size: 12.5px; line-height: 1.5; border-radius: 12px; padding: 8px 11px; max-width: 92%; }
+.rc-msg.ai { align-self: flex-start; background: var(--field); border: 1px solid var(--line); border-bottom-left-radius: 3px; }
+.rc-msg.ai b { display: block; font-size: 13px; margin-bottom: 2px; }
+.rc-msg.ai .rc-route { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+.rc-msg.ai p { margin: 0; white-space: pre-wrap; }
+.rc-msg.ai.pending { color: var(--muted); white-space: pre-wrap; }
+.rc-msg.me { align-self: flex-end; background: var(--accent-soft); border-bottom-right-radius: 3px; font-size: 13px; }
+.rc-new { align-self: center; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.rc-input { display: flex; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); }
+.rc-input input { height: 34px; }
 @media (max-width: 760px) {
   .route-main { grid-template-columns: 1fr; overflow: auto; }
-  .route-body, .route-think { overflow: visible; }
-  .route-think { border-left: 0; border-top: 1px solid var(--line); }
+  .route-body { overflow: visible; }
+  .route-chat { border-left: 0; border-top: 1px solid var(--line); }
+  .rc-log { max-height: 320px; }
 }
 .route-foot { display: flex; gap: 10px; align-items: center; justify-content: flex-end; padding: 12px 20px; border-top: 1px solid var(--line); }
 .route-foot #rpLive { margin-right: auto; }
@@ -155,14 +168,6 @@ details.import .inline { margin-bottom: 8px; }
 .route-stops .leg { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .route-stops .leg.long { color: var(--warn); font-weight: 600; }
 .route-stops li.end b { color: var(--muted); }
-.route-feedback { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
-.route-feedback label { display: block; font-weight: 600; margin-bottom: 6px; }
-.route-feedback .hint { margin: 6px 0 0; }
-.route-reasons { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.route-reasons:empty { display: none; }
-.route-reasons li { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font-size: 13px; }
-.route-reasons li span { flex: 1; min-width: 0; }
-.route-reasons .icon-btn { width: 24px; height: 24px; flex: none; }
 .route-stops .trips { grid-column: 2 / 4; font-size: 12px; color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .stay.flash, .stay-leg.flash { animation: stay-flash 1.6s ease-out; }
 @keyframes stay-flash { 0%, 35% { background-color: color-mix(in srgb, var(--accent) 16%, transparent); } 100% { background-color: transparent; } }

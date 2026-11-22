@@ -29,10 +29,11 @@ export interface RouteRequest {
   budget?: number;
   currency?: string;
   model: string;
-  /** Routes it suggested before ("Salzburg (2 nights) → …"), when they asked to try again. */
-  previous?: string[];
-  /** Why they asked to try again: what should be different. */
-  feedback?: string[];
+  /**
+   * When they're changing a route: each route suggested so far ("Salzburg (2 nights) → …") and what they said about it.
+   * The last one is the route on screen, with what they want changed now.
+   */
+  conversation?: { route: string; said?: string }[];
   /** Places they starred, to plan the route around; `how`: on the way between stays, or from a stay. */
   mustSee?: { name: string; lat?: number; lng?: number; how?: "way" | "stay" }[];
 }
@@ -198,14 +199,15 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
   const to = roundTrip ? from : await whereIs(end);
   const month = req.startDate ? MONTHS[Number(req.startDate.slice(5, 7)) - 1] : "";
 
-  const list = (v: unknown, max: number) => (Array.isArray(v) ? v : []).map((x) => String(x || "").trim().slice(0, 600)).filter(Boolean).slice(-max);
-  const previous = list(req.previous, 4), feedback = list(req.feedback, 12);
-  const again = !previous.length && !feedback.length ? "" : `
-${previous.length ? `They asked for another route. What you suggested before:
-${previous.map((p, k) => `${k + 1}. ${p}`).join("\n")}
-Don't hand back the same route again; keep the parts they didn't object to if they still fit.` : ""}
-${feedback.length ? `What they want different (the most important part, follow every point):
-${feedback.map((f) => `- ${f}`).join("\n")}` : ""}
+  const conv = (Array.isArray(req.conversation) ? req.conversation : []).slice(-8)
+    .map((t) => ({ route: String(t?.route || "").trim().slice(0, 1500), said: String(t?.said || "").trim().slice(0, 600) }))
+    .filter((t) => t.route);
+  const now = conv.at(-1);
+  const again = !now?.said ? "" : `
+They're shaping this route with you, step by step. The conversation so far (each route you suggested, then what they said about it):
+${conv.map((t, k) => `Route ${k + 1}: ${t.route}${t.said ? `\nThey said: "${t.said}"` : ""}`).join("\n")}
+
+Now change Route ${conv.length} (the one on their screen) for what they just said. Start from it: keep its stays, nights, order, day trips and stops on the way, and change only what their newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Everything they said earlier still applies unless their newest message takes it back. Don't start over with a different route.
 `;
 
   const must = (Array.isArray(req.mustSee) ? req.mustSee : []).slice(0, 40)
@@ -220,7 +222,7 @@ Choose where the stays go so that this works, rather than dropping a place:
 ${must.join("\n")}
 ` : "";
 
-  report({ type: "status", text: previous.length ? "Thinking up another route…" : "Thinking up a route…" });
+  report({ type: "status", text: now?.said ? "Changing the route…" : "Thinking up a route…" });
   const prompt = `Plan the route of a trip: where to stay each night. (A separate step plans the days themselves later.)
 
 Start: ${from.text}${req.startDate ? `, leaving on ${req.startDate}` : ""}. That's where they set off from, not a stay.
@@ -238,7 +240,7 @@ The route must flow${roundTrip ? " as one loop" : " in one direction"}: each sta
 Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of the stay closest to it (one with 2+ nights). Only add day trips they asked for or that clearly fit what they want; most stays have none. Use real place names that a map can find (a town or a sight, with its country).
 On the way: a place they ask to see on the way ("X on the way", "stop at X on the drive", "pass through X") is never a stay: put it in "onTheWay" of the stay they arrive at after passing it. Only for places they mention that way; leave it empty otherwise.
 Reply with only JSON:
-{"reasoning": "first, think it through in a few short sentences: ${feedback.length ? "how you change it for what they asked, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
+{"reasoning": "first, think it through in a few short sentences: ${now?.said ? "what you change in the route on their screen and why, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}]}`;
 
   const trips = (list: unknown, way: boolean): PlannedDayTrip[] => (Array.isArray(list) ? list : [])
     .map((t: any) => (typeof t === "string" ? { place: t, why: "" } : { place: String(t?.place || ""), why: String(t?.why || "") }))

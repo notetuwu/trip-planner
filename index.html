@@ -163,14 +163,15 @@
       <span class="hint">The route makes every place you starred reachable: from a stay, as a day trip, or on a drive between stays ("on the way" ones on a drive).</span></label>
   </form>
   <div id="routeResult"></div>
-  <div id="rpFeedback" class="route-feedback" hidden>
-    <label for="rpWhy">What should be different?</label>
-    <ul id="rpReasons" class="route-reasons"></ul>
-    <input id="rpWhy" maxlength="300" placeholder="e.g. less driving in Austria, a night by a lake, skip Italy">
-    <p class="hint">Press Enter or Try again. Every reason in the list goes to the model, together with the routes it already suggested, so it doesn't repeat them.</p>
   </div>
-  </div>
-  <aside class="route-think"><h3>How it's thinking</h3><div id="rpThink" class="hint">The model's reasoning shows here while it plans.</div></aside>
+  <aside class="route-chat">
+    <h3>Chat</h3>
+    <div id="rpChat" class="rc-log"></div>
+    <form id="rpChatForm" class="rc-input">
+      <input id="rpWhy" maxlength="400" autocomplete="off" placeholder="What should change? e.g. a bit more Italy" disabled>
+      <button class="btn solid" id="rpSend" disabled>Send</button>
+    </form>
+  </aside>
   </div>
   <div class="route-foot"><span class="hint" id="rpLive"></span>
     <button class="btn" id="rpCancel" type="button" hidden>Cancel</button>

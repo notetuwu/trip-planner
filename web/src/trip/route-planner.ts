@@ -54,8 +54,8 @@ const legText = (l: PlannedLeg, travel: string) => {
   return `<div class="leg${l.tooLong ? " long" : ""}">${icon(l.tooLong ? "warn" : "route")} ${l.hours} h ${esc(how)} from ${esc(l.from)} (${l.km?.toLocaleString()} km)${l.tooLong ? " · longer than you wanted" : ""}</div>`;
 };
 
-/** Shows a plan; `fresh` when it just came from the model (it's added to the tries), not when restored. */
-function showPlan(plan: RoutePlan, fresh = true) {
+/** Shows a plan on the left; `turn` adds it to the chat as the model's answer (not when restoring a saved one). */
+function showPlan(plan: RoutePlan, turn?: Omit<Turn, "route" | "title">) {
   let date = plan.startDate;
   const rows = plan.stays.map((s, k) => {
     const at = date; date = addDays(date, s.nights);
@@ -67,107 +67,137 @@ function showPlan(plan: RoutePlan, fresh = true) {
   const back = plan.legs.at(-1);
   const long = plan.legs.filter((l) => l.tooLong).length;
   $("#routeResult").innerHTML = `<div class="route-result">
-    <h3>${esc(plan.title || "Your route")} <button class="link-btn route-fresh" data-fresh type="button" title="Forget this route, the earlier tries and your reasons">Start over</button></h3><p class="hint">${esc(plan.summary)}</p>
+    <h3>${esc(plan.title || "Your route")} <button class="link-btn route-fresh" data-fresh type="button" title="Forget this route and the chat about it">Start over</button></h3><p class="hint">${esc(plan.summary)}</p>
     <ul class="route-stops">${rows}
       <li class="end"><span class="when">${esc(fmtDate(date))}</span><b>${esc(plan.end)}</b><span class="nights">end</span>${legLine(back, plan.stays.at(-1)?.travel || "")}</li></ul>
-    ${long ? `<p class="hint">${icon("warn")} ${long} leg${long > 1 ? "s are" : " is"} longer than your daily limit; try again, or add a night on the way afterwards ("Stops on the way").</p>` : ""}
+    ${long ? `<p class="hint">${icon("warn")} ${long} leg${long > 1 ? "s are" : " is"} longer than your daily limit; ask for a change in the chat, or add a night on the way afterwards ("Stops on the way").</p>` : ""}
   </div>`;
   const useBtn = $<HTMLButtonElement>("#rpUse");
   useBtn.hidden = false;
   useBtn.onclick = () => use(plan);
-  $("#rpGo").textContent = "Try again";
   $<HTMLButtonElement>("#routeResult [data-fresh]").onclick = startOver;
   shown = plan;
-  if (fresh) { tries.push(routeLine(plan)); remember(); $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" }); }
+  if (turn) { chat.push({ route: routeLine(plan), title: plan.title, ...turn }); remember(); $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" }); }
+  renderChat();
+  idle();
 }
 
-// The last plan, the tries before it and the reasons, kept (also across restarts) until they start over.
+// The plan on screen and the chat about it, kept (also across restarts) until they start over.
 const KEY = "trip-planner-route";
-const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ plan: shown, tries, reasons })); } catch { /* storage full */ } };
+const remember = () => { try { localStorage.setItem(KEY, JSON.stringify({ plan: shown, chat })); } catch { /* storage full */ } };
 
 function startOver() {
-  tries.length = 0; reasons.length = 0; shown = null;
-  renderReasons();
-  $("#rpFeedback").hidden = true; $("#rpGo").textContent = "Plan the route"; $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
+  chat.length = 0; shown = null;
+  $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
   localStorage.removeItem(KEY);
+  renderChat(); idle();
 }
 
 function restore() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || "null");
     if (!saved?.plan?.stays) return;
-    tries.push(...(saved.tries || [])); reasons.push(...(saved.reasons || []));
-    renderReasons();
-    if (reasons.length) $("#rpFeedback").hidden = false;
-    showPlan(saved.plan, false);
+    chat.push(...(Array.isArray(saved.chat) ? saved.chat.filter((t: Turn) => t && typeof t.route === "string") : []));
+    showPlan(saved.plan);
   } catch { /* nothing saved */ }
 }
 
 let running: AbortController | null = null;
-/** The plan on screen, the routes suggested so far (for "Try again"), and why they asked for another. */
+/** The plan on screen, and the chat: each route suggested (with what the model said about it), then their reply. */
 let shown: RoutePlan | null = null;
-const tries: string[] = [];
-const reasons: string[] = [];
+/** `fresh`: a completely new route ("New route"), where the conversation the model gets starts again. */
+interface Turn { route: string; title?: string; note?: string; said?: string; fresh?: boolean }
+const chat: Turn[] = [];
 
-/** "Salzburg (2 nights) → Hallstatt (3 nights; day trip: Dachstein) → …", for telling the model what it suggested. */
-const routeLine = (plan: RoutePlan) => plan.stays.map((s) => `${s.city} (${s.nights} night${s.nights > 1 ? "s" : ""}${
-  s.dayTrips?.length ? `; day trips: ${s.dayTrips.map((t) => t.place).join(", ")}` : ""})`).join(" → ");
+/** "Salzburg (2 nights; day trips: Hallstatt) → Lucerne (3 nights; on the way there: Vaduz) → …", the route in one line. */
+const routeLine = (plan: RoutePlan) => plan.stays.map((s, k) => {
+  const extra = [
+    s.dayTrips?.length ? `day trips: ${s.dayTrips.map((t) => t.place).join(", ")}` : "",
+    plan.legs[k]?.via?.length ? `on the way there: ${plan.legs[k].via!.map((v) => v.place).join(", ")}` : "",
+  ].filter(Boolean).join("; ");
+  return `${s.city} (${s.nights} night${s.nights > 1 ? "s" : ""}${extra ? `; ${extra}` : ""})`;
+}).join(" → ");
 
-function renderReasons() {
-  $("#rpReasons").innerHTML = reasons.map((r, k) => `<li><span>${esc(r)}</span>
-    <button class="icon-btn" type="button" data-k="${k}" title="Remove this reason">${icon("x")}</button></li>`).join("");
-  $("#rpReasons").querySelectorAll<HTMLButtonElement>("button").forEach((b) => { b.onclick = () => { reasons.splice(+b.dataset.k!, 1); renderReasons(); remember(); }; });
+/** The chat column; `pending` is the model's answer while it's being written (its reasoning so far). */
+function renderChat(pending?: string) {
+  const log = $("#rpChat");
+  const msgs = chat.map((t, k) => `
+    ${t.fresh && k > 0 ? `<div class="rc-new">New route</div>` : ""}
+    <div class="rc-msg ai"><b>${esc(t.title || `Route ${k + 1}`)}</b><div class="rc-route">${esc(t.route)}</div>${t.note ? `<p>${esc(t.note)}</p>` : ""}</div>
+    ${t.said ? `<div class="rc-msg me">${esc(t.said)}</div>` : ""}`).join("");
+  log.innerHTML = msgs + (pending != null ? `<div class="rc-msg ai pending" id="rpThink">${esc(pending)}</div>` : "")
+    || `<p class="hint">Plan a route on the left. Then tell it here what to change, and it changes that route, keeping the rest. "New route" starts again from scratch.</p>`;
+  log.scrollTop = log.scrollHeight;
 }
 
-/** Try again: the first click asks what should be different; the next one (or Enter) plans again with that. */
-function tryAgain() {
-  const box = $("#rpFeedback"), why = $<HTMLInputElement>("#rpWhy");
-  if (box.hidden) { box.hidden = false; why.focus(); box.scrollIntoView({ block: "nearest", behavior: "smooth" }); return; }
-  const text = why.value.trim();
-  if (text && !reasons.includes(text)) reasons.push(text);
+/** Buttons and the chat box for what can be done now. */
+function idle() {
+  const busy = !!running;
+  $("#rpGo").textContent = shown ? "New route" : "Plan the route";
+  $<HTMLButtonElement>("#rpGo").disabled = busy;
+  $<HTMLInputElement>("#rpWhy").disabled = busy || !shown;
+  $<HTMLButtonElement>("#rpSend").disabled = busy || !shown;
+  $<HTMLButtonElement>("#rpCancel").hidden = !busy;
+}
+
+/** A reply in the chat: the route on screen gets changed for it. */
+function send() {
+  const why = $<HTMLInputElement>("#rpWhy"), text = why.value.trim(), last = chat.at(-1);
+  if (!text || !shown || !last || running) return;
+  last.said = text;
   why.value = "";
-  renderReasons();
-  plan_();
+  plan_(true);
 }
 
-async function plan_() {
+/** Plans a route: a new one, or (`change`) the one on screen changed for what they just said in the chat. */
+async function plan_(change = false) {
   const form = $<HTMLFormElement>("#routeForm");
   if (!form.reportValidity()) return;
-  const go = $<HTMLButtonElement>("#rpGo"), live = $("#rpLive");
+  const live = $("#rpLive");
   // The model is fixed when the request starts: switching models meanwhile doesn't change who's answering.
   const model = state.model;
-  const think = $("#rpThink"), cancel = $<HTMLButtonElement>("#rpCancel");
+  // What the model gets of the chat: from the last new route on, when it's changing the one on screen.
+  const from = Math.max(0, chat.map((t) => !!t.fresh).lastIndexOf(true));
+  const conversation = change ? chat.slice(from).slice(-8).map(({ route, said }) => ({ route, said })) : [];
   running = new AbortController();
-  cancel.hidden = false;
-  cancel.onclick = () => running?.abort();
-  think.textContent = "Waiting for the model…";
-  go.disabled = true;
+  $<HTMLButtonElement>("#rpCancel").onclick = () => running?.abort();
   $<HTMLButtonElement>("#rpUse").hidden = true;
+  const before = shown;
   $("#routeResult").innerHTML = "";
   shown = null;
+  idle();
+  renderChat("Waiting for the model…");
+  let reasoning = "";
   try {
     const plan = await streamRequest<RoutePlan>("/api/route-plan", {
       start: val("rpStart"), end: val("rpEnd"), startDate: val("rpDate"), days: +val("rpDays"), mode: val("rpMode"),
       maxHours: +val("rpHours"), description: val("rpWhat"), stays: val("rpStays"),
       travelers: state.travelers, interests: state.interests, model, budget: state.dailyBudget, currency: state.currency,
-      // Earlier suggestions and what they want different, so another try doesn't repeat them.
-      previous: tries.slice(-4), feedback: [...reasons],
+      conversation,
       mustSee: !$("#rpMustRow").hidden && $<HTMLInputElement>("#rpMust").checked ? mustSees() : [],
     }, (l) => {
       live.textContent = `${modelLabel(model)}: ${liveText(l)}`;
-      if (l.reasoning && think.textContent !== l.reasoning) {
+      const think = document.querySelector<HTMLElement>("#rpThink");
+      if (l.reasoning && think && reasoning !== l.reasoning) {
+        reasoning = l.reasoning;
         // Follow the newest text, unless they scrolled up to read.
-        const box = think.parentElement!, atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-        think.textContent = l.reasoning;
-        if (atEnd) box.scrollTop = box.scrollHeight;
+        const log = $("#rpChat"), atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+        think.textContent = reasoning;
+        if (atEnd) log.scrollTop = log.scrollHeight;
       }
     }, running.signal);
     live.textContent = "";
-    if (think.textContent === "Waiting for the model…") think.textContent = "This model didn't share its reasoning.";
-    showPlan(plan);
+    running = null;
+    // What it says about the route: its reasoning, without the running list of stays (the route is right above it).
+    showPlan(plan, { note: reasoning.split(/\n\nStays so far:/)[0].trim() || undefined, fresh: !change });
   } catch (e) {
     live.textContent = running?.signal.aborted ? "Cancelled." : (e as Error).message;
-  } finally { go.disabled = false; cancel.hidden = true; running = null; }
+    running = null;
+    // Nothing came back: the route stays as it was, and what they said goes back in the box to send again.
+    const last = chat.at(-1);
+    if (change && last?.said) { $<HTMLInputElement>("#rpWhy").value = last.said; delete last.said; }
+    if (before) showPlan(before); else { renderChat(); idle(); }
+  }
 }
 
 /** Replaces the trip's stays with the plan: the start (no night there), the stays, and the end. */
@@ -201,7 +231,7 @@ function use(plan: RoutePlan) {
     save(); setListPlaces(session.listPlaces); fillFields(); renderStays(); renderTripTitle(); renderChips(); renderItinerary(); geocodeStays(); drawMap({ fit: true });
   };
   refresh();
-  // The plan, tries and reasons stay: reopening shows them, so they can try again from here (or start over).
+  // The plan and the conversation stay: reopening shows them, so they can carry on from here (or start over).
   $<HTMLDialogElement>("#routeDialog").close();
   toast(`Using the route: ${plan.stays.length} stays, ${plan.nights} nights. Generate the itinerary when you're ready.`, () => {
     Object.assign(state, before); refresh();
@@ -210,7 +240,8 @@ function use(plan: RoutePlan) {
 
 export function initRoutePlanner() {
   $("#planRoute").onclick = open;
-  $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); if (shown) tryAgain(); else plan_(); };
-  $<HTMLInputElement>("#rpWhy").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); tryAgain(); } };
+  $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); plan_(); };
+  $<HTMLFormElement>("#rpChatForm").onsubmit = (e) => { e.preventDefault(); send(); };
+  renderChat(); idle();
   restore();
 }

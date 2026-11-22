@@ -183,27 +183,30 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /longer than your daily limit/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /Day trip: Vaduz/);
   assert.match(await page.eval(`document.querySelector("#routeResult").textContent`), /On the way: Lugano/);
-  assert.equal(await page.eval(`document.querySelector("#rpThink").textContent`), "Lakes first, then the loop home.", "shows the reasoning");
+  assert.match(await page.eval(`document.querySelector("#rpChat .rc-msg.ai").textContent`), /Lakes first, then the loop home\./, "the chat shows the route with what the model says about it");
   assert.ok(await page.eval(`document.querySelector("#rpCancel").hidden`), "Cancel only while planning");
-  // Try again asks why first, then sends the reasons and the earlier route; reasons can be removed.
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "New route");
+  // Replies in the chat change the route on screen: the model gets each route and what was said about it.
+  const reply = (text) => page.eval(`(() => { document.querySelector("#rpWhy").value = ${JSON.stringify(text)}; document.querySelector("#rpSend").click(); })()`);
+  await reply("less driving");
+  await page.waitFor(`window.__e2e.routeAsked.conversation.length === 1 && !document.querySelector("#rpUse").hidden`);
+  let again = await page.eval(`window.__e2e.routeAsked.conversation`);
+  assert.match(again[0].route, /Milano \(2 nights\) → Lucerne \(2 nights; day trips: Vaduz; on the way there: Lugano\)/);
+  assert.equal(again[0].said, "less driving");
+  await reply("a night by a lake");
+  await page.waitFor(`window.__e2e.routeAsked.conversation.length === 2 && !document.querySelector("#rpUse").hidden`);
+  again = await page.eval(`window.__e2e.routeAsked.conversation`);
+  assert.deepEqual(again.map((t) => t.said), ["less driving", "a night by a lake"], "the whole conversation goes along");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpChat .rc-msg.me")].map((e) => e.textContent)`), ["less driving", "a night by a lake"]);
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.ai").length`), 3);
+  // New route: a fresh one, without the conversation.
   await page.eval(`document.querySelector("#rpGo").click()`);
-  assert.equal(await page.eval(`document.querySelector("#rpFeedback").hidden`), false, "Try again asks what should be different");
-  assert.equal(await page.eval(`window.__e2e.routeAsked.feedback.length`), 0, "and doesn't plan yet");
-  await page.eval(`(() => { const i = document.querySelector("#rpWhy"); i.value = "less driving";
-    i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
-  await page.waitFor(`window.__e2e.routeAsked.feedback.length === 1 && !document.querySelector("#rpUse").hidden`);
-  let again = await page.eval(`window.__e2e.routeAsked`);
-  assert.deepEqual(again.feedback, ["less driving"]);
-  assert.equal(again.previous.length, 1);
-  assert.match(again.previous[0], /Milano \(2 nights\) → Lucerne \(2 nights; day trips: Vaduz\)/);
-  await page.eval(`(() => { document.querySelector("#rpWhy").value = "a night by a lake"; document.querySelector("#rpGo").click(); })()`);
-  await page.waitFor(`window.__e2e.routeAsked.feedback.length === 2 && !document.querySelector("#rpUse").hidden`);
-  again = await page.eval(`window.__e2e.routeAsked`);
-  assert.deepEqual(again.feedback, ["less driving", "a night by a lake"], "later tries keep the earlier reasons");
-  assert.equal(again.previous.length, 2, "and the earlier routes");
-  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["less driving", "a night by a lake"]);
-  await page.eval(`document.querySelector("#rpReasons li button").click()`);
-  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["a night by a lake"], "× removes a reason");
+  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 4 && !document.querySelector("#rpUse").hidden`);
+  assert.equal(await page.eval(`window.__e2e.routeAsked.conversation.length`), 0, "a new route starts the conversation again");
+  assert.ok(await page.eval(`!!document.querySelector("#rpChat .rc-new")`), "marked in the chat");
+  await reply("fewer stays");
+  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 5 && !document.querySelector("#rpUse").hidden`);
+  assert.deepEqual(await page.eval(`window.__e2e.routeAsked.conversation.map((t) => t.said)`), ["fewer stays"], "only the chat since the new route goes along");
   await page.eval(`document.querySelector("#rpUse").click()`);
   const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights])`);
   assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
@@ -213,13 +216,13 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
   assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
-  // Reopening after using the route still shows it, the reasons and Try again; Start over clears them.
+  // Reopening after using the route still shows it and the chat; Start over clears them.
   await page.eval(`document.querySelector("#planRoute").click()`);
   assert.ok(await page.eval(`!!document.querySelector("#routeResult .route-result") && !document.querySelector("#rpUse").hidden`), "the route is still there");
-  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "Try again");
-  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpReasons li span")].map((e) => e.textContent)`), ["a night by a lake"]);
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "New route");
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.me").length`), 3, "the chat is still there");
   await page.eval(`document.querySelector("#routeResult [data-fresh]").click()`);
-  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpReasons li").length + "|" + !!localStorage.getItem("trip-planner-route")`), "Plan the route|0|false");
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpChat .rc-msg").length + "|" + !!localStorage.getItem("trip-planner-route") + "|" + document.querySelector("#rpWhy").disabled`), "Plan the route|0|false|true");
 });
 
 test("trains follow the tracks: a train leg and a train day trip ask for train routes; stays link to Google Maps", async () => {
