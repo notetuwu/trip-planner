@@ -3,6 +3,8 @@
 // phone opens the link once (or scans its QR code) and gets a cookie; anything without it is turned away. Keys,
 // updates, settings and model downloads stay on this computer only.
 import http from "node:http";
+import path from "node:path";
+import fs from "node:fs";
 import os from "node:os";
 import { PORT } from "./config";
 import { lanToken } from "./settings";
@@ -30,11 +32,32 @@ export function lanAddresses(): string[] {
   return [...new Set(out)].sort((a, b) => Number(home(b)) - Number(home(a)));
 }
 
+/** This computer's Tailscale address (100.64.0.0/10): reachable from your phone anywhere, once both are on Tailscale. */
+export function tailscaleAddresses(): string[] {
+  const out: string[] = [];
+  for (const [name, list] of Object.entries(os.networkInterfaces())) for (const a of list || []) {
+    const [x, y] = a.address.split(".").map(Number);
+    if (a.family === "IPv4" && (/tailscale/i.test(name) || (x === 100 && y >= 64 && y <= 127))) out.push(a.address);
+  }
+  return [...new Set(out)];
+}
+
+/** Whether the Tailscale app is installed here (its usual places), for the steps in Settings → Phone. */
+function tailscaleInstalled() {
+  const spots = process.platform === "win32" ? [path.join(process.env.ProgramFiles || "C:\\Program Files", "Tailscale", "tailscale.exe")]
+    : process.platform === "darwin" ? ["/Applications/Tailscale.app"] : ["/usr/bin/tailscale", "/usr/local/bin/tailscale", "/usr/sbin/tailscale"];
+  return spots.some((p) => fs.existsSync(p)) || tailscaleAddresses().length > 0;
+}
+
 export function lanStatus() {
   const token = lanToken();
   return {
     running: !!server, port: LAN_PORT, since, error: lastError,
     urls: server ? lanAddresses().map((ip) => `http://${ip}:${LAN_PORT}/?t=${token}`) : [],
+    // The same app over Tailscale, for when you're out: its own link (cookies are per address).
+    awayUrls: server ? tailscaleAddresses().map((ip) => `http://${ip}:${LAN_PORT}/?t=${token}`) : [],
+    tailscale: tailscaleInstalled(),
+    platform: process.platform,
   };
 }
 

@@ -21,7 +21,7 @@ interface Pull { name: string; status: string; total: number; completed: number;
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
 interface OllamaInstall { phase: "idle" | "running" | "done" | "error"; log: string[]; error: string; started: number; command: string; canRun: boolean }
-interface LanStatus { running: boolean; port: number; since: number; error: string; urls: string[] }
+interface LanStatus { running: boolean; port: number; since: number; error: string; urls: string[]; awayUrls?: string[]; tailscale?: boolean; platform?: string }
 interface LibModel { name: string; description: string; caps: string[]; sizes: string[]; downloads: number; context: string; updated: string; cloudOnly: boolean }
 interface LibTag { name: string; sizeGb: number; context: string; inputs: string }
 interface Rec { model: string; tag: string; sizeGb: number; context: string; caps: string[]; description: string; downloads: number }
@@ -566,9 +566,11 @@ function renderPhone() {
           </div>
         </div>` : `<p class="hint">${icon("warn")} No home network found. Connect this computer to Wi-Fi or a cable.</p>`) : ""}
     </div>
+    ${l?.running ? awayCard(l) : ""}
     <div class="set-card">
       <b class="card-title">Good to know</b>
       <ul class="set-list">
+        <li><b>Like an app:</b> on the phone, add the page to the home screen (iPhone: Share → Add to Home Screen; Android: ⋮ → Add to Home screen). On iPhone it then opens full-screen with its own icon.</li>
         <li>The phone uses this computer: the same saved trips, place lists and models, and the trip you have open. Switch between them and the other one catches up.</li>
         <li>The computer has to stay on with the planner running. Phone access starts again with the planner while it's on.</li>
         <li>Windows may ask whether Trip Planner may use the network: allow it for <b>private networks</b>.</li>
@@ -585,6 +587,41 @@ function renderPhone() {
     renderPhone();
   });
   $$<HTMLButtonElement>("#setMain [data-copy]").forEach((b) => { b.onclick = () => navigator.clipboard.writeText(b.dataset.copy!).then(() => toast("Copied the link")); });
+  document.querySelector<HTMLButtonElement>("#setAwayCheck")?.addEventListener("click", async () => { lan = await api<LanStatus>("/api/lan"); renderPhone(); });
+}
+
+/** Away from home: with Tailscale (a free private network) on this computer and the phone, the same planner works
+ *  anywhere the phone has internet, without opening anything to the internet. A guide until it's set up, then the link. */
+function awayCard(l: LanStatus) {
+  const away = l.awayUrls?.[0];
+  if (away) {
+    const q = qrcode(0, "M"); q.addData(away); q.make();
+    return `<div class="set-card">
+      <b class="card-title">Away from home <span class="fit ok">Tailscale is on</span></b>
+      <div class="phone-link">
+        <div class="qr">${q.createSvgTag({ cellSize: 4, margin: 2, scalable: true })}</div>
+        <div>
+          <b>The planner from anywhere</b>
+          <p class="hint">With Tailscale on the phone, this link works wherever it has internet, while this computer is on with the planner running. Scan it once (it's a separate link from the home one).</p>
+          ${(l.awayUrls || []).map((u) => `<div class="link-row"><code>${esc(u)}</code><button type="button" class="icon-btn" data-copy="${esc(u)}" title="Copy">${icon("copy")}</button></div>`).join("")}
+        </div>
+      </div>
+    </div>`;
+  }
+  const pc = l.platform === "darwin" ? ["https://tailscale.com/download/mac", "Download for Mac"]
+    : l.platform === "linux" ? ["https://tailscale.com/download/linux", "Install on Linux"]
+      : ["https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe", "Download for Windows"];
+  return `<div class="set-card">
+    <b class="card-title">Away from home</b>
+    <p class="hint">To use the planner while you're out (say, on the trip), connect this computer and your phone with <b>Tailscale</b>: a free private network between your own devices. Nothing is opened to the internet, and it takes a few minutes:</p>
+    <ol class="set-steps">
+      <li><b>On this computer:</b> install Tailscale and sign in (with Google, Microsoft, Apple or GitHub). ${l.tailscale ? `<span class="fit ok">installed</span>` : `<a class="btn" href="${pc[0]}" target="_blank" rel="noopener">${icon("download")} ${pc[1]}</a>`}</li>
+      <li><b>On your phone:</b> install the Tailscale app and sign in with the same account.
+        <span class="set-inline"><a class="link-btn" href="https://apps.apple.com/app/tailscale/id1470499037" target="_blank" rel="noopener">App Store${ext()}</a><a class="link-btn" href="https://play.google.com/store/apps/details?id=com.tailscale.ipn" target="_blank" rel="noopener">Google Play${ext()}</a></span></li>
+      <li><b>Back here:</b> the away-from-home link and its QR code show up in this place. <button type="button" class="link-btn" id="setAwayCheck">${icon("refresh")} Check again</button></li>
+    </ol>
+    <p class="hint">The computer has to stay on with the planner running (sleep off while you travel). Tailscale's free plan is enough.</p>
+  </div>`;
 }
 
 export function initSettings() {

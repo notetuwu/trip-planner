@@ -603,8 +603,9 @@ button.refine:hover { border-color: var(--accent); }
 .booking input[type=date] { flex: 1.5; }
 
 /* The cost breakdown window. */
-.costs-dialog { width: min(760px, 94vw); }
-.costs-body { padding: 4px 20px 20px; max-height: 76vh; overflow: auto; }
+.costs-dialog { width: min(760px, 94vw); padding: 0; }
+.costs-dialog .pl-head .hint { flex: 1; margin: 0; }
+.costs-body { padding: 8px 22px 22px; max-height: 76vh; overflow: auto; }
 .costs-body h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
 .cb-stats .stat.over b { color: var(--warn); }
 .cb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -621,3 +622,19 @@ button.refine:hover { border-color: var(--accent); }
 .costs-body .btn { margin-top: 12px; }
 .stat-btn { text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .stat-btn:hover { border-color: var(--accent); }
+
+/* A tidier sidebar: your wishes folded into one line, the planning switches on one line. */
+.wishes-fold { margin: 10px 0 4px; }
+.wishes-fold .row { margin: 0; }
+.wishes-fold summary .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.plan-switches { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.mini-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.mini-check input { width: 15px; height: 15px; margin: 0; }
+.mini-check.off { opacity: .5; }
+.settings > h2 { margin-top: 20px; }
+
+/* Settings → Phone: the steps for using it away from home. */
+.set-steps { margin: 10px 0; padding-left: 20px; display: grid; gap: 10px; font-size: 13px; }
+.set-steps li { line-height: 1.5; }
+.set-steps .btn, .set-steps .set-inline { margin-left: 6px; }
+.set-steps .set-inline { display: inline-flex; gap: 12px; margin-top: 0; }

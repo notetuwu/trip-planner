@@ -15,6 +15,7 @@ import { tripHolidays } from "../trip/holidays";
 import { dropBookedAgain, ensureBookings } from "../ai/output";
 import { stayDaylight } from "../trip/daylight";
 import { roadRoutes } from "../trip/drives";
+import { trainConnections } from "../trip/trains";
 import { nearbyPlaces } from "../trip/nearby";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 
@@ -106,6 +107,7 @@ export async function handleItinerary(req: Req, res: Res) {
     trip.holidays = await tripHolidays(trip.stays).catch(() => []);
     trip.daylight = await stayDaylight(trip.stays).catch(() => []);
     trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));
+    trip.trains = await trainConnections(trip, places, (text) => send({ type: "status", text })).catch(() => []);
     trip.nearby = await nearbyPlaces(trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
     // The page uses these to put stops on the map at their exact spot.
     send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });

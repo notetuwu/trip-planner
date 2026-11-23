@@ -1,7 +1,7 @@
 // The planning prompt. Sections with data come from prompt-sections.ts; this file holds the instructions.
 import { tune } from "../settings";
 import type { Place } from "../../shared/types";
-import { bookingsSection, holidayLines, hasChosenModes, nearbySection, placeLines, requestsSection, stayLines } from "./prompt-sections";
+import { bookingsSection, trainsSection, holidayLines, hasChosenModes, nearbySection, placeLines, requestsSection, stayLines } from "./prompt-sections";
 import { LOCAL_SCHEMA } from "./schema";
 import type { Trip } from "./types";
 
@@ -55,6 +55,8 @@ ${requestsSection(trip) ? `
 ${requestsSection(trip)}
 ` : ""}${bookingsSection(trip) ? `
 ${bookingsSection(trip)}
+` : ""}${trainsSection(trip) ? `
+${trainsSection(trip)}
 ` : ""}
 ## Constraints
 - Daily budget: ${trip.budgetPer === "person" && trip.travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day, so ${trip.dailyBudget * trip.travelers} ${trip.currency} a day for the group of ${trip.travelers}` : `${trip.dailyBudget} ${trip.currency} per day for ${trip.travelers} traveler(s)`} (costs in the plan are for the whole group), covering activities, food and local transport (accommodation is already paid, intercity transfers count toward the day they happen). It is a ceiling, not a target.

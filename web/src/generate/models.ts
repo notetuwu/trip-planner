@@ -67,11 +67,13 @@ export async function refreshModels() {
 export function syncResearch() {
   $<HTMLInputElement>("#research").checked = state.research !== false;
   $<HTMLInputElement>("#autoFix").checked = state.autoFix !== false;
-  $("#researchHint").textContent = isLocal(state.model)
+  const why = isLocal(state.model)
     ? "The model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
     : isApi(state.model)
       ? "The model uses its provider's own web search (billed per search on top of tokens)"
       : "Claude checks opening hours, prices and events on the web (slower, more accurate)";
+  $("#researchHint").textContent = why;
+  $("#researchRow").title = why;
 }
 
 export function initModels() {

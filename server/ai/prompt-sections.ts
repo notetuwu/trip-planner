@@ -28,6 +28,15 @@ How to treat them:
 - Questions they ask are answered in the planning notes or the tips.`;
 }
 
+/** Real train connections from a timetable service, so transfers use the actual lines (not a detour from memory). */
+export function trainsSection(trip: { trains?: string[] }) {
+  if (!trip.trains?.length) return "";
+  return `## Train connections (looked up in a timetable service: trust these over your own idea of the rail network)
+${trip.trains.join("\n")}
+
+Use these routes for the transfers they cover: the same stations, lines and kinds of train, and about this long (the trains in the names are examples; similar ones run through the day). Don't route via other cities when a direct connection is listed.`;
+}
+
 /** What's already booked: fixed points the plan has to work around. */
 export function bookingsSection(trip: { bookings?: Booking[]; currency?: string }) {
   const list = (trip.bookings || []).filter((b) => b.name && b.date).sort((a, b) => (a.date + (a.from || "")).localeCompare(b.date + (b.from || "")));

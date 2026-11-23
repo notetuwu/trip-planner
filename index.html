@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trip Planner</title>
 <link rel="icon" type="image/png" href="/favicon.png">
+<!-- On a phone (Settings → Phone): "Add to Home Screen" opens it like an app, full-screen with its own icon. -->
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-512.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trips">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script>
@@ -39,27 +45,30 @@
     <h2>Places <small><button class="link-btn" id="openPlaces" type="button" title="Your place lists and places: show them on the map, suggest them to the planner, star must-sees"><i data-icon="pin"></i> Manage places</button></small></h2>
     <div class="places-summary" id="placesSummary"></div>
 
+    <h2>Bookings</h2>
+    <div id="bookings" class="bookings"></div>
+
     <h2>Travelers &amp; style</h2>
-    <div class="row" style="--cols:3">
+    <div class="row" style="--cols:2">
       <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
       <div><label for="dailyBudget" title="For activities, food and getting around (not where you sleep)">Per person / day</label><input id="dailyBudget" type="number" min="0" step="10"></div>
       <div><label for="currency">Currency</label>
         <select id="currency"></select></div>
-    </div>
-    <div class="row" style="--cols:1">
       <div><label for="pace">Pace</label>
         <select id="pace">
           <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>
           <option value="balanced (3-5 stops per day)">Balanced</option>
           <option value="packed (as much as possible, early starts)">Packed</option>
         </select></div>
-      <div><label for="interests">Interests</label><textarea id="interests" rows="2" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
-      <div><label for="wishes">What you want to see</label><textarea id="wishes" rows="2" placeholder="e.g. the big must-sees plus hidden gems locals love; quiet temples over crowded ones; a castle or two…"></textarea></div>
-      <div><label for="notes">Anything else for the plan</label><textarea id="notes" rows="2" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
     </div>
-
-    <h2>Bookings</h2>
-    <div id="bookings" class="bookings"></div>
+    <details class="notes-fold wishes-fold" id="wishesFold">
+      <summary><span>Your wishes</span><span class="hint" id="wishesHint"></span></summary>
+      <div class="row" style="--cols:1">
+        <div><label for="interests">Interests</label><textarea id="interests" rows="2" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
+        <div><label for="wishes">What you want to see</label><textarea id="wishes" rows="2" placeholder="e.g. the big must-sees plus hidden gems locals love; quiet temples over crowded ones; a castle or two…"></textarea></div>
+        <div><label for="notes">Anything else for the plan</label><textarea id="notes" rows="2" placeholder="e.g. we land at 15:00, have a rail pass, want one rest day…"></textarea></div>
+      </div>
+    </details>
 
     <h2>Planning</h2>
     <div class="plan-card">
@@ -71,8 +80,10 @@
           <option value="haiku">Haiku (fast)</option>
         </select></div>
       <div class="hint model-hint" id="modelHint"></div>
-      <label class="check" id="researchRow"><input type="checkbox" id="research"> Research online <span class="hint" id="researchHint"></span></label>
-      <label class="check"><input type="checkbox" id="autoFix"> Fix what the checks find <span class="hint">Stops in the wrong town or closed at the planned time go back to the model before you see the plan.</span></label>
+      <div class="plan-switches">
+        <label class="mini-check" id="researchRow"><input type="checkbox" id="research"> Research online<span class="hint" id="researchHint" hidden></span></label>
+        <label class="mini-check" title="Stops in the wrong town or closed at the planned time go back to the model before you see the plan."><input type="checkbox" id="autoFix"> Fix what the checks find</label>
+      </div>
     </div>
 
     <details class="notes-fold" id="ideasFold">
@@ -211,7 +222,7 @@
 </dialog>
 
 <dialog id="costsDialog" class="keys-dialog costs-dialog">
-  <div class="pl-head"><h2><i data-icon="wallet"></i> Costs</h2>
+  <div class="pl-head"><h2><i data-icon="wallet"></i> Costs</h2><span class="hint" id="costsMeta"></span>
     <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
   <div id="costsBody" class="costs-body"></div>
 </dialog>

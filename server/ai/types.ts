@@ -11,6 +11,8 @@ export interface Trip extends TripRequest {
   researchNotes?: string;
   /** Road routes between consecutive stays travelled by road, by the arriving stay's index (null: no road route). */
   drives?: Record<number, { km: number; hours: number } | null>;
+  /** Real train connections (between stays, from stops on the way, to day trips) as prompt lines; see trains.ts. */
+  trains?: string[];
 }
 
 /** Progress events go to the browser as they happen (everything but the final "done"/"error"). */

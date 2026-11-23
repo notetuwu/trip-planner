@@ -51,6 +51,8 @@ function csv() {
 export function openCosts() {
   if (!state.itinerary) return;
   const dlg = $<HTMLDialogElement>("#costsDialog");
+  const it = state.itinerary;
+  $("#costsMeta").textContent = `${it.days.length} days · ${state.travelers} traveler${state.travelers > 1 ? "s" : ""} · estimates for the whole group`;
   $("#costsBody").innerHTML = bodyHtml();
   $("#costsBody").querySelector<HTMLButtonElement>("[data-cb-csv]")!.onclick = () => downloadFile(new Blob([csv()], { type: "text/csv" }), "trip-costs.csv");
   if (!dlg.open) dlg.showModal();
