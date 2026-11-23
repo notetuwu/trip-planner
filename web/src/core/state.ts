@@ -138,6 +138,8 @@ export function save() {
 
 /** Data for this session only. */
 export const session = {
+  /** Stays folded in the itinerary (by stay index): only their heading shows. */
+  foldedStays: new Set<number>(),
   /** What the itinerary is filtered by (the search box above the days). */
   search: "",
   /** Which collapsible sections of the itinerary are open, by name. */

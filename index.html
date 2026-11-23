@@ -49,11 +49,14 @@
     <div id="bookings" class="bookings"></div>
 
     <h2>Travelers &amp; style</h2>
-    <div class="row" style="--cols:2">
+    <!-- The currency next to the budget, so it reads as money. -->
+    <div class="row" style="--cols:3">
       <div><label for="travelers">Travelers</label><input id="travelers" type="number" min="1"></div>
       <div><label for="dailyBudget" title="For activities, food and getting around (not where you sleep)">Per person / day</label><input id="dailyBudget" type="number" min="0" step="10"></div>
       <div><label for="currency">Currency</label>
         <select id="currency"></select></div>
+    </div>
+    <div class="row" style="--cols:1">
       <div><label for="pace">Pace</label>
         <select id="pace">
           <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>

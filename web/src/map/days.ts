@@ -18,6 +18,8 @@ export function selectDay(i: number | null, { scroll = false } = {}) {
   session.selectedDay = session.selectedDay === i ? null : i;
   for (const el of $$(".day")) el.classList.toggle("selected", +el.dataset.i! === session.selectedDay);
   drawMap({ fit: true });
+  const group = session.selectedDay != null ? $(`.day[data-i="${session.selectedDay}"]`)?.closest<HTMLElement>(".stay-group") : null;
+  if (group?.classList.contains("folded")) { session.foldedStays.delete(+group.dataset.stayGroup!); group.classList.remove("folded"); }
   if (scroll && session.selectedDay != null) $(`.day[data-i="${session.selectedDay}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   $(".day-chip.on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
 }

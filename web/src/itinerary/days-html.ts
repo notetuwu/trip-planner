@@ -64,14 +64,33 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
 }
 
 export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {
-  let html = "", lastCity: string | null = null;
+  return daysGroups(it, byTitle, cur, budget) + (it.days.length ? `</div></section>` : "");
+}
+
+function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {
+  let html = "", group: number | null = null;
+  // Which stay a day belongs to: the one you sleep at that night (the last day, when you leave, goes with the stay before).
+  const stayOf = (date: string) => state.stays.findIndex((s) => s.start && Number(s.nights) > 0 && date >= s.start && date < addDays(s.start, Number(s.nights)));
+  // Each day's group, worked out once: its stay, or (the last day, when you leave) the one before it.
+  const groups: number[] = [];
+  it.days.forEach((d, i) => { const s = stayOf(d.date); groups.push(s >= 0 ? s : i ? groups[i - 1] : -1); });
   it.days.forEach((d, i) => {
     const trackColor = dayGroupColors(d.items, i);
-    if (d.city !== lastCity) {
-      // The stay this part of the trip belongs to (the one you sleep at that night), to re-plan all its days at once.
-      const si = state.stays.findIndex((s) => s.start && Number(s.nights) > 0 && d.date >= s.start && d.date < addDays(s.start, Number(s.nights)));
-      html += `<div class="city-band"><span>${esc(d.city)}</span>${si >= 0 ? `<button class="link-btn replan-stay" data-replan-stay="${si}" title="Re-plan all days of this stay together, e.g. after booking something">${icon("refresh")} Re-plan this stay</button>` : ""}</div>`;
-      lastCity = d.city;
+    const si = groups[i];
+    if (si !== group || i === 0) {
+      // A new stay: close the last group, and open one with a heading that folds its days away.
+      if (group !== null) html += `</div></section>`;
+      const s = state.stays[si], n = groups.filter((g) => g === si).length;
+      const town = s ? s.city.split(",")[0] : d.city;
+      const when = s?.start ? `${fmtDate(s.start)} – ${fmtDate(addDays(s.start, Number(s.nights)))}` : "";
+      html += `<section class="stay-group${session.foldedStays.has(si) ? " folded" : ""}" data-stay-group="${si}">
+        <div class="city-band" data-fold-stay="${si}" title="Fold or unfold this stay's days">
+          <span class="fold-arrow">${icon("chevronDown")}</span><span class="band-town">${esc(town)}</span>
+          <span class="band-meta">${esc([when, `${n} day${n === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</span>
+          ${si >= 0 ? `<button class="link-btn replan-stay" data-replan-stay="${si}" title="Re-plan all days of this stay together, e.g. after booking something">${icon("refresh")} Re-plan this stay</button>` : ""}
+        </div>
+        <div class="stay-days">`;
+      group = si;
     }
     const w = session.weather[d.date];
     html += `<div class="day ${session.selectedDay === i ? "selected" : ""}" id="day-${i}" data-i="${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">

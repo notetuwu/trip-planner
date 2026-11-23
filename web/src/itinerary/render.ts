@@ -93,6 +93,12 @@ function wire(out: HTMLElement) {
   $("#refineBtn").onclick = () => openChat("");
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
   for (const el of $$("[data-replan-stay]", out)) el.onclick = (e) => { e.stopPropagation(); replanStay(+el.dataset.replanStay!); };
+  // A stay's heading folds its days away (and back).
+  for (const el of $$("[data-fold-stay]", out)) el.onclick = () => {
+    const si = +el.dataset.foldStay!, group = el.closest(".stay-group")!;
+    if (session.foldedStays.has(si)) session.foldedStays.delete(si); else session.foldedStays.add(si);
+    group.classList.toggle("folded", session.foldedStays.has(si));
+  };
   wireBookAhead(out);
   wirePacking(out, () => renderItinerary());
   // Collapsible sections stay open or closed across redraws.

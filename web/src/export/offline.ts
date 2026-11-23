@@ -25,7 +25,7 @@ export function offlineHtml() {
   const content = $("#output").cloneNode(true) as HTMLElement;
   for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .redo, .thoughts, .stale, .it-search", content)) el.remove();
   // Show everything, whatever the search box on the page is filtering.
-  for (const el of $$(".day, .item, .fork, .city-band", content)) { el.hidden = false; el.classList.toggle("search-hit", false); }
+  for (const el of $$(".day, .item, .fork, .city-band, .stay-group", content)) { el.hidden = false; el.classList.toggle("search-hit", false); }
   // The export has no script to fill directions links on click, so fill them in now.
   for (const a of $$<HTMLAnchorElement>("a[data-dir]", content)) {
     const [di, xi] = a.dataset.dir!.split("-").map(Number), url = directionsUrl(di, xi);

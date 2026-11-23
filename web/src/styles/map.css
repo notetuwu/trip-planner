@@ -103,3 +103,11 @@
 .num-pin.hot { transform: scale(1.5); z-index: 1000; }
 /* Couldn't be looked up: placed at the model's own estimate, which may be off. */
 .num-pin.approx { border-style: dashed; opacity: .6; }
+
+/* Phones: the day buttons get a row of their own (scrolling sideways), the names menu and switches the row below;
+   "Generate itinerary" sits at the end of the form instead of floating over the page (and the address bar). */
+@media (max-width: 900px) {
+  .map-bar .day-chips { flex: 1 1 100%; }
+  .map-bar .day-chips:empty { display: none; }
+  .generate-bar { position: static; background: none; padding: 14px 0 6px; }
+}

@@ -638,3 +638,12 @@ button.refine:hover { border-color: var(--accent); }
 .set-steps li { line-height: 1.5; }
 .set-steps .btn, .set-steps .set-inline { margin-left: 6px; }
 .set-steps .set-inline { display: inline-flex; gap: 12px; margin-top: 0; }
+
+/* Sidebar: each stay a card like Planning; day trips soft rounded rows inside it; the folds as clear cards. */
+.stay { background: var(--field); border-radius: 12px; }
+.stay .day-trip { background: var(--panel); border: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: 10px; margin: 0 0 6px; padding: 8px; }
+.stay .day-trip .dt-label { color: var(--accent); }
+.notes-fold { background: var(--field); }
+.notes-fold summary { font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--ink); font-weight: 600; }
+.notes-fold summary::before { color: var(--accent); }
+.booking { border-left: 0; border-radius: 10px; border: 1px solid var(--line); background: var(--field); }

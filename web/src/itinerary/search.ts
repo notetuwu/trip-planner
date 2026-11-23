@@ -40,15 +40,8 @@ export function applySearch() {
     dayEl.hidden = words.length > 0 && !shown;
     if (!dayEl.hidden && words.length) days++;
   });
-  // A town heading goes when none of its days are left.
-  for (const band of $$(".city-band")) {
-    let el = band.nextElementSibling as HTMLElement | null, any = false;
-    while (el && !el.classList.contains("city-band")) {
-      if (el.classList.contains("day") && !el.hidden) any = true;
-      el = el.nextElementSibling as HTMLElement | null;
-    }
-    band.hidden = !any;
-  }
+  // A stay's heading (and its group) goes when none of its days are left.
+  for (const group of $$(".stay-group")) group.hidden = words.length > 0 && !$$(".day", group).some((el) => !el.hidden);
   const count = $("#itSearchCount");
   if (count) count.textContent = !words.length ? "" : days ? `${stops} stop${stops === 1 ? "" : "s"} on ${days} day${days === 1 ? "" : "s"}` : "Nothing matches";
 }

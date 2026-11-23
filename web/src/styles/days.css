@@ -68,3 +68,15 @@
 .book-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-weight: 600; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
 .extras li a { color: var(--accent); }
 .tip-links { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+/* Stays in the itinerary: a heading per stay (town, dates, days) that folds its days away. */
+.stay-group .city-band { cursor: pointer; user-select: none; }
+.stay-group .city-band::after { order: 3; }
+.city-band .fold-arrow { display: inline-flex; color: var(--muted); transition: transform .15s; }
+.city-band .band-meta { font-size: 13px; font-weight: 500; color: var(--muted); order: 2; }
+.city-band .band-town { order: 1; }
+.city-band .fold-arrow { order: 0; }
+.city-band .replan-stay { order: 4; }
+.stay-group.folded .fold-arrow { transform: rotate(-90deg); }
+.stay-group.folded .stay-days { display: none; }
+@media print { .stay-group.folded .stay-days { display: block; } .city-band .fold-arrow { display: none; } }
