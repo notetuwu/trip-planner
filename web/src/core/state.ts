@@ -1,5 +1,5 @@
 // The trip being edited (saved in localStorage) plus session-only data such as the loaded place list.
-import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode } from "../../../shared/types";
+import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode, Booking } from "../../../shared/types";
 import { prefs } from "./prefs";
 
 export interface Stay {
@@ -89,6 +89,8 @@ export interface AppState {
   chatSummarized?: number;
   /** The model that answers in the trip chat ("" or unset: the planning model). */
   chatModel?: string;
+  /** Things already booked (Bookings in the sidebar). */
+  bookings?: Booking[];
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
   saveName?: string;
   /** The trip chat so far. */

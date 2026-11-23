@@ -61,6 +61,7 @@ export function tripContext(full = true): string {
   out.push(`Travelers: ${s.travelers} · budget about ${s.dailyBudget} ${s.currency} per person a day (${s.dailyBudget * Math.max(1, s.travelers)} for the group; day costs in the plan are for the group) · pace: ${s.pace}`);
   if (s.interests) out.push(`Interests: ${s.interests}`);
   if (s.wishes) out.push(`What they want to see: ${s.wishes}`);
+  for (const b of (s.bookings || []).filter((x) => x.name && x.date)) out.push(`Booked: ${b.name} on ${b.date}${b.from ? ` ${b.from}${b.to ? `-${b.to}` : ""}` : ""}`);
   if (s.notes) out.push(`Their notes for the plan: ${s.notes}`);
   if (stays.length) {
     out.push("", "Stays:");

@@ -1,6 +1,6 @@
 // The data sections of the planning prompt: saved places, stays, holidays and nearby real places.
 import { tune } from "../settings";
-import type { Place } from "../../shared/types";
+import type { Booking, Place } from "../../shared/types";
 import { routeNote } from "../../shared/route";
 import { addDays } from "../config";
 import type { NearbyPlace } from "../trip/nearby";
@@ -26,6 +26,17 @@ How to treat them:
 - Things they say they have already booked go on the booked date and time; don't give them "booking" or "bookAhead" (write "already booked" in the description instead).
 - Things they say they skip or don't want never appear, not even as a generic stop (e.g. no hotel breakfast if they skip it).
 - Questions they ask are answered in the planning notes or the tips.`;
+}
+
+/** What's already booked: fixed points the plan has to work around. */
+export function bookingsSection(trip: { bookings?: Booking[]; currency?: string }) {
+  const list = (trip.bookings || []).filter((b) => b.name && b.date).sort((a, b) => (a.date + (a.from || "")).localeCompare(b.date + (b.from || "")));
+  if (!list.length) return "";
+  const when = (b: Booking) => b.from ? (b.to ? `${b.from}-${b.to}` : `from ${b.from}`) : "any time that day";
+  return `## Already booked (fixed: plan everything else around these)
+${list.map((b) => `- ${withDay(b.date)}, ${when(b)}: ${b.name}${b.cost != null ? `; cost ${b.cost} ${trip.currency || ""}${b.countCost ? "" : " (already paid: put 0 as its cost)"}` : ""}`).join("\n")}
+
+Each booking is a stop on exactly its day${list.some((b) => b.from) ? " and time" : ""} (where only the day is given, pick a sensible time), under its name, with "already booked" in the description and no "booking"/"bookAhead". Plan the rest of that day around it: getting there in time, things nearby before and after, meals that fit. Nothing else may overlap it.`;
 }
 
 /** "only 2 of the 4 travelers go" for a day trip part of the group takes. */

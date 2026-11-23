@@ -14,7 +14,7 @@ import { askModel } from "./ask";
 import { parseModelId, serverName } from "./local-models";
 import { addMissingMustSees, normalizeItinerary, parseJsonLoose } from "./output";
 import { buildPrompt } from "./prompt";
-import { holidayLines, placeLines, requestsSection, stayLines, withDay } from "./prompt-sections";
+import { bookingsSection, holidayLines, placeLines, requestsSection, stayLines, withDay } from "./prompt-sections";
 import type { OnEvent, Trip } from "./types";
 
 /** How far from a stay (or one of its day trips) a saved place counts as belonging to it. */
@@ -141,7 +141,7 @@ export async function planInSteps(trip: Trip, places: Place[], onEvent: OnEvent,
   const travelers = Number(trip.travelers) || 1;
   const budget = trip.budgetPer === "person" && travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day (${trip.dailyBudget * travelers} for the group)` : `${trip.dailyBudget} ${trip.currency} per day`;
   const about = `Travelers: ${travelers}. Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}.` : ""} Pace: ${trip.pace || "balanced"}. Budget: ${budget}, a ceiling, not a target.`;
-  const requests = requestsSection(trip);
+  const requests = [requestsSection(trip), bookingsSection(trip)].filter(Boolean).join("\n\n");
 
   // --- 1. The saved places per stay (code) ---
   onEvent({ type: "status", text: "Step 1 of 4: sorting your places by stay…" });

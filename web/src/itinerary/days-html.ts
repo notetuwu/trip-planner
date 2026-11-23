@@ -1,7 +1,7 @@
 // The days of the itinerary: city bands, stops (with split groups side by side), notes, and the extras at the end.
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { dayColor, fmtDate, fmtTemp, fmtTime, money } from "../core/format";
+import { dayColor, fmtDate, fmtTemp, fmtTime, money, addDays } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
@@ -67,7 +67,12 @@ export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: n
   let html = "", lastCity: string | null = null;
   it.days.forEach((d, i) => {
     const trackColor = dayGroupColors(d.items, i);
-    if (d.city !== lastCity) { html += `<div class="city-band">${esc(d.city)}</div>`; lastCity = d.city; }
+    if (d.city !== lastCity) {
+      // The stay this part of the trip belongs to (the one you sleep at that night), to re-plan all its days at once.
+      const si = state.stays.findIndex((s) => s.start && Number(s.nights) > 0 && d.date >= s.start && d.date < addDays(s.start, Number(s.nights)));
+      html += `<div class="city-band"><span>${esc(d.city)}</span>${si >= 0 ? `<button class="link-btn replan-stay" data-replan-stay="${si}" title="Re-plan all days of this stay together, e.g. after booking something">${icon("refresh")} Re-plan this stay</button>` : ""}</div>`;
+      lastCity = d.city;
+    }
     const w = session.weather[d.date];
     html += `<div class="day ${session.selectedDay === i ? "selected" : ""}" id="day-${i}" data-i="${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">
       <div class="day-head" data-sel="${i}" title="Show this day on the map">

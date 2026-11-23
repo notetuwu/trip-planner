@@ -1,5 +1,6 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
+import { initBookings, renderBookings } from "./trip/bookings";
 import { $, api, closeOnBackdrop } from "./core/dom";
 import { initUpdates } from "./core/update";
 import { initWindowMode } from "./core/window-mode";
@@ -55,8 +56,8 @@ initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
 initSettings(); initSync();
 // Settings → General changed (or came in from the computer): redraw in the new units and formats.
-onAppPrefs(() => { renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
-initFields(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
+onAppPrefs(() => { renderBookings(); renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
+initFields(); initBookings(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.

@@ -89,6 +89,29 @@ export function tidyStops(d: { items: any[] }) {
   d.items = out;
 }
 
+/** Makes sure every booking is in the plan on its day: the stop for it gets its time (if given), "already booked"
+ *  and its cost (or 0 when it's already paid); one that's missing is added at its time. */
+export function ensureBookings(it: any, bookings: { name: string; date: string; from?: string; to?: string; cost?: number; countCost?: boolean }[] | undefined) {
+  for (const b of (bookings || []).filter((x) => x?.name && x.date)) {
+    const day = (it.days || []).find((d: any) => d.date === b.date);
+    if (!day) continue;
+    const words = b.name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4);
+    let x = day.items.find((y: any) => { const p = String(y.place || "").toLowerCase(); return p.includes(b.name.toLowerCase()) || (words.length > 0 && words.filter((w) => p.includes(w)).length >= Math.ceil(words.length / 2)); });
+    if (!x) {
+      x = { time: b.from || "", place: b.name, description: "", kind: "activity" };
+      day.items.push(x);
+    }
+    if (b.from) x.time = b.from;
+    if (!/already booked/i.test(x.description || "")) x.description = `Already booked${b.from ? ` (${b.from}${b.to ? `-${b.to}` : ""})` : ""}. ${x.description || ""}`.trim();
+    delete x.booking; delete x.bookAhead;
+    if (b.cost != null) x.cost = b.countCost ? b.cost : 0;
+    // Back in time order (stops without a time keep their place).
+    day.items.sort((p: any, q: any) => (p.time && q.time ? p.time.localeCompare(q.time) : 0));
+    day.estimatedCost = day.items.reduce((n: number, y: any) => n + (Number(y.cost) || 0), 0);
+  }
+  if (Array.isArray(it.days) && it.days.length) it.totalEstimatedCost = it.days.reduce((n: number, d: any) => n + (Number(d.estimatedCost) || 0), 0);
+}
+
 /** Must-sees the plan left out without saying so go under "Didn't fit", so they don't vanish silently. A must-see
  *  counts as planned when a stop shares most of its words ("ZEN Chopsticks Workshop" for "ZEN Chopsticks Making
  *  Workshop Gion Kyoto"). */

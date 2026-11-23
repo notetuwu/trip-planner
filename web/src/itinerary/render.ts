@@ -1,5 +1,6 @@
 // Renders the itinerary column and wires up its buttons.
 import { openChat } from "../trip/companion";
+import { addDays } from "../core/format";
 import { $, $$, downloadFile, esc } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
@@ -52,6 +53,19 @@ function redoDay(day: number) {
   if (request !== null) runGeneration({ redoDay: { itinerary: it, day, request: request.trim() } });
 }
 
+/** All days of one stay at once, so they can be rearranged (a booking moved a sight to another day, say). */
+function replanStay(si: number) {
+  const it = state.itinerary, s = state.stays[si];
+  if (!it || !s?.start) return;
+  const end = addDays(s.start, Number(s.nights) || 0);
+  const days = it.days.map((d, i) => (d.date >= s.start && d.date <= end ? i : -1)).filter((i) => i >= 0);
+  if (!days.length) return;
+  const asked = prompt(`Re-plan ${s.city} (${days.length} days)? Anything to change? Leave empty to fit it around the bookings and whatever changed.`, "");
+  if (asked === null) return;
+  const request = `Re-plan these ${days.length} days of the stay in ${s.city} together: you may move sights between them so that everything fits (bookings on their days and times, opening days, the must-sees). Keep the arrival and departure transfers, the day trips and where they sleep.${asked.trim() ? ` They ask: ${asked.trim()}` : ""}`;
+  runGeneration({ edit: { itinerary: it, days, request } });
+}
+
 function downloadCalendar() {
   const it = state.itinerary; if (!it) return;
   const byTitle = byTitleMap();
@@ -77,6 +91,7 @@ function wire(out: HTMLElement) {
   out.querySelector('[data-stale="gen"]')?.addEventListener("click", () => runGeneration());
   $("#refineBtn").onclick = () => openChat("");
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
+  for (const el of $$("[data-replan-stay]", out)) el.onclick = (e) => { e.stopPropagation(); replanStay(+el.dataset.replanStay!); };
   wireBookAhead(out);
   wirePacking(out, () => renderItinerary());
   // Collapsible sections stay open or closed across redraws.

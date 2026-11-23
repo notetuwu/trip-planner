@@ -581,3 +581,17 @@ button.refine:hover { border-color: var(--accent); }
 .set-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }
 .set-grid label { display: flex; flex-direction: column; align-items: stretch; text-align: left; gap: 4px; font-size: 12px; color: var(--muted); }
 .set-grid input, .set-grid select { width: 100%; }
+
+/* Bookings: like the day trips, a name line and its date, time and cost below. */
+.bookings { margin-bottom: 14px; }
+.booking { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; padding: 8px; background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+.booking .bk-top, .booking .bk-opts { display: flex; gap: 6px; align-items: center; }
+.booking .bk-label { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+.booking input { flex: 1; min-width: 0; height: 30px; font-size: 12.5px; background: var(--panel); }
+.booking input[type=checkbox] { flex: none; width: 15px; height: 15px; }
+.booking .inline-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
+.bookings .muted { color: var(--muted); font-size: 12px; }
+.city-band { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.city-band .replan-stay { font-size: 12px; font-weight: 600; flex: none; }
+@media print { .city-band .replan-stay { display: none; } }
+.booking input[type=date] { flex: 1.5; }

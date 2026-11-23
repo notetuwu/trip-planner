@@ -1,6 +1,7 @@
 // Saved trips, stored as files in saves/ by the server: save, load, start a new trip, delete. Also Export / Import:
 // the trip as a file to share (someone else imports it into their planner) or keep a copy of.
 import type { ListSummary, PlaceList, SaveSummary } from "../../../shared/types";
+import { renderBookings } from "../trip/bookings";
 import { $, api, esc } from "../core/dom";
 import { type AppState, save, session, setListPlaces, setState, state, tickedLists } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
@@ -33,7 +34,7 @@ export async function applyState(next: Partial<AppState>) {
   fillFields();
   syncResearch();
   session.selectedDay = null; session.weather = {}; session.userMoved = false;
-  save(); await refreshLists(); renderStays(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList();
+  save(); await refreshLists(); renderStays(); renderBookings(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList();
   geocodeItems(); loadWeather(); refreshCompanion();
 }
 

@@ -27,6 +27,7 @@ export function tripRequest(change: Change = {}): TripRequest {
       travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "", people: t.people })),
     })),
     research: state.research !== false,
+    bookings: (state.bookings || []).filter((b) => b.name.trim() && b.date),
     mustSee: marked("must"),
     mustSeeWho: Object.fromEntries(marked("must").filter((t) => whoFor(t) < groupSize()).map((t) => [t, whoFor(t)])),
     mustSeeRoute: mustSeeRoutes(marked("must")),

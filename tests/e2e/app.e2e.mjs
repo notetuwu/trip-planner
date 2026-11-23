@@ -680,6 +680,32 @@ test("Settings → General: formats, new trips' defaults, saving new plans by th
   }
 });
 
+test("a booking added in the sidebar goes to the planner and onto its day; Re-plan this stay sends all its days", async () => {
+  await trip(PADUA_MILANO);
+  await page.eval(`document.querySelector("[data-bk-add]").click()`);
+  await page.waitFor(`!!document.querySelector('.booking [data-bk="name"]')`);
+  const set = (k, v) => page.eval(`(() => { const el = document.querySelector('.booking [data-bk="${k}"]'); if (el.type === "checkbox") el.checked = ${JSON.stringify(v)}; else el.value = ${JSON.stringify(v)}; el.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+  await set("name", "Opera at La Scala");
+  await set("date", "2027-09-17");
+  await set("from", "20:00");
+  await set("cost", "180");
+  assert.deepEqual(await page.eval(`planner.state().bookings`), [{ name: "Opera at La Scala", date: "2027-09-17", from: "20:00", cost: 180, countCost: true }]);
+  await page.eval(`window.__e2e.answer = () => ({ summary: "Plan", totalEstimatedCost: 0, days: [
+    day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")]), day("2027-09-15", "Padua", [stop("10:00", "Basilica")]),
+    day("2027-09-16", "Padua → Milano", [stop("17:00", "Duomo di Milano")]), day("2027-09-17", "Milano", [stop("10:00", "Castello Sforzesco")]) ] })`);
+  await page.eval(`document.querySelector("#generate").click()`);
+  await page.waitFor(`planner.state().itinerary?.days?.length === 4`, 20000, "the plan");
+  const asked = await page.eval(`window.__e2e.requests.at(-1)`);
+  assert.deepEqual(asked.bookings, [{ name: "Opera at La Scala", date: "2027-09-17", from: "20:00", cost: 180, countCost: true }], "the planner gets the booking");
+  // Re-planning the Milano stay sends all its days (arrival to departure) as one change.
+  await page.waitFor(`!!document.querySelector('[data-replan-stay="1"]')`, 5000, "the stay's re-plan button");
+  await page.eval(`window.prompt = () => ""; document.querySelector('[data-replan-stay="1"]').click()`);
+  await page.waitFor(`window.__e2e.requests.at(-1)?.edit?.days?.length === 2`, 10000, "the re-plan request");
+  const edit = await page.eval(`window.__e2e.requests.at(-1).edit`);
+  assert.deepEqual(edit.days, [2, 3]);
+  assert.match(edit.request, /Re-plan these 2 days of the stay in Milano together/);
+});
+
 test("no errors in the page", () => {
   assert.deepEqual(page.errors, []);
 });

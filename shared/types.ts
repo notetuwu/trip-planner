@@ -40,6 +40,20 @@ export interface ListSummary {
 /** How the travelers get between stays or on a day trip; "" lets the planner choose. */
 export type TravelMode = "" | "car" | "train" | "bus" | "flight" | "ferry" | "bike";
 
+/** Something already booked (a concert, an expo, timed tickets): planned around, always on its day. */
+export interface Booking {
+  name: string;
+  /** YYYY-MM-DD */
+  date: string;
+  /** "HH:MM": when it starts, and optionally until when; without from, any time that day. */
+  from?: string;
+  to?: string;
+  /** For the whole group, in the trip's currency. */
+  cost?: number;
+  /** Count the cost in that day's budget (otherwise it's already paid and shows as 0). */
+  countCost?: boolean;
+}
+
 export interface DayTrip {
   place: string;
   mode: TravelMode;
@@ -141,6 +155,8 @@ export interface TripRequest {
   interests: string;
   /** What they want to see, in their words. */
   wishes?: string;
+  /** Things already booked, planned around. */
+  bookings?: Booking[];
   notes: string;
   /** The first ticked place list (older servers read only this). */
   list: string;
