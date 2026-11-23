@@ -9,6 +9,7 @@ import { verifyWebsites } from "../ai/verify-links";
 import type { Runner, Trip } from "../ai/types";
 import { errMsg } from "../config";
 import { reverseGeocode } from "../geo/search";
+import { geoCache, geoKey, locateTown } from "../geo/geocode";
 import { getList } from "../lists/store";
 import { tripHolidays } from "../trip/holidays";
 import { dropBookedAgain } from "../ai/output";
@@ -70,7 +71,15 @@ async function tripPlaces(trip: Trip): Promise<Place[]> {
   }
   const names = [...new Set([...(Array.isArray(trip.lists) ? trip.lists : []), trip.list].filter((n): n is string => typeof n === "string" && !!n))].slice(0, 20);
   const lists = await Promise.all(names.map(async (n) => (await getList(n))?.places || []));
-  return [...mergeListPlaces(lists, trip.stays, trip.mustSee), ...extra];
+  // Places from a CSV have no coordinates in the list file; the page looked them up meanwhile (same cache, same key),
+  // so the planner gets where they are too.
+  const cc = [...new Set(trip.stays.map((s) => s.cc).filter(Boolean))].join(",");
+  const located = lists.map((l) => l.map((p) => {
+    if (typeof p.lat === "number" && typeof p.lng === "number") return p;
+    const hit = geoCache.data[geoKey(p.address || p.title, cc)] as { lat?: number; lng?: number } | number | null | undefined;
+    return hit && typeof hit === "object" && typeof hit.lat === "number" ? { ...p, lat: hit.lat, lng: hit.lng } : p;
+  }));
+  return [...mergeListPlaces(located, trip.stays, trip.mustSee), ...extra];
 }
 
 export async function handleItinerary(req: Req, res: Res) {
@@ -87,6 +96,13 @@ export async function handleItinerary(req: Req, res: Res) {
   res.on("close", () => { if (!res.writableFinished) abort.abort(); });
   try {
     send({ type: "status", text: "Looking up holidays and real places near your stays…" });
+    // Stays the page hadn't located (the request came too early, or from elsewhere): look them up here, since
+    // holidays, daylight, nearby places and step-by-step planning all go by where the stays are.
+    for (const s of trip.stays) {
+      if (typeof s.lat === "number" && typeof s.lng === "number" || !s.city) continue;
+      const hit = await locateTown(s.city, s.cc).catch(() => null);
+      if (hit) Object.assign(s, { lat: hit.lat, lng: hit.lng, cc: s.cc || hit.cc, country: s.country || hit.country });
+    }
     trip.holidays = await tripHolidays(trip.stays).catch(() => []);
     trip.daylight = await stayDaylight(trip.stays).catch(() => []);
     trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));

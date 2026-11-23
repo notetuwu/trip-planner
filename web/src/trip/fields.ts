@@ -5,7 +5,7 @@ import { type AppState, save, state } from "../core/state";
 import { renderChips } from "../places/chips";
 import { renderTripTitle } from "./title";
 
-export const FIELDS = ["dailyBudget", "currency", "travelers", "pace", "model", "interests", "notes"] as const;
+export const FIELDS = ["dailyBudget", "currency", "travelers", "pace", "model", "interests", "wishes", "notes"] as const;
 type Field = (typeof FIELDS)[number];
 
 const input = (f: Field) => $<HTMLInputElement>("#" + f);

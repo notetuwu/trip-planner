@@ -9,10 +9,13 @@ import { localOutput } from "./local-output";
 import { normalizeItinerary, parseJsonLoose, addMissingMustSees } from "./output";
 import { buildPrompt } from "./prompt";
 import { planInSteps } from "./local-steps";
+import { ensureOllama } from "./ollama-start";
 import { tune } from "../settings";
 import type { Runner } from "./types";
 
 export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<RunResult> => {
+  // Ollama may have stopped since the models were listed (e.g. after the PC slept): start it again, or say so plainly.
+  if (parseModelId(trip.model).kind === "ollama" && !(await ensureOllama())) throw new Error("Ollama isn't running and couldn't be started. Start Ollama, then generate again.");
   // Settings → Planning: a whole new plan step by step (re-planning a day, fixes and changes stay single requests).
   if (tune().localPlan === "steps" && !trip.redoDay && !trip.fix && !trip.edit && !trip.revise) return planInSteps(trip, places, onEvent, abort);
   const { kind, base, model } = parseModelId(trip.model);

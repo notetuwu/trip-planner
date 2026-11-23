@@ -25,7 +25,7 @@ import { dayLegs, routeKey, routes, setOnRouted } from "./map/routes";
 import { initMapSearch } from "./map/search";
 import { initChips, renderChips } from "./places/chips";
 import { initLists, loadList, refreshLists } from "./places/lists";
-import { applyState, importTrip, initSaves, refreshSaves } from "./saves/saves";
+import { applyState, importTrip, initSaves, refreshSaves, startFresh } from "./saves/saves";
 import { initFields } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
 import { initRoutePlanner } from "./trip/route-planner";
@@ -33,7 +33,7 @@ import { initCompanion } from "./trip/companion";
 import { initPrint } from "./export/print";
 import { initSettings } from "./settings/settings";
 import { initSync } from "./core/sync";
-import { loadPrefs } from "./core/prefs";
+import { loadPrefs, onAppPrefs, prefs } from "./core/prefs";
 import { renderTripTitle } from "./trip/title";
 
 // New coordinates arrived: redraw, and once the stays' countries are known, look up hotels, place names and
@@ -53,7 +53,9 @@ setOnRouted(() => { drawMap(); updateLegInfo(); });
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
-initSettings(); initSync(); loadPrefs();
+initSettings(); initSync();
+// Settings → General changed (or came in from the computer): redraw in the new units and formats.
+onAppPrefs(() => { renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
 initFields(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
 
@@ -77,3 +79,6 @@ geocodeStays();
 await refreshLists();
 await loadList();
 loadWeather();
+await loadPrefs();
+// Settings → General: start with a new trip (the one that was open goes to Saved trips first).
+if (prefs.app.startWith === "new") await startFresh();

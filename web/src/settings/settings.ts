@@ -6,7 +6,8 @@ import qrcode from "qrcode-generator";
 import type { GpuInfo } from "../../../shared/types";
 import { $, $$, api, esc, toast } from "../core/dom";
 import { ext, icon } from "../core/icons";
-import { prefs } from "../core/prefs";
+import { type AppPrefs, prefs, setPrefs } from "../core/prefs";
+import { CURRENCIES } from "../core/format";
 import { type Choice, choice, setTheme } from "../core/theme";
 import { type UpdateInfo, install } from "../core/update";
 import { switchWindowMode } from "../core/window-mode";
@@ -15,7 +16,7 @@ import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
-interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune }
+interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
@@ -140,6 +141,67 @@ function render() {
   else renderPhone();
 }
 
+/** Saves part of Settings → General; the page redraws in the new units and formats (see prefs.ts). */
+async function saveApp(part: Partial<AppPrefs>) {
+  settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ app: part }) });
+  setPrefs(settings);
+  toast("Saved");
+}
+
+/** Units and formats, map defaults, start-up and saving, and what a new trip starts with. */
+function generalCards() {
+  const a = settings?.app || prefs.app;
+  const seg = (k: keyof AppPrefs, v: string | boolean, label: string) => `<button type="button" class="seg${String(a[k]) === String(v) ? " on" : ""}" data-app="${k}" data-v="${v}">${label}</button>`;
+  const opt = (v: string | number, label: string, now: string | number) => `<option value="${v}"${String(v) === String(now) ? " selected" : ""}>${label}</option>`;
+  const t = a.newTrip;
+  return `
+    <div class="set-card">
+      <b class="card-title">Units &amp; formats</b>
+      <div class="set-row"><div><b>Units</b><div class="hint">Distances on the map and in the plan, and temperatures in the forecast.</div></div>
+        <div class="segs">${seg("units", "km", "Kilometres, °C")}${seg("units", "mi", "Miles, °F")}</div></div>
+      <div class="set-row"><div><b>Times</b><div class="hint">How the plan's times are shown (14:30 or 2:30 pm). Calendar files always use your calendar's own setting.</div></div>
+        <div class="segs">${seg("clock", "24", "24-hour")}${seg("clock", "12", "12-hour")}</div></div>
+      <div class="set-row"><div><b>Dates</b><div class="hint">As your system writes them, day first (Mon, 2 Nov) or month first (Mon, Nov 2).</div></div>
+        <div class="segs">${seg("dates", "auto", "System")}${seg("dates", "dmy", "2 Nov")}${seg("dates", "mdy", "Nov 2")}</div></div>
+    </div>
+    <div class="set-card">
+      <b class="card-title">Map</b>
+      <div class="set-row"><div><b>Place names</b><div class="hint">What the map starts with: names in the local language and script, or in English. The menu on the map changes it until the next start.</div></div>
+        <div class="segs">${seg("mapNames", "local", "Local")}${seg("mapNames", "english", "English")}</div></div>
+      <div class="set-row"><div><b>Show at start</b><div class="hint">Your saved places and the routes between stops; the boxes on the map turn them on and off for now.</div></div>
+        <div class="set-checks"><label class="inline-check"><input type="checkbox" data-app-check="showPlaces"${a.showPlaces ? " checked" : ""}> Places</label><label class="inline-check"><input type="checkbox" data-app-check="showRoutes"${a.showRoutes ? " checked" : ""}> Routes</label></div></div>
+    </div>
+    <div class="set-card">
+      <b class="card-title">Start-up &amp; saving</b>
+      <div class="set-row"><div><b>On start</b><div class="hint">Open the trip you had open, or start a new one. With a new one, the trip that was open is kept in Saved trips first.</div></div>
+        <div class="segs">${seg("startWith", "last", "Last trip")}${seg("startWith", "new", "New trip")}</div></div>
+      <div class="set-row"><div><b>Save new plans by themselves</b><div class="hint">After each generated plan, the trip is saved to Saved trips (into its own save if it has one, otherwise under its cities' names).</div></div>
+        <div class="segs">${seg("autoSave", true, "On")}${seg("autoSave", false, "Off")}</div></div>
+    </div>
+    <div class="set-card">
+      <b class="card-title">New trips start with</b>
+      <div class="set-grid">
+        <label>Travelers<input type="number" min="1" max="30" id="ntTravelers" value="${t.travelers}"></label>
+        <label>Budget per person / day<input type="number" min="0" id="ntBudget" value="${t.dailyBudget}"></label>
+        <label>Currency<select id="ntCurrency">${CURRENCIES.map((c) => opt(c, c, t.currency)).join("")}</select></label>
+        <label>Pace<select id="ntPace">${opt("relaxed (2-3 main stops per day, late starts)", "Relaxed", t.pace)}${opt("balanced (3-5 stops per day)", "Balanced", t.pace)}${opt("packed (as much as possible, early starts)", "Packed", t.pace)}</select></label>
+      </div>
+      <p class="hint">New trips keep the model you plan with.</p>
+    </div>`;
+}
+
+function wireGeneral() {
+  $$<HTMLButtonElement>("#setMain [data-app]").forEach((b) => {
+    b.onclick = async () => { const raw = b.dataset.v!; await saveApp({ [b.dataset.app!]: raw === "true" ? true : raw === "false" ? false : raw } as Partial<AppPrefs>); renderGeneral(); };
+  });
+  $$<HTMLInputElement>("#setMain [data-app-check]").forEach((c) => { c.onchange = () => saveApp({ [c.dataset.appCheck!]: c.checked } as Partial<AppPrefs>); });
+  const trip = () => ({ newTrip: {
+    travelers: Number($<HTMLInputElement>("#ntTravelers").value) || 1, dailyBudget: Number($<HTMLInputElement>("#ntBudget").value) || 0,
+    currency: $<HTMLSelectElement>("#ntCurrency").value, pace: $<HTMLSelectElement>("#ntPace").value,
+  } });
+  for (const id of ["#ntTravelers", "#ntBudget", "#ntCurrency", "#ntPace"]) document.querySelector<HTMLElement>(id)?.addEventListener("change", () => saveApp(trip()));
+}
+
 function renderGeneral() {
   const s = settings, th = choice();
   const seg = (c: Choice, label: string) => `<button type="button" class="seg${th === c ? " on" : ""}" data-theme-choice="${c}">${label}</button>`;
@@ -154,6 +216,7 @@ function renderGeneral() {
         <button type="button" class="btn" id="setKeys">${icon("key")} Manage keys</button></div>` : ""}
     </div>
     ${loadError ? `<p class="hint">The other settings are on the computer the planner runs on.</p>` : `
+    ${generalCards()}
     <div class="set-card">
       <div class="set-row"><div><b>Your data</b><div class="hint">Saved trips, place lists, caches and settings live in this folder on your computer.</div>
         <code class="set-path">${esc(s?.dataDir || "")}</code></div>
@@ -165,6 +228,7 @@ function renderGeneral() {
     win.onchange = async () => { if (!(await switchWindowMode(win.value as "app" | "browser"))) { s.window = win.value as "app" | "browser"; toast("Saved: it opens that way from the next start"); } };
   }
   $$<HTMLButtonElement>("[data-theme-choice]").forEach((b) => { b.onclick = () => { setTheme(b.dataset.themeChoice as Choice); renderGeneral(); }; });
+  if (!loadError) wireGeneral();
   document.querySelector<HTMLButtonElement>("#setKeys")?.addEventListener("click", () => openKeys(() => { refreshModels(); }));
   document.querySelector<HTMLButtonElement>("#setCopyPath")?.addEventListener("click", () => navigator.clipboard.writeText(s?.dataDir || "").then(() => toast("Copied the folder path")));
 }
@@ -207,8 +271,8 @@ function renderPlanning() {
     </div>
     <div class="set-card">
       <b class="card-title">Local models</b>
-      <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Small tasks suit local models much better; it takes about as long or a bit longer. Re-planning a day and fixes are always one request.</div></div>
-        <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step")}</div></div>
+      <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Experimental: in tests with a 27B model, planning in one go gave better plans; try step by step if one go gets cut off or a smaller model can't manage the whole trip. Re-planning a day and fixes are always one request.</div></div>
+        <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step (experimental)")}</div></div>
       <div class="set-row"><div><b>Thinking</b><div class="hint">Models that can think first plan more carefully; off answers straight away (much faster, sometimes sloppier).</div></div>
         <div class="segs">${seg("thinking", "on", "On")}${seg("thinking", "off", "Off")}</div></div>
       <div class="set-row"><div><b>Creativity</b> <span class="hint" id="tuneTempVal">${t.temperature.toFixed(1)}</span><div class="hint">Low sticks to the obvious choices and the format; high varies more (and slips more often). 0.4 suits most models.</div></div>

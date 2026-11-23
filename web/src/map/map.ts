@@ -1,5 +1,6 @@
 // The Leaflet map: tiles, layers, and the click-to-add behaviour.
 import * as L from "leaflet";
+import { prefs } from "../core/prefs";
 import { $ } from "../core/dom";
 import { session } from "../core/state";
 import { openAddPopup } from "./add";
@@ -42,7 +43,8 @@ async function setLabels(labels: Labels) {
 
 export function initMap() {
   map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
-  const saved: Labels = ["latin", "english"].includes(localStorage.getItem(LABELS_KEY) || "") ? "english" : "local";
+  // Place names start as set in Settings → General; the menu changes them until the next start.
+  const saved: Labels = prefs.app.mapNames === "english" ? "english" : "local";
   setLabels(saved);
   const pick = $<HTMLSelectElement>("#mapLabels");
   pick.value = saved;
@@ -65,6 +67,9 @@ export function initMap() {
   L.DomEvent.disableClickPropagation($("#mapSearch"));
   L.DomEvent.disableScrollPropagation($("#mapSearch"));
   map.on("popupopen", (e) => wirePlacePopup(e.popup.getElement()!));
+  // Places and routes start as set in Settings → General (the boxes change them until the next start).
+  $<HTMLInputElement>("#showPlaces").checked = prefs.app.showPlaces;
+  $<HTMLInputElement>("#showRoutes").checked = prefs.app.showRoutes;
   $<HTMLInputElement>("#showPlaces").onchange = () => drawMap();
   $<HTMLInputElement>("#showRoutes").onchange = () => drawMap();
 }

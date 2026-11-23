@@ -139,6 +139,8 @@ export interface TripRequest {
   pace: string;
   model: string;
   interests: string;
+  /** What they want to see, in their words. */
+  wishes?: string;
   notes: string;
   /** The first ticked place list (older servers read only this). */
   list: string;

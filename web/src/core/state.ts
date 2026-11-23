@@ -1,5 +1,6 @@
 // The trip being edited (saved in localStorage) plus session-only data such as the loaded place list.
 import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode } from "../../../shared/types";
+import { prefs } from "./prefs";
 
 export interface Stay {
   city: string;
@@ -50,6 +51,10 @@ export interface AppState {
   pace: string;
   model: string;
   interests: string;
+  /** What they want to see ("the must-sees plus hidden gems"); the route planner fills it from its description. */
+  wishes: string;
+  /** The route planner description last put into wishes, so a new route replaces it rather than piling up. */
+  lastRouteWhat?: string;
   notes: string;
   /** The first ticked place list (older trips had only this one). */
   list: string;
@@ -84,16 +89,19 @@ export interface AppState {
   chatSummarized?: number;
   /** The model that answers in the trip chat ("" or unset: the planning model). */
   chatModel?: string;
+  /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
+  saveName?: string;
   /** The trip chat so far. */
   chat?: { role: "me" | "ai"; text: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[] }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
 }
 
 const STORE_KEY = "trip-planner-v2";
 
+/** An empty trip, with what Settings → General says a new trip starts with. */
 export const blankTrip = (): AppState => ({
   stays: [{ city: "", start: "", nights: 3, hotel: "" }],
-  dailyBudget: 100, budgetPer: "person", currency: "EUR", travelers: 1, pace: "balanced (3-5 stops per day)",
-  model: "default", interests: "", notes: "", list: "", listChosen: false, marks: {}, who: {}, customPlaces: [], itinerary: null, meta: null,
+  dailyBudget: prefs.app.newTrip.dailyBudget, budgetPer: "person", currency: prefs.app.newTrip.currency, travelers: prefs.app.newTrip.travelers, pace: prefs.app.newTrip.pace,
+  model: "default", interests: "", wishes: "", notes: "", list: "", listChosen: false, marks: {}, who: {}, customPlaces: [], itinerary: null, meta: null,
 });
 
 function load(): Partial<AppState> | null {

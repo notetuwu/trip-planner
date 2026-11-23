@@ -1,6 +1,7 @@
 // The saved places in the Places dialog, as a table you can sort (click a column) and filter (search, status, list):
 // a star makes a place a must-see; on must-sees, how many of you want to go and how to fit it in (on the way, from a
 // stay, or let the route decide); skip keeps a place out of the plan. Also the sidebar's short summary of it all.
+import { fmtKm } from "../core/format";
 import { $, $$, esc, toast } from "../core/dom";
 import type { MustSeeHow, Place } from "../../../shared/types";
 import { type Mark, groupSize, keepPlace, listSuggest, save, session, setListPlaces, state, tickedLists, whoFor } from "../core/state";
@@ -23,14 +24,14 @@ const listOf = (p: Place, inList: Set<string>) => p.custom ? "Picked on the map"
 /** How a must-see is fitted in when left to the route ("Auto"), in a few words, and the full explanation. */
 function autoHow(title: string): { label: string; tip: string } {
   const r = mustSeeRoute(title);
-  const where = r?.leg ? `${r.leg.from} → ${r.leg.to}, about +${r.leg.detourKm} km` : "";
+  const where = r?.leg ? `${r.leg.from} → ${r.leg.to}, about +${fmtKm(r.leg.detourKm)}` : "";
   if (!r) return { label: "Auto", tip: "Where it is isn't known yet." };
   if (r.onWay) return { label: "Auto: on the way", tip: `It lies on the way (${where}), so it becomes a stop on that travel day.` };
-  if (r.onTrip && r.trip) return { label: `Auto: on the way to ${r.trip.to.split(",")[0]}`, tip: `It lies on the way of the day trip ${r.trip.from} → ${r.trip.to} (about +${r.trip.detourKm} km), so it becomes a stop on that day.` };
+  if (r.onTrip && r.trip) return { label: `Auto: on the way to ${r.trip.to.split(",")[0]}`, tip: `It lies on the way of the day trip ${r.trip.from} → ${r.trip.to} (about +${fmtKm(r.trip.detourKm)}), so it becomes a stop on that day.` };
   const base = r.base ? r.base.city.split(",")[0] : "";
   return {
     label: base ? `Auto: from ${base}` : "Auto: from a stay",
-    tip: `Visited from ${r.base ? `${r.base.city} (${r.base.km} km away)` : "a stay"}; ${r.base && r.base.km < 20 ? "it's right by that stay" : `it isn't on the way between stays${where ? ` (closest: ${where})` : ""}`}.`,
+    tip: `Visited from ${r.base ? `${r.base.city} (${fmtKm(r.base.km)} away)` : "a stay"}; ${r.base && r.base.km < 20 ? "it's right by that stay" : `it isn't on the way between stays${where ? ` (closest: ${where})` : ""}`}.`,
   };
 }
 

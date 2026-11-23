@@ -244,9 +244,12 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.deepEqual(stays, [["Padua", "2027-09-01", 0], ["Milano, Italy", "2027-09-01", 2], ["Lucerne, Switzerland", "2027-09-03", 2], ["Padua", "2027-09-05", 0]]);
   assert.deepEqual(await page.eval(`planner.state().stays[2].dayTrips`), [{ place: "Vaduz", mode: "car" }]);
   assert.match(await page.eval(`planner.state().notes`), /Stays: cosy B&Bs/);
+  assert.equal(await page.eval(`planner.state().wishes`), "lakes and old towns\nFrom the route plan: Milano: Duomo; Lucerne: Lake", "the description fills What you want to see");
+  assert.equal(await page.eval(`document.querySelector("#wishes").value`), "lakes and old towns\nFrom the route plan: Milano: Duomo; Lucerne: Lake");
   assert.deepEqual(await page.eval(`[planner.state().marks.Lugano, planner.state().how.Lugano]`), ["must", "way"], "a stop on the way becomes a must-see on the way");
   await page.eval(`document.querySelector("#toast button").click()`);
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
+  assert.equal(await page.eval(`planner.state().wishes || ""`), "", "and what they wanted to see");
   assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
   // Reopening after using the route still shows it and the chat; Start over clears them.
   await page.eval(`document.querySelector("#planRoute").click()`);
@@ -635,6 +638,46 @@ test("an imported trip brings its place lists along", async () => {
   const list = await page.eval(`fetch("/api/lists/Shared%20ideas").then((r) => r.json())`);
   assert.equal(list.places[0].title, "Orto Botanico di Padova");
   await page.eval(`fetch("/api/lists/Shared%20ideas", { method: "DELETE" })`);
+});
+
+test("Settings → General: formats, new trips' defaults, saving new plans by themselves, starting with a new trip", async () => {
+  const setApp = (app) => page.eval(`fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: ${JSON.stringify(app)} }) })`);
+  try {
+    await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("14:30", "Cappella degli Scrovegni")])] } })`);
+    await page.waitFor(`document.querySelector(".day time")?.textContent === "14:30"`, 10000, "the plan");
+    await page.eval(`document.querySelector("#settingsBtn").click()`);
+    await page.waitFor(`!!document.querySelector('[data-app="clock"]')`, 10000, "the general settings");
+    await page.eval(`document.querySelector('[data-app="clock"][data-v="12"]').click()`);
+    await page.waitFor(`document.querySelector(".day time")?.textContent === "2:30 pm"`, 5000, "12-hour times in the plan");
+    await page.waitFor(`!!document.querySelector('[data-app="dates"][data-v="dmy"]')`);
+    await page.eval(`document.querySelector('[data-app="dates"][data-v="dmy"]').click()`);
+    await page.waitFor(`/14 Sept?/.test(document.querySelector("#day-0 .date").textContent)`, 5000, "day-first dates");
+    await page.waitFor(`!!document.querySelector("#ntTravelers")`);
+    await page.eval(`(() => { const t = document.querySelector("#ntTravelers"); t.value = "4"; t.dispatchEvent(new Event("change")); })()`);
+    await page.waitFor(`fetch("/api/settings").then((r) => r.json()).then((s) => s.app.newTrip.travelers === 4)`, 5000, "the new-trip default saved");
+    await page.eval(`document.querySelector("#settingsDialog").close()`);
+    await page.eval(`window.confirm = () => true; document.querySelector("#newTrip").click()`);
+    await page.waitFor(`planner.state().travelers === 4 && !planner.state().itinerary`, 5000, "a new trip with 4 travelers");
+
+    // A new plan is saved by itself, under its cities' names.
+    await setApp({ autoSave: true });
+    await page.eval(`location.reload()`).catch(() => {});
+    await page.waitFor("document.readyState === 'complete' && !!window.planner");
+    await trip(PADUA_MILANO);
+    await page.eval(`window.__e2e.answer = () => ({ summary: "Plan", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")])] })`);
+    await page.eval(`document.querySelector("#generate").click()`);
+    await page.waitFor(`fetch("/api/saves").then((r) => r.json()).then((l) => l.some((x) => x.name === "Padua-Milano"))`, 20000, "the plan in Saved trips");
+    assert.equal(await page.eval(`planner.state().saveName`), "Padua-Milano");
+
+    // Starting with a new trip keeps the open one in Saved trips.
+    await setApp({ autoSave: false, startWith: "new" });
+    await page.eval(`sessionStorage.clear(); location.reload()`).catch(() => {});
+    await page.waitFor("document.readyState === 'complete' && !!window.planner");
+    await page.waitFor(`!planner.state().stays[0].city && !planner.state().itinerary`, 10000, "a new trip on start");
+  } finally {
+    await setApp({ units: "km", clock: "24", dates: "auto", startWith: "last", autoSave: false, newTrip: { travelers: 1 } });
+    await page.eval(`fetch("/api/saves/Padua-Milano", { method: "DELETE" })`);
+  }
 });
 
 test("no errors in the page", () => {

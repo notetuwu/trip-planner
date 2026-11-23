@@ -33,6 +33,7 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
     d.city = String(d.city ?? ""); d.title = String(d.title ?? d.city); d.date = String(d.date ?? "");
   }
   groupsFromText(it.days);
+  for (const d of it.days) tidyStops(d);
   it.totalEstimatedCost = Number(it.totalEstimatedCost) || it.days.reduce((n: number, d: any) => n + d.estimatedCost, 0);
   it.summary = String(it.summary ?? "");
   if (Array.isArray(it.tips)) it.tips = it.tips.map((t: any) => String(t ?? "").trim()).filter(Boolean);
@@ -59,6 +60,33 @@ export function dropBookedAgain(it: any, notes: string | undefined) {
     const words = String(x.place || "").toLowerCase().replace(/\(.*?\)/g, "").split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4 && !common.has(w));
     if (words.some((w) => said.includes(w))) { delete x.booking; delete x.bookAhead; }
   }
+}
+
+// Stops that are only somewhere you pass through: a station or the hotel ("Osaka Station (Shinkansen)", "Maple Tokyo
+// Riverside Hotel", "Around the hotel"). Check-in and check-out stay; so does anything with a real description or cost.
+const PASS_THROUGH = /^(around (the )?)?[^→]*\b(station|stn|terminal|platform|hotel)\b[^→]*$|駅$/i;
+const KEEP = /check[- ]?(in|out)|breakfast|lunch|dinner|onsen|spa|museum|tower|observatory|park|garden|shrine|temple|castle/i;
+
+/** Drops pass-through stops (their travel goes into the next stop's transport line) and the same place twice in one
+ *  day (for one group). */
+export function tidyStops(d: { items: any[] }) {
+  const out: any[] = [], seen = new Set<string>();
+  for (let i = 0; i < d.items.length; i++) {
+    const x = d.items[i];
+    const name = String(x.place || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+    const filler = x.kind !== "meal" && !(Number(x.cost) > 0) && String(x.description || "").length < 120
+      && PASS_THROUGH.test(name) && !KEEP.test(String(x.place));
+    if (filler) {
+      const next = d.items.slice(i + 1).find((y) => (y.group || "") === (x.group || ""));
+      if (next && x.transport && !String(next.transport || "").includes(String(x.transport))) next.transport = [x.transport, next.transport].filter(Boolean).join("; ");
+      continue;
+    }
+    const key = `${x.group || ""}|${name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
+    if (x.kind !== "meal" && x.kind !== "transfer" && !/→/.test(name) && seen.has(key)) continue;
+    seen.add(key);
+    out.push(x);
+  }
+  d.items = out;
 }
 
 /** Must-sees the plan left out without saying so go under "Didn't fit", so they don't vanish silently. A must-see

@@ -1,7 +1,7 @@
 // "Plan a route": describe the trip, get a route of stays from the selected model (each leg checked against the real
 // roads), look it over, then use it as the trip's stays (Undo puts the old ones back).
 import { $, esc, toast } from "../core/dom";
-import { addDays, fmtDate } from "../core/format";
+import { addDays, fmtDate, fmtKm } from "../core/format";
 import { icon } from "../core/icons";
 import { liveText, streamRequest } from "../core/progress";
 import { type Stay, save, session, setListPlaces, state } from "../core/state";
@@ -51,7 +51,7 @@ const legText = (l: PlannedLeg, travel: string) => {
   const how = travel ? `by ${modeName(travel as TravelMode)}` : "";
   if (l.noRoad) return `<div class="leg long">${icon("warn")} No road found from ${esc(l.from)}; plan another way to get there</div>`;
   if (l.hours == null) return how ? `<div class="leg">${icon("route")} From ${esc(l.from)} ${esc(how)}</div>` : "";
-  return `<div class="leg${l.tooLong ? " long" : ""}">${icon(l.tooLong ? "warn" : "route")} ${l.hours} h ${esc(how)} from ${esc(l.from)} (${l.km?.toLocaleString()} km)${l.tooLong ? " · longer than you wanted" : ""}</div>`;
+  return `<div class="leg${l.tooLong ? " long" : ""}">${icon(l.tooLong ? "warn" : "route")} ${l.hours} h ${esc(how)} from ${esc(l.from)} (${l.km != null ? fmtKm(l.km) : "?"})${l.tooLong ? " · longer than you wanted" : ""}</div>`;
 };
 
 /** Shows a plan on the left; `turn` adds it to the chat as the model's answer (not when restoring a saved one). */
@@ -236,7 +236,7 @@ function markedWay(place: string) {
 /** Replaces the trip's stays with the plan: the start (no night there), the stays, and the end. */
 function use(plan: RoutePlan) {
   const before = {
-    stays: JSON.parse(JSON.stringify(state.stays)) as Stay[], notes: state.notes,
+    stays: JSON.parse(JSON.stringify(state.stays)) as Stay[], notes: state.notes, wishes: state.wishes, lastRouteWhat: state.lastRouteWhat,
     customPlaces: [...state.customPlaces], marks: { ...state.marks }, how: { ...(state.how || {}) },
   };
   const lastTravel = plan.stays.at(-1)?.travel || "car";
@@ -249,9 +249,17 @@ function use(plan: RoutePlan) {
     { city: plan.end, start: "", nights: 0, hotel: "", travel: lastTravel },
   ];
   chainDates();
-  // What kind of stays they want helps the itinerary planner too.
-  const pref = val("rpStays");
-  if (pref && !state.notes.includes(pref)) state.notes = `${state.notes ? `${state.notes}\n` : ""}Stays: ${pref}`;
+  // What kind of trip and stays they described, and why each stay was picked, go on to the itinerary planner (it only
+  // sees the stays otherwise).
+  const add = (line: string) => { if (line && !state.notes.includes(line)) state.notes = `${state.notes ? `${state.notes}\n` : ""}${line}`; };
+  const what = val("rpWhat"), pref = val("rpStays");
+  if (pref) add(`Stays: ${pref}`);
+  // What kind of trip they described, and why each stay was picked: "What you want to see" (replacing what an earlier
+  // route put there, keeping anything they wrote themselves).
+  const why = plan.stays.filter((s) => s.why).map((s) => `${s.city}: ${s.why}`).join("; ");
+  const fromRoute = [what, why && `From the route plan: ${why}`].filter(Boolean).join("\n");
+  const own = (state.wishes || "").split("\n").filter((l) => !l.startsWith("From the route plan:") && l !== state.lastRouteWhat).join("\n").trim();
+  if (fromRoute) { state.wishes = [own, fromRoute].filter(Boolean).join("\n"); state.lastRouteWhat = what; }
   // Sights on the way become must-sees planned as stops on that travel day.
   for (const v of plan.legs.flatMap((l) => l.via || [])) {
     // The same place already in a list or the trip (by name, or within about 1 km: "Burg Hohenwerfen" for

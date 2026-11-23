@@ -50,9 +50,10 @@ export function placesByStay(trip: Trip, places: Place[]) {
         if (d < dist) { dist = d; best = i; }
       });
       if (dist > NEAR_KM && !must.has(p.title)) {
-        // Far from every stay, but maybe at one of a stay's day trips ("…, Onomichi"): matched by name or address.
+        // Far from every located stay, but maybe at one of a stay's day trips ("…, Onomichi"), or at a stay whose
+        // location isn't known: matched by name or address.
         const text = lc(`${p.title} ${p.address || ""}`);
-        best = stays.findIndex((x) => x.words.slice(1).some((w) => text.includes(w)));
+        best = stays.findIndex((x) => (x.at ? x.words.slice(1) : x.words).some((w) => text.includes(w)));
         dist = 30;
       }
     } else {
@@ -72,6 +73,43 @@ export function placesByStay(trip: Trip, places: Place[]) {
     perStay: groups.map((g) => g.sort((a, b) => b.score - a.score).filter((x, i) => i < PER_STAY || must.has(x.p.title)).map((x) => x.p)),
     unplaced: unplaced.filter((p, i) => must.has(p.title) || i < 30),
   };
+}
+
+const bareName = (s: unknown) => lc(s).replace(/\(.*?\)/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const sameThing = (a: string, b: string) => { const x = bareName(a), y = bareName(b); return !!x && !!y && (x === y || (x.length > 5 && y.includes(x)) || (y.length > 5 && x.includes(y))); };
+
+/** What's wrong with an outline that code can tell: must-sees left out, planned day trips missing, day trips that
+ *  parts of the group take not sharing a day, places on two days. Each problem is a sentence for the model. */
+export function outlineProblems(trip: Trip, outline: Outline): string[] {
+  const out: string[] = [];
+  const dayPlaces = (d: Outline["days"][number]) => [...(d.places || []), ...(d.groups || []).flatMap((g) => g.places || [])];
+  const dayText = (d: Outline["days"][number]) => lc(`${d.city} ${d.title || ""} ${(d.groups || []).map((g) => g.where || "").join(" ")} ${dayPlaces(d).join(" ")}`);
+  const missing = (trip.mustSee || []).filter((m) => !outline.days.some((d) => dayPlaces(d).some((p) => sameThing(p, m))));
+  if (missing.length) out.push(`These must-sees aren't on any day; each must be: ${missing.join("; ")}.`);
+  const travelers = Number(trip.travelers) || 1;
+  for (const s of trip.stays) {
+    const full = outline.days.filter((d) => s.start && d.date > s.start && d.date < addDays(s.start, Number(s.nights) || 0));
+    const dayOf = (place: string) => full.find((d) => dayText(d).includes(bareName(place).split(" ")[0] || "\u0000"));
+    const trips = (s.dayTrips || []).filter((t) => t.place);
+    const absent = trips.filter((t) => !dayOf(t.place)).map((t) => t.place);
+    if (absent.length) out.push(`These planned day trips from ${s.city} have no day: ${absent.join("; ")}. Give each a full day there (between ${addDays(s.start, 1)} and ${addDays(s.start, Math.max(1, Number(s.nights) - 1))}).`);
+    const parts = trips.filter((t) => t.people && t.people < travelers);
+    if (parts.length >= 2) {
+      const days = new Set(parts.map((t) => dayOf(t.place)?.date || "?"));
+      if (days.size > 1) out.push(`${parts.map((t) => `${t.place} (${t.people} of ${travelers})`).join(" and ")} are taken by different parts of the group: put them on the same day as one split day, with "groups" (one group each, "where" its town).`);
+    }
+  }
+  // Two day-trip towns in one day (Kyoto and Nara) is too much, unless the group splits up for them.
+  const tripTowns = trip.stays.flatMap((s) => (s.dayTrips || []).map((t) => bareName(t.place).split(" ")[0])).filter(Boolean);
+  for (const d of outline.days) {
+    if (d.groups?.length) continue;
+    const towns = [...new Set(tripTowns.filter((t) => dayText(d).includes(t)))];
+    if (towns.length > 1) out.push(`${d.date} visits ${towns.join(" and ")}: that's two day trips in one day. Give each its own day (or move one to another full day).`);
+  }
+  const seen = new Map<string, string>(), twice = new Set<string>();
+  for (const d of outline.days) for (const p of new Set(dayPlaces(d).map(bareName))) { if (p && seen.has(p) && seen.get(p) !== d.date) twice.add(p); seen.set(p, d.date); }
+  if (twice.size) out.push(`These places are on more than one day; keep each on one day: ${[...twice].join("; ")}.`);
+  return out;
 }
 
 /** A "## Heading" section of the full prompt, so the steps use the same rules as planning in one go. */
@@ -102,14 +140,21 @@ export async function planInSteps(trip: Trip, places: Place[], onEvent: OnEvent,
   const outputRules = section(full, "## Output rules");
   const travelers = Number(trip.travelers) || 1;
   const budget = trip.budgetPer === "person" && travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day (${trip.dailyBudget * travelers} for the group)` : `${trip.dailyBudget} ${trip.currency} per day`;
-  const about = `Travelers: ${travelers}. Interests: ${trip.interests || "none given"}. Pace: ${trip.pace || "balanced"}. Budget: ${budget}, a ceiling, not a target.`;
+  const about = `Travelers: ${travelers}. Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}.` : ""} Pace: ${trip.pace || "balanced"}. Budget: ${budget}, a ceiling, not a target.`;
   const requests = requestsSection(trip);
 
   // --- 1. The saved places per stay (code) ---
   onEvent({ type: "status", text: "Step 1 of 4: sorting your places by stay…" });
   const { perStay, unplaced } = placesByStay(trip, places);
-  const candidates = trip.stays.map((s, i) => perStay[i].length ? `### ${s.city} (near the stay or its day trips)\n${placeLines(trip, perStay[i])}` : "").filter(Boolean).join("\n\n")
-    + (unplaced.length ? `\n\n### Location not known\n${placeLines(trip, unplaced)}` : "");
+  // Real sights from OpenStreetMap around each stay: the main choice when there are few saved places there.
+  const sightsAt = (city: string, n: number) => (trip.nearby || []).filter((x) => lc(x.city) === lc(city)).flatMap((x) => x.sights).slice(0, n)
+    .map((p) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.hours ? [`hours ${p.hours}`] : [])].join("; ")}) {location ${p.lat},${p.lng}}`);
+  const candidates = trip.stays.map((s, i) => {
+    if (!(Number(s.nights) > 0) && !perStay[i].length) return "";
+    const saved = perStay[i].length ? `### ${s.city}: saved places (near the stay or its day trips)\n${placeLines(trip, perStay[i])}` : "";
+    const real = sightsAt(s.city, perStay[i].length >= 15 ? 8 : 25);
+    return [saved, real.length ? `### ${s.city}: real sights nearby (from OpenStreetMap${perStay[i].length ? "; for filling the days" : ""})\n${real.join("\n")}` : ""].filter(Boolean).join("\n");
+  }).filter(Boolean).join("\n\n") + (unplaced.length ? `\n\n### Location not known\n${placeLines(trip, unplaced)}` : "");
 
   // --- 2. The outline ---
   onEvent({ type: "status", text: "Step 2 of 4: outlining the days…" });
@@ -122,8 +167,8 @@ ${about}
 ## Stays
 ${stayLines(trip)}
 ${requests ? `\n${requests}\n` : ""}${holidayLines(trip) ? `\n## Public holidays during the trip\n${holidayLines(trip)}\n` : ""}
-## The travelers' saved places, by stay
-Build the days primarily from these: they saved them because they want to go. Use as many as fit well, grouped by area into themed days. Places marked [MUST SEE] must be on a day; never use [SKIP] places. Hotels are accommodation, not stops.
+## Places to choose from, by stay
+Build the days primarily from the travelers' saved places: they saved them because they want to go. Use as many as fit well, grouped by area into themed days; the real sights from OpenStreetMap fill the rest (or all of it where nothing is saved). Well-known highlights you're sure of are fine too, under their real names. Places marked [MUST SEE] must be on a day; never use [SKIP] places. Hotels are accommodation, not stops.
 ${candidates || "(none; choose well-known sights yourself)"}
 
 ## Rules
@@ -150,6 +195,14 @@ Only this JSON:
     if (o && Array.isArray(o.days) && o.days.length) outline = o as Outline;
   }
   if (!outline) throw new Error(`${model} didn't return a usable outline of the days. Try again, or plan "In one go" (Settings → Planning).`);
+  // Checked in code; what's wrong goes back once, to fix just that.
+  const problems = outlineProblems(trip, outline);
+  if (problems.length) {
+    onEvent({ type: "status", text: `Step 2 of 4: fixing the outline (${problems.length} problem${problems.length > 1 ? "s" : ""})…` });
+    const reply = await ask("Step 2: the outline, fixed", `${outlinePrompt}\n\n## Your outline so far\n${JSON.stringify(outline)}\n\n## Fix these problems, keep everything else\n${problems.map((p) => `- ${p}`).join("\n")}\n\nAnswer with the whole corrected outline JSON only.`, `${model} · ${problems.length} problem(s) the checks found`);
+    const fixed = json(reply);
+    if (fixed && Array.isArray(fixed.days) && fixed.days.length >= outline.days.length && outlineProblems(trip, fixed).length < problems.length) outline = fixed as Outline;
+  }
   outline.days = outline.days.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d.date))).sort((a, b) => a.date.localeCompare(b.date));
   if (outline.planningNotes) onEvent({ type: "notes", text: outline.planningNotes });
   const outlineLines = outline.days.map((d) => `- ${withDay(d.date)} ${d.city}: ${d.title || ""}${d.places?.length ? ` (${d.places.join("; ")})` : ""}${d.groups?.length ? ` · split: ${d.groups.map((g) => `${g.group} ${g.where || ""} (${(g.places || []).join("; ")})`).join(" / ")}` : ""}`).join("\n");
@@ -193,11 +246,16 @@ Start with the must-sees and places with tickets or limited hours. Prefer offici
     const light = stayIdx.map((k) => trip.daylight?.[k]).find(Boolean);
     const towns = lc(`${o.city} ${o.groups?.map((g) => g.where).join(" ") || ""}`);
     const near = (trip.nearby || []).filter((n) => stay.some((s) => lc(s.city) === lc(n.city)) || towns.includes(lc(n.city).split(",")[0]));
+    // The outline's places from OpenStreetMap, with their exact spots and hours.
+    const sightsHere = near.flatMap((n) => n.sights).filter((p) => names.some((x) => lc(x) === lc(p.name)))
+      .map((p) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.hours ? [`hours ${p.hours}`] : [])].join("; ")}) {location ${p.lat},${p.lng}}`);
     const food = near.flatMap((n) => n.food.slice(0, 12).map((p) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.hours ? [`hours ${p.hours}`] : [])].join("; ")}) {location ${p.lat},${p.lng}}`)).slice(0, 18);
     const keys = [...names, ...o.city.split(/[\/,→]/)].map((n) => lc(n).replace(/\(.*$/, "").trim()).filter((n) => n.length > 3);
     const relevant = findings.filter((l) => keys.some((k) => lc(l).includes(k))).join("\n").slice(0, 3000);
     const holidays = (trip.holidays || []).filter((h) => h.date === o.date).map((h) => `${h.name} (public holiday)`).join(", ");
     const prev = days.at(-1)?.items.at(-1);
+    // Each day is written on its own, so it's told which restaurants earlier days already use.
+    const usedFood = [...new Set(days.flatMap((d) => d.items.filter((x) => x.kind === "meal").map((x) => x.place)))];
     const dayPrompt = `You are writing one day of a trip plan in detail. The outline of the whole trip is fixed; write only this day.
 
 ## The trip
@@ -213,8 +271,8 @@ ${requests ? `\n${requests}\n` : ""}
 Title: ${o.title || ""}${o.theme ? `\nTheme: ${o.theme}` : ""}${o.travel ? `\nTravel today: ${o.travel}` : ""}${holidays ? `\nHoliday: ${holidays}` : ""}
 Places for this day (use them all, in a sensible order${o.groups?.length ? "; everyone together" : ""}): ${(o.places || []).join("; ") || "(none: choose fitting sights near the day's town)"}
 ${(o.groups || []).map((g) => `${g.group} (${g.people || "?"} people${g.where ? `, in ${g.where}` : ""}): ${(g.places || []).join("; ")}`).join("\n")}
-${saved.length ? `\nWhat the travelers saved about them:\n${placeLines(trip, saved)}` : ""}
-${food.length ? `\n## Real restaurants and cafés near where they sleep (from OpenStreetMap; exact names and locations)\n${food.join("\n")}` : ""}
+${saved.length ? `\nWhat the travelers saved about them:\n${placeLines(trip, saved)}` : ""}${sightsHere.length ? `\nFrom OpenStreetMap (exact spots and hours):\n${sightsHere.join("\n")}` : ""}
+${food.length ? `\n## Real restaurants and cafés near where they sleep (from OpenStreetMap; exact names and locations)\nName meals after a real place where you can: one of these (matching their diet), or one you know for sure near that day's stops. Otherwise tie the meal to a spot ("Lunch on Miyuki-dori shotengai", "Dinner near Kiyomizu-dera"), never just a town ("Lunch in Osaka").\n${food.join("\n")}` : ""}${usedFood.length ? `\nAlready used on earlier days (pick others): ${usedFood.join("; ")}` : ""}
 ${relevant ? `\n## Research findings for this day (trust these over your own memory)\n${relevant}` : ""}
 
 ${dayRules}

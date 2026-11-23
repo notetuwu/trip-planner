@@ -20,6 +20,52 @@ export interface Settings {
   braveKey: string;
   searxngUrl: string;
   tune: Tune;
+  app: AppPrefs;
+}
+
+/** Settings → General: how the page shows things and what a new trip starts with. */
+export interface AppPrefs {
+  /** Distances in kilometres or miles; times as 24-hour or 12-hour; dates as the system does, day first or month first. */
+  units: "km" | "mi";
+  clock: "24" | "12";
+  dates: "auto" | "dmy" | "mdy";
+  /** The map's start: place names in the local language or English; saved places and routes shown. */
+  mapNames: "local" | "english";
+  showPlaces: boolean;
+  showRoutes: boolean;
+  /** On start: the trip that was open, or a new one (the open one is kept in Saved trips first). */
+  startWith: "last" | "new";
+  /** Save each newly generated plan to Saved trips by itself. */
+  autoSave: boolean;
+  /** What a new trip starts with. */
+  newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
+}
+
+export const APP_DEFAULTS: AppPrefs = {
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, startWith: "last", autoSave: false,
+  newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
+};
+const PACES = ["relaxed (2-3 main stops per day, late starts)", "balanced (3-5 stops per day)", "packed (as much as possible, early starts)"];
+
+function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): AppPrefs {
+  const pick = <K extends keyof AppPrefs>(k: K, ok: (v: unknown) => boolean) => (a[k] !== undefined && ok(a[k]) ? a[k]! : base[k]);
+  const t: Partial<AppPrefs["newTrip"]> = a.newTrip && typeof a.newTrip === "object" ? a.newTrip : {};
+  return {
+    units: pick("units", (v) => v === "km" || v === "mi"),
+    clock: pick("clock", (v) => v === "24" || v === "12"),
+    dates: pick("dates", (v) => ["auto", "dmy", "mdy"].includes(v as string)),
+    mapNames: pick("mapNames", (v) => v === "local" || v === "english"),
+    showPlaces: pick("showPlaces", (v) => typeof v === "boolean"),
+    showRoutes: pick("showRoutes", (v) => typeof v === "boolean"),
+    startWith: pick("startWith", (v) => v === "last" || v === "new"),
+    autoSave: pick("autoSave", (v) => typeof v === "boolean"),
+    newTrip: {
+      currency: typeof t.currency === "string" && /^[A-Z]{3}$/.test(t.currency) ? t.currency : base.newTrip.currency,
+      travelers: Number.isInteger(Number(t.travelers)) && Number(t.travelers) >= 1 && Number(t.travelers) <= 30 ? Number(t.travelers) : base.newTrip.travelers,
+      dailyBudget: Number.isFinite(Number(t.dailyBudget)) && Number(t.dailyBudget) >= 0 && Number(t.dailyBudget) <= 100000 && t.dailyBudget !== undefined ? Math.round(Number(t.dailyBudget)) : base.newTrip.dailyBudget,
+      pace: typeof t.pace === "string" && PACES.includes(t.pace) ? t.pace : base.newTrip.pace,
+    },
+  };
 }
 
 /** How plans are made (Settings → Planning). */
@@ -85,13 +131,14 @@ export function readSettings(): Settings {
     braveKey: typeof saved.braveKey === "string" ? saved.braveKey : "",
     searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
     tune: cleanTune(saved.tune),
+    app: cleanApp(saved.app),
   };
 }
 
 /** The planning options in effect. */
 export const tune = () => readSettings().tune;
 
-export function writeSettings(next: Partial<Omit<Settings, "tune">> & { tune?: Partial<Tune> }) {
+export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { tune?: Partial<Tune>; app?: Partial<AppPrefs> }) {
   const now = readSettings();
   const s: Settings = {
     window: next.window === "app" || next.window === "browser" ? next.window : now.window,
@@ -102,6 +149,7 @@ export function writeSettings(next: Partial<Omit<Settings, "tune">> & { tune?: P
     braveKey: typeof next.braveKey === "string" ? next.braveKey.trim().slice(0, 200) : now.braveKey,
     searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
     tune: next.tune ? cleanTune(next.tune, now.tune) : now.tune,
+    app: next.app ? cleanApp({ ...now.app, ...next.app, newTrip: { ...now.app.newTrip, ...(next.app.newTrip || {}) } }, now.app) : now.app,
   };
   fs.mkdirSync(ROOT, { recursive: true });
   fs.writeFileSync(FILE, JSON.stringify(s, null, 2));

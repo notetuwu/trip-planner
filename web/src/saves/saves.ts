@@ -85,6 +85,45 @@ async function addBundledLists(bundled: PlaceList[], wanted: string[]) {
   return wanted.filter((n) => have.has(n));
 }
 
+/** A save name from any text: letters, numbers, spaces, - and _. */
+const cleanSaveName = (s: string) => s.replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+
+/** A name for the trip's save: its cities ("Osaka-Hakone-Tokyo"), with a number if that's taken by another trip. */
+async function freeName(base: string) {
+  const taken = new Set((await api<SaveSummary[]>("/api/saves").catch(() => [])).map((x) => x.name.toLowerCase()));
+  let name = base;
+  for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
+  return name;
+}
+const citiesName = () => cleanSaveName(state.stays.map((s) => s.city.split(",")[0]).filter(Boolean).slice(0, 4).join("-")) || "My trip";
+
+/** Saves the trip under `name`, remembering it as this trip's save; returns the name the server used. */
+export async function saveTripAs(name: string) {
+  state.saveName = name;
+  const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
+  state.saveName = data.name; save();
+  await refreshSaves(data.name);
+  return data.name;
+}
+
+/** Saves the trip by itself (Settings → General): into its own save if it has one, else under a new free name. */
+export async function saveByItself() {
+  try { return await saveTripAs(state.saveName || await freeName(citiesName())); } catch { return null; }
+}
+
+/** On start with "a new trip" (Settings → General): keeps the trip that was open in Saved trips, then starts fresh.
+ *  Only once per session, so reloading the page doesn't throw away what you're working on. */
+export async function startFresh() {
+  if (sessionStorage.getItem("trip-planner-started")) return;
+  sessionStorage.setItem("trip-planner-started", "1");
+  const worked = state.itinerary || state.stays.some((s) => s.city);
+  if (worked && !(await saveByItself())) return; // couldn't keep it: leave it open rather than lose it
+  const model = state.model;
+  picker().value = "";
+  await applyState({ listChosen: true, model });
+  status(worked ? "Started a new trip; the last one is in Saved trips." : "Started a new trip.");
+}
+
 export async function importTrip(file: File) {
   try {
     const { bundledLists = [], ...trip } = parseTripFile(await file.text());
@@ -96,15 +135,9 @@ export async function importTrip(file: File) {
     const lists = await addBundledLists(bundledLists, trip.lists || (trip.list ? [trip.list] : []));
     await applyState({ ...trip, list: lists[0] || "", lists, listChosen: true });
     // Keep it in the saved trips right away, named after the file (with a number if that name is taken).
-    const base = file.name.replace(/(\.trip)?\.json$/i, "").replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) || "Imported trip";
-    const taken = new Set((await api<SaveSummary[]>("/api/saves").catch(() => [])).map((x) => x.name.toLowerCase()));
-    let name = base;
-    for (let n = 2; taken.has(name.toLowerCase()); n++) name = `${base} ${n}`;
-    try {
-      const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
-      await refreshSaves(data.name);
-      status(`Imported "${file.name}" and saved it as "${data.name}".`);
-    } catch { status(`Imported "${file.name}", but it couldn't be saved; use Save to keep it.`); }
+    const name = await freeName(cleanSaveName(file.name.replace(/(\.trip)?\.json$/i, "")) || "Imported trip");
+    try { status(`Imported "${file.name}" and saved it as "${await saveTripAs(name)}".`); }
+    catch { status(`Imported "${file.name}", but it couldn't be saved; use Save to keep it.`); }
   } catch (e) { status((e as Error).message); }
 }
 
@@ -116,24 +149,23 @@ export function initSaves() {
     const suggested = picker().value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
     const name = prompt("Save current inputs as:", suggested);
     if (!name) return;
-    try {
-      const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
-      await refreshSaves(data.name);
-      status(`Saved "${data.name}" (includes the current itinerary, if any).`);
-    } catch (e) { status((e as Error).message); }
+    try { status(`Saved "${await saveTripAs(name)}" (includes the current itinerary, if any).`); }
+    catch (e) { status((e as Error).message); }
   };
   $("#loadSave").onclick = async () => {
     const name = picker().value;
     if (!name) return status("Pick a saved trip first.");
     try {
-      await applyState(await api<AppState>("/api/saves/" + encodeURIComponent(name)));
+      await applyState({ ...(await api<AppState>("/api/saves/" + encodeURIComponent(name))), saveName: name });
+      save();
       status(`Loaded "${name}".`);
     } catch (e) { status((e as Error).message); }
   };
   $("#newTrip").onclick = async () => {
     if (!confirm("Start a new, empty trip? Save the current one first if you want to keep it.")) return;
     picker().value = "";
-    await applyState({ listChosen: true }); // start without a place list rather than defaulting to the first one
+    // Start without a place list rather than defaulting to the first one; keep the model they plan with.
+    await applyState({ listChosen: true, model: state.model });
     status("Started a new trip.");
   };
   $("#delSave").onclick = async () => {

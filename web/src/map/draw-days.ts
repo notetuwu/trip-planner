@@ -2,7 +2,7 @@
 import * as L from "leaflet";
 import type { Day, ItineraryItem, LatLng } from "../../../shared/types";
 import { $, esc } from "../core/dom";
-import { dayColor, fmtDate } from "../core/format";
+import { dayColor, fmtDate, fmtTime } from "../core/format";
 import { session } from "../core/state";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
@@ -29,8 +29,8 @@ function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
     const note = loc.elsewhere ? ` · ${icon("warn")} the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
     const m = L.marker([loc.lat, loc.lng], {
       icon: L.divIcon({ className: "", html: `<div class="num-pin${loc.approx ? " approx" : ""}" style="--c:${color}">${xi + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }),
-    }).bindTooltip(`${esc(x.time)} ${esc(x.place)}${note}`, { direction: "top", offset: [0, -10] })
-      .bindPopup(`<b>${esc(x.place)}</b><div class="pop-meta">${esc(fmtDate(d.date))} · ${esc(x.time)}${splitGroup(x) ? ` · ${esc(x.group)}` : ""}</div><div>${esc(x.description)}</div>`)
+    }).bindTooltip(`${esc(fmtTime(x.time))} ${esc(x.place)}${note}`, { direction: "top", offset: [0, -10] })
+      .bindPopup(`<b>${esc(x.place)}</b><div class="pop-meta">${esc(fmtDate(d.date))} · ${esc(fmtTime(x.time))}${splitGroup(x) ? ` · ${esc(x.group)}` : ""}</div><div>${esc(x.description)}</div>`)
       .on("click", () => highlightItem(di, xi))
       .addTo(layers.items);
     itemMarkers.set(`${di}-${xi}`, m);

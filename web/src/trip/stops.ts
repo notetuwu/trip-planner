@@ -2,7 +2,7 @@
 // overnight stops and insert them as stays in between; later stays move back by the added nights. Undo restores.
 import { esc, toast } from "../core/dom";
 import { liveText, streamRequest } from "../core/progress";
-import { fmtDate } from "../core/format";
+import { fmtDate, fmtKm } from "../core/format";
 import { type Stay, save, state } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
 import { stayLoc } from "../geo/locate";
@@ -55,7 +55,7 @@ async function findStops(i: number, hoursPerDay: number, form: HTMLElement) {
   chainDates();
   refresh();
   const nights = added.reduce((n, s) => n + s.nights, 0), dest = state.stays[i + added.length];
-  toast(`Added ${added.length} stop${added.length > 1 ? "s" : ""} (${nights} night${nights > 1 ? "s" : ""}, ${Math.round(res.km).toLocaleString()} km); ${dest.city} now starts ${fmtDate(dest.start)}`,
+  toast(`Added ${added.length} stop${added.length > 1 ? "s" : ""} (${nights} night${nights > 1 ? "s" : ""}, ${fmtKm(res.km)}); ${dest.city} now starts ${fmtDate(dest.start)}`,
     () => { state.stays = before; refresh(); });
   if (res.note) setTimeout(() => toast(res.note!), 8500);
 }

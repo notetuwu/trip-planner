@@ -1,5 +1,6 @@
 // Generate, revise or re-plan one day: sends the trip, reads the server's NDJSON stream, and shows the result.
 import { prefs } from "../core/prefs";
+import { saveByItself } from "../saves/saves";
 import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../shared/types";
 import { $, apiFetch, toast } from "../core/dom";
 import { type Meta, groupBudget, save, session, state, staysKey } from "../core/state";
@@ -134,6 +135,8 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
       state.meta = meta;
       session.selectedDay = null;
       if (!change.revise) await fixBeforeShowing(state.itinerary, view, abort.signal);
+      // Settings → General: keep each new plan in Saved trips by itself.
+      if (prefs.app.autoSave) saveByItself().then((name) => { if (name) toast(`Saved as "${name}"`); });
     }
     session.weather = {};
     save();

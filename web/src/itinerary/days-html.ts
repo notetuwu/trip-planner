@@ -1,7 +1,7 @@
 // The days of the itinerary: city bands, stops (with split groups side by side), notes, and the extras at the end.
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { dayColor, fmtDate, money } from "../core/format";
+import { dayColor, fmtDate, fmtTemp, fmtTime, money } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
@@ -22,7 +22,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
   return `
     <li class="item ${x.fromList || byTitle.has(x.place) ? "listed" : ""}" data-k="${di}-${xi}">
       <div class="item-top">
-        <time>${esc(x.time)}</time>
+        <time>${esc(fmtTime(x.time))}</time>
         <span class="n">${xi + 1}</span>
         <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
@@ -73,7 +73,7 @@ export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: n
       <div class="day-head" data-sel="${i}" title="Show this day on the map">
         <h4><span class="date">${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
-          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${Math.round(w.max)}° / ${Math.round(w.min)}°</span>` : ""}
+          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>

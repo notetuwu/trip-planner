@@ -1,5 +1,6 @@
 // The map data and script of the phone export. The script is plain JavaScript inside the exported file: it jumps to
 // today's day and, when online, draws the stays, stops and routes with Leaflet from a CDN.
+import { fmtTime } from "../core/format";
 import type { LatLng } from "../../../shared/types";
 import { dayColor } from "../core/format";
 import { state } from "../core/state";
@@ -13,7 +14,7 @@ export function offlineMapData() {
     stays: state.stays.map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => [l!.lat, l!.lng, s.city]),
     days: it.days.map((d, i) => ({
       c: dayColor(i),
-      pts: d.items.map((x, xi) => { const l = itemLoc(x, d, byTitle); return l && [l.lat, l.lng, `${xi + 1}`, `${x.time} ${x.place}`]; }).filter(Boolean),
+      pts: d.items.map((x, xi) => { const l = itemLoc(x, d, byTitle); return l && [l.lat, l.lng, `${xi + 1}`, `${fmtTime(x.time)} ${x.place}`]; }).filter(Boolean),
       // Each leg along its route where one is known (rounded to keep the file small); dashed straight lines otherwise.
       lines: dayLegs(d, byTitle).map((leg) => {
         const r = legRoute(leg);
