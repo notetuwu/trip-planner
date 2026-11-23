@@ -51,9 +51,13 @@ The app isn't code-signed yet, so the first start shows a warning. On Windows cl
 
 It opens in a window of its own (or a browser tab: Settings → General) and keeps your trips in `%APPDATA%\Trip Planner` (Windows), `~/Library/Application Support/Trip Planner` (macOS) or `~/.local/share/trip-planner` (Linux). When a new version is out, a bar at the top offers it; on Windows **Update now** installs it and restarts. Settings → Updates has **Check now** and can turn the check off.
 
+On the first start a **Quick start** guide opens (the rocket next to Settings brings it back): it checks for Claude Code, API keys, Ollama and its models, Docker and SearXNG, shows what's ready and what's missing, takes API keys right there and links to where the rest is set up.
+
+**Your trips** keeps every saved trip as a card with a sketch of its route, or in a table: search by name, town, country or year, show what's coming up or past, sort by date, name or length, and open, rename or delete. Sorted by date, past trips are grouped by year.
+
 ## Choosing a model
 
-Pick one from the **Model** menu. You need one of these:
+Pick one from the **Model** menu (it only offers Claude when Claude Code is installed). You need one of these:
 
 - **Claude Code**, installed and logged in. Plans count toward your Claude plan, with no API charges.
 - **An API key** from [Anthropic](https://console.anthropic.com/settings/keys), [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys), added under 🔑 API keys. You pay the provider per use; the key stays on your computer.
@@ -61,7 +65,7 @@ Pick one from the **Model** menu. You need one of these:
 
 Local models are free and private but slower and less thorough on long trips; bigger models plan better. The planner helps them along: real places in the prompt, its own web research for them, checks afterwards, and if a model stops part way through a long trip, it keeps the finished days and asks only for the rest. Settings → Planning also has an experimental **step by step** mode for local models (an outline of the days, research for those days, then each day on its own), for when planning in one go gets cut off.
 
-**Settings → Planning** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, and remove again), instead of DuckDuckGo and Wikipedia.
+**Settings → Planning** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, step by step, and remove again; with SearXNG chosen, Docker and it are started with the app), instead of DuckDuckGo and Wikipedia.
 
 ## Run from source
 

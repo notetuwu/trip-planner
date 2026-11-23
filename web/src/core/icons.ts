@@ -5,7 +5,7 @@ import {
   Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
   KeyRound, Map, Wallet, ChevronDown, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Share2, Ship, Smartphone, Star, Sun,
   Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles, ImagePlus,
-  Brain, ScrollText, Info, PartyPopper, Luggage, Crosshair,
+  Brain, ScrollText, Info, PartyPopper, Luggage, Crosshair, Rocket, LayoutGrid, List, Globe, Container, Pencil, FolderOpen, Hourglass, Terminal, Compass, History, Heart,
 } from "lucide";
 
 type IconNode = [string, Record<string, string | number | undefined>][];
@@ -18,7 +18,8 @@ const ICONS = {
   pin: MapPin, monitor: Monitor, moon: Moon, plane: Plane, plus: Plus, printer: Printer, refresh: RefreshCw, route: Route,
   search: Search, share: Share2, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, wallet: Wallet, chevronDown: ChevronDown, train: TrainFront, trash: Trash2,
   warn: TriangleAlert, users: Users, x: X, settings: Settings, cpu: Cpu, wifi: Wifi, drive: HardDrive, sliders: Sliders, power: Power, chat: MessageCircle, upload: Upload, stop: Square, sparkles: Sparkles, image: ImagePlus,
-  brain: Brain, prompt: ScrollText, info: Info, party: PartyPopper, luggage: Luggage, crosshair: Crosshair,
+  brain: Brain, prompt: ScrollText, info: Info, party: PartyPopper, luggage: Luggage, crosshair: Crosshair, rocket: Rocket, grid: LayoutGrid,
+  list: List, globe: Globe, container: Container, pencil: Pencil, folder: FolderOpen, hourglass: Hourglass, terminal: Terminal, compass: Compass, history: History, heart: Heart,
 } satisfies Record<string, IconNode>;
 
 export type IconName = keyof typeof ICONS;

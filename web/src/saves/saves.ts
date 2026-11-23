@@ -2,7 +2,8 @@
 // the trip as a file to share (someone else imports it into their planner) or keep a copy of.
 import type { ListSummary, PlaceList, SaveSummary } from "../../../shared/types";
 import { renderBookings } from "../trip/bookings";
-import { $, api, esc } from "../core/dom";
+import { $, api, esc, toast } from "../core/dom";
+import { initTrips, load as reloadTrips, openTrips } from "./trips";
 import { type AppState, save, session, setListPlaces, setState, state, tickedLists } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
 import { geocodeItems } from "../geo/item-loc";
@@ -15,8 +16,19 @@ import { renderStays } from "../trip/stays";
 import { refreshCompanion } from "../trip/companion";
 import { renderTripTitle } from "../trip/title";
 
-const status = (msg: string) => { $("#saveStatus").textContent = msg; };
+/** Says how a save, load or import went: under the sidebar's buttons, and as a toast while Your trips is open. */
+const status = (msg: string) => {
+  $("#saveStatus").textContent = msg;
+  if ($<HTMLDialogElement>("#tripsDialog").open) toast(msg);
+};
 const picker = () => $<HTMLSelectElement>("#saveList");
+
+let saved: string[] = [];
+/** Under Your trips: the save the trip on screen belongs to. */
+function showCurrent() {
+  const current = state.saveName && saved.includes(state.saveName) ? state.saveName : "";
+  $("#currentSave").innerHTML = current ? `Saved as <b>${esc(current)}</b>` : "This trip isn't saved yet";
+}
 
 export async function refreshSaves(select?: string) {
   try {
@@ -24,6 +36,10 @@ export async function refreshSaves(select?: string) {
     picker().innerHTML = `<option value="">— Saved trips —</option>` +
       list.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${new Date(s.savedAt).toLocaleDateString()}</option>`).join("");
     if (select) picker().value = select;
+    $("#tripsCount").textContent = list.length ? String(list.length) : "";
+    $("#tripsCount").hidden = !list.length;
+    saved = list.map((s) => s.name);
+    showCurrent();
   } catch { status("Could not reach the server to list saves."); }
 }
 
@@ -35,7 +51,7 @@ export async function applyState(next: Partial<AppState>) {
   syncResearch();
   session.selectedDay = null; session.weather = {}; session.userMoved = false;
   save(); await refreshLists(); renderStays(); renderBookings(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList();
-  geocodeItems(); loadWeather(); refreshCompanion();
+  geocodeItems(); loadWeather(); refreshCompanion(); showCurrent();
 }
 
 const FORMAT = "trip-planner-trip";
@@ -142,38 +158,43 @@ export async function importTrip(file: File) {
   } catch (e) { status((e as Error).message); }
 }
 
+/** Opens a saved trip in place of the one on screen. */
+export async function openSave(name: string) {
+  await applyState({ ...(await api<AppState>("/api/saves/" + encodeURIComponent(name))), saveName: name });
+  save();
+  await refreshSaves(name);
+  status(`Opened "${name}".`);
+}
+
+async function saveCurrent() {
+  const suggested = state.saveName || picker().value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
+  const name = prompt("Save this trip as:", suggested);
+  if (!name) return;
+  try { status(`Saved "${await saveTripAs(name)}" (with its itinerary, if there is one).`); }
+  catch (e) { status((e as Error).message); }
+}
+
+async function newTrip() {
+  if (!confirm("Start a new, empty trip? Save the current one first if you want to keep it.")) return false;
+  picker().value = "";
+  // Start without a place list rather than defaulting to the first one; keep the model they plan with.
+  await applyState({ listChosen: true, model: state.model });
+  status("Started a new trip.");
+  return true;
+}
+
 export function initSaves() {
   $("#exportTrip").onclick = exportTrip;
   const input = $<HTMLInputElement>("#importTrip");
   input.onchange = () => { const f = input.files?.[0]; input.value = ""; if (f) importTrip(f); };
-  $("#saveBtn").onclick = async () => {
-    const suggested = picker().value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
-    const name = prompt("Save current inputs as:", suggested);
-    if (!name) return;
-    try { status(`Saved "${await saveTripAs(name)}" (includes the current itinerary, if any).`); }
-    catch (e) { status((e as Error).message); }
-  };
-  $("#loadSave").onclick = async () => {
-    const name = picker().value;
-    if (!name) return status("Pick a saved trip first.");
-    try {
-      await applyState({ ...(await api<AppState>("/api/saves/" + encodeURIComponent(name))), saveName: name });
-      save();
-      status(`Loaded "${name}".`);
-    } catch (e) { status((e as Error).message); }
-  };
-  $("#newTrip").onclick = async () => {
-    if (!confirm("Start a new, empty trip? Save the current one first if you want to keep it.")) return;
-    picker().value = "";
-    // Start without a place list rather than defaulting to the first one; keep the model they plan with.
-    await applyState({ listChosen: true, model: state.model });
-    status("Started a new trip.");
-  };
-  $("#delSave").onclick = async () => {
-    const name = picker().value;
-    if (!name || !confirm(`Delete saved trip "${name}"?`)) return;
-    await api("/api/saves/" + encodeURIComponent(name), { method: "DELETE" });
-    await refreshSaves();
-    status(`Deleted "${name}".`);
-  };
+  $("#saveBtn").onclick = saveCurrent;
+  $("#newTrip").onclick = newTrip;
+  $("#openTrips").onclick = openTrips;
+  // The same from Your trips, which then shows the change.
+  const trips = $<HTMLDialogElement>("#tripsDialog");
+  $("#tripsNew").onclick = async () => { if (await newTrip()) trips.close(); };
+  $("#tripsSave").onclick = async () => { await saveCurrent(); reloadTrips(); };
+  const input2 = $<HTMLInputElement>("#tripsImport");
+  input2.onchange = async () => { const f = input2.files?.[0]; input2.value = ""; if (f) { await importTrip(f); reloadTrips(); } };
+  initTrips({ open: openSave, afterChange: async (renamed) => { await refreshSaves(renamed?.to ?? (picker().value || undefined)); } });
 }

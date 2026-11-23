@@ -14,7 +14,10 @@ const PORT = 47616;
 export const SEARXNG_LOCAL = `http://127.0.0.1:${PORT}`;
 const DIR = path.join(ROOT, "searxng");
 
-interface Job { action: "install" | "uninstall"; step: string; done: boolean; error?: string }
+/** Where a set-up or start is: the page shows these as steps (Docker installed, Docker running, SearXNG downloaded,
+ *  running, answering). */
+type Stage = "docker-install" | "docker-start" | "pull" | "run" | "wait" | "remove";
+interface Job { action: "install" | "start" | "uninstall"; step: string; stage?: Stage; done: boolean; error?: string }
 let job: Job | null = null;
 
 const DESKTOP_DIR = path.join(process.env.ProgramFiles || "C:\\Program Files", "Docker", "Docker");
@@ -29,7 +32,7 @@ const docker = (args: string[], ms = 20000) => new Promise<string>((resolve, rej
     err ? reject(new Error((errOut || err.message).trim().split("\n").pop() || "docker failed")) : resolve(out.trim())));
 
 /** "missing": no Docker; "stopped": Docker is installed but its engine isn't running; "ok". */
-async function dockerState(): Promise<"missing" | "stopped" | "ok"> {
+export async function dockerState(): Promise<"missing" | "stopped" | "ok"> {
   try { await docker(["version", "--format", "{{.Server.Version}}"], 8000); return "ok"; }
   catch (e) { return /not recognized|ENOENT|not found/i.test(errMsg(e)) ? "missing" : "stopped"; }
 }
@@ -46,6 +49,7 @@ async function startDocker() {
 /** Installs Docker Desktop with winget (Windows asks for permission). It may need WSL and a restart before it runs. */
 async function installDocker(j: Job) {
   if (process.platform !== "win32") throw new Error("Docker isn't installed: install Docker (docker.com), then try again");
+  j.stage = "docker-install";
   j.step = "Installing Docker Desktop (Windows will ask for permission; this takes a few minutes)…";
   await new Promise<void>((resolve, reject) => execFile("winget", ["install", "-e", "--id", "Docker.DockerDesktop", "--silent",
     "--accept-package-agreements", "--accept-source-agreements"], { timeout: 30 * 60 * 1000, windowsHide: true, maxBuffer: 8 << 20 }, (err, out) =>
@@ -53,12 +57,12 @@ async function installDocker(j: Job) {
       ? reject(new Error(/not recognized|ENOENT/i.test(err.message) ? "Couldn't install Docker: winget is missing. Get Docker Desktop from docker.com, then try again"
         : `Couldn't install Docker Desktop: ${String(out || err.message).trim().split("\n").pop()}`))
       : resolve()));
-  j.step = "Starting Docker for the first time…";
+  j.stage = "docker-start"; j.step = "Starting Docker for the first time…";
   try { await startDocker(); }
   catch { throw new Error("Docker Desktop is installed. Restart the computer, open Docker Desktop once and accept its terms, then press Set up again"); }
 }
 
-const containerState = async () => { try { return await docker(["inspect", "-f", "{{.State.Status}}", NAME], 8000); } catch { return ""; } };
+export const containerState = async () => { try { return await docker(["inspect", "-f", "{{.State.Status}}", NAME], 8000); } catch { return ""; } };
 
 /** Answers a JSON search? (Fresh SearXNG takes a few seconds to start.) */
 async function answers() {
@@ -84,31 +88,34 @@ function writeConfig() {
   ].join("\n"));
 }
 
+/** Sets SearXNG up, or (start) only starts Docker and SearXNG again: a start never installs Docker by itself. */
 async function install(j: Job) {
   const state = await dockerState();
+  if (state === "missing" && j.action === "start") throw new Error("Docker isn't installed: press Set up to install it");
   if (state === "missing") await installDocker(j);
-  if (state === "stopped") { j.step = "Starting Docker…"; await startDocker(); }
+  if (state === "stopped") { j.stage = "docker-start"; j.step = "Starting Docker…"; await startDocker(); }
   writeConfig();
   if (!(await containerState())) {
-    j.step = "Downloading SearXNG (about 200 MB)…";
+    j.stage = "pull"; j.step = "Downloading SearXNG (about 200 MB)…";
     await docker(["pull", IMAGE], 15 * 60 * 1000);
-    j.step = "Starting SearXNG…";
+    j.stage = "run"; j.step = "Starting SearXNG…";
     // Only this computer can reach it; it starts again with Docker.
     await docker(["run", "-d", "--name", NAME, "--restart", "unless-stopped", "-p", `127.0.0.1:${PORT}:8080`,
       "-v", `${DIR}:/etc/searxng`, IMAGE], 60000);
   } else {
-    j.step = "Starting SearXNG…";
+    j.stage = "run"; j.step = "Starting SearXNG…";
     await docker(["start", NAME]);
   }
-  j.step = "Waiting for SearXNG to answer…";
+  j.stage = "wait"; j.step = "Waiting for SearXNG to answer…";
   for (let i = 0; i < 45 && !(await answers()); i++) await sleep(2000);
   if (!(await answers())) throw new Error("SearXNG started but doesn't answer searches yet: try Set up again in a minute");
-  writeSettings({ searxngUrl: SEARXNG_LOCAL, tune: { search: "searxng" } });
+  // Set up: research uses it from now on. A start leaves the settings as they are.
+  if (j.action === "install") writeSettings({ searxngUrl: SEARXNG_LOCAL, tune: { search: "searxng" } });
 }
 
 async function uninstall(j: Job) {
   if ((await dockerState()) === "ok") {
-    j.step = "Removing SearXNG…";
+    j.stage = "remove"; j.step = "Removing SearXNG…";
     await docker(["rm", "-f", NAME]).catch(() => {});
     await docker(["rmi", IMAGE], 60000).catch(() => {}); // kept if something else uses it
   } else if (fs.existsSync(DIR)) throw new Error("Docker isn't running: start it so SearXNG can be removed, then try again");
@@ -126,12 +133,11 @@ export function ensureSearxng(): Promise<boolean> {
   return ensuring = (async () => {
     try {
       if (await answers()) return true;
-      const state = await dockerState();
-      if (state === "missing") return false;
-      if (state === "stopped") await startDocker();
-      if ((await containerState()) !== "running") await docker(["start", NAME]);
-      for (let i = 0; i < 30; i++) { if (await answers()) return true; await sleep(2000); }
-      return false;
+      if ((await dockerState()) === "missing") return false;
+      // As a job, so Settings and the quick-start guide show its steps while it starts.
+      run("start");
+      while (job && !job.done) await sleep(1000);
+      return !job?.error;
     } catch { return false; } finally { ensuring = null; }
   })();
 }
@@ -139,18 +145,31 @@ export function ensureSearxng(): Promise<boolean> {
 function run(action: Job["action"]) {
   if (job && !job.done) return;
   const j: Job = job = { action, step: "Checking Docker…", done: false };
-  (action === "install" ? install(j) : uninstall(j))
-    .then(() => { j.step = action === "install" ? "SearXNG is set up" : "SearXNG is removed"; })
+  (action === "uninstall" ? uninstall(j) : install(j))
+    .then(() => { j.step = action === "install" ? "SearXNG is set up" : action === "start" ? "SearXNG is running" : "SearXNG is removed"; })
     .catch((e) => { j.error = errMsg(e); })
     .finally(() => { j.done = true; });
 }
 
+/** Research is set to use SearXNG on this computer: start Docker and it with the app (in the background). */
+export function startSearxngIfChosen() {
+  const s = readSettings();
+  if (fs.existsSync(DIR) && s.searxngUrl === SEARXNG_LOCAL && s.tune.search !== "brave") ensureSearxng().catch(() => {});
+}
+
+/** Everything the page shows about SearXNG on this computer (also the quick-start guide's Docker and SearXNG rows). */
+export async function searxngInfo() {
+  const busy = !!job && !job.done;
+  const [dockerNow, container] = await Promise.all([dockerState(), containerState()]);
+  return {
+    installed: fs.existsSync(DIR), linked: readSettings().searxngUrl === SEARXNG_LOCAL,
+    running: container === "running", container, docker: dockerNow, busy, platform: process.platform, job,
+  };
+}
+
 export async function handleSearxng(req: Req, res: Res, p: string) {
   if (req.method === "POST" && p === "/api/searxng/install") run("install");
+  else if (req.method === "POST" && p === "/api/searxng/start") run("start");
   else if (req.method === "POST" && p === "/api/searxng/uninstall") run("uninstall");
-  const busy = !!job && !job.done;
-  sendJson(res, 200, {
-    installed: fs.existsSync(DIR), linked: readSettings().searxngUrl === SEARXNG_LOCAL,
-    running: busy ? false : (await containerState()) === "running", job,
-  });
+  sendJson(res, 200, await searxngInfo());
 }

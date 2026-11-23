@@ -269,3 +269,28 @@ export interface SaveSummary {
   name: string;
   savedAt: string;
 }
+
+/** A saved trip as a card in Your trips (GET /api/trips). */
+export interface TripCard {
+  name: string;
+  savedAt: string;
+  /** The plan's own name for the trip ("Alpine road trip"), if there's a plan. */
+  title: string;
+  cities: string[];
+  /** First day and last day (YYYY-MM-DD), "" when the stays have no dates. */
+  start: string;
+  end: string;
+  nights: number;
+  travelers: number;
+  /** Days in the plan (0: no plan yet). */
+  days: number;
+  cost: number;
+  currency: string;
+  countries: { cc: string; country: string }[];
+  /** The stays in order, [lat, lng] (those that were looked up). */
+  route: [number, number][];
+  /** Some of the plan's stops, for texture. */
+  dots: [number, number][];
+  bookings: number;
+  mustSees: number;
+}

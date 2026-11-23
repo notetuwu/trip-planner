@@ -5,13 +5,16 @@ import { $, api, esc } from "../core/dom";
 import { save, state } from "../core/state";
 import { openKeys } from "./keys";
 import { openSettings } from "../settings/settings";
+import { openQuickstart } from "../setup/quickstart";
 
 let localModels: LocalModel[] = [], cloudModels: CloudModel[] = [];
 export let lastModels: ModelsResponse | null = null;
 export const isLocal = (id: string) => String(id).startsWith("local|");
 export const isApi = (id: string) => String(id).startsWith("api|");
 const PROVIDER_NAME: Record<CloudProvider, string> = { anthropic: "Anthropic API", openai: "OpenAI API", openrouter: "OpenRouter" };
-const ADD_KEY = "__keys";
+const ADD_KEY = "__keys", SETUP = "__setup";
+/** Claude through Claude Code (the CLI): not "local|…" or "api|…". */
+const isClaudeCode = (id: string) => !isLocal(id) && !isApi(id);
 
 export function modelLabel(id: string) {
   if (isApi(id)) return cloudModels.find((m) => m.id === id)?.name || id.split("|").slice(2).join("|");
@@ -26,8 +29,10 @@ export async function refreshModels() {
   const sel = $<HTMLSelectElement>("#model");
   try { lastModels = await api<ModelsResponse>("/api/models"); } catch { lastModels = null; }
   localModels = lastModels?.local || []; cloudModels = lastModels?.cloud || [];
-  let html = `<optgroup label="Claude (via Claude Code, uses your plan)">
-      ${option("default", "Claude · CLI default")}${option("opus", "Claude Opus")}${option("sonnet", "Claude Sonnet")}${option("haiku", "Claude Haiku (fast)")}</optgroup>`;
+  // Claude only when Claude Code is on this computer (if the server can't be asked, as before: it's offered).
+  const claude = lastModels ? lastModels.claude : true;
+  let html = claude ? `<optgroup label="Claude (via Claude Code, uses your plan)">
+      ${option("default", "Claude · CLI default")}${option("opus", "Claude Opus")}${option("sonnet", "Claude Sonnet")}${option("haiku", "Claude Haiku (fast)")}</optgroup>` : "";
   for (const p of Object.keys(PROVIDER_NAME) as CloudProvider[]) {
     const ms = cloudModels.filter((m) => m.provider === p);
     if (ms.length) html += `<optgroup label="${esc(PROVIDER_NAME[p])} (your key, pay per use)">${ms.map((m) => option(m.id, m.name)).join("")}</optgroup>`;
@@ -37,14 +42,19 @@ export async function refreshModels() {
   for (const [server, ms] of Object.entries(groups)) {
     html += `<optgroup label="Local · ${esc(server)} (free)">${ms.map((m) => option(m.id, m.name + gb(m.size))).join("")}</optgroup>`;
   }
+  const usable = [...(claude ? ["default"] : []), ...cloudModels.map((m) => m.id), ...localModels.map((m) => m.id)];
+  // Claude picked, but there's no Claude Code (any more): switch to a model that's there, if there is one.
+  if (isClaudeCode(state.model) && !claude && usable.length) { state.model = usable[0]; save(); }
   // Keep a saved choice visible even while its server is off or its key is gone.
-  if ((isLocal(state.model) && !localModels.some((m) => m.id === state.model)) || (isApi(state.model) && !cloudModels.some((m) => m.id === state.model))) {
-    html += `<optgroup label="Not available">${option(state.model, `${modelLabel(state.model)} (${isApi(state.model) ? "no key" : "offline"})`)}</optgroup>`;
+  if ((isLocal(state.model) && !localModels.some((m) => m.id === state.model)) || (isApi(state.model) && !cloudModels.some((m) => m.id === state.model))
+    || (isClaudeCode(state.model) && !claude)) {
+    const why = isApi(state.model) ? "no key" : isLocal(state.model) ? "offline" : "Claude Code not found";
+    html += `<optgroup label="Not available">${option(state.model, `${modelLabel(state.model)} (${why})`)}</optgroup>`;
   }
-  html += `<optgroup label="More">${option(ADD_KEY, "Add or change API keys…")}</optgroup>`;
+  html += `<optgroup label="More">${option(SETUP, usable.length ? "Set up more models…" : "Set up a model to plan with…")}${option(ADD_KEY, "Add or change API keys…")}</optgroup>`;
   sel.innerHTML = html;
   sel.value = state.model;
-  if (sel.value !== state.model) sel.value = "default";
+  if (sel.value !== state.model) sel.value = usable[0] || state.model;
   syncResearch();
   const errors = Object.entries(lastModels?.errors || {}).map(([p, e]) => `${PROVIDER_NAME[p as CloudProvider]}: ${e}`);
   const hint = $("#modelHint");
@@ -85,6 +95,7 @@ export function initModels() {
   $<HTMLSelectElement>("#model").addEventListener("change", (e) => {
     const sel = e.target as HTMLSelectElement;
     if (sel.value === ADD_KEY) { sel.value = state.model; openKeys(refreshModels); return; }
+    if (sel.value === SETUP) { sel.value = state.model; openQuickstart(); return; }
     syncResearch();
   });
   $<HTMLInputElement>("#research").onchange = (e) => { state.research = (e.target as HTMLInputElement).checked; save(); };

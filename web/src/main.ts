@@ -33,6 +33,7 @@ import { initRoutePlanner } from "./trip/route-planner";
 import { initCompanion } from "./trip/companion";
 import { initPrint } from "./export/print";
 import { initSettings } from "./settings/settings";
+import { initQuickstart, maybeShowQuickstart } from "./setup/quickstart";
 import { initSync } from "./core/sync";
 import { loadPrefs, onAppPrefs, prefs } from "./core/prefs";
 import { renderTripTitle } from "./trip/title";
@@ -54,7 +55,7 @@ setOnRouted(() => { drawMap(); updateLegInfo(); });
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
-initSettings(); initSync();
+initSettings(); initQuickstart(); initSync();
 // Settings → General changed (or came in from the computer): redraw in the new units and formats.
 onAppPrefs(() => { renderBookings(); renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
 initFields(); initBookings(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
@@ -83,3 +84,5 @@ loadWeather();
 await loadPrefs();
 // Settings → General: start with a new trip (the one that was open goes to Saved trips first).
 if (prefs.app.startWith === "new") await startFresh();
+// The first time the app starts: the quick-start guide.
+maybeShowQuickstart();

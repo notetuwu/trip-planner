@@ -36,9 +36,10 @@ async function waitFor(fn, ms = 15000, what = "condition") {
 }
 
 /** Starts the app (from dist/, so run `npm run build` first) and a browser; returns a page handle and stop(). */
-export async function launch() {
+export async function launch({ prepare } = {}) {
   if (!fs.existsSync(path.join(ROOT, "dist/server/main.js"))) throw new Error('No build in dist/: run "npm run build" first.');
   const data = fs.mkdtempSync(path.join(os.tmpdir(), "trip-planner-e2e-"));
+  prepare?.(data); // e.g. saved trips to start with
   const [appPort, cdpPort] = [await freePort(), await freePort()];
   const app = spawn(process.execPath, [path.join(ROOT, "dist/server/main.js")], {
     env: { ...process.env, PORT: String(appPort), TRIP_PLANNER_DATA: data, TRIP_PLANNER_NO_WINDOW: "1" }, stdio: "ignore",

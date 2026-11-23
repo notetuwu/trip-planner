@@ -13,9 +13,11 @@ import { openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
+import { tripCards } from "./routes/trips";
 import { handleLan, handleSettings } from "./routes/settings";
 import { handleOllama } from "./routes/ollama";
-import { handleSearxng } from "./routes/searxng";
+import { handleSearxng, searxngInfo, startSearxngIfChosen } from "./routes/searxng";
+import { readSettings } from "./settings";
 import { handleCurrent } from "./routes/current";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
@@ -37,6 +39,8 @@ export function startup() {
   console.log(`Place lists: ${listSummaries().map((l) => `${l.name} (${l.count})`).join(", ") || "none yet"}`);
   // Looking for the CLI starts a process, so it's done after the server is up rather than delaying it.
   setTimeout(() => console.log(`Claude CLI: ${findClaude() || "NOT FOUND (set CLAUDE_BIN)"}`), 1500);
+  // Research goes to SearXNG on this computer: have Docker and it running by the time it's needed.
+  setTimeout(startSearxngIfChosen, 4000);
 }
 
 /** Handles an /api request; returns false for anything else. */
@@ -62,6 +66,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
     if (path === "/api/searxng" || path.startsWith("/api/searxng/")) { await handleSearxng(req, res, path); return true; }
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
+    if (path === "/api/trips" && method === "GET") { sendJson(res, 200, tripCards()); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
@@ -86,6 +91,17 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const [local, cloud] = await Promise.all([detectLocalModels(), cloudModels()]);
       sendJson(res, 200, { claude: !!findClaude(), local, cloud: cloud.models, errors: cloud.errors, keys: keyStatus(),
         ollama: { installed: ollamaInstalled(), running: ollamaUp } });
+    }
+    // The quick-start guide: what's there to plan with (Claude Code, API keys, Ollama and its models) and to research
+    // with (the search engine, a Brave key, Docker and SearXNG).
+    else if (method === "GET" && path === "/api/setup") {
+      const s = readSettings(), ollamaUp = await ensureOllama();
+      const [local, searxng] = await Promise.all([detectLocalModels(), searxngInfo()]);
+      sendJson(res, 200, {
+        claude: !!findClaude(), keys: keyStatus(),
+        ollama: { installed: ollamaInstalled(), running: ollamaUp }, localModels: local.length,
+        search: s.tune.search, braveKey: !!(s.braveKey || process.env.BRAVE_API_KEY), searxngUrl: s.searxngUrl, searxng,
+      });
     }
     else if (method === "GET" && path === "/api/gpu") {
       sendJson(res, 200, await gpuInfo());

@@ -26,14 +26,21 @@ function rowHtml(p: (typeof PROVIDERS)[number], s: KeyStatus | undefined) {
   </div>`;
 }
 
-async function render(dialog: HTMLDialogElement, keys?: Record<CloudProvider, KeyStatus>) {
+/**
+ * The key rows in `rows` (the dialog's, or the quick-start guide's), saving and removing straight away; problems go in
+ * `status`. onSaved runs after each change, with what's set now.
+ */
+export async function renderKeyRows(rows: HTMLElement, status: HTMLElement, onSaved: (keys: Record<CloudProvider, KeyStatus>) => void, keys?: Record<CloudProvider, KeyStatus>) {
   keys ||= (await api<{ keys: Record<CloudProvider, KeyStatus> }>("/api/models").catch(() => null))?.keys;
-  $("#keyRows").innerHTML = PROVIDERS.map((p) => rowHtml(p, keys?.[p.id])).join("");
-  for (const row of $$("[data-provider]", dialog)) {
+  rows.innerHTML = PROVIDERS.map((p) => rowHtml(p, keys?.[p.id])).join("");
+  for (const row of $$("[data-provider]", rows)) {
     const provider = row.dataset.provider as CloudProvider;
     const put = async (key: string) => {
-      try { await render(dialog, await api(`/api/keys/${provider}`, { method: "PUT", body: JSON.stringify({ key }) })); changed = true; }
-      catch (e) { $("#keyStatus").textContent = (e as Error).message; }
+      try {
+        const now = await api<Record<CloudProvider, KeyStatus>>(`/api/keys/${provider}`, { method: "PUT", body: JSON.stringify({ key }) });
+        await renderKeyRows(rows, status, onSaved, now);
+        onSaved(now);
+      } catch (e) { status.textContent = (e as Error).message; }
     };
     row.querySelector<HTMLButtonElement>("[data-save]")?.addEventListener("click", () => {
       const key = row.querySelector("input")!.value.trim();
@@ -53,6 +60,6 @@ export function openKeys(onChange: () => void) {
   changed = false;
   $("#keyStatus").textContent = "";
   dialog.onclose = () => { if (changed) onChange(); };
-  render(dialog);
+  renderKeyRows($("#keyRows"), $("#keyStatus"), () => { changed = true; });
   dialog.showModal();
 }

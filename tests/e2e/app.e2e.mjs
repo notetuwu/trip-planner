@@ -52,6 +52,11 @@ const STUBS = `(() => {
     const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "reasoning", text: "Lakes first, then the loop home." }, { type: "done", result }]
       .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
     if (url.includes("/api/current")) return json({ at: 0 });
+    // The quick-start guide opens by itself on a first start: not over the tests (one test opens it itself).
+    if (url.endsWith("/api/settings") && (o.method || "GET") === "GET" && !window.__e2e.firstStart) return real(u, o).then((r) => r.json()).then((s) => json({ ...s, quickstartSeen: true }));
+    if (url.endsWith("/api/setup") && window.__e2e.setup) return json(window.__e2e.setup);
+    if (url.endsWith("/api/trips") && window.__e2e.trips) return json(window.__e2e.trips);
+    if (url.endsWith("/api/models") && window.__e2e.models) return json(window.__e2e.models);
     // Place lists: scripted by the test through window.__e2e.lists ({ name: places }); absent: the real (empty) ones.
     const lists = window.__e2e.lists;
     const listPath = url.split("?")[0].split("/api/lists")[1];
@@ -750,6 +755,53 @@ test("the cost breakdown shows the total, per person, by kind, per day and alrea
   for (const want of ["estimated total", "per person (2 travelers)", "under the budget", "already paid (not in the total)", "Sights", "Meals", "Opera at La Scala", "Most expensive"]) assert.ok(text.includes(want), want);
   assert.equal(await page.eval(`document.querySelectorAll("#costsBody .cb-day").length`), 2);
   await page.eval(`document.querySelector("#costsDialog").close()`);
+});
+
+const NO_KEYS = { anthropic: { set: false }, openai: { set: false }, openrouter: { set: false } };
+const SX_NONE = { installed: false, linked: false, running: false, container: "", docker: "missing", busy: false, platform: "win32", job: null };
+
+test("the quick start shows what's there and what's missing; without Claude Code the model menu has no Claude", async () => {
+  await page.eval(`window.__e2e.setup = { claude: false, keys: ${JSON.stringify(NO_KEYS)}, ollama: { installed: true, running: true }, localModels: 0,
+    search: "auto", braveKey: false, searxngUrl: "", searxng: ${JSON.stringify(SX_NONE)} }; document.querySelector("#quickstartBtn").click()`);
+  await page.waitFor(`/One thing left/.test(document.querySelector(".qs-hero h2")?.textContent || "")`, 5000, "the checks");
+  assert.equal(await page.eval(`document.querySelectorAll(".qs-check").length`), 5);
+  assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(1)").textContent`), /Claude Code.*Not found/);
+  assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(3)").textContent`), /Ollama.*No model yet/);
+  assert.equal(await page.eval(`document.querySelectorAll("#qsKeys .key-row").length`), 3, "the API key inputs");
+  // Choosing SearXNG shows its steps (Docker first).
+  await page.eval(`document.querySelector('[data-search="searxng"]').click()`);
+  await page.waitFor(`document.querySelectorAll("#qsSearxng .sx-step").length === 5`, 5000, "the SearXNG steps");
+  assert.match(await page.eval(`document.querySelector("#qsSearxng .sx-step").textContent`), /Docker installed/);
+  await page.eval(`fetch("/api/settings", { method: "POST", body: JSON.stringify({ tune: { search: "auto" } }) })`);
+  await page.eval(`document.querySelector("#qsDone").click()`);
+  // A model with no Claude Code: no Claude in the menu, and the trip switches to a model that's there.
+  await page.eval(`window.__e2e.models = { claude: false, local: [{ id: "local|ollama|http://x|qwen3:8b", name: "qwen3:8b", server: "Ollama" }], cloud: [], keys: ${JSON.stringify(NO_KEYS)}, errors: {}, ollama: { installed: true, running: true } };
+    document.querySelector("#refreshModels").click()`);
+  await page.waitFor(`![...document.querySelectorAll("#model option")].some((o) => o.value === "opus")`, 5000, "no Claude");
+  assert.equal(await page.eval(`planner.state().model`), "local|ollama|http://x|qwen3:8b");
+  await page.eval(`window.__e2e.models = null; window.__e2e.setup = null; planner.state().model = "default"; document.querySelector("#refreshModels").click()`);
+});
+
+test("Your trips: cards with a route sketch, grouped coming up / past by year, filtered, searched, and as a table", async () => {
+  const card = (name, start, end, extra = {}) => ({ name, savedAt: "2026-01-01T00:00:00Z", title: "", cities: ["Padua", "Milano"], start, end, nights: 4, travelers: 2, days: 0, cost: 0, currency: "EUR",
+    countries: [{ cc: "it", country: "Italy" }], route: [[45.4, 11.88], [45.46, 9.19]], dots: [], bookings: 0, mustSees: 0, ...extra });
+  await page.eval(`window.__e2e.trips = ${JSON.stringify([
+    card("Italy 2099", "2099-05-01", "2099-05-05", { days: 5 }),
+    card("Lakes 2024", "2024-06-01", "2024-06-05", { cities: ["Lucerne", "Bregenz"], countries: [{ cc: "ch", country: "Switzerland" }, { cc: "at", country: "Austria" }] }),
+    card("Someday", "", "", { route: [], nights: 0 }),
+  ])}; document.querySelector("#openTrips").click()`);
+  await page.waitFor(`document.querySelectorAll("#tripsBody .trip-card").length === 3`, 5000, "the cards");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll(".trips-group")].map((g) => g.firstChild.textContent)`), ["Coming up", "2024", "No dates yet"]);
+  assert.ok(await page.eval(`!!document.querySelector('.trip-card[data-name="Italy 2099"] .pv-route')`), "the route is drawn");
+  assert.match(await page.eval(`document.querySelector('.trip-card[data-name="Lakes 2024"] .tc-when').textContent`), /years? ago/);
+  assert.match(await page.eval(`document.querySelector("#tripsMeta").textContent`), /3 trips · 3 countries/);
+  await page.eval(`document.querySelector('[data-filter="past"]').click()`);
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#tripsBody .trip-card")].map((c) => c.dataset.name)`), ["Lakes 2024"]);
+  await page.eval(`document.querySelector('[data-filter="all"]').click(); (() => { const s = document.querySelector("#tripsSearch"); s.value = "austria"; s.dispatchEvent(new Event("input")); })()`);
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#tripsBody .trip-card")].map((c) => c.dataset.name)`), ["Lakes 2024"], "found by country");
+  await page.eval(`(() => { const s = document.querySelector("#tripsSearch"); s.value = ""; s.dispatchEvent(new Event("input")); })(); document.querySelector('[data-view="table"]').click()`);
+  assert.equal(await page.eval(`document.querySelectorAll("#tripsBody .trip-row").length`), 3, "the table");
+  await page.eval(`document.querySelector('[data-view="grid"]').click(); document.querySelector("#tripsDialog").close(); window.__e2e.trips = null`);
 });
 
 test("no errors in the page", () => {

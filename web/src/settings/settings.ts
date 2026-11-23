@@ -14,6 +14,9 @@ import { switchWindowMode } from "../core/window-mode";
 import { openKeys } from "../generate/keys";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
+import { mountSearxng } from "./searxng-panel";
+import { creditsHtml } from "./credits";
+import { SEARXNG_LOCAL } from "./searxng-local";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
 interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
@@ -28,7 +31,7 @@ interface Rec { model: string; tag: string; sizeGb: number; context: string; cap
 
 interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean }
 
-type Tab = "general" | "planning" | "models" | "updates" | "phone";
+type Tab = "general" | "planning" | "models" | "updates" | "phone" | "credits";
 let tab: Tab = "general", settings: Settings | null = null, ollama: OllamaInfo | null = null, lan: LanStatus | null = null;
 let poll: number | undefined, loadError = "";
 // The library: recommendations, the last search and its results, and the sizes of models opened in the results.
@@ -130,10 +133,11 @@ function render() {
   const nav = (t: Tab, ico: Parameters<typeof icon>[0], label: string) =>
     `<button type="button" class="set-tab${tab === t ? " on" : ""}" data-tab="${t}">${icon(ico)}<span>${label}</span></button>`;
   $("#settingsBody").innerHTML = `
-    <nav class="set-nav">${nav("general", "settings", "General")}${nav("planning", "sliders", "Planning")}${nav("models", "cpu", "Local models")}${nav("updates", "refresh", "Updates")}${nav("phone", "phone", "Phone")}</nav>
+    <nav class="set-nav">${nav("general", "settings", "General")}${nav("planning", "sliders", "Planning")}${nav("models", "cpu", "Local models")}${nav("updates", "refresh", "Updates")}${nav("phone", "phone", "Phone")}${nav("credits", "heart", "Credits")}</nav>
     <div class="set-main" id="setMain"></div>`;
   $$<HTMLButtonElement>("#settingsBody [data-tab]").forEach((b) => { b.onclick = () => { tab = b.dataset.tab as Tab; render(); if (tab === "models") loadModelsTab(); if (tab === "updates") loadUpdates(); }; });
   if (tab === "general") renderGeneral();
+  else if (tab === "credits") $("#setMain").innerHTML = creditsHtml();
   else if (loadError) $("#setMain").innerHTML = `<p class="hint">${esc(loadError)}</p>`;
   else if (tab === "planning") renderPlanning();
   else if (tab === "models") renderModels();
@@ -237,40 +241,6 @@ function renderGeneral() {
 
 const LANGUAGES = ["", "Deutsch", "Français", "Español", "Italiano", "Português", "Nederlands", "Polski", "Čeština", "Svenska", "Dansk", "Norsk", "Suomi", "Türkçe", "日本語", "한국어", "中文"];
 
-interface SearxngInfo { installed: boolean; linked: boolean; running: boolean; job: { action: string; step: string; done: boolean; error?: string } | null }
-let sxTimer: number | undefined, sxLastJob = "";
-
-/** Shows the local SearXNG's state, polling while it's being set up or removed. */
-async function pollSearxng() {
-  clearTimeout(sxTimer);
-  const status = document.querySelector<HTMLElement>("#sxStatus");
-  if (!status) return;
-  let s: SearxngInfo;
-  try { s = await api<SearxngInfo>("/api/searxng"); } catch { status.textContent = "Couldn't check SearXNG"; return; }
-  const busy = !!s.job && !s.job.done;
-  status.classList.toggle("set-warn", !!s.job?.error);
-  status.textContent = busy ? s.job!.step : s.job?.error ? s.job.error
-    : s.installed ? (s.running ? "Set up and running" : "Set up, but not running (start Docker)") + (s.linked ? ", used for research" : "") : "Not set up";
-  $<HTMLButtonElement>("#sxInstall").hidden = busy || (s.installed && s.running && s.linked);
-  $<HTMLButtonElement>("#sxInstall").textContent = s.installed ? "Start and use it" : "Set up SearXNG";
-  $<HTMLButtonElement>("#sxRemove").hidden = busy || !s.installed;
-  // Finished just now: the settings changed (address, search engine), so show them.
-  const key = s.job ? `${s.job.action}:${s.job.done}` : "";
-  if (sxLastJob.endsWith(":false") && key.endsWith(":true")) {
-    toast(s.job!.error ? s.job!.error : s.job!.step);
-    settings = await api<Settings>("/api/settings");
-    sxLastJob = key; renderPlanning(); return;
-  }
-  sxLastJob = key;
-  if (busy) sxTimer = window.setTimeout(pollSearxng, 1500);
-}
-
-async function searxngAction(action: "install" | "uninstall") {
-  sxLastJob = `${action}:false`;
-  await api(`/api/searxng/${action}`, { method: "POST" });
-  pollSearxng();
-}
-
 function renderPlanning() {
   const t = settings?.tune;
   if (!t) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
@@ -301,12 +271,11 @@ function renderPlanning() {
       ${t.search === "brave" ? `<div class="set-row"><div><b>Brave Search API key</b> ${settings?.braveKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Reliable web search; the free plan covers a good number of searches a month. Get a key at <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api${ext()}</a>. It stays on this computer.</div>
           <div class="set-inline"><input id="braveKey" type="password" autocomplete="off" placeholder="${settings?.braveKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="braveSave">Save</button>${settings?.braveKeySet ? `<button type="button" class="link-btn" id="braveClear">Remove</button>` : ""}</div>
           ${settings?.braveKeySet ? "" : `<div class="hint set-warn">Until a key is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
-      ${t.search === "searxng" ? `<div class="set-row"><div><b>SearXNG server</b><div class="hint">SearXNG is a free search engine you run yourself (e.g. with Docker on this PC or a home server): it asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. Turn on its JSON format, then enter its address, e.g. http://192.168.1.20:8080.</div>
-          <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl || "")}"><button type="button" class="btn" id="searxngSave">Save</button></div>
-          ${settings?.searxngUrl ? "" : `<div class="hint set-warn">Until an address is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
-      ${t.search !== "brave" ? `<div class="set-row"><div><b>SearXNG on this computer</b><div class="hint">Sets SearXNG up for you in Docker (installing Docker Desktop first if needed: Windows asks for permission, and a restart may be needed), only reachable from this computer, and switches research to it. If Docker is closed, research starts it again. Remove takes the container, its download and its settings away again.</div>
-          <div class="hint" id="sxStatus">Checking…</div>
-          <div class="set-inline"><button type="button" class="btn" id="sxInstall" hidden>Set up SearXNG</button><button type="button" class="link-btn" id="sxRemove" hidden>Remove</button></div></div></div>` : ""}
+      ${t.search === "searxng" ? `<div class="set-row sx-row"><div><b>${icon("container")} SearXNG on this computer</b><div class="hint">A free search engine that asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. It runs in Docker, only reachable from this computer; with SearXNG chosen here, the planner starts Docker and it whenever they're needed.</div>
+          <div id="sxPanel"></div>
+          <details class="sx-own"${settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? " open" : ""}><summary>Use your own SearXNG server instead</summary>
+            <div class="hint">On a home server, say: turn on its JSON format, then enter its address, e.g. http://192.168.1.20:8080.</div>
+            <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? settings.searxngUrl : "")}"><button type="button" class="btn" id="searxngSave">Save</button></div></details></div></div>` : ""}
     </div>
     <div class="set-card">
       <b class="card-title">Local models</b>
@@ -333,9 +302,13 @@ function renderPlanning() {
   document.querySelector<HTMLButtonElement>("#braveSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#braveKey").value.trim(); if (k) saveSearch({ braveKey: k }, "Saved the Brave key"); });
   document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
-  if (document.querySelector("#sxStatus")) pollSearxng();
-  document.querySelector<HTMLButtonElement>("#sxInstall")?.addEventListener("click", () => searxngAction("install"));
-  document.querySelector<HTMLButtonElement>("#sxRemove")?.addEventListener("click", () => { if (confirm("Remove SearXNG from this computer?")) searxngAction("uninstall"); });
+  // SearXNG chosen: its steps, and Docker and it started if they're set up but stopped (unless research goes to
+  // another SearXNG server).
+  const sx = document.querySelector<HTMLElement>("#sxPanel");
+  if (sx) mountSearxng(sx, {
+    autoStart: !settings?.searxngUrl || settings.searxngUrl === SEARXNG_LOCAL,
+    onChange: async () => { settings = await api<Settings>("/api/settings"); if (tab === "planning") renderPlanning(); },
+  });
   $<HTMLSelectElement>("#tuneKeep").onchange = (e) => saveTune({ keepAlive: (e.target as HTMLSelectElement).value });
   const temp = $<HTMLInputElement>("#tuneTemp");
   temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };

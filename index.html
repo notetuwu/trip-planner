@@ -22,20 +22,22 @@
 <header>
   <div class="brand"><span class="logo"><i data-icon="map"></i></span>Trip Planner</div>
   <div class="trip-title" id="tripTitle"></div>
-  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="chat-toggle" id="chatBtn" type="button" title="Trip chat: ask anything about the trip, or ask for changes" aria-pressed="false"><i data-icon="chat"></i><span>Chat</span></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
+  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="chat-toggle" id="chatBtn" type="button" title="Trip chat: ask anything about the trip, or ask for changes" aria-pressed="false"><i data-icon="chat"></i><span>Chat</span></button><button class="icon-btn theme-btn" id="quickstartBtn" type="button" title="Quick start: what's set up on this computer, and what's missing" aria-label="Quick start"><i data-icon="rocket"></i></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
 </header>
 
 <main>
   <section class="panel settings">
-    <h2>Saved trips <small><button class="link-btn" id="exportTrip" type="button" title="Download this trip as a file, to share it or keep a copy (someone else can import it)"><i data-icon="download"></i> Export</button>
+    <h2>Your trips <small><button class="link-btn" id="exportTrip" type="button" title="Download this trip as a file, to share it or keep a copy (someone else can import it)"><i data-icon="download"></i> Export</button>
       <label class="link-btn file-link" title="Open a trip file someone shared (it replaces the trip on screen)"><i data-icon="upload"></i> Import<input type="file" id="importTrip" accept=".json,application/json" hidden></label>
       <button class="link-btn" id="newTrip" title="Start a new, empty trip">+ New trip</button></small></h2>
-    <div class="inline">
-      <select id="saveList"><option value="">— Saved trips —</option></select>
-      <button class="btn" id="loadSave" title="Load the selected trip">Load</button>
-      <button class="btn solid" id="saveBtn" title="Save current inputs">Save</button>
-      <button class="btn" id="delSave" title="Delete the selected trip"><i data-icon="trash"></i></button>
+    <div class="trip-bar">
+      <button class="trips-open" id="openTrips" type="button" title="All your saved trips: open one, or look back at past ones">
+        <span class="trips-open-icon"><i data-icon="grid"></i></span>
+        <span class="trips-open-text"><b>Browse trips <span class="trips-count" id="tripsCount" hidden></span></b><span class="hint" id="currentSave">This trip isn't saved yet</span></span>
+      </button>
+      <button class="btn solid" id="saveBtn" title="Save this trip (with its itinerary)">Save</button>
     </div>
+    <select id="saveList" hidden><option value="">— Saved trips —</option></select>
     <div class="counts" id="saveStatus"></div>
 
     <h2>Stays <small><button class="link-btn" id="planRoute" type="button" title="Describe the trip and get a route of stays to start from"><i data-icon="route"></i> Plan a route</button></small></h2>
@@ -176,7 +178,7 @@
   <form method="dialog" class="keys-close"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
   <h2>API keys</h2>
   <p class="hint">Optional: with a key you can plan with cloud models that search the web themselves. You pay the provider per use
-    (a long trip with research on a top model can cost a dollar or two; smaller models much less; the cost is shown after each plan where known). Keys are kept in <code>keys.json</code> in the planner folder, only sent to that provider,
+    (a long trip with research on a top model can cost a euro or two; smaller models much less; the cost is shown after each plan where known). Keys are kept in <code>keys.json</code> in the planner folder, only sent to that provider,
     and never included in saves or exports.</p>
   <div id="keyRows"></div>
   <div class="counts" id="keyStatus"></div>
@@ -284,6 +286,37 @@
   <div class="pl-head"><h2 id="sectionTitle"></h2><span class="hint" id="sectionMeta"></span>
     <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
   <div id="sectionBody" class="section-body"></div>
+</dialog>
+
+<dialog id="quickstartDialog" class="keys-dialog quickstart-dialog">
+  <div class="qs-top"><span class="qs-top-title"><i data-icon="rocket"></i> Quick start</span>
+    <button class="link-btn" id="qsRecheck" type="button" title="Look again for what's installed"><i data-icon="refresh"></i> Check again</button>
+    <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
+  <div id="qsBody" class="qs-body"></div>
+  <div class="qs-foot"><span class="hint">You can open this again any time with <i data-icon="rocket"></i> at the top.</span><button class="btn solid" id="qsDone" type="button">Start planning</button></div>
+</dialog>
+
+<dialog id="tripsDialog" class="keys-dialog trips-dialog">
+  <div class="trips-head">
+    <div class="trips-title"><h2><i data-icon="globe"></i> Your trips</h2><span class="hint" id="tripsMeta"></span></div>
+    <div class="trips-acts">
+      <button class="btn" id="tripsNew" type="button"><i data-icon="plus"></i> New trip</button>
+      <label class="btn" title="Open a trip file someone shared"><i data-icon="upload"></i> Import<input type="file" id="tripsImport" accept=".json,application/json" hidden></label>
+      <button class="btn solid" id="tripsSave" type="button" title="Save the trip on screen">Save this trip</button>
+      <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
+    </div>
+  </div>
+  <div class="trips-tools">
+    <div class="trips-search"><i data-icon="search"></i><input id="tripsSearch" type="search" placeholder="Search trips, towns, countries, years…" autocomplete="off"></div>
+    <div class="segs"><button type="button" class="seg" data-filter="all">All</button><button type="button" class="seg" data-filter="upcoming">Coming up</button><button type="button" class="seg" data-filter="past">Past</button><button type="button" class="seg" data-filter="undated">No dates</button></div>
+    <select id="tripsSort" title="Order">
+      <option value="date-desc">Trip date, newest first</option><option value="date-asc">Trip date, oldest first</option>
+      <option value="recent">Recently saved</option><option value="name">Name</option><option value="length">Longest first</option>
+    </select>
+    <div class="segs view-segs"><button type="button" class="seg" data-view="grid" title="Cards"><i data-icon="grid"></i></button><button type="button" class="seg" data-view="table" title="Table"><i data-icon="list"></i></button></div>
+  </div>
+  <div id="tripsBody" class="trips-body"></div>
+  <div class="trips-credit">Maps © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
 </dialog>
 
 <dialog id="settingsDialog" class="keys-dialog settings-dialog">
