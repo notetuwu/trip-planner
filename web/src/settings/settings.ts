@@ -235,6 +235,40 @@ function renderGeneral() {
 
 const LANGUAGES = ["", "Deutsch", "Français", "Español", "Italiano", "Português", "Nederlands", "Polski", "Čeština", "Svenska", "Dansk", "Norsk", "Suomi", "Türkçe", "日本語", "한국어", "中文"];
 
+interface SearxngInfo { installed: boolean; linked: boolean; running: boolean; job: { action: string; step: string; done: boolean; error?: string } | null }
+let sxTimer: number | undefined, sxLastJob = "";
+
+/** Shows the local SearXNG's state, polling while it's being set up or removed. */
+async function pollSearxng() {
+  clearTimeout(sxTimer);
+  const status = document.querySelector<HTMLElement>("#sxStatus");
+  if (!status) return;
+  let s: SearxngInfo;
+  try { s = await api<SearxngInfo>("/api/searxng"); } catch { status.textContent = "Couldn't check SearXNG"; return; }
+  const busy = !!s.job && !s.job.done;
+  status.classList.toggle("set-warn", !!s.job?.error);
+  status.textContent = busy ? s.job!.step : s.job?.error ? s.job.error
+    : s.installed ? (s.running ? "Set up and running" : "Set up, but not running (start Docker)") + (s.linked ? ", used for research" : "") : "Not set up";
+  $<HTMLButtonElement>("#sxInstall").hidden = busy || (s.installed && s.running && s.linked);
+  $<HTMLButtonElement>("#sxInstall").textContent = s.installed ? "Start and use it" : "Set up SearXNG";
+  $<HTMLButtonElement>("#sxRemove").hidden = busy || !s.installed;
+  // Finished just now: the settings changed (address, search engine), so show them.
+  const key = s.job ? `${s.job.action}:${s.job.done}` : "";
+  if (sxLastJob.endsWith(":false") && key.endsWith(":true")) {
+    toast(s.job!.error ? s.job!.error : s.job!.step);
+    settings = await api<Settings>("/api/settings");
+    sxLastJob = key; renderPlanning(); return;
+  }
+  sxLastJob = key;
+  if (busy) sxTimer = window.setTimeout(pollSearxng, 1500);
+}
+
+async function searxngAction(action: "install" | "uninstall") {
+  sxLastJob = `${action}:false`;
+  await api(`/api/searxng/${action}`, { method: "POST" });
+  pollSearxng();
+}
+
 function renderPlanning() {
   const t = settings?.tune;
   if (!t) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
@@ -268,6 +302,9 @@ function renderPlanning() {
       ${t.search === "searxng" ? `<div class="set-row"><div><b>SearXNG server</b><div class="hint">SearXNG is a free search engine you run yourself (e.g. with Docker on this PC or a home server): it asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. Turn on its JSON format, then enter its address, e.g. http://192.168.1.20:8080.</div>
           <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl || "")}"><button type="button" class="btn" id="searxngSave">Save</button></div>
           ${settings?.searxngUrl ? "" : `<div class="hint set-warn">Until an address is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
+      ${t.search !== "brave" ? `<div class="set-row"><div><b>SearXNG on this computer</b><div class="hint">Sets SearXNG up for you in Docker (installing Docker Desktop first if needed: Windows asks for permission, and a restart may be needed), only reachable from this computer, and switches research to it. If Docker is closed, research starts it again. Remove takes the container, its download and its settings away again.</div>
+          <div class="hint" id="sxStatus">Checking…</div>
+          <div class="set-inline"><button type="button" class="btn" id="sxInstall" hidden>Set up SearXNG</button><button type="button" class="link-btn" id="sxRemove" hidden>Remove</button></div></div></div>` : ""}
     </div>
     <div class="set-card">
       <b class="card-title">Local models</b>
@@ -294,6 +331,9 @@ function renderPlanning() {
   document.querySelector<HTMLButtonElement>("#braveSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#braveKey").value.trim(); if (k) saveSearch({ braveKey: k }, "Saved the Brave key"); });
   document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
+  if (document.querySelector("#sxStatus")) pollSearxng();
+  document.querySelector<HTMLButtonElement>("#sxInstall")?.addEventListener("click", () => searxngAction("install"));
+  document.querySelector<HTMLButtonElement>("#sxRemove")?.addEventListener("click", () => { if (confirm("Remove SearXNG from this computer?")) searxngAction("uninstall"); });
   $<HTMLSelectElement>("#tuneKeep").onchange = (e) => saveTune({ keepAlive: (e.target as HTMLSelectElement).value });
   const temp = $<HTMLInputElement>("#tuneTemp");
   temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };

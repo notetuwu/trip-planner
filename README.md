@@ -59,7 +59,7 @@ Pick one from the **Model** menu. You need one of these:
 
 Local models are free and private but slower and less thorough on long trips; bigger models plan better. The planner helps them along: real places in the prompt, its own web research for them, checks afterwards, and if a model stops part way through a long trip, it keeps the finished days and asks only for the rest. Settings → Planning also has an experimental **step by step** mode for local models (an outline of the days, research for those days, then each day on its own), for when planning in one go gets cut off.
 
-**Settings → Planning** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org), instead of DuckDuckGo and Wikipedia.
+**Settings → Planning** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, and remove again), instead of DuckDuckGo and Wikipedia.
 
 ## Run from source
 

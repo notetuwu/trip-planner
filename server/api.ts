@@ -15,6 +15,7 @@ import { handleLists } from "./routes/lists";
 import { handleSaves } from "./routes/saves";
 import { handleLan, handleSettings } from "./routes/settings";
 import { handleOllama } from "./routes/ollama";
+import { handleSearxng } from "./routes/searxng";
 import { handleCurrent } from "./routes/current";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
@@ -57,6 +58,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/settings") { await handleSettings(req, res); return true; }
     if (path === "/api/lan" || path.startsWith("/api/lan/")) { await handleLan(req, res, path); return true; }
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
+    if (path === "/api/searxng" || path.startsWith("/api/searxng/")) { await handleSearxng(req, res, path); return true; }
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);

@@ -3,6 +3,7 @@
 // work but only know articles.
 import { BROWSER_UA, USER_AGENT, errMsg, sleep } from "../config";
 import { readSettings } from "../settings";
+import { SEARXNG_LOCAL, ensureSearxng } from "../routes/searxng";
 
 /** The Brave key and SearXNG address: from Settings → Planning, or the environment variables. */
 const braveKey = () => readSettings().braveKey || process.env.BRAVE_API_KEY || "";
@@ -31,7 +32,9 @@ const searxng: Backend = {
   name: "SearXNG", enabled: () => !!searxngUrl(),
   async search(q) {
     const base = searxngUrl().replace(/\/+$/, "");
-    const res = await fetch(`${base}/search?${new URLSearchParams({ q, format: "json" })}`, { signal: AbortSignal.timeout(15000) });
+    const get = () => fetch(`${base}/search?${new URLSearchParams({ q, format: "json" })}`, { signal: AbortSignal.timeout(15000) });
+    // The one set up from Settings isn't running (Docker closed, after a restart): start it, then try again.
+    let res = await get().catch(async (e) => { if (base === SEARXNG_LOCAL && (await ensureSearxng())) return get(); throw e; });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (((await res.json()) as any).results || []).slice(0, 6).map((r: any) => ({ title: r.title, url: r.url, snippet: r.content || "" }));
   },
