@@ -706,6 +706,21 @@ test("a booking added in the sidebar goes to the planner and onto its day; Re-pl
   assert.match(edit.request, /Re-plan these 2 days of the stay in Milano together/);
 });
 
+test("the cost breakdown shows the total, per person, by kind, per day and already-paid bookings", async () => {
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, travelers: 2, dailyBudget: 50, currency: "EUR",
+    bookings: [{ name: "Opera at La Scala", date: "2027-09-17", from: "20:00", cost: 180, countCost: false }],
+    itinerary: { summary: "", totalEstimatedCost: 70, days: [
+      { date: "2027-09-14", city: "Padua", title: "", estimatedCost: 30, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "", cost: 30, kind: "sight" }] },
+      { date: "2027-09-15", city: "Padua", title: "", estimatedCost: 40, items: [{ time: "12:00", place: "Lunch at Pedrocchi", description: "", cost: 40, kind: "meal" }] } ] } })`);
+  await page.waitFor(`!!document.querySelector("[data-costs]")`, 10000, "the summary");
+  await page.eval(`document.querySelector("[data-costs]").click()`);
+  await page.waitFor(`document.querySelector("#costsDialog").open`, 5000, "the breakdown");
+  const text = await page.eval(`document.querySelector("#costsBody").textContent`);
+  for (const want of ["estimated total", "per person (2 travelers)", "under the budget", "already paid (not in the total)", "Sights", "Meals", "Opera at La Scala", "Most expensive"]) assert.ok(text.includes(want), want);
+  assert.equal(await page.eval(`document.querySelectorAll("#costsBody .cb-day").length`), 2);
+  await page.eval(`document.querySelector("#costsDialog").close()`);
+});
+
 test("no errors in the page", () => {
   assert.deepEqual(page.errors, []);
 });

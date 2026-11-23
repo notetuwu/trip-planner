@@ -584,9 +584,15 @@ button.refine:hover { border-color: var(--accent); }
 
 /* Bookings: like the day trips, a name line and its date, time and cost below. */
 .bookings { margin-bottom: 14px; }
-.booking { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; padding: 8px; background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+.booking { margin: 0 0 6px; padding: 6px 8px; background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; }
+.booking summary { display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 13px; list-style: none; min-width: 0; }
+.booking summary::-webkit-details-marker { display: none; }
+.booking summary svg { color: var(--accent); flex: none; }
+.booking summary b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.booking .bk-when { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.booking[open] summary { margin-bottom: 6px; }
+.booking .bk-top, .booking .bk-opts { margin-top: 6px; }
 .booking .bk-top, .booking .bk-opts { display: flex; gap: 6px; align-items: center; }
-.booking .bk-label { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--accent); white-space: nowrap; }
 .booking input { flex: 1; min-width: 0; height: 30px; font-size: 12.5px; background: var(--panel); }
 .booking input[type=checkbox] { flex: none; width: 15px; height: 15px; }
 .booking .inline-check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; white-space: nowrap; }
@@ -595,3 +601,23 @@ button.refine:hover { border-color: var(--accent); }
 .city-band .replan-stay { font-size: 12px; font-weight: 600; flex: none; }
 @media print { .city-band .replan-stay { display: none; } }
 .booking input[type=date] { flex: 1.5; }
+
+/* The cost breakdown window. */
+.costs-dialog { width: min(760px, 94vw); }
+.costs-body { padding: 4px 20px 20px; max-height: 76vh; overflow: auto; }
+.costs-body h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
+.cb-stats .stat.over b { color: var(--warn); }
+.cb-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.cb-table td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.cb-table .num, .cb-day .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cb-table .muted, .cb-day .muted { color: var(--muted); }
+.cb-bar { display: inline-block; width: 100%; min-width: 60px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; vertical-align: middle; }
+.cb-bar i { display: block; height: 100%; background: var(--accent); }
+.cb-day { border-bottom: 1px solid var(--line); }
+.cb-day summary { display: grid; grid-template-columns: 110px 1fr 120px 90px; gap: 10px; align-items: center; padding: 7px 4px; cursor: pointer; font-size: 13px; }
+.cb-day summary .over { color: var(--warn); }
+.cb-day .cb-city { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-day .cb-table { margin: 0 0 8px 14px; width: calc(100% - 14px); }
+.costs-body .btn { margin-top: 12px; }
+.stat-btn { text-align: left; cursor: pointer; font: inherit; color: inherit; }
+.stat-btn:hover { border-color: var(--accent); }
