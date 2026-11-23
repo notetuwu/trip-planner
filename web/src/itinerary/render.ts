@@ -1,10 +1,10 @@
 // Renders the itinerary column and wires up its buttons.
 import { openChat } from "../trip/companion";
 import { openCosts } from "./costs";
-import { addDays } from "../core/format";
+import { addDays, fmtDate } from "../core/format";
 import { $, $$, downloadFile, esc, toast } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
-import { byTitleMap, itemLoc } from "../geo/item-loc";
+import { byTitleMap, itemLoc, stopMapsUrl } from "../geo/item-loc";
 import { downloadForPhone, shareForPhone } from "../export/offline";
 import { runGeneration } from "../generate/run";
 import { renderDayChips, selectDay } from "../map/days";
@@ -22,7 +22,6 @@ import { summaryHtml } from "./summary";
 import { type Section, openSection } from "./sections";
 import type { Itinerary } from "../../../shared/types";
 import { icon } from "../core/icons";
-import { pointUrl, searchUrl } from "../core/maps-links";
 import { checksSettled, planProblems, quickFixes } from "../generate/autofix";
 import { setMapStatus } from "../map/status";
 import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
@@ -74,7 +73,7 @@ function downloadCalendar() {
   const byTitle = byTitleMap();
   const ics = itineraryIcs(it, {
     loc: (x, d) => { const l = itemLoc(x, d, byTitle); return l && !l.approx ? l : null; },
-    mapsUrl: (x, d) => { const l = itemLoc(x, d, byTitle); return l && !l.approx ? pointUrl(l, x.place) : searchUrl(`${x.place}, ${d.city}`, l); },
+    mapsUrl: (x, d) => stopMapsUrl(x, d, itemLoc(x, d, byTitle)),
   });
   const name = (it.destination || "trip").replace(/[^\p{L}\p{N}-]+/gu, "-");
   downloadFile(new Blob([ics], { type: "text/calendar" }), `${name}-itinerary.ics`);
@@ -144,7 +143,7 @@ export function renderItinerary(error?: string) {
 
 /** A re-plan or fix in progress shown inside the itinerary (in its day, or where the fix bar is), kept there when the
  *  itinerary is redrawn meanwhile. */
-let inline: { day?: number; fix?: boolean; el: HTMLElement } | null = null;
+let inline: { day?: number; days?: number[]; fix?: boolean; el: HTMLElement } | null = null;
 export function setInlineProgress(p: typeof inline) { inline = p; placeInline(); }
 
 function placeInline() {
@@ -154,11 +153,29 @@ function placeInline() {
     if (bar && bar.firstElementChild !== inline.el) { bar.hidden = false; bar.className = "fix-bar busy"; bar.replaceChildren(inline.el); }
     return;
   }
-  const day = document.getElementById(`day-${inline.day}`);
+  // Several days (a stay re-planned, or days the chat changes): the progress in the first, and in each of the others a
+  // line saying it's being changed with it. All in the days themselves rather than up in the fix bar, out of sight.
+  const [first, ...rest] = inline.days || [inline.day!];
+  const day = document.getElementById(`day-${first}`);
   if (!day || day.contains(inline.el)) return;
-  for (const el of day.querySelectorAll<HTMLElement>(":scope > .items, :scope > .day-notes")) el.hidden = true;
+  const firstDate = state.itinerary?.days[first]?.date || "";
+  for (const i of [first, ...rest]) {
+    const d = document.getElementById(`day-${i}`);
+    if (!d) continue;
+    const group = d.closest<HTMLElement>(".stay-group");
+    if (group?.classList.contains("folded")) {
+      session.foldedStays.delete(+group.dataset.stayGroup!);
+      group.classList.remove("folded");
+    }
+    for (const el of d.querySelectorAll<HTMLElement>(":scope > .items, :scope > .day-notes")) el.hidden = true;
+    d.classList.add("replanning");
+    if (i !== first && !d.querySelector(".inline-wait")) {
+      d.insertAdjacentHTML("beforeend", `<div class="inline-progress inline-wait"><span class="wait-dot"></span>Being changed together with
+        <a href="#day-${first}" data-goto-day="${first}">${esc(firstDate ? fmtDate(firstDate) : `day ${first + 1}`)}</a>; the progress is there.</div>`);
+      d.querySelector<HTMLAnchorElement>("[data-goto-day]")!.onclick = (e) => { e.preventDefault(); day.scrollIntoView({ block: "start", behavior: "smooth" }); };
+    }
+  }
   day.append(inline.el);
-  day.classList.add("replanning");
 }
 
 let offerFor: Itinerary | null = null;

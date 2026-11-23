@@ -6,12 +6,12 @@ import { cleanAnswer, compactPrompt, companionPrompt, parseChange } from "../ser
 
 describe("trip chat", () => {
   it("puts the trip, the recent conversation and the question in the prompt", () => {
-    const history = Array.from({ length: 20 }, (_, k) => ({ role: (k % 2 ? "ai" : "me") as "me" | "ai", text: `turn ${k}` }));
+    const history = Array.from({ length: 80 }, (_, k) => ({ role: (k % 2 ? "ai" : "me") as "me" | "ai", text: `turn ${k}` }));
     const p = companionPrompt({ model: "m", question: "Where do we eat on day 2?", context: "Day 2 · Padua", history, today: "2027-09-14", days: 5 });
     expect(p).toContain("Day 2 · Padua");
-    expect(p).toContain("Traveler: turn 18");
-    expect(p).toContain("You: turn 19");
-    expect(p).not.toContain("turn 7\n");
+    expect(p).toContain("Traveler: turn 20");
+    expect(p).toContain("You: turn 79");
+    expect(p).not.toContain("turn 19\n");
     expect(p.trim().endsWith("Where do we eat on day 2?")).toBe(true);
     expect(p).toContain("Today is 2027-09-14");
     expect(p).toContain("change their 5-day itinerary");

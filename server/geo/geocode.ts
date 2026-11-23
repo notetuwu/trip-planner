@@ -7,13 +7,16 @@ import { nominatim, nominatimHit, photon, photonHit } from "./providers";
 export type GeoEntry = GeoHit | ReverseHit | null;
 export const geoCache = diskCache<GeoEntry | number>("geocode.json");
 // Cache v2 added the Photon fallback: retry everything v1 couldn't find. v3 prefers a town's own point over the middle
-// of its municipality: look up again what was answered with a boundary.
-if (geoCache.data.__v !== 3) {
+// of its municipality: look up again what was answered with a boundary. v4 prefers the town over a region that has
+// its name among others (bestHit): look up again regions that were found under another name.
+if (geoCache.data.__v !== 4) {
+  const v0 = geoCache.data.__v;
   for (const k of Object.keys(geoCache.data)) {
     const v = geoCache.data[k];
-    if (v === null || (geoCache.data.__v === 2 && typeof v === "object" && (v as GeoHit).kind === "administrative")) delete geoCache.data[k];
+    const boundary = v && typeof v === "object" && (v as GeoHit).kind === "administrative";
+    if (v === null || (v0 === 2 && boundary) || (boundary && !sameWord(String((v as GeoHit).name || ""), k.split("|")[0]))) delete geoCache.data[k];
   }
-  geoCache.data.__v = 3;
+  geoCache.data.__v = 4;
 }
 
 /**
@@ -21,13 +24,23 @@ if (geoCache.data.__v !== 3) {
  * name. A boundary's point is the middle of its area, which for a village like Hallstatt is up in the mountains,
  * kilometres from the village itself.
  */
-export function bestHit(hits: any[]) {
-  const [first] = hits;
+export function bestHit(hits: any[], q = "") {
+  let [first] = hits;
   if (!first) return undefined;
   const cat = (h: any) => h.category || h.class;
+  // A region that only carries the name among its others gives way to the town itself: "Bolzano, Italy" is first the
+  // province of South Tyrol (one of its names is Bolzano), whose middle is by Merano, 25 km from the city.
+  const wanted = sameName(q.split(",")[0]);
+  const named = (h: any) => [h.name, ...String(h.name || "").split(/\s+[-–\/]\s+/)].some((n) => sameName(String(n || "")) === wanted);
+  if (wanted && first.place_rank != null && first.place_rank < 13 && !named(first)) {
+    first = hits.find((h) => h.place_rank >= 13 && h.place_rank <= 20 && named(h)) || first;
+  }
   if (cat(first) === "boundary") return hits.find((h) => cat(h) === "place" && h.name === first.name) || first;
   return first;
 }
+
+/** A name for comparing: lower case, without accents or punctuation. */
+const sameName = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 
 /** The "near" point (rounded to ~10 km) is part of the key only when given, so older cache entries stay valid. */
 export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = false) =>
@@ -71,7 +84,7 @@ async function byNominatim(q: string, cc?: string, near?: LatLng | null, stop = 
       params.set("viewbox", `${lng - d},${lat + d},${lng + d},${lat - d}`);
       params.set("bounded", "1");
     }
-    return bestHit(await nominatim("search", params));
+    return bestHit(await nominatim("search", params), text);
   };
   // The name as given, then other ways of writing it (see nameVariants). A shorter form only counts when it finds an
   // actual place (a shop, sight, park…), not a district or town that happens to share a word of the name.

@@ -7,6 +7,7 @@ import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
 import { splitGroup, transferEnds } from "../trip/modes";
 import { activityTown } from "./stop-text";
+import { pointUrl, searchUrl } from "../core/maps-links";
 
 export { activityTown };
 
@@ -117,6 +118,33 @@ function itemTown(x: ItineraryItem, d: Day): Town | null {
   }
   const home = dayHome(d);
   return home ? { name: daySegments(d)[0] || "", loc: home } : null;
+}
+
+/**
+ * The town to search a stop by in a maps app: the one of the day's towns nearest to where it is (within ~25 km), else
+ * the stop's own town. "The Raum" alone is anywhere; "The Raum, Innsbruck" is the one. "" when its name already says
+ * it ("Lunch in Vaduz") or there is none.
+ */
+export function stopTown(x: ItineraryItem, d: Day, loc?: Loc | null): string {
+  const towns = townList(d), name = String(x.place).toLowerCase();
+  const near = loc ? towns.reduce<Town | null>((b, t) => (distKm(t.loc, loc) < 25 && (!b || distKm(t.loc, loc) < distKm(b.loc, loc)) ? t : b), null) : null;
+  const own = near || itemTown(x, d);
+  // Somewhere far from all of them (a stop on a long drive): no town, rather than the wrong one.
+  if (!own || (loc && distKm(own.loc, loc) > 25)) return "";
+  const short = own.name.split(",")[0].trim();
+  return short && !name.includes(short.toLowerCase()) ? short : "";
+}
+
+/** A stop in the maps app: searched by name and town, so it opens the place itself (its page, hours, reviews) rather
+ *  than a bare pin at its coordinates; only a place far from every town of the day, where a name search could find
+ *  another of that name, gets the pin. */
+export function stopMapsUrl(x: ItineraryItem, d: Day, loc: Loc | null) {
+  const name = x.place.replace(/\s*\([^)]*\)/g, "").trim(), exact = loc && !loc.approx ? loc : null;
+  // Not located (yet): the day's first town, as the plan names it.
+  const first = (daySegments(d)[0] || "").split(",")[0].trim();
+  const town = stopTown(x, d, exact) || (!exact && first && !name.toLowerCase().includes(first.toLowerCase()) ? first : "");
+  if (!town && exact) return pointUrl(exact, name);
+  return searchUrl(town ? `${name}, ${town}` : name, loc);
 }
 
 /** Hotel stops ("Hotel breakfast", "Check-in", "Back to the hotel"): at the hotel, as located for the stay. */

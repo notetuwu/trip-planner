@@ -59,7 +59,7 @@ const MAX_CONTEXT = 60_000, MAX_TURN = 4_000, MAX_ROUNDS = 2;
 const clip = (s: unknown, n: number) => String(s ?? "").slice(0, n);
 
 export function companionPrompt(req: CompanionRequest) {
-  const history = (Array.isArray(req.history) ? req.history : []).slice(-12)
+  const history = (Array.isArray(req.history) ? req.history : []).slice(-60)
     .map((t) => `${t.role === "me" ? "Traveler" : "You"}: ${clip(t.text, MAX_TURN)}`).join("\n\n");
   const days = Number(req.days) || 0;
   const changes = days ? `

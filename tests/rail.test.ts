@@ -42,6 +42,17 @@ describe("choosing among place search answers", () => {
     expect(bestHit(hits)?.type).toBe("city");
     expect(bestHit([{ category: "boundary", type: "administrative", name: "Bezirk X" }])?.type).toBe("administrative");
   });
+  it("takes the town over a province that only has its name among others (Bolzano, not South Tyrol by Merano)", () => {
+    const hits = [
+      { category: "boundary", type: "administrative", place_rank: 12, name: "South Tyrol" },
+      { category: "boundary", type: "administrative", place_rank: 16, name: "Bolzano" },
+      { category: "place", type: "village", place_rank: 19, name: "Bolzano Bellunese" },
+    ];
+    expect(bestHit(hits, "Bolzano, Italy")?.name).toBe("Bolzano");
+    expect(bestHit([{ ...hits[1], name: "Bolzano - Bozen" }, hits[2]], "Bozen")?.name).toBe("Bolzano - Bozen");
+    // A region asked for by its own name stays the region.
+    expect(bestHit([{ category: "boundary", place_rank: 8, name: "Tyrol" }, { category: "place", place_rank: 19, name: "Tirolo" }], "Tyrol")?.place_rank).toBe(8);
+  });
 });
 
 import { countryCode } from "../server/geo/geocode";

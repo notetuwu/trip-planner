@@ -174,3 +174,7 @@ label.check.off { opacity: .5; }
 /* "must-see" next to a stop's name. */
 .must-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); font-weight: 600; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
 .must-tag svg.i { width: .95em; height: .95em; fill: currentColor; }
+/* The other days of a change that spans several: a line pointing to the first, where the progress is. */
+.inline-progress.inline-wait { padding: 10px 14px; font-size: 13.5px; color: var(--muted); }
+.inline-wait a { color: var(--accent); }
+.inline-wait .wait-dot { display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--accent); animation: pulse 1.2s ease-in-out infinite; }

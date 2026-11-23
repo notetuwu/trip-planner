@@ -52,9 +52,12 @@ const capture = (): Snapshot => structuredClone({ itinerary: state.itinerary, st
 
 const panel = () => $<HTMLElement>("#chatPanel");
 const box = () => $<HTMLTextAreaElement>("#cpQ");
-/** Compacting: once this many messages aren't covered by the summary, the older ones are summarized, keeping the
- *  most recent few as they are. */
-const COMPACT_AT = 16, KEEP_RECENT = 6, HISTORY = 12;
+/** Compacting: once the conversation since the summary is this long (tokens, or failing that this many messages), the
+ *  older messages are summarized, keeping the most recent few as they are. Until then all of it goes to the model:
+ *  a fixed count of 16 messages summarized short chats of a few hundred tokens, and only the last 12 were sent. */
+const COMPACT_TOKENS = 12000, COMPACT_MESSAGES = 60, KEEP_RECENT = 6;
+/** The next redraw scrolls to the end whatever the position (they just sent something, or opened the chat). */
+let jumpToEnd = true;
 const OPEN_KEY = "trip-planner-chat-open";
 
 /** Everything the chat knows about the trip, as plain text. Long itineraries lose the descriptions first. */
@@ -183,6 +186,13 @@ function render(pending?: Pending) {
   const log = $("#cpLog");
   // Keep an opened "Thought for…" open across redraws.
   const opened = new Set([...log.querySelectorAll<HTMLDetailsElement>("details.cp-think[data-k]")].filter((d) => d.open).map((d) => d.dataset.k));
+  // Follow the newest text only when they're at the bottom already: scrolled up to read, they stay where they are
+  // while the answer streams in (each streamed bit redraws the log). Same for the live thinking's own scroll box.
+  const atEnd = (el: HTMLElement | null) => !el || el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  const prevLive = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
+  const follow = jumpToEnd || atEnd(log), top = log.scrollTop;
+  const liveFollow = atEnd(prevLive), liveTop = prevLive?.scrollTop || 0;
+  jumpToEnd = false;
   const turns = chat(), last = turns.length - 1;
   // Buttons only on the very last message: once they write again, the conversation moves on from there.
   // Where the summary ends: a marker you can open to read it.
@@ -210,10 +220,10 @@ function render(pending?: Pending) {
   log.querySelectorAll<HTMLButtonElement>("[data-apply]").forEach((b) => { b.onclick = () => apply(+b.dataset.apply!); });
   log.querySelectorAll<HTMLButtonElement>("[data-skip]").forEach((b) => { b.onclick = () => setStatus(+b.dataset.skip!, "skipped"); });
   log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(); });
-  log.scrollTop = log.scrollHeight;
-  // The live thinking scrolls to its newest line.
+  // The live thinking scrolls to its newest line (unless they scrolled up in it); then the log.
   const live = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
-  if (live) live.scrollTop = live.scrollHeight;
+  if (live) live.scrollTop = liveFollow ? live.scrollHeight : liveTop;
+  log.scrollTop = follow ? log.scrollHeight : top;
   idle();
 }
 
@@ -341,7 +351,8 @@ const tokensIn = (text: string) => Math.round(text.length / 4);
 function contextUse() {
   const from = state.chatSummarized || 0, turns = chat().slice(from);
   const tokens = turns.reduce((n, t) => n + tokensIn(turnText(t).text), 0) + tokensIn(state.chatSummary || "");
-  return { messages: turns.length, tokens, freed: Math.max(0, tokens - Math.min(tokens, 350)) };
+  const fill = Math.max(tokens / COMPACT_TOKENS, turns.length / COMPACT_MESSAGES);
+  return { messages: turns.length, tokens, fill, freed: Math.max(0, tokens - Math.min(tokens, 350)) };
 }
 
 /** The ring by the chat box (like Claude Code's): it fills up until the chat summarizes itself; clicking it does so now. */
@@ -398,10 +409,10 @@ function idle() {
   const ring = $<HTMLButtonElement>("#cpCompact"), use = contextUse();
   ring.hidden = busy || use.messages < 2;
   if (!ring.hidden) {
-    const fill = Math.min(1, use.messages / COMPACT_AT);
+    const fill = Math.min(1, use.fill);
     ring.innerHTML = ringHtml(fill);
     ring.classList.toggle("near", fill >= 0.75);
-    ring.title = `${use.messages} of ${COMPACT_AT} messages before the chat summarizes itself (about ${use.tokens.toLocaleString()} tokens of conversation so far).`
+    ring.title = `About ${use.tokens.toLocaleString()} of ${COMPACT_TOKENS.toLocaleString()} tokens of conversation (${use.messages} message${use.messages === 1 ? "" : "s"}) before the chat summarizes itself.`
       + `\nClick to summarize now: frees about ${use.freed.toLocaleString()} tokens.`;
     ring.setAttribute("aria-label", `Summarize the conversation now (${Math.round(fill * 100)}% until it happens by itself)`);
   }
@@ -440,11 +451,12 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
   if (!again) { pictures = []; renderPictures(); }
   notice = "";
   // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
-  if (chat().length - (state.chatSummarized || 0) > COMPACT_AT) await compact(chat().length - KEEP_RECENT);
+  if (contextUse().fill >= 1) await compact(chat().length - KEEP_RECENT);
   // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
-  const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - HISTORY)).map(turnText);
+  const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - COMPACT_MESSAGES)).map(turnText);
   state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}) }];
   save();
+  jumpToEnd = true;
   if (!again) { box().value = ""; fit(); }
   running = new AbortController();
   const pending: Pending = { text: "", thinking: "", since: 0, until: 0, answering: false };
@@ -474,6 +486,7 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
 function setOpen(open: boolean) {
   markHeader();
   panel().hidden = !open;
+  if (open) { const log = $("#cpLog"); log.scrollTop = log.scrollHeight; }
   document.body.classList.toggle("chat-open", open);
   $("#chatBtn").setAttribute("aria-pressed", String(open));
   localStorage.setItem(OPEN_KEY, open ? "1" : "");

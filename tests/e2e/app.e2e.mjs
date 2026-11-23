@@ -332,6 +332,32 @@ test("re-planning a day shows its progress in that day, keeps the rest, and says
   assert.equal(await page.eval(`window.__e2e.requests[0].redoDay.day`), 1);
 });
 
+test("a stop's name opens the place in the maps app by name and town, not as a bare pin", async () => {
+  await trip(PADUA_MILANO);
+  await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [
+    day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni", { lat: 45.4115, lng: 11.8796 })]) ] } })`);
+  const href = await page.eval(`document.querySelector("#day-0 .item a[href*='maps']")?.href || ""`);
+  assert.match(decodeURIComponent(href.replace(/\+/g, " ")), /Cappella degli Scrovegni, Padua/);
+  assert.doesNotMatch(href, /45\.41/, "no coordinates");
+});
+
+test("re-planning a stay shows its progress in the stay (unfolded), not up in the fix bar", async () => {
+  await trip(PADUA_MILANO);
+  await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [
+    day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")]), day("2027-09-15", "Padua", [stop("10:00", "Basilica")]) ] } })`);
+  await page.eval(`document.querySelector('[data-fold-stay="0"]').click()`);
+  await page.eval(`window.__e2e.delay = 1500; window.__e2e.answer = () => ({ summary: "New", totalEstimatedCost: 0, days: [
+    day("2027-09-14", "Padua", [stop("15:00", "Palazzo della Ragione")]), day("2027-09-15", "Padua", [stop("09:00", "Orto Botanico")])] })`);
+  await page.eval(`window.prompt = () => ""; document.querySelector('[data-replan-stay="0"]').click()`);
+  await page.waitFor(`!!document.querySelector("#day-0 .inline-progress")`);
+  assert.equal(await page.eval(`document.querySelector('[data-stay-group="0"]').classList.contains("folded")`), false, "the stay unfolds");
+  assert.equal(await page.eval(`document.querySelector("#day-1 .items").hidden`), true, "its other day is greyed out");
+  assert.match(await page.eval(`document.querySelector("#day-1 .inline-wait")?.textContent || ""`), /Being changed together with/, "and says so");
+  assert.equal(await page.eval(`document.querySelector("#fixBar").hidden`), true, "nothing up in the fix bar");
+  await page.waitFor(`[...document.querySelectorAll("#day-1 .item .name")].map((e) => e.textContent.trim()).join() === "Orto Botanico"`);
+  assert.equal(await page.eval(`window.__e2e.requests[0].edit.days.join()`), "0,1");
+});
+
 test("a travel day draws the drive once: no transfer pins, no long day legs", async () => {
   await trip({
     stays: [{ city: "Lucerne", start: "2027-09-18", nights: 2, hotel: "" }, { city: "Bregenz", start: "2027-09-20", nights: 3, hotel: "", travel: "car" }],
@@ -575,7 +601,8 @@ test("the chat can set a place on the way (taking it off the stay's day trips); 
 });
 
 test("a long chat is compacted: the older messages are summarized and the summary is sent instead", async () => {
-  const chat = Array.from({ length: 18 }, (_, k) => ({ role: k % 2 ? "ai" : "me", text: `message ${k}` }));
+  // Compacting goes by size: 18 messages of ~900 tokens are over the 12,000 (18 short ones aren't).
+  const chat = Array.from({ length: 18 }, (_, k) => ({ role: k % 2 ? "ai" : "me", text: `message ${k} ${"lorem ipsum ".repeat(300)}` }));
   await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false, chat });
   await page.eval(`window.__e2e.companion = { answer: "Noted." }; document.querySelector("#chatBtn").click();
     (() => { const q = document.querySelector("#cpQ"); q.value = "one more"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
@@ -585,7 +612,7 @@ test("a long chat is compacted: the older messages are summarized and the summar
   assert.equal(await page.eval(`planner.state().chatSummarized`), 12);
   const sent = await page.eval(`window.__e2e.companionAsked`);
   assert.equal(sent.summary, "- They want Pedrocchi on the way.");
-  assert.equal(sent.history[0].text, "message 12", "only what came after the summary");
+  assert.match(sent.history[0].text, /^message 12 /, "only what came after the summary");
   assert.ok(await page.eval(`!!document.querySelector("#cpLog .cp-summary")`), "a marker where the summary ends");
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });

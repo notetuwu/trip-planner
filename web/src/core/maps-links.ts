@@ -33,8 +33,10 @@ export function pointUrl(at: At, label = "", app = mapsApp()) {
  *  on the map): that's used with Google; with another app, the place's spot, else a search for its name and address. */
 export function placeUrl(p: { title: string; url?: string; address?: string; lat?: number; lng?: number }, app = mapsApp()) {
   if (p.url && (app === "google" || !/google\.|goo\.gl/.test(p.url))) return p.url;
-  if (typeof p.lat === "number" && typeof p.lng === "number") return pointUrl({ lat: p.lat, lng: p.lng }, p.title, app);
-  return searchUrl([p.title, p.address].filter(Boolean).join(", "), null, app);
+  const at = typeof p.lat === "number" && typeof p.lng === "number" ? { lat: p.lat, lng: p.lng } : null;
+  // Its name and address find the place itself; the bare point only when there's no address to go by.
+  if (at && !p.address) return pointUrl(at, p.title, app);
+  return searchUrl([p.title, p.address].filter(Boolean).join(", "), at, app);
 }
 
 /** Directions from one place to another ("lat,lng" or a name with its town). */

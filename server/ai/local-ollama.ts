@@ -37,7 +37,7 @@ export async function planWithOllama({ base, model, prompt, trip, abort, onEvent
     const thinkLoop = loopGuard(), jsonLoop = jsonLoopGuard();
     onEvent({
       type: "prompt", label,
-      info: `Sent to Ollama /api/chat · model: ${model} · context ${numCtx.toLocaleString()} tokens · temperature ${t.temperature} · thinking ${think ? "on" : "off"} · `
+      info: `Sent to Ollama /api/chat · model: ${model} · context window ${numCtx.toLocaleString()} tokens (the prompt about ${(Math.round(Math.ceil(text.length / 3) / 100) * 100).toLocaleString()}, the rest room for thinking and the plan) · temperature ${t.temperature} · thinking ${think ? "on" : "off"} · `
         + "output forced to the JSON schema at the end of the prompt (Ollama's format option). Ollama adds the model's own system prompt, if it has one.",
       text,
     });

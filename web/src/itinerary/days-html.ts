@@ -7,8 +7,8 @@ import type { ByTitle } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
 import { bookLink } from "./book-ahead";
 import { directionsUrl, mealSearchUrl } from "./directions";
-import { genericMeal, mapsName, placeUrl, pointUrl, searchUrl } from "../core/maps-links";
-import { itemLoc } from "../geo/item-loc";
+import { genericMeal, mapsName, placeUrl } from "../core/maps-links";
+import { itemLoc, stopMapsUrl } from "../geo/item-loc";
 import { distKm, placeLoc, stayLoc } from "../geo/locate";
 import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
@@ -21,9 +21,7 @@ function mapsLink(x: ItineraryItem, d: Day, di: number, xi: number, byTitle: ByT
   if (listed?.url) return placeUrl({ ...listed, ...(placeLoc(listed) || {}) });
   const meal = mealSearchUrl(di, xi);
   if (meal) return meal;
-  const loc = itemLoc(x, d, byTitle);
-  if (loc && !loc.approx) return pointUrl(loc, x.place);
-  return searchUrl(`${x.place.replace(/\s*\([^)]*\)/g, "")}, ${d.city.split(/\s*[/→]\s*/)[0]}`, loc);
+  return stopMapsUrl(x, d, itemLoc(x, d, byTitle));
 }
 
 /** Their must-sees, by name without accents, case and punctuation. */

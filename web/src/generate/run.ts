@@ -153,7 +153,7 @@ let running = false;
 
 /** Generates, revises, re-plans a day or fixes; true when the new plan is shown (false: cancelled, failed or busy). */
 export async function runGeneration(change: Change = {}): Promise<boolean> {
-  if (running) return false;
+  if (running) { toast("Still busy with the last change; try again when it's done."); return false; }
   const btn = $<HTMLButtonElement>("#generate");
   const trip = tripRequest(change);
   // Fixes and asked-for changes touch a few stops: no research round (the real places near each stay are in the prompt).
@@ -167,7 +167,8 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
   const box = redo || fix || edit ? document.createElement("div") : undefined;
   if (box) {
     box.className = "inline-progress";
-    setInlineProgress(redo ? { day: redo.day, el: box } : editDays.length === 1 ? { day: editDays[0], el: box } : { fix: true, el: box });
+    setInlineProgress(redo ? { day: redo.day, el: box } : edit ? { days: editDays, el: box } : { fix: true, el: box });
+    box.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   const view = showProgress({ into: box,
     who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),

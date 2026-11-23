@@ -17,7 +17,7 @@ import { chainDates, renderStays } from "./stays";
 import { renderTripTitle } from "./title";
 import { mdLite } from "../itinerary/panels";
 import { hideRouteMap, refreshRouteMap, showRouteMap } from "./route-map";
-import { pointUrl, searchUrl } from "../core/maps-links";
+import { searchUrl } from "../core/maps-links";
 import type { Place, TravelMode } from "../../../shared/types";
 
 interface PlannedStay { city: string; country: string; nights: number; travel: TravelMode; why: string; dayTrips?: { place: string; why: string }[] }
@@ -59,11 +59,12 @@ function followMapsApp(e: MouseEvent) {
   const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a.rp-link");
   if (!a) return;
   const ll = a.dataset.mapsLl?.split(",").map(Number);
-  a.href = ll?.length === 2 ? pointUrl({ lat: ll[0], lng: ll[1] }, a.textContent || "") : searchUrl(a.dataset.mapsQ || a.textContent || "");
+  // By name (the place itself, not a bare pin), near its spot where known.
+  a.href = searchUrl(a.dataset.mapsQ || a.textContent || "", ll?.length === 2 ? { lat: ll[0], lng: ll[1] } : null);
 }
 
 const viaLines = (l: PlannedLeg) => (l.via || [])
-  .map((v) => `<div class="trips">${icon("route")} On the way: <a class="rp-link" href="${esc(pointUrl(v, v.place))}" data-maps-ll="${v.lat},${v.lng}" target="_blank" rel="noopener" title="Open in your maps app">${esc(v.place)}</a>${v.why ? ` · ${esc(v.why)}` : ""}</div>`).join("");
+  .map((v) => `<div class="trips">${icon("route")} On the way: <a class="rp-link" href="${esc(searchUrl(v.place, v))}" data-maps-ll="${v.lat},${v.lng}" target="_blank" rel="noopener" title="Open in your maps app">${esc(v.place)}</a>${v.why ? ` · ${esc(v.why)}` : ""}</div>`).join("");
 
 const legLine = (l: PlannedLeg | undefined, travel: string) => (l ? legText(l, travel) + viaLines(l) : "");
 
@@ -163,7 +164,7 @@ function renderChat(pending?: Pending) {
   const log = $("#rpChat");
   // An opened "Thought for…" stays open across redraws; they keep their place unless they were at the bottom.
   const opened = new Set([...log.querySelectorAll<HTMLDetailsElement>("details.cp-think[data-k]")].filter((d) => d.open).map((d) => d.dataset.k));
-  const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40, top = log.scrollTop;
   const msgs = chat.map((t, k) => `
     ${t.fresh && k > 0 ? `<div class="rc-new">New route</div>` : ""}
     <div class="rc-msg ai">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, opened.has(String(k)), String(k)) : ""}${t.note ? mdLite(t.note) : ""}<div class="rc-card">${icon("route")}<span><b>${esc(t.title || `Route ${k + 1}`)}</b><span class="rc-route">${esc(t.route)}</span></span></div></div>
@@ -173,7 +174,7 @@ function renderChat(pending?: Pending) {
   log.innerHTML = msgs + (pending ? `<div class="rc-msg ai pending">${pending.thinking ? thinkingHtml(pending.thinking, answering ? `Thought for ${secs}s` : "Thinking…", !answering) : ""}${pending.text
     ? mdLite(pending.text) : !pending.thinking ? `<span class="typing"><i></i><i></i><i></i></span>` : ""}</div>` : "")
     || `<div class="cp-empty"><div class="cp-empty-icon">${icon("route")}</div><p><b>Shape the route here</b></p><p class="hint">Plan a route on the left, then tell it what to change ("the other way round", "Hallstatt as a day trip", "one more night in Lucerne"). It changes that route and keeps the rest; "New route" starts from scratch.</p></div>`;
-  if (atEnd || !pending) log.scrollTop = log.scrollHeight;
+  log.scrollTop = atEnd || !pending ? log.scrollHeight : top;
   // The live thinking follows its newest line.
   const live = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
   if (live) live.scrollTop = live.scrollHeight;
