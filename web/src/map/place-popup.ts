@@ -9,6 +9,7 @@ import { openAddPopup } from "./add";
 import { drawMap } from "./draw";
 import { map } from "./map";
 import { ext, icon } from "../core/icons";
+import { mapsName, placeUrl } from "../core/maps-links";
 
 export function placePopupHtml(p: Place) {
   const mark = state.marks[p.title];
@@ -18,7 +19,7 @@ export function placePopupHtml(p: Place) {
       <button data-mark="${esc(p.title)}" data-v="skip" class="${mark === "skip" ? "on" : ""}">Skip</button>
       ${mark && !p.custom ? `<button data-mark="${esc(p.title)}" data-v="">Reset</button>` : ""}
       ${p.custom ? `<button data-rename-custom="${esc(p.title)}">Rename</button><button data-remove-custom="${esc(p.title)}">Remove</button>` : ""}
-      ${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener" style="margin-left:auto">Maps${ext()}</a>` : ""}
+      <a href="${esc(placeUrl({ ...p, ...(placeLoc(p) || {}) }))}" target="_blank" rel="noopener" style="margin-left:auto" title="Open in ${esc(mapsName())}">Maps${ext()}</a>
     </div>
     ${state.itinerary ? `<div class="pop-actions"><button data-add-place="${esc(p.title)}">＋ Add to a day</button></div>` : ""}`;
 }

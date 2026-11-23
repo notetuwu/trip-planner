@@ -8,12 +8,13 @@ import { type ByTitle, byTitleMap, daySegments, stopWebsite } from "../geo/item-
 import { stayLoc, tripCountries } from "../geo/locate";
 import { type TicketLink, bookingSite, pickWebsite, ticketLinks, ticketQuery } from "./booking-sites";
 import { ext, icon } from "../core/icons";
+import { searchUrl } from "../core/maps-links";
 import { modeName } from "../trip/modes";
 import { bookableMode, hotelUrl, transportUrl } from "./travel-links";
 
 const site = () => bookingSite(tripCountries().map(([cc]) => cc));
 const towns = (d: Day) => { const t = daySegments(d); return t.length ? t : [d.city]; };
-const mapsUrl = (x: ItineraryItem, d: Day) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${towns(d)[0]}`)}`;
+const mapsUrl = (x: ItineraryItem, d: Day) => searchUrl(`${x.place}, ${towns(d)[0]}`);
 const isMeal = (x: ItineraryItem) => x.kind === "meal" || /^(breakfast|brunch|lunch|dinner)\b/i.test(x.place);
 
 const anchors = (links: TicketLink[], cls: string, prefix: string) => links
@@ -60,6 +61,15 @@ function tripRows() {
       link: { url: transportUrl(prev.city, s.city), label: "Compare on Rome2Rio", title: `Ways to get from ${prev.city} to ${s.city}, with links to book` },
     }));
   return [...hotels, ...rides].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Things to book: how many there are and how many are still to do. */
+export function bookAheadCount(it: Itinerary) {
+  const booked = state.booked || {};
+  const rows = it.days.flatMap((d) => d.items.filter((x) => x.booking === "essential" || x.booking === "recommended").map((x) => bookingKey(d, x)));
+  const trip = tripRows().map((r) => r.key);
+  const all = [...rows, ...trip];
+  return { total: all.length, left: all.filter((k) => !booked[k]).length };
 }
 
 export function bookAheadHtml(it: Itinerary) {

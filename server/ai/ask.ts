@@ -10,11 +10,36 @@ import { lines } from "../util/http";
 import { findClaude } from "./claude-bin";
 import { parseCloudId } from "./cloud-models";
 import { parseModelId } from "./local-models";
-import { keepAlive, tune } from "../settings";
+import { keepAlive, readSettings, tune } from "../settings";
 import { loopGuard } from "./loop-guard";
 import { BASE } from "./responses";
 
 const TIMEOUT = 6 * 60_000;
+
+/** The longest context each Ollama model was trained for (from /api/show), asked once per model. */
+const modelMax = new Map<string, number>();
+async function ollamaMaxCtx(base: string, model: string) {
+  const key = `${base}|${model}`;
+  if (!modelMax.has(key)) {
+    try {
+      const info: any = await (await fetch(`${base}/api/show`, { method: "POST", body: JSON.stringify({ model }), signal: AbortSignal.timeout(5000) })).json();
+      modelMax.set(key, Number(Object.entries(info.model_info || {}).find(([k]) => k.endsWith(".context_length"))?.[1]) || 0);
+    } catch { modelMax.set(key, 0); }
+  }
+  return modelMax.get(key)!;
+}
+
+/**
+ * The context window for a one-off question: room for the prompt (about 3 characters a token), the pictures, the
+ * thinking and the answer. A fixed 16k cut the trip chat off: with a long itinerary in the prompt Ollama dropped the
+ * start of it and stopped the answer after a few hundred tokens once the window was full.
+ */
+async function askCtx(base: string, model: string, prompt: string, images: number, thinks: boolean) {
+  const fixed = readSettings().numCtx, max = await ollamaMaxCtx(base, model);
+  const cap = Math.min(fixed || Number(process.env.OLLAMA_NUM_CTX) || 131072, max || 131072);
+  const needed = Math.ceil(prompt.length / 3) + images * 1600 + (thinks ? 12000 : 4000);
+  return Math.max(Math.min(16384, cap), Math.min(cap, Math.ceil(needed / 4096) * 4096));
+}
 export type OnProgress = (tokens: number) => void;
 export interface AskOptions {
   signal?: AbortSignal;
@@ -66,12 +91,13 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     const { kind, base, model } = parseModelId(modelId);
     if (kind === "ollama") {
       const images = opts.images?.length ? { images: opts.images.map((i) => i.data) } : {};
+      const numCtx = await askCtx(base, model, prompt, opts.images?.length || 0, !!opts.text && tune().thinking !== "off");
       const chat = (noThink: boolean) => fetch(`${base}/api/chat`, {
         method: "POST", signal,
         body: JSON.stringify({
           model, stream: true, ...(opts.text ? {} : { format: "json" }), ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt, ...images }],
           // Asked again after a loop: a little more randomness and a penalty on repeating, to get it out of the rut.
-          options: { num_ctx: 16384, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { repeat_penalty: 1.15 } : {}) },
+          options: { num_ctx: numCtx, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { repeat_penalty: 1.15 } : {}) },
           keep_alive: keepAlive(tune().keepAlive),
         }),
       });

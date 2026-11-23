@@ -5,6 +5,14 @@ import { esc } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { state } from "../core/state";
 import { renderItinerary } from "../itinerary/render";
+import { bookAheadHtml } from "../itinerary/book-ahead";
+import { packingHtml } from "../itinerary/packing";
+import { eventsHtml } from "../itinerary/summary";
+import type { Itinerary } from "../../../shared/types";
+
+/** Booking, holidays and packing as fold-outs (the page shows them in windows; on paper and in the phone file they
+ *  come after the days). */
+export const sectionsHtml = (it: Itinerary) => bookAheadHtml(it) + eventsHtml(it) + packingHtml(it);
 
 let theme: string | undefined, prepared = false;
 
@@ -51,10 +59,8 @@ function layout(out: HTMLElement) {
   // Booking, holidays and packing after the days, opened; then tips and what didn't fit.
   const after = document.createElement("section");
   after.className = "print-after";
-  for (const sel of [".book-ahead", ".events", ".packing"]) {
-    const d = out.querySelector<HTMLDetailsElement>(`details${sel}`);
-    if (d) { d.open = true; after.append(d); }
-  }
+  after.innerHTML = sectionsHtml(state.itinerary!);
+  for (const d of after.querySelectorAll("details")) d.open = true;
   const extras = out.querySelector(".extras");
   if (extras) after.append(extras);
   if (after.childElementCount) out.append(after);

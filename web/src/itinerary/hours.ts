@@ -46,6 +46,12 @@ export function hoursProblem(di: number, xi: number) {
   const c = checks().get(`${di}-${xi}`), r = c && results.get(keyOf(c));
   return r && !["ok", "unknown", "closes-soon"].includes(r.status) ? r.text : null;
 }
+/** The check's answer for a stop, if it has one. */
+export function hoursResult(di: number, xi: number) {
+  const c = checks().get(`${di}-${xi}`);
+  return c ? results.get(keyOf(c)) : undefined;
+}
+
 /** Shows warnings for the rendered itinerary, asking the server about anything not checked yet. */
 export async function checkOpeningHours() {
   const byItem = checks();

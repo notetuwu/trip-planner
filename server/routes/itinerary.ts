@@ -18,6 +18,7 @@ import { roadRoutes } from "../trip/drives";
 import { trainConnections } from "../trip/trains";
 import { nearbyPlaces } from "../trip/nearby";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
+import { addDays } from "../config";
 
 function validateTrip(t: Trip | null) {
   if (!t || !Array.isArray(t.stays) || !t.stays.length) return "Add at least one stay.";
@@ -61,6 +62,39 @@ export function mergeListPlaces(lists: Place[][], stays: { lat?: number; lng?: n
     || at.some((s) => km(s, { lat: p.lat!, lng: p.lng! }) <= FAR_KM));
 }
 
+/** The days a re-plan, fix or change is about (dates), and the stays they touch (indexes); null for a whole plan. */
+export function partialScope(trip: Trip): { dates: Set<string>; stays: Set<number> } | null {
+  const it = trip.redoDay?.itinerary || trip.edit?.itinerary || trip.fix?.itinerary;
+  if (!it) return null;
+  const idx = trip.redoDay ? [trip.redoDay.day] : trip.edit ? trip.edit.days : trip.fix!.problems.map((p) => p.day);
+  const dates = new Set(idx.map((i) => it.days[i]?.date).filter((d): d is string => !!d));
+  const stays = new Set<number>();
+  trip.stays.forEach((s, i) => {
+    const end = addDays(s.start, Number(s.nights) || 0);
+    if ([...dates].some((d) => d >= s.start && d <= end)) stays.add(i);
+  });
+  return { dates, stays };
+}
+
+/**
+ * For a re-plan of some days: only what those days need. The prompt for re-planning the drive from Isny to Lucerne
+ * shouldn't carry Milan's restaurants, Venice's sights and every must-see of the trip (which the model then tries to
+ * fit into that one day). Places and must-sees go when they're far from the stays those days touch.
+ */
+export function scopeTrip(trip: Trip, places: Place[], scope: { dates: Set<string>; stays: Set<number> }) {
+  const at = trip.stays.filter((_, i) => scope.stays.has(i)).filter((s): s is typeof s & { lat: number; lng: number } => typeof s.lat === "number" && typeof s.lng === "number");
+  const near = (p: { lat?: number; lng?: number }) => typeof p.lat === "number" && typeof p.lng === "number" && at.some((s) => km(s, { lat: p.lat!, lng: p.lng! }) <= 80);
+  const kept = at.length ? places.filter((p) => near(p) || (typeof p.lat !== "number" && !trip.mustSee?.includes(p.title))) : places;
+  const keptTitles = new Set(kept.map((p) => p.title));
+  trip.mustSee = (trip.mustSee || []).filter((t) => keptTitles.has(t));
+  const cities = new Set(trip.stays.filter((_, i) => scope.stays.has(i)).map((s) => s.city.trim().toLowerCase()));
+  if (trip.nearby) trip.nearby = trip.nearby.filter((n) => cities.has(n.city.trim().toLowerCase()));
+  if (trip.holidays) trip.holidays = trip.holidays.filter((h) => scope.dates.has(h.date));
+  if (trip.bookings) trip.bookings = trip.bookings.filter((b) => [...scope.dates].some((d) => d >= b.date && d <= (b.until || b.date)));
+  if (trip.trains) trip.trains = trip.trains.filter((line) => [...cities].some((c) => line.toLowerCase().includes(c.split(",")[0])));
+  return kept;
+}
+
 /** The ticked lists' places plus the ones picked on the map. */
 async function tripPlaces(trip: Trip): Promise<Place[]> {
   const extra = Array.isArray(trip.extraPlaces) ? trip.extraPlaces.filter((p) => p?.title) : [];
@@ -88,7 +122,8 @@ export async function handleItinerary(req: Req, res: Res) {
   if (!trip) return sendJson(res, 400, { error: "Invalid JSON" });
   const problem = validateTrip(trip);
   if (problem) return sendJson(res, 400, { error: problem });
-  const places = await tripPlaces(trip);
+  let places = await tripPlaces(trip);
+  const scope = partialScope(trip);
   console.log(`${trip.redoDay ? `Re-planning day ${trip.redoDay.day + 1} of` : trip.edit ? `Changing ${trip.edit.days.length} day(s) of` : trip.fix ? `Fixing ${trip.fix.problems.length} problem(s) in` : trip.revise ? "Revising" : "Generating"} itinerary: ${trip.stays.map((s) => `${s.city} (${s.nights}n)`).join(" -> ")}`);
 
   res.writeHead(200, { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" });
@@ -108,7 +143,9 @@ export async function handleItinerary(req: Req, res: Res) {
     trip.daylight = await stayDaylight(trip.stays).catch(() => []);
     trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));
     trip.trains = await trainConnections(trip, places, (text) => send({ type: "status", text })).catch(() => []);
-    trip.nearby = await nearbyPlaces(trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
+    // A re-plan of some days only needs the places around their stays.
+    trip.nearby = await nearbyPlaces(scope ? trip.stays.filter((_, i) => scope.stays.has(i)) : trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
+    if (scope) places = scopeTrip(trip, places, scope);
     // The page uses these to put stops on the map at their exact spot.
     send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
     const run = runnerFor(String(trip.model || ""));

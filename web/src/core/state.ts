@@ -49,6 +49,11 @@ export interface AppState {
   currency: string;
   travelers: number;
   pace: string;
+  /** How much walking and climbing the plan can ask of them. */
+  fitness?: "easy" | "average" | "fit";
+  /** When a normal day starts ("10:00"; "" as the pace suits), and what they do for breakfast. */
+  dayStart?: string;
+  breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
   model: string;
   interests: string;
   /** What they want to see ("the must-sees plus hidden gems"); the route planner fills it from its description. */
@@ -77,6 +82,8 @@ export interface AppState {
   research?: boolean;
   /** After a plan, send what the map and opening-hours checks find back to the model to fix (default on). */
   autoFix?: boolean;
+  /** After a plan, look up opening hours on the web for stops OpenStreetMap has none for, and check each stay's days. */
+  hoursOnline?: boolean;
   /** Things to book that the travelers ticked off, by "date|place". */
   booked?: Record<string, boolean>;
   /** Packing list: ticked items, and items the travelers added themselves. */
@@ -89,6 +96,11 @@ export interface AppState {
   chatSummarized?: number;
   /** The model that answers in the trip chat ("" or unset: the planning model). */
   chatModel?: string;
+  /** Their car, for the fuel estimate: fuel type, consumption (litres or kWh per 100 km), a price per kWh for an
+   *  electric car, and fuel prices they set themselves per country (EUR a litre; otherwise the weekly averages). */
+  car?: { fuel: "" | "petrol" | "diesel" | "electric"; per100: number; kwhPrice?: number; prices?: Record<string, number> };
+  /** The model that plans routes in "Plan a route" ("" or unset: the planning model). */
+  routeModel?: string;
   /** Things already booked (Bookings in the sidebar). */
   bookings?: Booking[];
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
@@ -102,7 +114,7 @@ const STORE_KEY = "trip-planner-v2";
 /** An empty trip, with what Settings → General says a new trip starts with. */
 export const blankTrip = (): AppState => ({
   stays: [{ city: "", start: "", nights: 3, hotel: "" }],
-  dailyBudget: prefs.app.newTrip.dailyBudget, budgetPer: "person", currency: prefs.app.newTrip.currency, travelers: prefs.app.newTrip.travelers, pace: prefs.app.newTrip.pace,
+  dailyBudget: prefs.app.newTrip.dailyBudget, budgetPer: "person", currency: prefs.app.newTrip.currency, travelers: prefs.app.newTrip.travelers, pace: prefs.app.newTrip.pace, fitness: "average", dayStart: "", breakfast: "",
   model: "default", interests: "", wishes: "", notes: "", list: "", listChosen: false, marks: {}, who: {}, customPlaces: [], itinerary: null, meta: null,
 });
 

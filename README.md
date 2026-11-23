@@ -13,7 +13,7 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 - **Real places, not invented ones.** Sights and restaurants around each stay come from OpenStreetMap and go into the plan with their exact location.
 - **Research online.** The model looks up opening hours, prices, events and connections while it plans.
 - **Checked before you see it.** Stops in the wrong town or closed at the planned time (holidays included) go back to the model to be fixed.
-- **Plan a route.** Describe the trip ("a road trip through the Alps, lakes and old towns") and get a route of stays, with day trips and stops on the way.
+- **Plan a route.** Describe the trip ("a road trip through the Alps, lakes and old towns") and get a route of stays, with day trips and stops on the way, on a map; change it in its chat.
 
 **Your places**
 - **Google Maps lists.** Import lists by share link or Takeout CSV. Tick the lists to show on the map, and switch on **Suggest** for the ones the planner may pick from.
@@ -21,13 +21,15 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 
 **The trip chat**
 - Ask anything about the trip: what's on a day, where to eat, what to book.
-- Ask for a change ("make day 4 more relaxed", "Hohenwerfen on the way, not as a day trip") and **Apply** it: only the days it touches are changed, and **Undo** puts everything back.
+- Ask for a change ("make day 4 more relaxed", "Hohenwerfen on the way, not as a day trip") and **Apply** it: only the days it touches are changed, and **Undo** puts everything back. Small edits (add a stop, move a time) happen straight away.
+- It looks things up when it isn't sure (where a place is, a road route, a web search), and asks you rather than guessing.
 - Send a picture of a place you don't know, and it works out what it is (and adds it if you ask).
 - It shows its thinking, can use a different model than the planner, and summarizes long conversations.
 
 **On the map and in the plan**
-- Walking and driving legs follow real paths and roads, train legs the tracks. Each stop links to directions in Google Maps.
+- Walking and driving legs follow real paths and roads, train legs the tracks. Each stop links to directions in Google Maps, Apple Maps or Bing Maps (your choice).
 - Costs per stop and day against a budget per person, public holidays and events, a weather forecast close to the trip, a "Book ahead" checklist and a packing list.
+- A fuel estimate for the drives, at each country's weekly fuel prices (or electricity for an electric car).
 - Re-plan a single day, or remove and add stops yourself.
 
 **Take it with you**

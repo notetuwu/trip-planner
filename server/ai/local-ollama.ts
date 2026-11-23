@@ -96,7 +96,7 @@ ${done.days.map((d) => `${d.date} ${d.city}: ${(d.items || []).map((x: any) => x
 
 ## Write only the remaining days
 Continue the itinerary from the day after ${last}${end ? ` to the end of the trip (${end})` : ""}. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only the remaining days, each complete. Don't repeat places from the days already written. Give "tips", "holidaysAndEvents" and "unused" for the whole trip as usual; "summary" and "planningNotes" can be short.`;
-    output.restart();
+    output.restart(done.days.length);
     const second = await run(Math.min(cap, Math.max(firstCtx, roundUp(Math.ceil(rest.length / 3) + (tripDays - done.days.length) * 1000 + 4000))), false, "Planning prompt (the remaining days)", rest);
     if (second === "ok") {
       let more: any = null;

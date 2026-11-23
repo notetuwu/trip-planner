@@ -12,10 +12,15 @@
 .weather svg.i { font-size: 15px; }
 .budget-pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 600; white-space: nowrap; }
 .budget-pill.over { background: var(--accent-soft); color: var(--accent); }
-.items { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--line); margin-left: 6px; }
-.item { position: relative; padding: 0 0 12px 18px; }
-.item::before { content: ""; position: absolute; left: -6px; top: 5px; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); }
+/* The timeline: each stop draws its own piece of the line and its dot, both centred on the same x (the stop's left
+   edge), so they line up at any zoom or display scaling. */
+.items { --rail: var(--line); list-style: none; margin: 0 0 0 7px; padding: 0; }
+.item, .fork { position: relative; }
+.item { padding: 0 0 12px 18px; }
+.item::after, .fork::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: var(--rail); }
+.item::before { content: ""; position: absolute; z-index: 1; left: 0; top: 5px; width: 12px; height: 12px; transform: translateX(-50%); border-radius: 50%; background: var(--panel); border: 2px solid var(--muted); }
 .item.listed::before { border-color: var(--accent); background: var(--accent); }
+.item.must::before { border-color: var(--accent); background: var(--panel); box-shadow: inset 0 0 0 2px var(--panel), inset 0 0 0 6px var(--accent); }
 .item-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .item time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 40px; }
 .item .n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 10px; font-weight: 700; align-self: center; }
@@ -38,15 +43,15 @@
 .item .leg:empty { display: none; }
 .item .leg::before { content: "⇢ "; }
 /* Split: the group forks into parallel tracks, then rejoins */
-.fork { position: relative; padding: 2px 0 14px 18px; }
-.fork::before { content: "⑂"; position: absolute; left: -9px; top: -2px; width: 16px; text-align: center; background: var(--panel); color: var(--muted); font-size: 14px; line-height: 20px; }
+.fork { padding: 2px 0 14px 18px; }
+.fork::before { content: "⑂"; position: absolute; z-index: 1; left: 0; top: -2px; width: 16px; transform: translateX(-50%); text-align: center; background: var(--panel); color: var(--muted); font-size: 14px; line-height: 20px; }
 .fork-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
 .tracks { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .track { --t: var(--track-0); border: 1px solid color-mix(in srgb, var(--t) 35%, var(--line)); border-top: 3px solid var(--t); border-radius: 10px; padding: 8px 10px 0; background: color-mix(in srgb, var(--t) 6%, var(--panel)); }
 .track.t1 { --t: var(--track-1); } .track.t2 { --t: var(--track-2); } .track.t3 { --t: var(--track-3); }
 .track-head { font-size: 12px; font-weight: 700; color: var(--t); margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
 .track-head span { font-weight: 500; color: var(--muted); }
-.track .items { border-left-color: color-mix(in srgb, var(--t) 40%, var(--line)); }
+.track .items { --rail: color-mix(in srgb, var(--t) 40%, var(--line)); }
 .track .item.listed::before { border-color: var(--t); background: var(--t); }
 .split-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--skip-soft); color: var(--muted); font-weight: 600; margin-left: 6px; vertical-align: middle; }
 .day-notes { font-size: 13px; color: var(--muted); background: var(--field); border-radius: 8px; padding: 8px 10px; margin-top: 4px; }
@@ -80,3 +85,15 @@
 .stay-group.folded .fold-arrow { transform: rotate(-90deg); }
 .stay-group.folded .stay-days { display: none; }
 @media print { .stay-group.folded .stay-days { display: block; } .city-band .fold-arrow { display: none; } }
+/* A stay's heading on two lines: the town (and Re-plan this stay) on top, its dates and days underneath. */
+.stay-group .city-band { flex-wrap: wrap; row-gap: 0; column-gap: 8px; }
+.stay-group .city-band::after { display: none; }
+.city-band .band-town { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.city-band .band-meta { order: 3; flex: 1 1 100%; padding-left: 26px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.city-band .replan-stay { order: 2; }
+.stay-group { border-top: 1px solid var(--line); }
+.stay-group:first-of-type { border-top: 0; }
+.unused-more { margin-top: 8px; }
+.unused-more summary { cursor: pointer; font-size: 13px; color: var(--muted); font-weight: 600; }
+.unused-more p { margin: 6px 0; }
+.unused-more ul { columns: 2 180px; font-size: 13px; }

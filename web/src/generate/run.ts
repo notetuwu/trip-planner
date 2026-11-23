@@ -5,13 +5,16 @@ import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../sh
 import { $, apiFetch, toast } from "../core/dom";
 import { type Meta, groupBudget, save, session, state, staysKey } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
-import { renderItinerary, setInlineProgress } from "../itinerary/render";
+import { renderItinerary, resetFixOffer, setInlineProgress } from "../itinerary/render";
 import { fmtDate } from "../core/format";
 import { loadWeather } from "../itinerary/weather";
 import { drawMap } from "../map/draw";
 import { renderTripTitle } from "../trip/title";
 import { setMapStatus } from "../map/status";
-import { checksSettled, planProblems } from "./autofix";
+import { type Problem, checksSettled, planProblems, quickFixes } from "./autofix";
+import { streamRequest } from "../core/progress";
+import { byTitleMap, daySegments, exactPoi } from "../geo/item-loc";
+import { addDays } from "../core/format";
 import { isLocal, modelLabel } from "./models";
 import { type ProgressView, showProgress } from "./progress";
 import { type Change, tripRequest } from "./request";
@@ -83,12 +86,66 @@ async function fixBeforeShowing(it: Itinerary, view: ProgressView, signal: Abort
     const settled = await checksSettled(it, 120_000);
     setMapStatus("");
     if (!settled || signal.aborted) return;
+    // A stop just before it opens moves to the opening time by itself; only what's left goes to the model.
+    if (quickFixes(it)) { save(); await checksSettled(it, 30_000); }
     const problems = planProblems(it);
-    if (!problems.length) return;
+    if (!problems.length) break;
     view.onEvent({ type: "status", text: `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found (wrong town or closed)${rounds > 1 ? `, round ${round} of ${rounds}` : ""}…` });
     const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
     try { spliceFixed(it, await request(trip, view, signal), view, problems.length); }
-    catch (e) { if ((e as Error).name === "AbortError") throw e; return; /* keep the plan as it was; the Fix bar offers it again */ }
+    catch (e) { if ((e as Error).name === "AbortError") throw e; break; /* keep the plan as it was; the Fix bar offers it again */ }
+  }
+  if (state.hoursOnline && !signal.aborted) await checkHoursOnline(it, view, signal);
+}
+
+/** Stops worth checking online: real places (not transfers, the hotel or "Lunch in town") whose opening hours
+ *  OpenStreetMap doesn't know, at most 8 a day and 60 in all. */
+function stopsToCheck(it: Itinerary) {
+  const byTitle = byTitleMap(), out: { di: number; xi: number; place: string; town: string }[] = [];
+  it.days.forEach((d, di) => {
+    let n = 0;
+    d.items.forEach((x, xi) => {
+      if (n >= 8 || out.length >= 60 || x.kind === "transfer" || /→|->/.test(x.place) || /\bhotel\b|check[- ]?(in|out)/i.test(x.place)) return;
+      if (/^(breakfast|brunch|lunch|dinner|coffee|free time|walk|stroll)\b/i.test(x.place) && !/\b(at|:)\s+\S/.test(x.place)) return;
+      if (exactPoi(x, d, byTitle)?.hours) return; // checked against OpenStreetMap already
+      out.push({ di, xi, place: x.place.replace(/\s*\([^)]*\)/g, "").trim(), town: daySegments(d)[0] || d.city });
+      n++;
+    });
+  });
+  return out;
+}
+
+/** "Check opening hours online": looks up the hours of the stops OpenStreetMap doesn't know, then sends each stay's
+ *  days with what was found to the model, which moves or swaps only what's closed at the planned time. */
+async function checkHoursOnline(it: Itinerary, view: ProgressView, signal: AbortSignal) {
+  const stops = stopsToCheck(it);
+  if (!stops.length) return;
+  view.onEvent({ type: "status", text: `Looking up opening hours online for ${stops.length} stops…` });
+  let found: string[] = [];
+  try {
+    ({ results: found } = await streamRequest<{ results: string[] }>("/api/hours/online", { stops: stops.map(({ place, town }) => ({ place, town })) },
+      (l) => view.onEvent({ type: "status", text: l.status }), signal));
+  } catch (e) { if ((e as Error).name === "AbortError") throw e; return; }
+  // Per stay: the days it covers, each stop with what the web says about its hours.
+  const stayOf = (date: string) => state.stays.findIndex((s) => s.start && date >= s.start && date < addDays(s.start, Number(s.nights) || 0));
+  const byStay = new Map<number, Problem[]>();
+  stops.forEach((s, i) => {
+    if (!found[i]) return;
+    const d = it.days[s.di], x = d.items[s.xi];
+    const weekday = new Date(`${d.date}T12:00:00`).toLocaleDateString("en", { weekday: "long" });
+    const list = byStay.get(stayOf(d.date)) || [];
+    list.push({ day: s.di, text: `"${s.place}" at ${x.time || "?"} on ${weekday}: found online: ${found[i]}. If it's closed at that time on that weekday, move it to when it's open (or swap it with another stop that day, or a similar place that's open); if it's open or the results don't say, leave it exactly as it is.` });
+    byStay.set(stayOf(d.date), list);
+  });
+  let k = 0;
+  for (const [si, problems] of byStay) {
+    if (signal.aborted) return;
+    k++;
+    const where = state.stays[si]?.city || "the trip";
+    view.onEvent({ type: "status", text: `Checking ${where}'s days against the opening hours found online (${k} of ${byStay.size})…` });
+    const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
+    try { spliceFixed(it, await request(trip, view, signal), view, problems.length, `Checked ${where} against opening hours found online`); }
+    catch (e) { if ((e as Error).name === "AbortError") throw e; }
   }
 }
 
@@ -140,6 +197,8 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     }
     session.weather = {};
     save();
+    // The checks run again on what changed before the Fix bar says how many problems are left.
+    resetFixOffer();
     view.stop();
     renderItinerary(); renderTripTitle(); drawMap({ fit: !redo && !fix && !edit }); geocodeItems(); loadWeather();
     if (redo) {

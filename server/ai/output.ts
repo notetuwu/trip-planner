@@ -24,6 +24,9 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
       // Some models write a sentence in the time field; keep it as description text instead.
       if (x.time && !/^\d{1,2}:\d{2}/.test(x.time)) { x.description = `${x.time}. ${x.description}`.trim(); x.time = ""; }
       x.place = String(x.place).replace(/\s*[({]\s*-?\d+\.\d+\s*,\s*-?\d+\.\d+\s*[)}]\s*$/, ""); // drop copied "(lat, lng)"
+      // "[MUST SEE]" copied from the prompt into a name or description: a tag on the page instead.
+      const place = stripMustSee(x.place), description = stripMustSee(x.description);
+      if (place !== x.place || description !== x.description) { x.mustSee = true; x.place = place || x.place; x.description = description; }
       // "All" / everyone in the group isn't a split.
       if (!x.group || /^(all|everyone|everybody|together|whole group|both|group)$/i.test(String(x.group).trim()) || (travelers > 1 && x.people >= travelers)) {
         delete x.group; delete x.people;
@@ -91,16 +94,22 @@ export function tidyStops(d: { items: any[] }) {
 
 /** Makes sure every booking is in the plan on its day: the stop for it gets its time (if given), "already booked"
  *  and its cost (or 0 when it's already paid); one that's missing is added at its time. */
-export function ensureBookings(it: any, bookings: { name: string; date: string; from?: string; to?: string; cost?: number; countCost?: boolean }[] | undefined) {
+export function ensureBookings(it: any, bookings: { name: string; date: string; until?: string; from?: string; to?: string; cost?: number; countCost?: boolean; lat?: number; lng?: number }[] | undefined) {
   for (const b of (bookings || []).filter((x) => x?.name && x.date)) {
-    const day = (it.days || []).find((d: any) => d.date === b.date);
-    if (!day) continue;
+    // A ticket valid for several days: the day the model put it on, else the first of them.
+    const last = b.until && b.until > b.date ? b.until : b.date;
+    const inRange = (it.days || []).filter((d: any) => d.date >= b.date && d.date <= last);
+    if (!inRange.length) continue;
     const words = b.name.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4);
-    let x = day.items.find((y: any) => { const p = String(y.place || "").toLowerCase(); return p.includes(b.name.toLowerCase()) || (words.length > 0 && words.filter((w) => p.includes(w)).length >= Math.ceil(words.length / 2)); });
+    const matches = (y: any) => { const p = String(y.place || "").toLowerCase(); return p.includes(b.name.toLowerCase()) || (words.length > 0 && words.filter((w) => p.includes(w)).length >= Math.ceil(words.length / 2)); };
+    const day = inRange.find((d: any) => d.items.some(matches)) || inRange[0];
+    let x = day.items.find(matches);
     if (!x) {
       x = { time: b.from || "", place: b.name, description: "", kind: "activity" };
       day.items.push(x);
     }
+    // Its spot as given with the booking (picked on the map, or an address chosen from the suggestions).
+    if (typeof b.lat === "number" && typeof b.lng === "number") { x.lat = b.lat; x.lng = b.lng; x.fixed = true; }
     if (b.from) x.time = b.from;
     if (!/already booked/i.test(x.description || "")) x.description = `Already booked${b.from ? ` (${b.from}${b.to ? `-${b.to}` : ""})` : ""}. ${x.description || ""}`.trim();
     delete x.booking; delete x.bookAhead;
@@ -127,6 +136,15 @@ export function addMissingMustSees(it: any, mustSee: string[]) {
   });
   if (missing.length) it.unused = [...(it.unused || []), ...missing.map((place) => ({ place, reason: "A must-see that isn't in the plan, and the model didn't say why. Ask for it in the trip chat." }))];
 }
+
+/** Text without the planner's "must see" markers: "[MUST SEE for 2 of 4 travelers]", "(must-see)", "MUST SEE: …",
+ *  "… - MUST SEE". Must-see in ordinary prose ("a must-see for castle fans") stays. */
+export const stripMustSee = (s: string) => String(s)
+  .replace(/\s*[[(]\s*must[- ]?see\b[^\])]*[\])]/gi, "")
+  .replace(/^\s*must[- ]?see\s*(?:[:!.\-–—|]\s*)+/i, "")
+  .replace(/\s*[-–—|:]\s*must[- ]?see\s*!?\s*$/i, "")
+  .replace(/\bMUST[- ]SEE\b[:!.]?\s*/g, "")
+  .replace(/\s{2,}/g, " ").trim();
 
 /** A place name for comparing: lowercase, without details in brackets or punctuation. */
 const simpleName = (s: unknown) => String(s ?? "").toLowerCase().replace(/[({[].*$/, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();

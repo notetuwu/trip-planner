@@ -125,3 +125,52 @@ label.check.off { opacity: .5; }
 .pack-add .btn { height: 30px; }
 .book-ahead .when { overflow-wrap: anywhere; }
 .book-ahead label b { min-width: 0; }
+
+/* The itinerary's head: title with small buttons (reasoning, prompt, key) on the right. */
+.sum-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.sum-head h3 { flex: 1; min-width: 0; margin: 0; }
+.sum-icons { display: flex; gap: 2px; flex: none; }
+.sum-icons .icon-btn { width: 32px; height: 32px; font-size: 17px; }
+/* One toolbar: the exports on the left, the sections (each opens a window) on the right. */
+.toolbar { justify-content: space-between; row-gap: 8px; }
+.tb-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.toolbar .tb-sections button { gap: 6px; }
+.tb-sections { margin-left: auto; }
+.tb-count { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--field); border: 1px solid var(--line); color: var(--muted); font-variant-numeric: tabular-nums; }
+.toolbar button.danger { margin-left: 0; }
+@media (max-width: 700px) {
+  /* On a phone the exports are icons only (the titles say what they do); the sections keep their names. */
+  .toolbar .tb-group:first-child .tb-label { display: none; }
+  .toolbar .tb-group:first-child button { width: 36px; padding: 0; justify-content: center; }
+}
+/* A section in its own window. */
+.section-dialog { width: min(720px, 94vw); padding: 0; }
+.section-dialog .pl-head .hint { flex: 1; margin: 0; min-width: 0; }
+.section-body { padding: 10px 22px 22px; max-height: 76vh; overflow: auto; }
+.section-body > div { margin: 0; }
+.section-body .book-ahead > ul:first-child, .section-body .events > ul:first-child { margin-top: 4px; }
+.section-body .thoughts-body { max-height: none; padding: 0; font-size: 13.5px; }
+.sec-overview { font-size: 14px; margin: 6px 0 14px; padding: 10px 12px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; }
+/* The key: a sample of each mark beside what it means. */
+.key h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 16px 0 6px; }
+.key h4:first-child { margin-top: 6px; }
+.key ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+.key li { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: center; font-size: 13px; }
+.key-sample { display: flex; align-items: center; gap: 6px; }
+.key-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); background: var(--panel); flex: none; }
+.key-dot.listed { border-color: var(--accent); background: var(--accent); }
+.key-dot.must { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--panel), inset 0 0 0 6px var(--accent); }
+.key .n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 10px; font-weight: 700; }
+.key-link { color: var(--accent); font-weight: 600; font-size: 12px; }
+.key-leg { color: var(--muted); font-size: 11px; }
+.key-warn { color: var(--warn); font-size: 15px; display: inline-flex; }
+.key-icon { color: var(--muted); font-size: 15px; display: inline-flex; }
+.key-line { width: 56px; height: 0; border-top: 4px solid var(--track-0); border-radius: 2px; }
+.key-line.dots { border-top-style: dotted; }
+.key-line.dashed { border-top: 3px dashed var(--track-0); }
+.key-line.stays { border-top: 3px solid var(--accent); opacity: .75; }
+.key-line.stays.dashed { border-top: 2px dashed var(--accent); }
+@media (max-width: 560px) { .key li { grid-template-columns: 1fr; gap: 2px; } }
+/* "must-see" next to a stop's name. */
+.must-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); font-weight: 600; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
+.must-tag svg.i { width: .95em; height: .95em; fill: currentColor; }

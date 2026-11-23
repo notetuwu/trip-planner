@@ -37,7 +37,7 @@ export function checkHours(c: HoursCheck): HoursResult {
     if (state === "closed") {
       const next = oh.getNextChange(start, dayEnd);
       if (next && oh.getState(next) && next.getTime() - start.getTime() <= 90 * 60000) {
-        return { status: "opens-later", text: `Opens at ${hhmm(next)} (${listed})` };
+        return { status: "opens-later", text: `Opens at ${hhmm(next)} (${listed})`, opens: hhmm(next) };
       }
       return { status: "closed", text: `Closed at ${c.time}${spans ? `; open ${spans}` : ""} (${listed})` };
     }

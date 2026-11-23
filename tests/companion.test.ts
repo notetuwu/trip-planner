@@ -16,10 +16,11 @@ describe("trip chat", () => {
     expect(p).toContain("Today is 2027-09-14");
     expect(p).toContain("change their 5-day itinerary");
   });
-  it("without a plan: no changes offered", () => {
+  it("without a plan: only setup changes (must-sees, day trips), never changes to days", () => {
     const p = companionPrompt({ model: "m", question: "Ideas?" });
     expect(p).toContain("Nothing planned yet");
-    expect(p).not.toContain("CHANGE:");
+    expect(p).toContain('CHANGE: {"days": [], "request": "", "trip":');
+    expect(p).not.toContain('"stops"');
   });
   it("strips code fences, speaker labels and the change line", () => {
     expect(cleanAnswer("```markdown\nHello **there**\n```")).toBe("Hello **there**");

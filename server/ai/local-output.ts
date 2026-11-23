@@ -5,7 +5,7 @@ import type { OnEvent } from "./types";
 
 export function localOutput(onEvent: OnEvent) {
   const out = { content: "", thinking: "", tokens: 0, perSec: undefined as number | undefined };
-  let raw = "", inlineThought = 0, days = 0, lastNotes = "";
+  let raw = "", inlineThought = 0, days = 0, lastNotes = "", kept = 0;
   // Local servers stream one token per chunk, so counting chunks counts tokens.
   const meter = tokenMeter(onEvent, false);
 
@@ -24,15 +24,16 @@ export function localOutput(onEvent: OnEvent) {
     const notes = partialNotes(out.content);
     if (notes != null && notes !== lastNotes) { lastNotes = notes; onEvent({ type: "notes", text: notes }); }
     const n = daysWritten(out.content);
-    if (n !== days) { days = n; onEvent({ type: "progress", days }); }
+    if (n !== days) { days = n; onEvent({ type: "progress", days: kept + days }); }
   };
 
   const tick = () => meter(++out.tokens);
   /** Exact totals from the server (Ollama reports them at the end). */
   const setExact = (tokens: number, perSec?: number) => { out.tokens = tokens; out.perSec = perSec; meter(tokens, { force: true, perSec }); };
 
-  /** Starts the answer over (a retry), keeping the token count and the thinking shown so far. */
-  const restart = () => { out.content = ""; raw = ""; inlineThought = 0; days = 0; lastNotes = ""; onEvent({ type: "progress", days: 0 }); };
+  /** Starts the answer over (a retry), keeping the token count and the thinking shown so far. `keep`: days already
+   *  written and kept (asked only for the rest), so the progress counts on from there instead of from day 1. */
+  const restart = (keep = 0) => { out.content = ""; raw = ""; inlineThought = 0; days = 0; kept = keep; lastNotes = ""; onEvent({ type: "progress", days: keep }); };
 
   return { out, onThinking, onContent, tick, setExact, restart };
 }

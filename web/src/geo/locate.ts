@@ -4,6 +4,7 @@ import { api } from "../core/dom";
 import { addDays } from "../core/format";
 import { type Stay, session, state } from "../core/state";
 import { geo, geoKey, geocode } from "./geocode";
+import { searchUrl } from "../core/maps-links";
 
 /** A point on the map; approx/elsewhere mark itinerary stops whose position is a guess. */
 export interface Loc {
@@ -63,9 +64,8 @@ export function warmNearby() {
   api("/api/nearby/warm", { method: "POST", body: JSON.stringify({ stays }) }).catch(() => {});
 }
 
-/** Google Maps for a stay: its hotel when one is given, else the town. */
-export const stayMapsUrl = (s: Stay) =>
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s.hotel ? `${s.hotel}, ${s.city}` : s.city)}`;
+/** The maps app at a stay: its hotel when one is given, else the town. */
+export const stayMapsUrl = (s: Stay) => searchUrl(s.hotel ? `${s.hotel}, ${s.city}` : s.city, stayLoc(s));
 
 /** A place's name for comparing: lower case, without accents or a trailing ", Country" ("Burg Hohenwerfen, Austria" → "burg hohenwerfen"). */
 export const sameName = (name: string) => name.split(",")[0].toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();

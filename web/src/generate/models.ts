@@ -67,6 +67,8 @@ export async function refreshModels() {
 export function syncResearch() {
   $<HTMLInputElement>("#research").checked = state.research !== false;
   $<HTMLInputElement>("#autoFix").checked = state.autoFix !== false;
+  $<HTMLInputElement>("#hoursOnline").checked = !!state.hoursOnline;
+  $<HTMLInputElement>("#hoursOnline").disabled = state.autoFix === false;
   const why = isLocal(state.model)
     ? "The model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
     : isApi(state.model)
@@ -86,5 +88,6 @@ export function initModels() {
     syncResearch();
   });
   $<HTMLInputElement>("#research").onchange = (e) => { state.research = (e.target as HTMLInputElement).checked; save(); };
-  $<HTMLInputElement>("#autoFix").onchange = (e) => { state.autoFix = (e.target as HTMLInputElement).checked; save(); };
+  $<HTMLInputElement>("#autoFix").onchange = (e) => { state.autoFix = (e.target as HTMLInputElement).checked; save(); syncResearch(); };
+  $<HTMLInputElement>("#hoursOnline").onchange = (e) => { state.hoursOnline = (e.target as HTMLInputElement).checked; save(); };
 }

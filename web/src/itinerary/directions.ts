@@ -1,8 +1,10 @@
-// Google Maps directions for each stop: from the previous stop (or the hotel, for the day's first stop) in the mode
-// the transport text describes. Transfers named "Salzburg → Hallstatt" use the two names as start and end.
+// Directions for each stop (in the maps app chosen in Settings): from the previous stop (or the hotel, for the day's
+// first stop) in the mode the transport text describes. Transfers named "Salzburg → Hallstatt" use the two names as
+// start and end. A meal with no particular place ("Lunch in Vaduz") opens a search for restaurants there instead.
 import type { Day, ItineraryItem } from "../../../shared/types";
 import { state } from "../core/state";
-import { type ByTitle, byTitleMap, daySegments, itemLoc } from "../geo/item-loc";
+import { type ByTitle, activityTown, byTitleMap, daySegments, itemLoc } from "../geo/item-loc";
+import { type TravelMode, directionsLink, genericMeal, searchUrl } from "../core/maps-links";
 import { type Loc, distKm, stayLoc, stayOn } from "../geo/locate";
 import { FOOT } from "../map/routes";
 import { chosenMode, cleanStop, splitGroup, transferEnds } from "../trip/modes";
@@ -11,7 +13,7 @@ const TRANSIT = /\b(bus|buses|coach|train|trains|rail|railjet|rjx?|ice|ic|ec|int
 const DRIVE = /\b(taxi|uber|car|drive|driving|rental)\b/i;
 const BIKE = /\b(bike|bicycle|cycle|cycling)\b/i;
 
-function travelMode(x: ItineraryItem, km: number | null) {
+function travelMode(x: ItineraryItem, km: number | null): TravelMode {
   const m = chosenMode(x);
   if (m) return m === "car" ? "driving" : m === "bike" ? "bicycling" : "transit";
   const t = `${x.transport || ""} ${x.place || ""}`;
@@ -24,14 +26,29 @@ function travelMode(x: ItineraryItem, km: number | null) {
 
 interface StopRef { text: string; loc: Loc | null }
 
-/** How to point Google at a stop: exact coordinates when known, else "name, town". A transfer ends where it arrives. */
+/** How to point the maps app at a stop: exact coordinates when known, else "name, town". A transfer ends where it
+ *  arrives; a walk in a town the name gives ("Kempten old town walk") goes to that town, not "…, Isny". */
 function stopRef(x: ItineraryItem, d: Day, byTitle: ByTitle): StopRef {
   const ends = transferEnds(x);
   if (ends) return { text: ends[1], loc: null };
   const loc = itemLoc(x, d, byTitle);
   if (loc && !loc.approx) return { text: `${loc.lat.toFixed(5)},${loc.lng.toFixed(5)}`, loc };
-  const town = daySegments(d)[0], name = cleanStop(x.place);
-  return { text: town && !name.toLowerCase().includes(town.toLowerCase()) ? `${name}, ${town}` : name, loc };
+  const town = activityTown(x.place);
+  if (town) return { text: town, loc };
+  const meal = genericMeal(x.place);
+  if (meal?.where) return { text: meal.where, loc };
+  const day = daySegments(d)[0], name = cleanStop(x.place);
+  return { text: day && !name.toLowerCase().includes(day.toLowerCase()) ? `${name}, ${day}` : name, loc };
+}
+
+/** "Lunch in Vaduz" or a plain "Dinner": what's there to eat, around the stop's spot (or in its town). */
+export function mealSearchUrl(di: number, xi: number): string | null {
+  const d = state.itinerary?.days[di], x = d?.items[xi];
+  const meal = x && genericMeal(x.place);
+  if (!d || !x || !meal) return null;
+  const loc = itemLoc(x, d, byTitleMap());
+  const where = meal.where || daySegments(d)[0] || "";
+  return searchUrl(`${meal.what}${where ? ` ${where}` : ""}`, loc);
 }
 
 /** The stop before this one on the same path (a split group continues from its own previous stop). */
@@ -44,6 +61,9 @@ function prevStop(d: Day, xi: number) {
 export function directionsUrl(di: number, xi: number): string | null {
   const d = state.itinerary?.days[di], x = d?.items[xi];
   if (!d || !x) return null;
+  // No route to a meal that isn't anywhere in particular: the list of restaurants there is what's useful.
+  const meal = mealSearchUrl(di, xi);
+  if (meal) return meal;
   const byTitle = byTitleMap();
   let from: string, to: string, km: number | null = null;
   const ends = transferEnds(x);
@@ -63,7 +83,7 @@ export function directionsUrl(di: number, xi: number): string | null {
     if (a.loc && b.loc) km = distKm(a.loc, b.loc);
   }
   if (from === to) return null;
-  return `https://www.google.com/maps/dir/?${new URLSearchParams({ api: "1", origin: from, destination: to, travelmode: travelMode(x, km) })}`;
+  return directionsLink(from, to, travelMode(x, km));
 }
 
 /** Links are filled in when clicked, so they use the latest locations. */

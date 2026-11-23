@@ -6,25 +6,52 @@ import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
 import { bookLink } from "./book-ahead";
-import { directionsUrl } from "./directions";
+import { directionsUrl, mealSearchUrl } from "./directions";
+import { genericMeal, mapsName, placeUrl, pointUrl, searchUrl } from "../core/maps-links";
+import { itemLoc } from "../geo/item-loc";
+import { distKm, placeLoc, stayLoc } from "../geo/locate";
 import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
 
-const mapsLink = (x: ItineraryItem, d: Day, byTitle: ByTitle) => byTitle.get(x.place)?.url ||
-  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${d.city}`)}`;
+/** The stop's name links to it in the maps app: a saved place's own link (see placeUrl), the exact spot where it's known,
+ *  else a search for "name, town" (for a meal without a place: what's there to eat). */
+function mapsLink(x: ItineraryItem, d: Day, di: number, xi: number, byTitle: ByTitle) {
+  const listed = byTitle.get(x.place);
+  if (listed?.url) return placeUrl({ ...listed, ...(placeLoc(listed) || {}) });
+  const meal = mealSearchUrl(di, xi);
+  if (meal) return meal;
+  const loc = itemLoc(x, d, byTitle);
+  if (loc && !loc.approx) return pointUrl(loc, x.place);
+  return searchUrl(`${x.place.replace(/\s*\([^)]*\)/g, "")}, ${d.city.split(/\s*[/→]\s*/)[0]}`, loc);
+}
+
+/** Their must-sees, by name without accents, case and punctuation. */
+const norm = (s: string) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s*\([^)]*\)/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+/** Rebuilt on every render (marks change in place). */
+let mustSet = new Set<string>();
+const refreshMustSees = () => { mustSet = new Set(Object.keys(state.marks).filter((t) => state.marks[t] === "must").map(norm)); };
+function isMustSee(x: ItineraryItem) {
+  if (x.mustSee) return true;
+  const n = norm(x.place);
+  return !!n && (mustSet.has(n) || [...mustSet].some((m) => m.length > 5 && n.length > 5 && (n.includes(m) || m.includes(n))));
+}
 
 /** xi is the item's index within its day; it matches the numbered pin on the map. */
 function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByTitle, cur: string) {
-  const dir = directionsUrl(di, xi) ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in Google Maps">Route${ext()}</a>` : "";
+  const meal = genericMeal(x.place);
+  const dir = directionsUrl(di, xi) ? (meal
+    ? `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="${esc(`${meal.what[0].toUpperCase()}${meal.what.slice(1)} around here in ${mapsName()}`)}">Find ${esc(meal.what)}${ext()}</a>`
+    : `<a class="dir" data-dir="${di}-${xi}" href="#" target="_blank" rel="noopener" title="Directions to here in ${mapsName()}">Route${ext()}</a>`) : "";
   const links = [dir, bookLink(x, d, di, xi)].filter(Boolean).join(" · ");
   const badge = x.booking === "essential" ? `<span class="book-badge" title="${esc(x.bookAhead ? `Book ${x.bookAhead}` : "Book ahead")}">book ahead</span>` : "";
+  const must = isMustSee(x), listed = x.fromList || byTitle.has(x.place);
   return `
-    <li class="item ${x.fromList || byTitle.has(x.place) ? "listed" : ""}" data-k="${di}-${xi}">
+    <li class="item${must ? " must" : listed ? " listed" : ""}" data-k="${di}-${xi}">
       <div class="item-top">
         <time>${esc(fmtTime(x.time))}</time>
         <span class="n">${xi + 1}</span>
-        <span class="name"><a href="${esc(mapsLink(x, d, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${badge}</span>
+        <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
         <button class="del" data-del="${di}-${xi}" title="Remove this stop">${icon("x")}</button>
       </div>
@@ -64,6 +91,7 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
 }
 
 export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {
+  refreshMustSees();
   return daysGroups(it, byTitle, cur, budget) + (it.days.length ? `</div></section>` : "");
 }
 
@@ -87,7 +115,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
         <div class="city-band" data-fold-stay="${si}" title="Fold or unfold this stay's days">
           <span class="fold-arrow">${icon("chevronDown")}</span><span class="band-town">${esc(town)}</span>
           <span class="band-meta">${esc([when, `${n} day${n === 1 ? "" : "s"}`].filter(Boolean).join(" · "))}</span>
-          ${si >= 0 ? `<button class="link-btn replan-stay" data-replan-stay="${si}" title="Re-plan all days of this stay together, e.g. after booking something">${icon("refresh")} Re-plan this stay</button>` : ""}
+          ${si >= 0 ? `<button class="link-btn replan-stay" data-replan-stay="${si}" title="Re-plan all days of this stay together, e.g. after booking something">${icon("refresh")} <span>Re-plan this stay</span></button>` : ""}
         </div>
         <div class="stay-days">`;
       group = si;
@@ -109,13 +137,29 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
   return html;
 }
 
+/** Places the planner could pick from (lists with Suggest on) near the stays that aren't in the plan, and that it gave
+ *  no reason for: so it's clear what was left out, not only what it chose to mention. */
+function otherUnused(it: Itinerary) {
+  const planned = it.days.flatMap((d) => d.items.map((x) => norm(x.place)));
+  const said = new Set((it.unused || []).map((u) => norm(u.place)));
+  const stays = state.stays.map(stayLoc).filter((l): l is NonNullable<typeof l> => !!l);
+  const used = (n: string) => planned.some((p) => p === n || (n.length > 5 && p.length > 5 && (p.includes(n) || n.includes(p))));
+  return session.places.filter((p) => session.fullTitles.has(p.title) && state.marks[p.title] !== "skip")
+    .filter((p) => { const n = norm(p.title); return n && !said.has(n) && !used(n); })
+    .filter((p) => { const l = placeLoc(p); return !l || !stays.length || stays.some((s) => distKm(s, l) < 60); });
+}
+
 /** Tips, places that didn't fit, sources, and how the plan was made. */
 export function extrasHtml(it: Itinerary) {
   let html = "";
-  if (it.tips?.length || it.unused?.length || it.sources?.length) {
+  const others = otherUnused(it);
+  if (it.tips?.length || it.unused?.length || it.sources?.length || others.length) {
     html += `<div class="extras">`;
     if (it.tips?.length) html += `<div><h2>Tips</h2><ul>${it.tips.map((t) => `<li>${tipHtml(t)}</li>`).join("")}</ul></div>`;
-    if (it.unused?.length) html += `<div><h2>Didn't fit</h2><ul>${it.unused.map((u) => `<li>${esc(u.place)} <div class="reason">${esc(u.reason)}</div></li>`).join("")}</ul></div>`;
+    if (it.unused?.length || others.length) {
+      html += `<div><h2>Not in the plan</h2>${it.unused?.length ? `<ul>${it.unused.map((u) => `<li>${esc(u.place)} <div class="reason">${esc(u.reason)}</div></li>`).join("")}</ul>` : ""}${others.length
+        ? `<details class="unused-more"><summary>${it.unused?.length ? "Other s" : "S"}uggested places nearby not used (${others.length})</summary><p class="hint">From your lists with Suggest on, near your stays; the planner didn't say why. Ask in the trip chat to fit one in.</p><ul>${others.slice(0, 80).map((p) => `<li>${esc(p.title)}</li>`).join("")}${others.length > 80 ? `<li class="hint">and ${others.length - 80} more</li>` : ""}</ul></details>` : ""}</div>`;
+    }
     if (it.sources?.length) html += `<div><h2>Sources</h2><ul class="sources">${it.sources.filter((s) => /^https?:\/\//.test(s)).map((s) =>
       `<li><a href="${esc(s)}" target="_blank" rel="noopener">${esc(s.replace(/^https?:\/\/(www\.)?/, "").slice(0, 80))}</a></li>`).join("")}</ul></div>`;
     html += `</div>`;

@@ -170,6 +170,8 @@ function generalCards() {
         <div class="segs">${seg("mapNames", "local", "Local")}${seg("mapNames", "english", "English")}</div></div>
       <div class="set-row"><div><b>Show at start</b><div class="hint">Your saved places and the routes between stops; the boxes on the map turn them on and off for now.</div></div>
         <div class="set-checks"><label class="inline-check"><input type="checkbox" data-app-check="showPlaces"${a.showPlaces ? " checked" : ""}> Places</label><label class="inline-check"><input type="checkbox" data-app-check="showRoutes"${a.showRoutes ? " checked" : ""}> Routes</label></div></div>
+      <div class="set-row"><div><b>Maps app</b><div class="hint">Where the links to places and directions open (also in the phone file and the calendar).</div></div>
+        <div class="segs">${seg("mapsApp", "google", "Google")}${seg("mapsApp", "apple", "Apple")}${seg("mapsApp", "bing", "Bing")}</div></div>
     </div>
     <div class="set-card">
       <b class="card-title">Start-up &amp; saving</b>

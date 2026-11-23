@@ -16,8 +16,10 @@ function rankNearby(elements: OsmElement[], interests: string) {
   const seen = new Set<string>(), sights: (NearbyPlace & { score: number })[] = [], food: typeof sights = [];
   for (const e of elements) {
     const t = e.tags || {}, c = e.center || e;
-    if (!t.name || c.lat == null || seen.has(t.name)) continue;
-    seen.add(t.name);
+    // Some names carry the height ("Scheidegger Wasserfälle (695m)"), which reads like a distance in the plan.
+    const name = String(t.name || "").replace(/\s*\(\s*\d[\d.,]*\s*m\s*\)\s*$/i, "").trim();
+    if (!name || c.lat == null || seen.has(name)) continue;
+    seen.add(name);
     const kind = t.amenity || t.tourism || t.historic || t.leisure || "place";
     const isFood = FOOD.includes(t.amenity);
     const extras = [
@@ -29,7 +31,7 @@ function rankNearby(elements: OsmElement[], interests: string) {
     if (isFood) score += (t.amenity === "restaurant" || t.amenity === "cafe" ? 1 : 0) + (extras.some((x) => /options|fully/.test(x)) ? 5 : 0);
     else score += ["museum", "castle", "palace", "attraction", "zoo", "aquarium"].includes(kind) ? 2 : 0;
     (isFood ? food : sights).push({
-      name: t.name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score,
+      name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score,
       ...(t.opening_hours ? { hours: String(t.opening_hours).slice(0, 120) } : {}),
       ...(/^https?:\/\//.test(t.website || t["contact:website"] || "") ? { website: String(t.website || t["contact:website"]).split(";")[0].trim() } : {}),
     });

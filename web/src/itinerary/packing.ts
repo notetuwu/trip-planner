@@ -71,15 +71,21 @@ export function packingList(it: Itinerary): PackGroup[] {
   return groups.map((g) => ({ ...g, items: g.items.filter((i, k, a) => a.findIndex((j) => j.text === i.text) === k) }));
 }
 
+/** How much of the packing list is ticked. */
+export function packingCount(it: Itinerary) {
+  const packed = state.packed || {};
+  const all = [...packingList(it).flatMap((g) => g.items.map((i) => i.text)), ...(state.packingExtra || [])];
+  return { done: all.filter((t) => packed[t]).length, all: all.length };
+}
+
 export function packingHtml(it: Itinerary) {
   const packed = state.packed || {}, extra = state.packingExtra || [];
   const groups = packingList(it);
-  const all = [...groups.flatMap((g) => g.items.map((i) => i.text)), ...extra];
-  const done = all.filter((t) => packed[t]).length;
+  const { done, all: total } = packingCount(it);
   const row = (text: string, why?: string, own = false) => `<li><label><input type="checkbox" data-packed="${esc(text)}" ${packed[text] ? "checked" : ""}>
       <span>${esc(text)}${why ? ` <span class="hint">· ${esc(why)}</span>` : ""}</span></label>${own ? `<button class="icon-btn" data-unpack="${esc(text)}" title="Remove">×</button>` : ""}</li>`;
   return `<details class="packing fold" data-fold="packing">
-    <summary><h2>Packing list</h2><span class="hint">${done} of ${all.length} packed · from your trip's countries, weather and plans</span></summary>
+    <summary><h2>Packing list</h2><span class="hint">${done} of ${total} packed · from your trip's countries, weather and plans</span></summary>
     <div class="packing-groups">${groups.map((g) => `<div><div class="ahead-sub">${esc(g.title)}</div><ul>${g.items.map((i) => row(i.text, i.why)).join("")}</ul></div>`).join("")}
       <div><div class="ahead-sub">Your own</div><ul>${extra.map((t) => row(t, undefined, true)).join("")}</ul>
         <form class="pack-add"><input placeholder="Add an item…" maxlength="80"><button class="btn">Add</button></form></div>

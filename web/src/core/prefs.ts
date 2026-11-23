@@ -11,13 +11,14 @@ export interface AppPrefs {
   mapNames: "local" | "english";
   showPlaces: boolean;
   showRoutes: boolean;
+  mapsApp: "google" | "apple" | "bing";
   startWith: "last" | "new";
   autoSave: boolean;
   newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, startWith: "last", autoSave: false,
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 

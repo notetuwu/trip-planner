@@ -6,7 +6,8 @@
 // the trip (and saved with it).
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
-import type { MustSeeHow } from "../../../shared/types";
+import type { ItineraryItem, MustSeeHow } from "../../../shared/types";
+import { stayLoc } from "../geo/locate";
 import { $, esc } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
 import { icon } from "../core/icons";
@@ -25,7 +26,9 @@ import { map } from "../map/map";
 
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[] }
-interface PlanChange { days: number[]; request: string; trip?: TripOps; status?: ChangeState }
+/** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
+interface StopOp { op: "add" | "remove" | "time"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number }
+interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; status?: ChangeState }
 type Turn = { role: "me" | "ai"; text: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange };
 /** Pictures attached to the next message: what's sent (shrunk to at most 1600 px) and a small copy kept with the chat. */
 interface Picture { type: string; data: string; thumb: string }
@@ -101,10 +104,41 @@ const dayList = (days: number[]) => days.length === 1 ? `day ${days[0]}` : days.
 
 /** What the model is told about an earlier change, so it can build on it ("and day 4 too", or one that wasn't applied). */
 function changeNote(c: PlanChange) {
-  const what = [c.request, ...opsLines(c.trip)].filter(Boolean).join("; ");
+  const what = [c.request, ...opsLines(c.trip), ...stopLines(c.stops)].filter(Boolean).join("; ");
   const st = c.status === "applied" ? "applied" : c.status === "undone" ? "applied, then undone: the trip is as before it"
     : "offered but not applied (the traveler moved on; include it again if they still want it)";
   return `Change ${st}: ${what}`;
+}
+
+/** The stop edits in words. */
+function stopLines(ops?: StopOp[]) {
+  return (ops || []).map((o) => o.op === "add" ? `Day ${o.day}, ${o.time}: add ${o.place}${o.where ? ` (${o.where})` : ""}`
+    : o.op === "remove" ? `Day ${o.day}: remove ${o.place}` : `Day ${o.day}: ${o.place} at ${o.time}`);
+}
+
+/** Makes the stop edits in the plan itself: no model, nothing else on the day changes. */
+function applyStops(ops: StopOp[]) {
+  const it = state.itinerary;
+  if (!it) return;
+  const touched = new Set<number>();
+  for (const o of ops) {
+    const d = it.days[o.day - 1];
+    if (!d) continue;
+    const at = d.items.findIndex((x) => samePlace(x.place, o.place));
+    if (o.op === "remove" && at >= 0) d.items.splice(at, 1);
+    else if (o.op === "time" && at >= 0 && o.time) d.items[at].time = o.time;
+    else if (o.op === "add") {
+      d.items.push({ time: o.time || "", place: o.place, description: o.description || "", cost: o.cost || 0, kind: o.kind || "sight",
+        ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}) });
+    } else continue;
+    touched.add(o.day - 1);
+  }
+  for (const i of touched) {
+    const d = it.days[i];
+    d.items.sort((a, b) => (a.time && b.time ? a.time.localeCompare(b.time) : 0));
+    d.estimatedCost = d.items.reduce((n, x) => n + (Number(x.cost) || 0), 0);
+  }
+  it.totalEstimatedCost = it.days.reduce((n, d) => n + (Number(d.estimatedCost) || 0), 0);
 }
 
 /** The setup changes in words. */
@@ -121,9 +155,11 @@ function opsLines(t?: TripOps) {
 
 /** The change card: what it changes, and (on the latest message only) Apply / Undo. Older cards just say how it went. */
 function changeCard(c: PlanChange, k: number, latest: boolean) {
-  const lines = opsLines(c.trip);
+  const lines = [...opsLines(c.trip), ...stopLines(c.stops)];
   const what = c.request
     ? (c.days.length ? `Changes ${dayList(c.days)} only, and only what you asked for; the other days stay exactly as they are.` : "Revises the whole plan, changing only what you asked for.")
+    : c.stops?.length && !c.trip ? "Changes just these stops, straight away: nothing else is re-planned."
+    : !state.itinerary ? "Changes the trip's setup (your places and day trips); the plan is made from it when you generate."
     : "Changes the trip's setup; the day plans stay as they are.";
   const status = c.status || "offered";
   const inChain = chain?.cards.includes(k) ? chain.cards.length : 0;
@@ -233,12 +269,14 @@ function refreshAll() {
  *  are), or the whole plan when it's all over it. Undo later goes back to before the first change of the series. */
 async function apply(k: number) {
   const c = chat()[k]?.change, it = state.itinerary;
-  if (!c || !it) return;
+  // Without a plan only the setup can change (must-sees, day trips).
+  if (!c || (!it && (c.request || c.stops?.length))) return;
   const now = capture(), snap = chain?.snap ?? now;
   setStatus(k, "applying");
   if (c.trip) { applyOps(c.trip); refreshAll(); }
+  if (c.stops?.length) { applyStops(c.stops); refreshAll(); }
   let ok = true;
-  if (c.request) {
+  if (c.request && it) {
     const days = c.days.filter((d) => d >= 1 && d <= it.days.length).map((d) => d - 1);
     ok = await runGeneration(days.length ? { edit: { itinerary: state.itinerary!, days, request: c.request } } : { revise: { itinerary: state.itinerary!, request: c.request } });
     // The plan couldn't be changed: the setup goes back too, so nothing is half done.
@@ -296,12 +334,30 @@ function renderPictures() {
 /** A message as the model gets it: changes with how they went. */
 const turnText = (t: Turn) => ({ role: t.role, text: `${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}` });
 
+/** About how many tokens some text is (a token is roughly 4 characters). */
+const tokensIn = (text: string) => Math.round(text.length / 4);
+/** What the conversation since the last summary costs on every message, and what compacting it all would free (the
+ *  messages minus the summary that replaces them). */
+function contextUse() {
+  const from = state.chatSummarized || 0, turns = chat().slice(from);
+  const tokens = turns.reduce((n, t) => n + tokensIn(turnText(t).text), 0) + tokensIn(state.chatSummary || "");
+  return { messages: turns.length, tokens, freed: Math.max(0, tokens - Math.min(tokens, 350)) };
+}
+
+/** The ring by the chat box (like Claude Code's): it fills up until the chat summarizes itself; clicking it does so now. */
+function ringHtml(fill: number) {
+  const r = 7, c = 2 * Math.PI * r, f = Math.max(0, Math.min(1, fill));
+  return `<svg viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><circle cx="9" cy="9" r="${r}" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-width="2.4"/>`
+    + `<circle cx="9" cy="9" r="${r}" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="${(c * f).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 9 9)"/></svg>`;
+}
+
 /** Summarizes the messages up to `upTo` (with the summary before them) so long chats stay quick; the messages stay on
  *  screen, with a marker where the summary ends. Without a summary (it failed), the chat just carries on. */
 async function compact(upTo: number) {
   const from = state.chatSummarized || 0;
   if (upTo <= from || compacting) return;
   compacting = true;
+  const before = contextUse().tokens;
   setNotice("Summarizing the earlier conversation…");
   try {
     const { summary } = await streamRequest<{ summary: string }>("/api/companion/compact", {
@@ -309,7 +365,8 @@ async function compact(upTo: number) {
     }, (l) => { setNotice(esc(`${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""}`)); });
     state.chatSummary = summary; state.chatSummarized = upTo;
     save();
-    notice = "";
+    const freed = Math.max(0, before - contextUse().tokens);
+    notice = esc(`Summarized ${upTo - from} message${upTo - from === 1 ? "" : "s"}: about ${freed.toLocaleString()} tokens freed.`);
   } catch (e) { notice = esc(`Couldn't summarize: ${(e as Error).message}`); }
   finally { compacting = false; render(); }
 }
@@ -338,7 +395,16 @@ function idle() {
     send.title = busy ? "Stop" : "Send (Enter) · new line with Shift+Enter";
   }
   send.disabled = !busy && !box().value.trim() && !pictures.length;
-  $<HTMLButtonElement>("#cpCompact").hidden = busy || chat().length - (state.chatSummarized || 0) < 4;
+  const ring = $<HTMLButtonElement>("#cpCompact"), use = contextUse();
+  ring.hidden = busy || use.messages < 2;
+  if (!ring.hidden) {
+    const fill = Math.min(1, use.messages / COMPACT_AT);
+    ring.innerHTML = ringHtml(fill);
+    ring.classList.toggle("near", fill >= 0.75);
+    ring.title = `${use.messages} of ${COMPACT_AT} messages before the chat summarizes itself (about ${use.tokens.toLocaleString()} tokens of conversation so far).`
+      + `\nClick to summarize now: frees about ${use.freed.toLocaleString()} tokens.`;
+    ring.setAttribute("aria-label", `Summarize the conversation now (${Math.round(fill * 100)}% until it happens by itself)`);
+  }
   syncModels();
 }
 
@@ -386,6 +452,7 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
   try {
     const { answer, change, thinking, thoughtSecs } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number }>("/api/companion", {
       model: chatModel(), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
+      towns: state.stays.filter((s) => s.city).map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => ({ name: s.city, lat: l!.lat, lng: l!.lng })),
     }, (l) => {
       const status = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""} · ${l.seconds} s`;
       if (status !== pending.status) { pending.status = status; render(pending); }
@@ -411,7 +478,19 @@ function setOpen(open: boolean) {
   $("#chatBtn").setAttribute("aria-pressed", String(open));
   localStorage.setItem(OPEN_KEY, open ? "1" : "");
   requestAnimationFrame(() => map?.invalidateSize());
+  document.body.classList.toggle("chat-cover", open && window.innerWidth <= 900);
+  fitViewport();
   if (open) { render(); fit(); }
+}
+
+/** On a phone the chat covers the screen: sized to the part you can see, so the on-screen keyboard (Safari on iOS
+ *  shrinks the visible area, not the page) doesn't push the box out of sight or the page sideways. */
+function fitViewport() {
+  const vv = window.visualViewport, el = panel();
+  if (!vv || window.innerWidth > 900 || el.hidden) { el.style.removeProperty("height"); el.style.removeProperty("top"); el.style.removeProperty("bottom"); return; }
+  el.style.height = `${Math.round(vv.height)}px`;
+  el.style.top = `${Math.round(vv.offsetTop)}px`;
+  el.style.bottom = "auto";
 }
 
 /** Where the header ends, for the chat drawer on smaller screens to start just below it. */
@@ -471,7 +550,9 @@ export function initCompanion() {
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.
   for (const t of chat()) if (t.change?.status === "applying") t.change.status = "offered";
-  window.addEventListener("resize", () => { if (!panel().hidden) { markHeader(); map?.invalidateSize(); } });
+  window.addEventListener("resize", () => { if (!panel().hidden) { markHeader(); map?.invalidateSize(); document.body.classList.toggle("chat-cover", window.innerWidth <= 900); fitViewport(); } });
+  window.visualViewport?.addEventListener("resize", fitViewport);
+  window.visualViewport?.addEventListener("scroll", fitViewport);
   if (localStorage.getItem(OPEN_KEY)) setOpen(true);
 
   // Ideas & notes.

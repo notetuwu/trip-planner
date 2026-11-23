@@ -21,7 +21,7 @@
 .map-toggles { align-items: center; }
 .map-toggles select { width: auto; height: 28px; font-size: 12px; padding-left: 10px; }
 #map { height: 420px; background: var(--bg); }
-:root[data-theme="dark"] #map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
+:root[data-theme="dark"] #map .leaflet-tile-pane, :root[data-theme="dark"] .route-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
 /* The status pill in the map's corner; clicked, it opens up and to the right into a panel of what the lookups do. */
 .map-status { position: absolute; left: 10px; bottom: 10px; z-index: 1100; } /* above the map's own controls */
 .ms-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px 4px 10px; font: inherit; font-size: 12px; cursor: pointer; box-shadow: var(--shadow); transition: color .15s, border-color .15s; }
@@ -111,3 +111,11 @@
   .map-bar .day-chips:empty { display: none; }
   .generate-bar { position: static; background: none; padding: 14px 0 6px; }
 }
+/* The address in the add popup: selectable, with a copy button. */
+.pop-addr { display: flex; align-items: flex-start; gap: 4px; }
+.pop-addr .pop-meta { flex: 1; min-width: 0; user-select: text; -webkit-user-select: text; cursor: text; }
+.pop-copy { width: 24px; height: 24px; font-size: 13px; flex: none; margin-top: -2px; }
+/* Picking a spot on the map (a booking's location): a bar over the map, a crosshair cursor. */
+.map-pick { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); font-size: 13px; max-width: calc(100% - 24px); }
+.map-pick .btn { height: 30px; }
+#map.picking, #map.picking .leaflet-interactive { cursor: crosshair; }

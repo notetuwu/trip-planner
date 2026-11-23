@@ -33,6 +33,8 @@ export interface AppPrefs {
   mapNames: "local" | "english";
   showPlaces: boolean;
   showRoutes: boolean;
+  /** Where place and directions links open. */
+  mapsApp: "google" | "apple" | "bing";
   /** On start: the trip that was open, or a new one (the open one is kept in Saved trips first). */
   startWith: "last" | "new";
   /** Save each newly generated plan to Saved trips by itself. */
@@ -42,7 +44,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, startWith: "last", autoSave: false,
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 const PACES = ["relaxed (2-3 main stops per day, late starts)", "balanced (3-5 stops per day)", "packed (as much as possible, early starts)"];
@@ -57,6 +59,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     mapNames: pick("mapNames", (v) => v === "local" || v === "english"),
     showPlaces: pick("showPlaces", (v) => typeof v === "boolean"),
     showRoutes: pick("showRoutes", (v) => typeof v === "boolean"),
+    mapsApp: pick("mapsApp", (v) => v === "google" || v === "apple" || v === "bing"),
     startWith: pick("startWith", (v) => v === "last" || v === "new"),
     autoSave: pick("autoSave", (v) => typeof v === "boolean"),
     newTrip: {

@@ -25,6 +25,8 @@ export function offlineMapData() {
 }
 
 export const OFFLINE_SCRIPT = `
+  // A stay's heading folds its days away and back.
+  document.querySelectorAll("[data-fold-stay]").forEach((el) => el.addEventListener("click", () => el.closest(".stay-group").classList.toggle("folded")));
   // During the trip, jump straight to today.
   const today = new Date().toLocaleDateString("sv");
   document.querySelectorAll('[data-date="' + today + '"]').forEach((el) => el.classList.add("today"));

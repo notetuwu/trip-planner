@@ -10,6 +10,15 @@ import { addCustomPlace, addStop } from "./edit";
 import { map } from "./map";
 import { icon } from "../core/icons";
 
+/** Puts text on the clipboard; also over plain http on the home network, where the clipboard API isn't offered. */
+export async function copyText(text: string) {
+  try { await navigator.clipboard.writeText(text); return true; } catch { /* not a secure page: the old way */ }
+  const t = document.createElement("textarea");
+  t.value = text; t.style.position = "fixed"; t.style.opacity = "0";
+  document.body.append(t); t.select();
+  try { return document.execCommand("copy"); } catch { return false; } finally { t.remove(); }
+}
+
 export const toMin = (t: string | undefined) => { const m = /^(\d{1,2}):(\d{2})/.exec(t || ""); return m ? +m[1] * 60 + +m[2] : null; };
 const fromMin = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 
@@ -56,7 +65,8 @@ export function openAddPopup(latlng: L.LatLng, preset: Preset = {}) {
   const popup = L.popup({ minWidth: 250, autoPanPaddingTopLeft: [10, 64] }).setLatLng(latlng).setContent(`
     <form class="add-form">
       <b>${it ? "Add to the itinerary" : "Add as a must-see place"}</b>
-      <div class="pop-meta ${preset.name ? "" : "lookup"}" data-label>${preset.name ? esc(preset.label || "") : "Looking up this spot…"}</div>
+      <div class="pop-addr"><div class="pop-meta ${preset.name ? "" : "lookup"}" data-label>${preset.name ? esc(preset.label || "") : "Looking up this spot…"}</div>
+        <button type="button" class="icon-btn pop-copy" data-copy title="Copy the address" aria-label="Copy the address">${icon("copy")}</button></div>
       <input name="placeName" required placeholder="Name" value="${esc(preset.name || "")}">
       <div class="name-options" data-options></div>
       ${it ? `<div class="add-row">
@@ -82,6 +92,13 @@ export function openAddPopup(latlng: L.LatLng, preset: Preset = {}) {
       }
     }).catch(() => { el.querySelector("[data-label]")!.textContent = ""; });
   }
+  el.querySelector<HTMLButtonElement>("[data-copy]")!.onclick = async (e) => {
+    const b = e.currentTarget as HTMLButtonElement, text = el.querySelector("[data-label]")!.textContent?.trim() || `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;
+    const ok = await copyText(text);
+    b.innerHTML = icon(ok ? "check" : "x");
+    b.title = ok ? "Copied" : "Couldn't copy: select the text instead";
+    setTimeout(() => { b.innerHTML = icon("copy"); b.title = "Copy the address"; }, 1500);
+  };
   el.querySelector<HTMLElement>("[data-options]")!.onclick = (e) => {
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-name]"); if (!b) return;
     nameInput.value = b.dataset.name!;

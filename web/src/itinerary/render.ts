@@ -2,7 +2,7 @@
 import { openChat } from "../trip/companion";
 import { openCosts } from "./costs";
 import { addDays } from "../core/format";
-import { $, $$, downloadFile, esc } from "../core/dom";
+import { $, $$, downloadFile, esc, toast } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { downloadForPhone, shareForPhone } from "../export/offline";
@@ -19,9 +19,11 @@ import { daysHtml, extrasHtml } from "./days-html";
 import { checkOpeningHours } from "./hours";
 import { searchHtml, wireSearch } from "./search";
 import { summaryHtml } from "./summary";
+import { type Section, openSection } from "./sections";
 import type { Itinerary } from "../../../shared/types";
 import { icon } from "../core/icons";
-import { checksSettled, planProblems } from "../generate/autofix";
+import { pointUrl, searchUrl } from "../core/maps-links";
+import { checksSettled, planProblems, quickFixes } from "../generate/autofix";
 import { setMapStatus } from "../map/status";
 import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
 import { groupsFromText } from "../../../shared/groups";
@@ -72,7 +74,7 @@ function downloadCalendar() {
   const byTitle = byTitleMap();
   const ics = itineraryIcs(it, {
     loc: (x, d) => { const l = itemLoc(x, d, byTitle); return l && !l.approx ? l : null; },
-    mapsUrl: (x, d) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${x.place}, ${d.city}`)}`,
+    mapsUrl: (x, d) => { const l = itemLoc(x, d, byTitle); return l && !l.approx ? pointUrl(l, x.place) : searchUrl(`${x.place}, ${d.city}`, l); },
   });
   const name = (it.destination || "trip").replace(/[^\p{L}\p{N}-]+/gu, "-");
   downloadFile(new Blob([ics], { type: "text/calendar" }), `${name}-itinerary.ics`);
@@ -109,6 +111,7 @@ function wire(out: HTMLElement) {
   for (const el of $$("[data-sel]", out)) el.onclick = (e) => { if (!(e.target as HTMLElement).closest("a")) selectDay(+el.dataset.sel!); };
   for (const el of $$("[data-bar]", out)) el.onclick = () => selectDay(+el.dataset.bar!, { scroll: true });
   for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts();
+  for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
 }
 
@@ -159,6 +162,8 @@ function placeInline() {
 }
 
 let offerFor: Itinerary | null = null;
+/** After days were re-planned or fixed (the same itinerary, changed): wait for the checks again before counting. */
+export function resetFixOffer() { offerFor = null; }
 /** Once the map and opening-hours checks are done, offers to send what they found back to the model (any plan, also
  *  older ones made before plans were fixed automatically). */
 async function offerFix(it: Itinerary) {
@@ -177,7 +182,18 @@ function showFixBar(it: Itinerary) {
   bar.hidden = !problems.length;
   if (!problems.length) return;
   const n = problems.length, days = new Set(problems.map((p) => p.day)).size;
-  bar.innerHTML = `${icon("warn")}<span>${n} stop${n > 1 ? "s are" : " is"} closed at the planned time or in the wrong town (${days} day${days > 1 ? "s" : ""}).</span>
+  bar.innerHTML = `${icon("warn")}<span>${n} stop${n > 1 ? "s need" : " needs"} fixing on ${days} day${days > 1 ? "s" : ""}: closed at the planned time, in the wrong town, or a restaurant they already eat at.</span>
     <button class="btn" data-fix>Fix ${n > 1 ? "them" : "it"}</button>`;
-  bar.querySelector<HTMLButtonElement>("[data-fix]")!.onclick = () => runGeneration({ fix: { itinerary: it, problems } });
+  bar.querySelector<HTMLButtonElement>("[data-fix]")!.onclick = () => {
+    // Stops just before opening time move by themselves; the model gets only what's left.
+    if (quickFixes(it)) {
+      save(); renderItinerary();
+      const left = planProblems(it);
+      toast(left.length ? `Moved stops to their opening times; ${left.length} problem${left.length > 1 ? "s" : ""} left for the planner` : "Moved stops to their opening times");
+      if (!left.length) return;
+      runGeneration({ fix: { itinerary: it, problems: left } });
+      return;
+    }
+    runGeneration({ fix: { itinerary: it, problems: planProblems(it) } });
+  };
 }

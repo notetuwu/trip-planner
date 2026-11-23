@@ -21,6 +21,27 @@ export interface PromptOptions {
   schema?: boolean;
 }
 
+/** How much walking and climbing the plan can ask of them. */
+const FITNESS = {
+  easy: "easy: little walking and no real hikes; short, flat walks only (up to about 1 hour), with lifts, cable cars or the car for anything steep",
+  average: "average: walks of a few hours are fine; hikes up to about 3 hours or 500 m of climbing",
+  fit: "fit: long hikes (5+ hours, 1000 m of climbing) are fine",
+} as const;
+const BREAKFAST = {
+  hotel: "at the hotel (no breakfast stop in the plan; the first stop is after it)",
+  out: "out, at a café or bakery near where they are (a named stop each morning)",
+  brunch: "a late brunch instead of breakfast and lunch (a named brunch place around 10:30-11:30, then no separate lunch)",
+  skip: "they skip it (no breakfast stop at all)",
+} as const;
+
+/** When the days start, breakfast and fitness, as constraint lines. */
+function dayShapeLines(trip: Trip) {
+  const lines = [`- Fitness: ${FITNESS[trip.fitness || "average"] || FITNESS.average}`];
+  if (/^\d{2}:\d{2}$/.test(trip.dayStart || "")) lines.push(`- Days start around ${trip.dayStart}: the first stop (or breakfast) is at about that time. Start earlier only when the day needs it (a day trip, a travel day with a long drive, a booked early time, a place that's only quiet or open early, a packed day with several big sights) and then say why in the day's notes; on a normal day in town, don't.`);
+  if (trip.breakfast && BREAKFAST[trip.breakfast]) lines.push(`- Breakfast: ${BREAKFAST[trip.breakfast]}.`);
+  return lines.join("\n");
+}
+
 /** What a stop's description says, by the detail chosen in Settings → Planning. */
 const DETAIL = {
   brief: "one short sentence on what it is and why go, plus anything they must know (book ahead, closed days).",
@@ -61,6 +82,7 @@ ${trainsSection(trip)}
 ## Constraints
 - Daily budget: ${trip.budgetPer === "person" && trip.travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day, so ${trip.dailyBudget * trip.travelers} ${trip.currency} a day for the group of ${trip.travelers}` : `${trip.dailyBudget} ${trip.currency} per day for ${trip.travelers} traveler(s)`} (costs in the plan are for the whole group), covering activities, food and local transport (accommodation is already paid, intercity transfers count toward the day they happen). It is a ceiling, not a target.
 - Pace: ${trip.pace}
+${dayShapeLines(trip)}
 - Interests / preferences: ${trip.interests || "none given"}${trip.wishes?.trim() ? `
 - What they want to see: ${trip.wishes.trim()}` : ""}
 - Their own requests: see above.
@@ -85,6 +107,10 @@ ${nearby}
 - Choosing sights: mix the essential highlights of each place (the ones most visitors would be sorry to miss) with a few lesser-known spots that fit their interests, the kind locals recommend${trip.wishes?.trim() ? `, weighted the way they describe under "What they want to see"` : ""}. Give each full day a theme or an area.
 - Only real places: every named stop must exist under exactly that name (from the saved places, the lists above, or your research). Never make up names for restaurants, cafés or sights. If you don't know a real place for a meal, write a generic stop such as "Lunch around the Marktplatz" instead of inventing one.
 - ${STOPS_PER_DAY[pace]} sights or activities per full day, plus meals: a specific, named place for lunch and for dinner (and breakfast when not at the hotel) that fits the interests and dietary needs, and a different one each time (no restaurant or café twice in the trip unless they ask). Arrival and departure days can be lighter, but still plan the hours that are free.
+- One lunch and one dinner a day, never two of either. A restaurant they ask for on a day (in their requests or bookings) is that day's lunch or dinner at that time: don't add another meal next to it (no second dinner at 19:00 after McDonald's at 17:00); a restaurant you had in mind instead goes on another day.
+- Hikes and long climbs (an hour or more on foot, or a steep climb such as up a mountain) are the main event of their day: plan them in the morning while fresh, with only easy things afterwards (a meal, a café, a relaxed stroll, a spa), or as the last activity of the day. Never schedule another big sight (a castle, a large museum, a theme park) after one. Fit hikes to their fitness above.
+- Before giving a stop its time, check when it opens and closes on that weekday: many museums and castles open at 9:00 or 10:00, cafés at 7:00-9:00, and restaurants often close between lunch and dinner. Don't plan breakfast before the café opens.
+- Never write "MUST SEE" (or "[MUST SEE]") into a stop's name or description: the page marks must-sees itself.
 - "time": the start time in 24-hour "HH:MM" only, nothing else. Items in chronological order with realistic durations, travel time between them and opening hours respected.
 - "transport": how to get there from the previous stop, with mode or line and minutes, e.g. "Tram 1 from Hauptbahnhof, 12 min" or "Walk, 5 min".
 - "cost": on every item, for the whole group (0 if free): tickets, meals, fares. The day's "estimatedCost" is the sum of its item costs. Don't pad days to reach the budget.
@@ -99,12 +125,13 @@ ${nearby}
 - Road distances and driving times given with the stays come from a routing service: trust them over your own idea of geography or borders. If a drive is longer than one travel day allows, don't pretend it fits: say so plainly in the planning notes and plan that day around the drive (and suggest how to make it work, e.g. extra nights on the way).
 - A planned day trip that "only N of the M travelers" take is a split day: those N go on the trip while the others spend the day elsewhere (another such day trip, if the stay has one that the rest of the group takes, on the same day; otherwise a day of their own near the stay). Use the "group" and "people" fields on every item while they're apart (writing "Group A" only in the description isn't enough: the fields are what splits the day into columns and map lines), give each group its own meals, and bring them back together in the evening if that's sensible. Day trips the travelers set up here are part of the plan: never drop one for being far away.
 - Getting between towns (a day trip there and back, or a stop on the way) is one transfer item each way, named "<from> → <to> (<mode>)", e.g. "Osaka → Himeji (JR Special Rapid)"; its "transport" says which station to walk or ride to, and the next stop's "transport" how to get on from the station there ("Walk 15 min up Otemae-dori from JR Himeji"). Stations, platforms and the hotel are never stops of their own (no "Osaka Station" or "Hotel" item), except checking in or out. By car, the first stop's transport says where to park.
+- A place on the way between two stays (a mountain pass, a lake, a castle) is a stop on the drive itself: route the drive through it on the road it lies on (over the pass, through its valley; e.g. Bolzano → Sarntal → Penser Joch → Sterzing → Brenner → Innsbruck rather than the A22 motorway), with the stops in driving order. Never drive past it on the motorway, go up to it and come back the same way to carry on. The transfer item's "transport" names that road.
 - Day trips and other long excursions (anything more than about 30-45 minutes away from where you sleep) go on full days only, never on a travel day: changing cities and doing a day trip on the same day is exhausting. Travel days get the transfer plus light sightseeing near the hotel or a stop on the way that lies directly on the route. For example, with 2 nights in Padua the one full day there is the day for Venice. If a must-see day trip fits no full day, say so in the notes (or list it in "unused") rather than squeezing it into a travel day.
 
 ## Trip-wide extras
 - "holidaysAndEvents": every public holiday, festival, major event or seasonal highlight in the visited places during the trip, with what it means for the plan.
 - "tips": 6-10 specific, practical tips for this trip: money and payment, transport passes or tickets worth buying (with prices; for things bought online, such as a motorway vignette, a toll account or a rail pass, end the tip with the official website to buy it, only when you know it for certain${research ? " or found it online" : ""}), reservations to make and how far ahead, etiquette, SIM/data, luggage, tipping.
-- "unused": saved places you could not fit, with a short reason.${research ? `
+- "unused": saved places you could not fit, with a short reason: every must-see you left out, and the saved places (from their lists) near the stays that you chose not to use (up to about 25 of the most notable, e.g. "too far from the route", "closed on the days there", "similar to X, which is in the plan").${research ? `
 - "sources": the URLs you relied on most.` : ""}
 
 ## Output rules
@@ -115,7 +142,7 @@ ${nearby}
 - "place" is only the place's name. For items from the list it must be the exact Title as written above, without the details in brackets or braces.
 - Give every item "lat"/"lng" coordinates (4 decimals) so it can be shown on a map.
 - All costs in ${trip.currency}.
-- Group nearby places on the same day to minimise transit.
+- Group nearby places on the same day to minimise transit: sights within about 2 km of each other (a castle and an aquarium in the same part of town, two waterfalls in the same valley) go on the same day, one after the other, and never send them back on another day to a place right next to one they already visited.
 - If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.`;
 
   if (trip.revise?.itinerary && trip.revise?.request) {

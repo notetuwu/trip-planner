@@ -6,6 +6,7 @@ import { state } from "../core/state";
 import { tripCountries } from "../geo/locate";
 import { directionsUrl } from "../itinerary/directions";
 import { APP_CSS } from "../styles";
+import { sectionsHtml } from "./print";
 import { OFFLINE_SCRIPT, offlineMapData } from "./offline-map";
 
 const EXPORT_CSS = `
@@ -17,13 +18,28 @@ const EXPORT_CSS = `
   .daynav a.today { background: var(--accent); border-color: var(--accent); color: #fff; }
   .day { scroll-margin-top: 52px; }
   .day-head { cursor: default; }
+  .offline-sections { margin: 12px 0; }
+  .offline .stay-group .city-band { cursor: pointer; }
   #map { height: 300px; border-radius: 14px; margin-bottom: 12px; border: 1px solid var(--line); }
   @media print { .daynav, #map { display: none; } }`;
 
 export function offlineHtml() {
   const it = state.itinerary!;
   const content = $("#output").cloneNode(true) as HTMLElement;
-  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .redo, .thoughts, .stale, .it-search", content)) el.remove();
+  // Only what works without the planner: no buttons that re-plan, open windows or change the trip.
+  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .redo, .thoughts, .stale, .it-search, .sum-icons, .replan-stay, .fix-bar, .inline-progress, .far-warn[hidden]", content)) el.remove();
+  // Every stay unfolded, whatever was folded on screen (the arrows still fold them, see OFFLINE_SCRIPT).
+  for (const el of $$(".stay-group.folded", content)) el.classList.remove("folded");
+  for (const el of $$(".day.replanning", content)) el.classList.remove("replanning");
+  // The cost breakdown is a window in the planner: here the total is just a figure.
+  for (const b of $$<HTMLButtonElement>(".stat-btn", content)) {
+    const div = document.createElement("div");
+    div.className = "stat";
+    div.innerHTML = b.innerHTML.replace(" · breakdown", "");
+    b.replaceWith(div);
+  }
+  // Booking, holidays and packing as fold-outs under the summary (windows in the planner).
+  content.querySelector(".summary")?.insertAdjacentHTML("afterend", `<div class="offline-sections">${sectionsHtml(it)}</div>`);
   // Show everything, whatever the search box on the page is filtering.
   for (const el of $$(".day, .item, .fork, .city-band, .stay-group", content)) { el.hidden = false; el.classList.toggle("search-hit", false); }
   // The export has no script to fill directions links on click, so fill them in now.

@@ -174,3 +174,23 @@ input[type="checkbox"]:disabled { opacity: .45; cursor: default; }
 :root { --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E"); }
 .row { display: grid; gap: 10px; grid-template-columns: repeat(var(--cols, 2), 1fr); margin-bottom: 10px; }
 .hint { font-size: 12px; color: var(--muted); font-weight: 400; }
+
+/* Fields shrink with their column: a date field's built-in width (Safari on iOS) mustn't push it under the next one. */
+.row { grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); }
+.row > div { min-width: 0; }
+input, select, textarea { min-width: 0; }
+input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; display: block; min-height: var(--control-h); line-height: normal; }
+input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-date-and-time-value { text-align: left; margin: 0; }
+
+/* Touch screens: text fields at 16px, or Safari on iOS zooms into the page when one is tapped (the chat box did that,
+   and the zoomed page didn't fit any more). */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea, .cp-box textarea { font-size: 16px; }
+  .cp-box textarea { line-height: 22px; }
+}
+/* The chat over the whole screen on a phone: the page behind it doesn't scroll along. */
+@media (max-width: 900px) {
+  body.chat-cover { overflow: hidden; }
+  .chat-panel { overscroll-behavior: contain; }
+  .chat-panel .cp-log { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+}

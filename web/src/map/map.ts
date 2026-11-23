@@ -62,6 +62,7 @@ export function initMap() {
   });
   map.on("click", (e) => {
     if (!$("#mapResults").hidden) { $("#mapResults").hidden = true; return; }
+    if (picking) { const done = picking; endPick(); done(e.latlng); return; }
     if (Date.now() - popupClosedAt > 300) openAddPopup(e.latlng);
   });
   L.DomEvent.disableClickPropagation($("#mapSearch"));
@@ -72,6 +73,35 @@ export function initMap() {
   $<HTMLInputElement>("#showRoutes").checked = prefs.app.showRoutes;
   $<HTMLInputElement>("#showPlaces").onchange = () => drawMap();
   $<HTMLInputElement>("#showRoutes").onchange = () => drawMap();
+}
+
+/** Waiting for a click on the map that picks a spot (for a booking, say) instead of adding one. */
+let picking: ((at: L.LatLng) => void) | null = null;
+function endPick() {
+  picking = null;
+  document.getElementById("mapPick")?.remove();
+  map?.getContainer().classList.remove("picking");
+}
+
+/** Asks for a spot on the map: the next click there is handed to `done` (Esc or Cancel gives up). The map scrolls into
+ *  view first (on a phone it's above the sidebar). */
+export function pickOnMap(what: string, done: (at: L.LatLng) => void) {
+  if (!map) return;
+  endPick();
+  picking = done;
+  map.closePopup();
+  map.getContainer().classList.add("picking");
+  const bar = document.createElement("div");
+  bar.id = "mapPick";
+  bar.className = "map-pick";
+  bar.innerHTML = `<span>Click the spot on the map for <b></b></span><button type="button" class="btn">Cancel</button>`;
+  bar.querySelector("b")!.textContent = what;
+  bar.querySelector("button")!.onclick = endPick;
+  $(".map-wrap").append(bar);
+  L.DomEvent.disableClickPropagation(bar);
+  $(".map-wrap").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { endPick(); document.removeEventListener("keydown", esc); } };
+  document.addEventListener("keydown", esc);
 }
 
 /** A CSS variable's current value (colours follow light/dark mode). */

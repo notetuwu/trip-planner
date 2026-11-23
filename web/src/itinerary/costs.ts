@@ -4,6 +4,7 @@ import { $, downloadFile, esc } from "../core/dom";
 import { fmtDate, fmtTime, money } from "../core/format";
 import { groupBudget, state } from "../core/state";
 import { splitGroup } from "../trip/modes";
+import { fuelHtml, loadFuelData, wireFuel } from "./fuel";
 
 const KINDS: [string, string][] = [["sight", "Sights"], ["activity", "Activities"], ["meal", "Meals"], ["transfer", "Getting around"], ["other", "Other"]];
 
@@ -25,6 +26,7 @@ function bodyHtml() {
       ${perDay ? `<div class="stat ${diff < 0 ? "over" : ""}"><b>${money(Math.abs(diff), cur)}</b><span>${diff < 0 ? "over" : "under"} the budget of ${money(budget, cur)} (${money(perDay, cur)} a day)</span></div>` : ""}
       ${paidSum ? `<div class="stat"><b>${money(paidSum, cur)}</b><span>already paid (not in the total)</span></div>` : ""}
     </div>
+    <div class="fuel" data-fuel-box>${fuelHtml()}</div>
     <h3>By kind</h3>
     <table class="cb-table">${byKind.map(([label, v]) => `<tr><td>${label}</td><td>${bar(v, total)}</td><td class="num">${money(v, cur)}</td><td class="num muted">${total ? Math.round((v / total) * 100) : 0}%</td></tr>`).join("")}</table>
     ${(state.bookings || []).some((b) => b.name && b.cost != null) ? `<h3>Bookings</h3>
@@ -55,5 +57,10 @@ export function openCosts() {
   $("#costsMeta").textContent = `${it.days.length} days · ${state.travelers} traveler${state.travelers > 1 ? "s" : ""} · estimates for the whole group`;
   $("#costsBody").innerHTML = bodyHtml();
   $("#costsBody").querySelector<HTMLButtonElement>("[data-cb-csv]")!.onclick = () => downloadFile(new Blob([csv()], { type: "text/csv" }), "trip-costs.csv");
+  // The fuel section redraws on its own (its inputs keep their place in the window).
+  const fuel = $("#costsBody").querySelector<HTMLElement>("[data-fuel-box]")!;
+  const redraw = () => { fuel.innerHTML = fuelHtml(); wireFuel(fuel, redraw); };
+  wireFuel(fuel, redraw);
+  loadFuelData().then((got) => { if (got && dlg.open) redraw(); });
   if (!dlg.open) dlg.showModal();
 }

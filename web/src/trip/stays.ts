@@ -1,5 +1,6 @@
 // The stays editor: one card per stay, the transport between them, and day trips.
 import type { TravelMode } from "../../../shared/types";
+import { mapsName } from "../core/maps-links";
 import { $, $$, esc } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { type Stay, save, state } from "../core/state";
@@ -53,7 +54,7 @@ function stayHtml(s: Stay, i: number) {
         <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
       </div>
       ${!geoLine ? "" : loc
-        ? `<a class="stay-geo" href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener" title="${esc(`${loc.label}: open in Google Maps`)}">${geoLine}${ext()}</a>`
+        ? `<a class="stay-geo" href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener" title="${esc(`${loc.label}: open in ${mapsName()}`)}">${geoLine}${ext()}</a>`
         : `<div class="stay-geo">${geoLine}</div>`}
       ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1, loc))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
       <div class="day-trips">

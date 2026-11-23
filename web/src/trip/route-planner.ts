@@ -15,6 +15,9 @@ import { fillFields } from "./fields";
 import { modeName } from "./modes";
 import { chainDates, renderStays } from "./stays";
 import { renderTripTitle } from "./title";
+import { mdLite } from "../itinerary/panels";
+import { hideRouteMap, refreshRouteMap, showRouteMap } from "./route-map";
+import { pointUrl, searchUrl } from "../core/maps-links";
 import type { Place, TravelMode } from "../../../shared/types";
 
 interface PlannedStay { city: string; country: string; nights: number; travel: TravelMode; why: string; dayTrips?: { place: string; why: string }[] }
@@ -33,6 +36,7 @@ function mustSees() {
 }
 
 function open() {
+  syncModels();
   const n = mustSees().length;
   $("#rpMustRow").hidden = !n;
   $("#rpMustLabel").textContent = `Plan around my must-see places (${n})`;
@@ -40,10 +44,26 @@ function open() {
   if (!val("rpStart") && first) $<HTMLInputElement>("#rpStart").value = first.city;
   if (!val("rpDate")) $<HTMLInputElement>("#rpDate").value = first?.start || addDays(new Date().toISOString().slice(0, 10), 30);
   $<HTMLDialogElement>("#routeDialog").showModal();
+  refreshRouteMap();
+}
+
+/** A place of the route in the maps app (opens in a new tab). */
+const mapLink = (name: string, country = "", text = name) => {
+  const q = country && !name.toLowerCase().includes(country.toLowerCase()) ? `${name}, ${country}` : name;
+  return `<a class="rp-link" href="${esc(searchUrl(q))}" data-maps-q="${esc(q)}" target="_blank" rel="noopener" title="Open in your maps app">${esc(text)}</a>`;
+};
+
+/** The route's links are made when it's drawn, but follow the maps app chosen in Settings when clicked (the setting may
+ *  have changed since, or the route was restored before the settings arrived). */
+function followMapsApp(e: MouseEvent) {
+  const a = (e.target as HTMLElement).closest<HTMLAnchorElement>("a.rp-link");
+  if (!a) return;
+  const ll = a.dataset.mapsLl?.split(",").map(Number);
+  a.href = ll?.length === 2 ? pointUrl({ lat: ll[0], lng: ll[1] }, a.textContent || "") : searchUrl(a.dataset.mapsQ || a.textContent || "");
 }
 
 const viaLines = (l: PlannedLeg) => (l.via || [])
-  .map((v) => `<div class="trips">${icon("route")} On the way: ${esc(v.place)}${v.why ? ` · ${esc(v.why)}` : ""}</div>`).join("");
+  .map((v) => `<div class="trips">${icon("route")} On the way: <a class="rp-link" href="${esc(pointUrl(v, v.place))}" data-maps-ll="${v.lat},${v.lng}" target="_blank" rel="noopener" title="Open in your maps app">${esc(v.place)}</a>${v.why ? ` · ${esc(v.why)}` : ""}</div>`).join("");
 
 const legLine = (l: PlannedLeg | undefined, travel: string) => (l ? legText(l, travel) + viaLines(l) : "");
 
@@ -59,23 +79,25 @@ function showPlan(plan: RoutePlan, turn?: Omit<Turn, "route" | "title">) {
   let date = plan.startDate;
   const rows = plan.stays.map((s, k) => {
     const at = date; date = addDays(date, s.nights);
-    return `<li><span class="when">${esc(fmtDate(at))}</span><b>${esc(s.city)}${s.country ? `, ${esc(s.country)}` : ""}</b>
+    return `<li><span class="when">${esc(fmtDate(at))}</span><b>${mapLink(s.city, s.country, s.country ? `${s.city}, ${s.country}` : s.city)}</b>
       <span class="nights">${s.nights} night${s.nights > 1 ? "s" : ""}</span>
       ${legLine(plan.legs[k], s.travel)}<div class="why">${esc(s.why)}</div>
-      ${(s.dayTrips || []).map((t) => `<div class="trips">${icon("dayTrip")} Day trip: ${esc(t.place)}${t.why ? ` · ${esc(t.why)}` : ""}</div>`).join("")}</li>`;
+      ${(s.dayTrips || []).map((t) => `<div class="trips">${icon("dayTrip")} Day trip: ${mapLink(t.place, s.country)}${t.why ? ` · ${esc(t.why)}` : ""}</div>`).join("")}</li>`;
   }).join("");
   const back = plan.legs.at(-1);
   const long = plan.legs.filter((l) => l.tooLong).length;
   $("#routeResult").innerHTML = `<div class="route-result">
     <h3>${esc(plan.title || "Your route")} <button class="link-btn route-fresh" data-fresh type="button" title="Forget this route and the chat about it">Start over</button></h3><p class="hint">${esc(plan.summary)}</p>
+    <div class="route-map" id="rpMap"></div>
     <ul class="route-stops">${rows}
-      <li class="end"><span class="when">${esc(fmtDate(date))}</span><b>${esc(plan.end)}</b><span class="nights">end</span>${legLine(back, plan.stays.at(-1)?.travel || "")}</li></ul>
+      <li class="end"><span class="when">${esc(fmtDate(date))}</span><b>${mapLink(plan.end, plan.stays.at(-1)?.country || "")}</b><span class="nights">end</span>${legLine(back, plan.stays.at(-1)?.travel || "")}</li></ul>
     ${long ? `<p class="hint">${icon("warn")} ${long} leg${long > 1 ? "s are" : " is"} longer than your daily limit; ask for a change in the chat, or add a night on the way afterwards ("Stops on the way").</p>` : ""}
   </div>`;
   const useBtn = $<HTMLButtonElement>("#rpUse");
   useBtn.hidden = false;
   useBtn.onclick = () => use(plan);
   $<HTMLButtonElement>("#routeResult [data-fresh]").onclick = startOver;
+  showRouteMap($("#rpMap"), plan);
   shown = plan;
   if (turn) { chat.push({ route: routeLine(plan), title: plan.title, ...turn }); remember(); $("#routeResult").scrollIntoView({ block: "start", behavior: "smooth" }); }
   renderChat();
@@ -92,6 +114,7 @@ const remember = () => {
 
 function startOver() {
   chat.length = 0; shown = null;
+  hideRouteMap();
   $("#routeResult").innerHTML = ""; $<HTMLButtonElement>("#rpUse").hidden = true;
   localStorage.removeItem(KEY);
   renderChat(); idle();
@@ -117,7 +140,13 @@ let running: AbortController | null = null;
 /** The plan on screen, and the chat: each route suggested (with what the model said about it), then their reply. */
 let shown: RoutePlan | null = null;
 /** `fresh`: a completely new route ("New route"), where the conversation the model gets starts again. */
-interface Turn { route: string; title?: string; note?: string; said?: string; fresh?: boolean }
+interface Turn { route: string; title?: string; note?: string; said?: string; fresh?: boolean; thinking?: string; thoughtSecs?: number }
+/** While it plans: its thinking so far (and since when), and what it has written about the route. */
+interface Pending { thinking: string; text: string; since: number; until: number }
+
+/** The model's thinking, folded like in the trip chat: "Thinking…" (open, live) or "Thought for 12s". */
+const thinkingHtml = (thinking: string, label: string, open: boolean, k = "") =>
+  `<details class="cp-think"${open ? " open" : ""}${k ? ` data-k="${k}"` : ""}><summary>${icon("sparkles")}<span>${esc(label)}</span></summary><div class="cp-think-body">${mdLite(thinking)}</div></details>`;
 const chat: Turn[] = [];
 
 /** "Salzburg (2 nights; day trips: Hallstatt) → Lucerne (3 nights; on the way there: Vaduz) → …", the route in one line. */
@@ -129,17 +158,39 @@ const routeLine = (plan: RoutePlan) => plan.stays.map((s, k) => {
   return `${s.city} (${s.nights} night${s.nights > 1 ? "s" : ""}${extra ? `; ${extra}` : ""})`;
 }).join(" → ") + (plan.legs.at(-1)?.via?.length && plan.legs.length > plan.stays.length ? ` → home (on the way: ${plan.legs.at(-1)!.via!.map((v) => v.place).join(", ")})` : "");
 
-/** The chat column; `pending` is the model's answer while it's being written (its reasoning so far). */
-function renderChat(pending?: string) {
+/** The chat column; `pending` is the model's answer while it's being written (its thinking and reasoning so far). */
+function renderChat(pending?: Pending) {
   const log = $("#rpChat");
+  // An opened "Thought for…" stays open across redraws; they keep their place unless they were at the bottom.
+  const opened = new Set([...log.querySelectorAll<HTMLDetailsElement>("details.cp-think[data-k]")].filter((d) => d.open).map((d) => d.dataset.k));
+  const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   const msgs = chat.map((t, k) => `
     ${t.fresh && k > 0 ? `<div class="rc-new">New route</div>` : ""}
-    <div class="rc-msg ai"><b>${esc(t.title || `Route ${k + 1}`)}</b><div class="rc-route">${esc(t.route)}</div>${t.note ? `<p>${esc(t.note)}</p>` : ""}</div>
+    <div class="rc-msg ai">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, opened.has(String(k)), String(k)) : ""}${t.note ? mdLite(t.note) : ""}<div class="rc-card">${icon("route")}<span><b>${esc(t.title || `Route ${k + 1}`)}</b><span class="rc-route">${esc(t.route)}</span></span></div></div>
     ${t.said ? `<div class="rc-msg me">${esc(t.said)}</div>` : ""}`).join("");
-  log.innerHTML = msgs + (pending != null ? `<div class="rc-msg ai pending" id="rpThink">${esc(pending)}</div>` : "")
-    || `<p class="hint">Plan a route on the left. Then tell it here what to change, and it changes that route, keeping the rest. "New route" starts again from scratch.</p>`;
-  log.scrollTop = log.scrollHeight;
+  const answering = !!pending?.text;
+  const secs = pending ? Math.max(1, Math.round(((pending.until || Date.now()) - pending.since) / 1000)) : 0;
+  log.innerHTML = msgs + (pending ? `<div class="rc-msg ai pending">${pending.thinking ? thinkingHtml(pending.thinking, answering ? `Thought for ${secs}s` : "Thinking…", !answering) : ""}${pending.text
+    ? mdLite(pending.text) : !pending.thinking ? `<span class="typing"><i></i><i></i><i></i></span>` : ""}</div>` : "")
+    || `<div class="cp-empty"><div class="cp-empty-icon">${icon("route")}</div><p><b>Shape the route here</b></p><p class="hint">Plan a route on the left, then tell it what to change ("the other way round", "Hallstatt as a day trip", "one more night in Lucerne"). It changes that route and keeps the rest; "New route" starts from scratch.</p></div>`;
+  if (atEnd || !pending) log.scrollTop = log.scrollHeight;
+  // The live thinking follows its newest line.
+  const live = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
+  if (live) live.scrollTop = live.scrollHeight;
 }
+
+/** The route chat's model menu: "Same as planning (…)" and every model the planning menu has (not its actions). */
+function syncModels() {
+  const pick = $<HTMLSelectElement>("#rpModel"), main = $<HTMLSelectElement>("#model");
+  const opts = [...main.options].filter((o) => o.value && !o.value.startsWith("__"));
+  const planning = main.selectedOptions[0]?.textContent?.trim() || "the planning model";
+  const html = `<option value="">Same as planning (${esc(planning)})</option>` + opts.map((o) => `<option value="${esc(o.value)}">${esc(o.textContent?.trim() || o.value)}</option>`).join("");
+  if (pick.dataset.html !== html) { pick.innerHTML = html; pick.dataset.html = html; }
+  pick.value = state.routeModel && opts.some((o) => o.value === state.routeModel) ? state.routeModel : "";
+}
+
+/** The model that plans routes: the one picked in the route chat, else the planning model. */
+const routeModel = () => (state.routeModel && [...$<HTMLSelectElement>("#model").options].some((o) => o.value === state.routeModel) ? state.routeModel : state.model);
 
 /** Buttons and the chat box for what can be done now. */
 function idle() {
@@ -156,6 +207,8 @@ function idle() {
     sendBtn.title = busy ? "Stop planning" : "Send (Enter) · new line with Shift+Enter";
   }
   sendBtn.disabled = !busy && (!shown || !why.value.trim());
+  $<HTMLSelectElement>("#rpModel").disabled = busy;
+  syncModels();
 }
 
 /** The reply box grows with what's typed, up to its maximum height (then it scrolls). */
@@ -183,17 +236,19 @@ async function plan_(change = false) {
   if (!form.reportValidity()) return;
   const live = $("#rpLive");
   // The model is fixed when the request starts: switching models meanwhile doesn't change who's answering.
-  const model = state.model;
+  const model = routeModel();
   // What the model gets of the chat: from the last new route on, when it's changing the one on screen.
   const from = Math.max(0, chat.map((t) => !!t.fresh).lastIndexOf(true));
-  const conversation = change ? chat.slice(from).slice(-8).map(({ route, said }) => ({ route, said })) : [];
+  const conversation = change ? chat.slice(from).slice(-40).map(({ route, said }) => ({ route, said })) : [];
   running = new AbortController();
   $<HTMLButtonElement>("#rpUse").hidden = true;
   const before = shown;
+  hideRouteMap();
   $("#routeResult").innerHTML = "";
   shown = null;
   idle();
-  renderChat("Waiting for the model…");
+  const pending: Pending = { thinking: "", text: "", since: 0, until: 0 };
+  renderChat(pending);
   let reasoning = "";
   try {
     const plan = await streamRequest<RoutePlan>("/api/route-plan", {
@@ -204,19 +259,20 @@ async function plan_(change = false) {
       mustSee: !$("#rpMustRow").hidden && $<HTMLInputElement>("#rpMust").checked ? mustSees() : [],
     }, (l) => {
       live.textContent = `${modelLabel(model)}: ${liveText(l)}`;
-      const think = document.querySelector<HTMLElement>("#rpThink");
-      if (l.reasoning && think && reasoning !== l.reasoning) {
+      let changed = false;
+      if (l.thinking && l.thinking !== pending.thinking) { pending.since ||= Date.now(); pending.thinking = l.thinking; changed = true; }
+      if (l.reasoning && l.reasoning !== reasoning) {
         reasoning = l.reasoning;
-        // Follow the newest text, unless they scrolled up to read.
-        const log = $("#rpChat"), atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
-        think.textContent = reasoning;
-        if (atEnd) log.scrollTop = log.scrollHeight;
+        if (pending.thinking && !pending.until) pending.until = Date.now();
+        pending.text = reasoning; changed = true;
       }
+      if (changed) renderChat(pending);
     }, running.signal);
     live.textContent = "";
     running = null;
     // What it says about the route: its reasoning, without the running list of stays (the route is right above it).
-    showPlan(plan, { note: reasoning.split(/\n\nStays so far:/)[0].trim() || undefined, fresh: !change });
+    showPlan(plan, { note: reasoning.split(/\n\nStays so far:/)[0].trim() || undefined, fresh: !change,
+      ...(pending.thinking ? { thinking: pending.thinking.slice(-20_000), thoughtSecs: Math.max(1, Math.round(((pending.until || Date.now()) - pending.since) / 1000)) } : {}) });
   } catch (e) {
     live.textContent = running?.signal.aborted ? "Cancelled." : (e as Error).message;
     running = null;
@@ -283,6 +339,13 @@ function use(plan: RoutePlan) {
 }
 
 export function initRoutePlanner() {
+  // The model menu follows the planning menu as models come and go.
+  $<HTMLSelectElement>("#rpModel").onchange = (e) => { state.routeModel = (e.target as HTMLSelectElement).value; save(); };
+  const main = $<HTMLSelectElement>("#model");
+  main.addEventListener("change", syncModels);
+  new MutationObserver(syncModels).observe(main, { childList: true });
+  syncModels();
+  $("#routeResult").addEventListener("click", followMapsApp, true);
   $("#planRoute").onclick = open;
   $<HTMLFormElement>("#routeForm").onsubmit = (e) => { e.preventDefault(); plan_(); };
   $<HTMLFormElement>("#rpChatForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else send(); };
@@ -291,7 +354,7 @@ export function initRoutePlanner() {
   why.onkeydown = (e) => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } };
   why.oninput = () => { fitBox(); idle(); };
   // A click anywhere in the box puts the cursor in the text.
-  $(".rc-box").onclick = (e) => { if (e.target === e.currentTarget) why.focus(); };
+  $("#rpBox").onclick = (e) => { const t = e.target as HTMLElement; if (t === e.currentTarget || t.classList.contains("cp-tools-fill")) why.focus(); };
   renderChat(); idle();
   restore();
 }

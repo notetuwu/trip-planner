@@ -6,12 +6,15 @@ import { geo, geoKey, geocode } from "./geocode";
 import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
 import { splitGroup, transferEnds } from "../trip/modes";
+import { activityTown } from "./stop-text";
+
+export { activityTown };
 
 export const byTitleMap = () => new Map(session.places.map((p) => [p.title, p]));
 export type ByTitle = Map<string, Place>;
 
 /** The towns a day's city field names ("Kyoto / Nara"), without bracketed details such as an address. */
-export const daySegments = (d: Day) => String(d.city || "").replace(/\s*\([^)]*\)/g, "")
+export const daySegments = (d: Day) => String(d.city || "").replace(/\s*\(\s*via\s+([^)]*)\)/gi, " / $1").replace(/\s*\([^)]*\)/g, "")
   .split(/\s*(?:\/|,|→|->|–|&|\band\b)\s*/i).map((s) => s.trim()).filter(Boolean);
 
 // Lookup results that can't be a sight, a town or a meal: a "Pilatus" employment office or aircraft factory, or a
@@ -19,7 +22,21 @@ export const daySegments = (d: Day) => String(d.city || "").replace(/\s*\([^)]*\
 const JUNK_KIND = /^(employment_agency|industrial|office|company|commercial|retail|government|bus_stop|stop_position|parking|post_box|atm|vending_machine|residential|primary|secondary|tertiary|unclassified|service|trunk|motorway|living_street)$/;
 const usable = (g: GeoHit | null | undefined): g is GeoHit => !!g && !JUNK_KIND.test(g.kind || "");
 
-const dayTowns = (d: Day): Loc[] => daySegments(d).map((seg) => geo[geoKey(seg, countryCodes())]).filter(usable);
+/** A town of the day, looked up both within the trip's countries and anywhere: Vaduz is in Liechtenstein even when
+ *  nobody sleeps there (searched only in the stays' countries, "Vaduz" came back as something in Sardinia). Of the
+ *  two, the one nearer the day's stays wins. */
+function townHit(seg: string, d: Day): GeoHit | null {
+  const found = [geo[geoKey(seg, countryCodes())], geo[geoKey(seg)]].filter(usable);
+  if (found.length < 2) return found[0] || null;
+  const refs = staysOn(d);
+  if (!refs.length) return found[0];
+  const dist = (g: GeoHit) => Math.min(...refs.map((r) => distKm(g, r)));
+  return dist(found[1]) < dist(found[0]) - 1 ? found[1] : found[0];
+}
+/** Both lookups of a town (see townHit). */
+const townQueries = (q: string) => [{ q, cc: countryCodes(), first: true }, { q, first: true }];
+
+const dayTowns = (d: Day): Loc[] => daySegments(d).map((seg) => townHit(seg, d)).filter((g): g is GeoHit => !!g);
 
 /** The point a day's stops are searched around: the day's own town (e.g. Venice on a day trip), else where you sleep. */
 function dayHome(d: Day): Loc | null {
@@ -46,7 +63,7 @@ interface Town { name: string; loc: Loc }
 /** The towns a day can happen in: those its city names ("Osaka / Onomichi / Hiroshima") and its stay's day trips. */
 function townList(d: Day): Town[] {
   const out: Town[] = [];
-  for (const seg of daySegments(d)) { const g = geo[geoKey(seg, countryCodes())]; if (usable(g)) out.push({ name: seg, loc: g }); }
+  for (const seg of daySegments(d)) { const g = townHit(seg, d); if (g) out.push({ name: seg, loc: g }); }
   for (const s of state.stays) if (s.start && d.date > s.start && d.date < addDays(s.start, Number(s.nights) || 0))
     for (const t of s.dayTrips || []) { const g = t.place ? geo[geoKey(t.place)] : null; if (usable(g)) out.push({ name: t.place, loc: g }); }
   return out;
@@ -69,7 +86,7 @@ function townSoFar(x: ItineraryItem, d: Day, towns: Town[]): Town | null {
     if (named) { at = named; continue; }
     // A station or spot rather than a town ("Saga-Arashiyama Station"): where it is, named after the nearest of the
     // day's towns for lookups ("…, Kyoto").
-    const spot = geo[geoKey(cleanDest(ends[1]), countryCodes())];
+    const spot = townHit(cleanDest(ends[1]), d);
     if (spot && typeof spot.lat === "number") { // any result will do here, even the bus stop outside the station
       const near = towns.reduce<Town | null>((b, t) => (!b || distKm(t.loc, spot) < distKm(b.loc, spot) ? t : b), null);
       at = { name: near && distKm(near.loc, spot) < 40 ? near.name : ends[1], loc: spot };
@@ -159,17 +176,39 @@ function itemQueries(x: ItineraryItem, d: Day, town = daySegments(d)[0] || ""): 
   return [...new Set([withTown(name), ...alt])];
 }
 const nearOf = (home: Loc): [number, number] => [home.lat, home.lng];
+/** The countries a stop is searched in: the trip's, plus the country of the town it's in (Liechtenstein for a stop in
+ *  Vaduz on a drive from Germany to Switzerland). */
+const stopCc = (town: Town) => [...new Set([...countryCodes().split(","), town.loc.cc || ""].filter(Boolean))].join(",");
+
+/** The day's towns other than the one a stop is searched around first (at most three, more than ~10 km away). */
+const otherTowns = (d: Day, town: Town) => townList(d).filter((t) => bare(t.name) !== bare(town.name) && distKm(t.loc, town.loc) > 10).slice(0, 3);
+/** Settlements and districts: what an activity's town lookup may land on (not a bar called "Sunset"). */
+const SETTLEMENT = /^(city|town|village|hamlet|suburb|quarter|neighbourhood|isolated_dwelling|locality|administrative|municipality|borough|district)$/;
 
 /** The best lookup result for a stop: one with its name if any, else the first plausible one (fuzzy). */
-function stopHit(x: ItineraryItem, d: Day): { g: GeoHit; same: boolean } | null {
+function stopHit(x: ItineraryItem, d: Day): { g: GeoHit; same: boolean; town?: boolean } | null {
   const town = itemTown(x, d), home = town?.loc;
   if (!home) return null;
+  const cc = stopCc(town!);
   let fuzzy: GeoHit | null = null;
   for (const q of itemQueries(x, d, town!.name)) {
-    const g = geo[geoKey(q, countryCodes(), nearOf(home), true)];
+    const g = geo[geoKey(q, cc, nearOf(home), true)];
     if (!usable(g) || distKm(g, home) >= 60) continue;
     if (sameName(q, g, d)) return { g, same: true };
     fuzzy ||= g;
+  }
+  // A day through several towns (Isny → Vaduz → Lucerne): the place may be at another of them.
+  for (const t of otherTowns(d, town!)) {
+    for (const q of itemQueries(x, d, t.name)) {
+      const g = geo[geoKey(q, stopCc(t), nearOf(t.loc), true)];
+      if (usable(g) && distKm(g, t.loc) < 60 && sameName(q, g, d)) return { g, same: true };
+    }
+  }
+  // "Kempten old town walk" on a Isny day: the walk is in Kempten, so it goes there (the town's own point).
+  const at = activityTown(x.place);
+  if (at && !daySegments(d).some((s) => bare(s) === at.toLowerCase())) {
+    const g = geo[geoKey(at, cc, nearOf(home), true)];
+    if (usable(g) && SETTLEMENT.test(g.kind || "") && distKm(g, home) < 60 && sameName(at, g, { ...d, city: "" })) return { g, same: false, town: true };
   }
   return fuzzy ? { g: fuzzy, same: false } : null;
 }
@@ -200,6 +239,8 @@ function farFromDay(loc: Loc, d: Day) {
 }
 
 export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | null {
+  // Looked up from its address (a booking, a stop added in the chat): that's where it is.
+  if (x.fixed && typeof x.lat === "number" && typeof x.lng === "number") return { lat: x.lat, lng: x.lng };
   const p = byTitle.get(x.place);
   const hotel = !p && hotelLoc(x, day);
   if (hotel) return hotel;
@@ -215,6 +256,7 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
     return { lat: ref.lat, lng: ref.lng, approx: true, elsewhere: hit.where || `${hit.loc.lat.toFixed(3)}, ${hit.loc.lng.toFixed(3)}` };
   }
   if (found?.same) return found.g;            // found the place itself
+  if (found?.town) return { ...found.g, approx: true }; // a walk in a town the name gives: that town
   const fuzzy: Loc | null = found?.g || null; // something else with a similar name
   const model = typeof x.lat === "number" && typeof x.lng === "number" ? { lat: x.lat, lng: x.lng } : null;
   // Check guesses against the towns the day names, or (until those are located) where you sleep that night.
@@ -253,9 +295,9 @@ export function geocodeItems() {
   const it = state.itinerary; if (!it || !countryCodes()) return;
   const byTitle = byTitleMap(), qs = [];
   for (const d of it.days) {
-    for (const seg of daySegments(d)) qs.push({ q: seg, cc: countryCodes(), first: true });
+    for (const seg of daySegments(d)) qs.push(...townQueries(seg));
     // Where transfers end (a station such as "Saga-Arashiyama Station"), so the stops after them are looked up there.
-    for (const x of d.items) { const ends = transferEnds(x); if (ends) qs.push({ q: cleanDest(ends[1]), cc: countryCodes(), first: true }); }
+    for (const x of d.items) { const ends = transferEnds(x); if (ends) qs.push(...townQueries(cleanDest(ends[1]))); }
     for (const x of d.items) {
       const town = itemTown(x, d);
       if (!town) continue;
@@ -266,8 +308,12 @@ export function geocodeItems() {
       const elsewhere = !!itemLoc(x, d, byTitle)?.elsewhere;
       if (!known || paid || elsewhere) {
         // Stops whose spot is already known (looked up only for their website) wait behind the ones still to place.
-        for (const q of itemQueries(x, d, town.name)) qs.push({ q, cc: countryCodes(), near: nearOf(town.loc), first: !known || elsewhere, stop: true });
+        for (const q of itemQueries(x, d, town.name)) qs.push({ q, cc: stopCc(town), near: nearOf(town.loc), first: !known || elsewhere, stop: true });
       }
+      // Around the day's other towns too, after everything else (only needed when it isn't found at the first).
+      if (!known) for (const t of otherTowns(d, town)) for (const q of itemQueries(x, d, t.name)) qs.push({ q, cc: stopCc(t), near: nearOf(t.loc), first: false, stop: true });
+      const at = !known && activityTown(x.place);
+      if (at) qs.push({ q: at, cc: stopCc(town), near: nearOf(town.loc), first: true, stop: true });
     }
   }
   geocode(qs);

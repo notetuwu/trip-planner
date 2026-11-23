@@ -39,7 +39,7 @@
   .print-cover th { text-align: left; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .06em; color: #666; border-bottom: 1px solid #bbb; padding: 1.5mm 2mm; }
   .print-cover td { border-bottom: 1px solid #e3e3e3; padding: 1.5mm 2mm; vertical-align: top; }
   .print-cover .pc-summary { margin: 4mm 0 0; }
-  .summary > h3, .summary > p { display: none; } /* on the cover instead */
+  .summary .sum-head { display: none; } /* on the cover instead */
   .summary .stats { display: flex; gap: 4mm; margin: 0 0 6mm; }
   .summary .stat { border: 1px solid #ddd; border-radius: 3mm; padding: 2mm 3mm; }
 

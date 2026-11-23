@@ -56,12 +56,37 @@
       <div><label for="currency">Currency</label>
         <select id="currency"></select></div>
     </div>
-    <div class="row" style="--cols:1">
+    <div class="row" style="--cols:2">
       <div><label for="pace">Pace</label>
         <select id="pace">
           <option value="relaxed (2-3 main stops per day, late starts)">Relaxed</option>
           <option value="balanced (3-5 stops per day)">Balanced</option>
           <option value="packed (as much as possible, early starts)">Packed</option>
+        </select></div>
+      <div><label for="fitness" title="How much walking and climbing the plan can ask of you: it decides how long hikes are and what comes after them">Fitness</label>
+        <select id="fitness">
+          <option value="easy">Easy: little walking</option>
+          <option value="average">Average</option>
+          <option value="fit">Fit: long hikes are fine</option>
+        </select></div>
+    </div>
+    <div class="row" style="--cols:2">
+      <div><label for="dayStart" title="When a normal day starts; earlier only on days that need it (a day trip, an early booking, a packed day)">Days start</label>
+        <select id="dayStart">
+          <option value="">As the pace suits</option>
+          <option value="07:00">Early, around 7:00</option>
+          <option value="08:00">Around 8:00</option>
+          <option value="09:00">Around 9:00</option>
+          <option value="10:00">Late, around 10:00</option>
+          <option value="11:00">Very late, 11:00</option>
+        </select></div>
+      <div><label for="breakfast">Breakfast</label>
+        <select id="breakfast">
+          <option value="">Planner decides</option>
+          <option value="hotel">At the hotel</option>
+          <option value="out">Out, at a café</option>
+          <option value="brunch">Brunch instead</option>
+          <option value="skip">We skip it</option>
         </select></div>
     </div>
     <details class="notes-fold wishes-fold" id="wishesFold">
@@ -86,6 +111,7 @@
       <div class="plan-switches">
         <label class="mini-check" id="researchRow"><input type="checkbox" id="research"> Research online<span class="hint" id="researchHint" hidden></span></label>
         <label class="mini-check" title="Stops in the wrong town or closed at the planned time go back to the model before you see the plan."><input type="checkbox" id="autoFix"> Fix what the checks find</label>
+        <label class="mini-check" title="After the plan: stops without opening hours on OpenStreetMap are looked up on the web, and each stay's days go back to the model to move what's closed. Slower (a search per stop and a check per stay), fewer surprises."><input type="checkbox" id="hoursOnline"> Check opening hours online (slower)</label>
       </div>
     </div>
 
@@ -134,7 +160,7 @@
         <div class="cp-tools">
           <label class="cp-tool" title="Add a picture: a place you saw but don't know the name of (you can also paste or drop one)"><i data-icon="image"></i><input type="file" id="cpImage" accept="image/*" multiple hidden></label>
           <select id="cpModel" class="cp-model" title="The model that answers in the chat (changes are still applied with the planning model)"></select>
-          <button class="cp-tool cp-tool-text" id="cpCompact" type="button" title="Summarize the conversation so far, so long chats stay quick (it also happens by itself)" hidden>Compact</button>
+          <button class="cp-tool cp-ring" id="cpCompact" type="button" hidden></button>
           <span class="cp-tools-fill"></span>
           <button class="rc-send" id="cpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
         </div>
@@ -191,12 +217,15 @@
   <div id="routeResult"></div>
   </div>
   <aside class="route-chat">
-    <h3>Chat</h3>
-    <div id="rpChat" class="rc-log"></div>
+    <div class="cp-head"><h2><i data-icon="chat"></i> Route chat</h2></div>
+    <div id="rpChat" class="rc-log cp-log"></div>
     <form id="rpChatForm" class="rc-input">
-      <div class="rc-box">
+      <div class="cp-box" id="rpBox">
         <textarea id="rpWhy" rows="1" maxlength="1500" placeholder="Reply to change the route…" disabled></textarea>
-        <button class="rc-send" id="rpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button>
+        <div class="cp-tools">
+          <select id="rpModel" class="cp-model" title="The model that plans the route and answers here"></select>
+          <span class="cp-tools-fill"></span>
+          <button class="rc-send" id="rpSend" type="submit" title="Send (Enter) · new line with Shift+Enter" disabled><i data-icon="arrowUp"></i></button></div>
       </div>
     </form>
   </aside>
@@ -249,6 +278,12 @@
   <label class="check imp-all"><input type="checkbox" id="impAll" checked> Suggest its places to the planner
     <span class="hint">The planner may pick from them where they fit (as options, not must-sees). Off: the places only show on the map; just the ones you star go to the planner. You can switch it later with <i data-icon="sparkles"></i> on the list.</span></label>
   <div class="counts" id="importStatus"></div>
+</dialog>
+
+<dialog id="sectionDialog" class="keys-dialog section-dialog">
+  <div class="pl-head"><h2 id="sectionTitle"></h2><span class="hint" id="sectionMeta"></span>
+    <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form></div>
+  <div id="sectionBody" class="section-body"></div>
 </dialog>
 
 <dialog id="settingsDialog" class="keys-dialog settings-dialog">

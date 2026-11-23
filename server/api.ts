@@ -19,6 +19,8 @@ import { handleSearxng } from "./routes/searxng";
 import { handleCurrent } from "./routes/current";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
+import { lookupHours } from "./trip/hours-online";
+import { eurRates, fuelPrices } from "./trip/fuel";
 import { warmNearby } from "./trip/nearby";
 import { suggestStops } from "./trip/stops";
 import { planRoute } from "./trip/route-plan";
@@ -116,6 +118,11 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       if (!body?.question || !body?.model) sendJson(res, 400, { error: "A question and a model are needed" });
       else await busyWhile(() => streamProgress(res, (report, signal) => askCompanion(body, report, signal)));
     }
+    // Opening hours from the web for stops OpenStreetMap has none for ("Check opening hours online").
+    else if (method === "POST" && path === "/api/hours/online") {
+      const body = await readJson(req);
+      await busyWhile(() => streamProgress(res, (report) => lookupHours(body || {}, report)));
+    }
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);
       sendJson(res, 200, (Array.isArray(body?.checks) ? body.checks : []).slice(0, 500).map(checkHours));
@@ -126,6 +133,9 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       if (!q) sendJson(res, 400, { error: "Type a place name" });
       else sendJson(res, 200, await searchPlaces(q, num("lat"), num("lng"), url.searchParams.get("cc") || ""));
     }
+    // The fuel estimate: fuel prices per country (?cc=DE,AT) and euro exchange rates.
+    else if (method === "GET" && path === "/api/fuel") sendJson(res, 200, await fuelPrices((url.searchParams.get("cc") || "").split(",")));
+    else if (method === "GET" && path === "/api/fx") sendJson(res, 200, await eurRates());
     else if (method === "GET" && path === "/api/reverse") {
       const lat = +url.searchParams.get("lat")!, lng = +url.searchParams.get("lng")!;
       if (!isFinite(lat) || !isFinite(lng)) sendJson(res, 400, { error: "lat and lng required" });

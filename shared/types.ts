@@ -43,8 +43,15 @@ export type TravelMode = "" | "car" | "train" | "bus" | "flight" | "ferry" | "bi
 /** Something already booked (a concert, an expo, timed tickets): planned around, always on its day. */
 export interface Booking {
   name: string;
-  /** YYYY-MM-DD */
+  /** YYYY-MM-DD: the day it's for, or the first day a ticket is valid. */
   date: string;
+  /** YYYY-MM-DD: the last day a ticket is valid (an exhibition ticket for the 9th to the 13th), so the planner picks
+   *  the best day in between. Unset: only `date`. */
+  until?: string;
+  /** Where it is: an address or place name, and its spot (picked on the map or from the suggestions). */
+  where?: string;
+  lat?: number;
+  lng?: number;
   /** "HH:MM": when it starts, and optionally until when; without from, any time that day. */
   from?: string;
   to?: string;
@@ -94,6 +101,10 @@ export interface ItineraryItem {
   bookAhead?: string;
   /** The place's official website or ticket page, as the model gave it (checked to exist before it's shown). */
   website?: string;
+  /** One of their must-sees (the model wrote "MUST SEE" into the text; the page shows a tag instead). */
+  mustSee?: boolean;
+  /** lat/lng come from a real lookup (an address, a booking's spot, a stop added in the chat), not the model's guess. */
+  fixed?: boolean;
 }
 
 export interface Day {
@@ -151,6 +162,12 @@ export interface TripRequest {
   currency: string;
   travelers: number;
   pace: string;
+  /** How much walking and climbing the plan can ask of them (unset: average). */
+  fitness?: "easy" | "average" | "fit";
+  /** When a normal day starts, "HH:MM" ("" or unset: as the pace suits). */
+  dayStart?: string;
+  /** Breakfast at the hotel, out at a café, brunch instead, skipped ("" or unset: the planner decides). */
+  breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
   model: string;
   interests: string;
   /** What they want to see, in their words. */

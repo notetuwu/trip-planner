@@ -15,6 +15,8 @@ beforeAll(async () => {
     let body = "";
     req.on("data", (d) => { body += d; });
     req.on("end", () => {
+      // The model's details (its context length): none, like an older Ollama.
+      if (req.url === "/api/show") { res.writeHead(200, { "Content-Type": "application/json" }); res.end("{}"); return; }
       bodies.push(JSON.parse(body));
       res.writeHead(200, { "Content-Type": "application/x-ndjson" });
       const send = (o: object) => res.write(`${JSON.stringify(o)}\n`);

@@ -5,7 +5,7 @@ import { type AppState, save, state } from "../core/state";
 import { renderChips } from "../places/chips";
 import { renderTripTitle } from "./title";
 
-export const FIELDS = ["dailyBudget", "currency", "travelers", "pace", "model", "interests", "wishes", "notes"] as const;
+export const FIELDS = ["dailyBudget", "currency", "travelers", "pace", "fitness", "dayStart", "breakfast", "model", "interests", "wishes", "notes"] as const;
 type Field = (typeof FIELDS)[number];
 
 const input = (f: Field) => $<HTMLInputElement>("#" + f);
@@ -20,7 +20,7 @@ function wishesHint() {
 
 /** Puts the trip's values into the inputs (after loading a trip). */
 export function fillFields() {
-  for (const f of FIELDS) input(f).value = String(state[f]);
+  for (const f of FIELDS) input(f).value = String(state[f] ?? (f === "fitness" ? "average" : ""));
   // Open when nothing is filled in yet, so a new trip shows the boxes; closed (one line) once there's something.
   $<HTMLDetailsElement>("#wishesFold").open = wishesHint() === 0;
 }

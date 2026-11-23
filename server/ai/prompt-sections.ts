@@ -41,11 +41,16 @@ Use these routes for the transfers they cover: the same stations, lines and kind
 export function bookingsSection(trip: { bookings?: Booking[]; currency?: string }) {
   const list = (trip.bookings || []).filter((b) => b.name && b.date).sort((a, b) => (a.date + (a.from || "")).localeCompare(b.date + (b.from || "")));
   if (!list.length) return "";
-  const when = (b: Booking) => b.from ? (b.to ? `${b.from}-${b.to}` : `from ${b.from}`) : "any time that day";
+  const time = (b: Booking) => b.from ? (b.to ? `${b.from}-${b.to}` : `from ${b.from}`) : "";
+  const day = (b: Booking) => b.until && b.until > b.date
+    ? `any one day from ${withDay(b.date)} to ${withDay(b.until)} (a ticket valid for those days: you pick the best day)${time(b) ? `, ${time(b)}` : ""}`
+    : `${withDay(b.date)}, ${time(b) || "any time that day"}`;
+  const where = (b: Booking) => [b.where, typeof b.lat === "number" && typeof b.lng === "number" ? `{location ${b.lat.toFixed(4)},${b.lng.toFixed(4)}}` : ""].filter(Boolean).join(" ");
+  const ranged = list.some((b) => b.until && b.until > b.date);
   return `## Already booked (fixed: plan everything else around these)
-${list.map((b) => `- ${withDay(b.date)}, ${when(b)}: ${b.name}${b.cost != null ? `; cost ${b.cost} ${trip.currency || ""}${b.countCost ? "" : " (already paid: put 0 as its cost)"}` : ""}`).join("\n")}
+${list.map((b) => `- ${day(b)}: ${b.name}${where(b) ? ` at ${where(b)}` : ""}${b.cost != null ? `; cost ${b.cost} ${trip.currency || ""}${b.countCost ? "" : " (already paid: put 0 as its cost)"}` : ""}`).join("\n")}
 
-Each booking is a stop on exactly its day${list.some((b) => b.from) ? " and time" : ""} (where only the day is given, pick a sensible time), under its name, with "already booked" in the description and no "booking"/"bookAhead". Plan the rest of that day around it: getting there in time, things nearby before and after, meals that fit. Nothing else may overlap it.`;
+Each booking is a stop on exactly its day${list.some((b) => b.from) ? " and time" : ""} (where only the day is given, pick a sensible time), under its name, with "already booked" in the description and no "booking"/"bookAhead".${ranged ? " A ticket valid for several days goes on exactly one of them: the day that fits best (near the other stops that day, open then, not a travel day if possible)." : ""} Where a booking has a location, that's where it is (use it for "lat"/"lng"). Plan the rest of that day around it: getting there in time, things nearby before and after, meals that fit. Nothing else may overlap it.`;
 }
 
 /** "only 2 of the 4 travelers go" for a day trip part of the group takes. */

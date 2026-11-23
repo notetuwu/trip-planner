@@ -201,15 +201,21 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
   const to = roundTrip ? from : await whereIs(end);
   const month = req.startDate ? MONTHS[Number(req.startDate.slice(5, 7)) - 1] : "";
 
-  const conv = (Array.isArray(req.conversation) ? req.conversation : []).slice(-8)
+  // The whole conversation since the last new route: every request they made stays in force (a long chat used to
+  // keep only the last few turns, and the model then undid earlier requests, such as flipping the route back).
+  const conv = (Array.isArray(req.conversation) ? req.conversation : []).slice(-40)
     .map((t) => ({ route: String(t?.route || "").trim().slice(0, 1500), said: String(t?.said || "").trim().slice(0, 600) }))
     .filter((t) => t.route);
   const now = conv.at(-1);
+  const asked = conv.map((t) => t.said).filter(Boolean);
   const again = !now?.said ? "" : `
-They're shaping this route with you, step by step. The conversation so far (each route you suggested, then what they said about it):
-${conv.map((t, k) => `Route ${k + 1}: ${t.route}${t.said ? `\nThey said: "${t.said}"` : ""}`).join("\n")}
+They're shaping this route with you, step by step. The routes you suggested, then what they said about each (the earlier ones in short):
+${conv.map((t, k) => `Route ${k + 1}: ${k >= conv.length - 3 ? t.route : t.route.slice(0, 300)}${t.said ? `\nThey said: "${t.said}"` : ""}`).join("\n")}
 
-Now change Route ${conv.length} (the one on their screen) for what they just said. Start from it: keep its stays, nights, order, day trips and stops on the way, and change only what their newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Everything they said earlier still applies unless their newest message takes it back: a place they moved (to a day trip, to the way, out of the route) stays where they put it. Don't start over with a different route.
+Everything they've asked for so far, oldest first. All of it still applies, unless a later message takes it back:
+${asked.map((s, k) => `${k + 1}. ${s}`).join("\n")}
+
+Now change Route ${conv.length} (the one on their screen) for their newest message (number ${asked.length} above). Start from it: keep its stays, nights, order and direction (which way round the trip goes), day trips and stops on the way, and change only what the newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Its order is what they chose, even where it differs from the description above: don't turn the route back round or reorder it unless the newest message asks for that. A place they moved (to a day trip, to the way, out of the route) stays where they put it. Don't start over with a different route.
 `;
 
   const must = (Array.isArray(req.mustSee) ? req.mustSee : []).slice(0, 40)
@@ -249,7 +255,13 @@ Reply with only JSON:
     .map((t) => ({ place: t.place.trim().slice(0, 100), why: t.why.trim().slice(0, 160), ...(way ? { way } : {}) }))
     .filter((t) => t.place).slice(0, 3);
   const parsed = parseJsonLoose(await askModel(req.model, prompt, (n) => report({ type: "tokens", n }), {
-    signal, onText: (reply, thinking) => { const text = reasoningSoFar(reply, thinking); if (text) report({ type: "reasoning", text }); },
+    // The model's own thinking and what it writes about the route go separately: the chat shows the thinking folded
+    // ("Thought for 12s") above the answer, like the trip chat.
+    signal, onText: (reply, thinking) => {
+      if (thinking.trim()) report({ type: "thinking", text: thinking.trim() });
+      const text = reasoningSoFar(reply, "");
+      if (text) report({ type: "reasoning", text });
+    },
     onRetry: (text) => report({ type: "status", text }),
   }));
   const stays: PlannedStay[] = (Array.isArray(parsed?.stays) ? parsed.stays : [])

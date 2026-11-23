@@ -360,15 +360,17 @@ test("links in the app's own window go to the default browser", async () => {
   assert.match(await page.eval(`window.__e2e.open[0]`), /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=Cappella/);
 });
 
-test("book ahead links hotels and transport; the packing list fits the countries", async () => {
+test("book ahead links hotels and transport; the packing list fits the countries (each in its window from the toolbar)", async () => {
   await trip({
     stays: [{ city: "Osaka", start: "2027-04-01", nights: 3, hotel: "around the Garden Court Hotel" }, { city: "Kyoto", start: "2027-04-04", nights: 2, hotel: "", travel: "train" }],
     list: "", listChosen: true, travelers: 2, autoFix: false,
   });
   await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [
     day("2027-04-01", "Osaka", [stop("15:00", "Osaka Castle")]), day("2027-04-02", "Osaka", [stop("10:00", "Onsen Spa World")]) ] } })`);
-  await page.waitFor(`!!document.querySelector('details[data-fold="book-ahead"]')`);
-  const links = await page.eval(`[...document.querySelectorAll('.book-ahead li.trip a')].map((a) => a.href)`);
+  await page.waitFor(`!!document.querySelector('[data-section="ahead"]')`);
+  await page.eval(`document.querySelector('[data-section="ahead"]').click()`);
+  await page.waitFor(`document.querySelector("#sectionDialog").open && !!document.querySelector('#sectionBody .book-ahead')`);
+  const links = await page.eval(`[...document.querySelectorAll('#sectionBody .book-ahead li.trip a')].map((a) => a.href)`);
   assert.equal(links.length, 3, "two hotels and one transfer");
   const hotel = new URL(links[0]);
   assert.equal(hotel.hostname, "www.booking.com");
@@ -379,7 +381,9 @@ test("book ahead links hotels and transport; the packing list fits the countries
   assert.equal(hotel.searchParams.get("dest_type"), "latlong", "Booking needs a position; text alone finds nothing");
   assert.equal(Number(hotel.searchParams.get("latitude")).toFixed(2), "34.69");
   assert.ok(links.includes("https://www.rome2rio.com/map/Osaka/Kyoto"));
-  const packing = await page.eval(`document.querySelector('details[data-fold="packing"]').textContent`);
+  await page.eval(`document.querySelector("#sectionDialog").close(); document.querySelector('[data-section="packing"]').click()`);
+  const packing = await page.eval(`document.querySelector('#sectionBody .packing').textContent`);
+  await page.eval(`document.querySelector("#sectionDialog").close()`);
   assert.match(packing, /Cash in yen/);
   assert.match(packing, /Japan A\/B/);
   assert.match(packing, /Swimwear/, "the spa in the plan");

@@ -74,5 +74,7 @@ export interface HoursResult {
   /** closes-soon: closes before the next stop but leaves time for a visit (a note, not a problem). */
   status: "ok" | "closed" | "opens-later" | "closes-early" | "closes-soon" | "closed-all-day" | "unknown";
   text: string;
+  /** opens-later: when it opens ("08:00"), so the stop can simply move there. */
+  opens?: string;
 }
 
