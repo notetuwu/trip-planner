@@ -30,6 +30,7 @@ export const ITINERARY_SCHEMA = {
                 fromList: { type: "boolean" },
                 description: { type: "string" },
                 cost: { type: "number" },
+                costPer: { type: "string", enum: ["person", "group"] },
                 transport: { type: "string", description: "How to get here from the previous stop" },
                 lat: { type: "number", description: "Latitude of the place, best estimate" },
                 lng: { type: "number", description: "Longitude of the place, best estimate" },

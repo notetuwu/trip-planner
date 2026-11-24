@@ -188,7 +188,7 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
       const meta: Meta = {
         costUsd: data.costUsd, durationMs: data.durationMs, reasoning: data.reasoning, thinking: data.thinking, ...view.collected,
         tokens: data.tokens, perSec: data.perSec, engine: data.engine, local: isLocal(trip.model), billing: data.billing,
-        searches: data.searches, budget: groupBudget(), currency: trip.currency, at: new Date().toISOString(), staysKey: staysKey(),
+        searches: data.searches, budget: groupBudget(), travelers: Number(state.travelers) || 1, currency: trip.currency, at: new Date().toISOString(), staysKey: staysKey(),
       };
       state.meta = meta;
       session.selectedDay = null;

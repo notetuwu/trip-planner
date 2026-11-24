@@ -72,3 +72,62 @@ describe("other ways a name is written", () => {
     expect(nameVariants("Vaduz, Liechtenstein")).toEqual(["Vaduz, Liechtenstein", "Vaduz"]);
   });
 });
+
+import { webSources } from "../server/trip/chat-lookups";
+describe("sources and modes", () => {
+  it("lists the pages a web search found", () => {
+    const text = "Hohenzollern Castle - official site\nhttps://www.burg-hohenzollern.com/\nOpening hours…\n\nTickets\nhttps://www.burg-hohenzollern.com/tickets\nPrices…";
+    expect(webSources(text)).toEqual([
+      { kind: "web", title: "Hohenzollern Castle - official site", url: "https://www.burg-hohenzollern.com/" },
+      { kind: "web", title: "Tickets", url: "https://www.burg-hohenzollern.com/tickets" },
+    ]);
+  });
+  it("keeps the change's headline", () => {
+    expect(parseChange('Ok.\nCHANGE: {"title": "Hohenzollern instead of Nuremberg", "days": [1], "request": "Swap the castle"}', 5)?.title).toBe("Hohenzollern instead of Nuremberg");
+  });
+  it("Ask mode never offers a change", () => {
+    const p = companionPrompt({ model: "m", question: "x", days: 5, mode: "ask" });
+    expect(p).toContain("Ask mode");
+    expect(p).not.toContain("CHANGE: {");
+  });
+});
+
+import { tripOps, unverifiedFigures } from "../server/trip/companion";
+describe("figures must come from the trip or a lookup", () => {
+  const looked = "Stuttgart → Hohenzollern Castle: 465.2 km by road, about 4 h 53 min driving\nHohenzollern Castle → Lindau: 190.4 km by road, about 2 h 5 min driving";
+  it("flags guessed figures and accepts looked-up ones (rounded, or the total of two legs)", () => {
+    expect(unverifiedFigures("Stuttgart → Hohenzollern (~320-350 km, ~3.5-4h)", looked)).toEqual(["320-350 km", "3.5-4h"]);
+    expect(unverifiedFigures("about 465 km and almost 5 h, then 190 km", looked)).toEqual([]);
+    expect(unverifiedFigures("about 656 km in all, 7 h of driving", looked)).toEqual([]);
+    expect(unverifiedFigures("Day 3 has 4 stops and costs 80 EUR", "")).toEqual([]);
+  });
+});
+
+describe("costs for another number of travelers", () => {
+  it("reads rescaleCosts, and only sensible numbers", () => {
+    expect(tripOps({ rescaleCosts: { from: 1, to: 2 } })).toEqual({ rescaleCosts: { from: 1, to: 2 } });
+    expect(tripOps({ rescaleCosts: { from: 2, to: 2 } })).toBeNull();
+    expect(tripOps({ rescaleCosts: { from: 0, to: 99 } })).toBeNull();
+  });
+});
+
+import { editOps } from "../server/trip/companion";
+describe("edits and the trip's own data", () => {
+  it("keeps well-formed edits only", () => {
+    expect(editOps([{ op: "set", field: "travelers", value: 2 }, { op: "set", field: "password", value: "x" }, { op: "swapDays", day: 3, toDay: 9 }, { op: "nope" }, { op: "stayNights", stay: "Lucerne", nights: 4 }], 5))
+      .toEqual([{ op: "set", field: "travelers", value: 2 }, { op: "stayNights", stay: "Lucerne", nights: 4 }]);
+    expect(parseChange('Ok.\nCHANGE: {"days": [], "request": "", "edits": [{"op": "note", "value": "No drives over 4 hours"}]}', 5)?.edits).toEqual([{ op: "note", value: "No drives over 4 hours" }]);
+  });
+  it("answers LOOKUP: trip | topic from what the page sent", async () => {
+    const out = await runLookupsFresh([{ kind: "trip", args: ["costs"] }, { kind: "trip", args: ["nonsense"] }], { costs: "Day 1: 97 EUR" });
+    expect(out).toContain("Day 1: 97 EUR");
+    expect(out).toContain('Nothing called "nonsense". There is: costs.');
+  });
+  it("lists the topics in the prompt", () => {
+    expect(companionPrompt({ model: "m", question: "x", days: 3, data: { costs: "", checks: "" } })).toContain("LOOKUP: trip | costs");
+  });
+});
+async function runLookupsFresh(l: any[], data: Record<string, string>) {
+  const { runLookups: run } = await import("../server/trip/chat-lookups");
+  return run(l, [], () => {}, [], data);
+}

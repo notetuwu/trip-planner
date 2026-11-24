@@ -8,10 +8,26 @@ import { nominatim, nominatimHit } from "../geo/providers";
 import { waitForRoute } from "../geo/routing";
 import { webSearch } from "../research/search";
 
-export interface Lookup { kind: "place" | "route" | "search"; args: string[] }
+export interface Lookup { kind: "place" | "route" | "search" | "trip"; args: string[] }
+/** What an answer relied on, listed under it with links: a web page, a place on the map, or a road route (its stops in
+ *  order, with the routed distance and time). */
+export type Source =
+  | { kind: "web"; title: string; url: string }
+  | { kind: "place"; label: string; lat: number; lng: number }
+  | { kind: "route"; stops: { label: string; lat: number; lng: number }[]; km: number; mins: number };
+
+/** The pages in a web search's results ("title / url / snippet" blocks). */
+export function webSources(text: string): Source[] {
+  const lines = text.split("\n"), out: Source[] = [];
+  lines.forEach((l, i) => {
+    const url = l.trim();
+    if (/^https?:\/\/\S+$/.test(url) && !out.some((s) => s.kind === "web" && s.url === url)) out.push({ kind: "web", title: (lines[i - 1] || "").trim().slice(0, 140) || new URL(url).hostname, url });
+  });
+  return out.slice(0, 6);
+}
 export interface Town { name: string; lat: number; lng: number }
 
-const LINE = /^[ \t>*`-]*LOOKUP:\s*(place|route|search)\s*\|\s*(.+?)[ \t`]*$/gim;
+const LINE = /^[ \t>*`-]*LOOKUP:\s*(place|route|search|trip)\s*\|\s*(.+?)[ \t`]*$/gim;
 
 /** The LOOKUP lines in a reply (at most `max`). */
 export function parseLookups(text: string, max = 3): Lookup[] {
@@ -72,7 +88,7 @@ async function findPlace(q: string): Promise<{ lat: number; lng: number; label: 
   return geocodeOne(q);
 }
 
-async function place(name: string, towns: Town[]) {
+async function place(name: string, towns: Town[], sources: Source[]) {
   const params = new URLSearchParams({ q: name, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en", extratags: "1" });
   let raw = (await nominatim("search", params)) as any[];
   // Nothing under that spelling: its other spellings (see nameVariants).
@@ -82,42 +98,48 @@ async function place(name: string, towns: Town[]) {
   }
   const hits = raw.map(nominatimHit);
   if (!hits.length) return `Nothing found for "${name}" on OpenStreetMap. Try another spelling, or the place plus its town.`;
+  sources.push({ kind: "place", label: hits[0].label, lat: hits[0].lat, lng: hits[0].lng });
   return hits.map((h) => `- ${h.name} (${h.kind || "place"}): ${h.label} · at ${h.lat.toFixed(5)},${h.lng.toFixed(5)}${towns.length ? ` · ${nearest(h, towns)} (straight line)` : ""}${h.website ? ` · ${h.website}` : ""}`).join("\n");
 }
 
 const duration = (mins: number) => (mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`);
 
 /** The road route through two or more places in order (the map's own routing service): each leg, and the total. */
-async function route(stops: string[]) {
+async function route(stops: string[], sources: Source[]) {
   const found: Awaited<ReturnType<typeof findPlace>>[] = [];
   for (const s of stops) found.push(await findPlace(s));
   const missing = stops.find((_, i) => !found[i]);
   if (missing) return `Couldn't find "${missing}" on the map. Try the place plus its town and country.`;
   const hits = found as NonNullable<(typeof found)[number]>[];
   const lines: string[] = [];
-  let meters = 0, secs = 0;
+  let meters = 0, secs = 0, routed = true;
   for (let i = 1; i < hits.length; i++) {
     const a = hits[i - 1], b = hits[i];
     const r = await waitForRoute("car", [a.lat, a.lng] as LatLng, [b.lat, b.lng] as LatLng, 25_000);
     const crow = km(a, b);
-    if (!r) { lines.push(`${a.label} → ${b.label}: no road route found (${crow.toFixed(1)} km in a straight line).`); continue; }
+    if (!r) { routed = false; lines.push(`${a.label} → ${b.label}: no road route found (${crow.toFixed(1)} km in a straight line).`); continue; }
     meters += r.d; secs += r.t;
     lines.push(`${a.label} → ${b.label}: ${(r.d / 1000).toFixed(1)} km by road, about ${duration(Math.round(r.t / 60))} driving (${crow.toFixed(1)} km in a straight line).`);
   }
   if (hits.length > 2) lines.push(`Total: ${(meters / 1000).toFixed(1)} km, about ${duration(Math.round(secs / 60))} driving, without stops.`);
+  if (routed) sources.push({ kind: "route", stops: hits.map((h) => ({ label: h.label, lat: h.lat, lng: h.lng })), km: Math.round(meters / 100) / 10, mins: Math.round(secs / 60) });
   return lines.join("\n");
 }
 
 /** Runs the lookups; each result is labelled with what was asked. */
-export async function runLookups(lookups: Lookup[], towns: Town[], onStatus: (s: string) => void): Promise<string> {
+export async function runLookups(lookups: Lookup[], towns: Town[], onStatus: (s: string) => void, sources: Source[] = [], data: Record<string, string> = {}): Promise<string> {
   const out: string[] = [];
   for (const l of lookups) {
     const what = `${l.kind}: ${l.args.join(" | ")}`;
-    onStatus(l.kind === "search" ? `Searching the web for "${l.args[0]}"…` : l.kind === "route" ? `Looking up the route ${l.args.join(" → ")}…` : `Looking up where ${l.args[0]} is…`);
+    onStatus(l.kind === "trip" ? `Looking at the trip's ${l.args[0]}…` : l.kind === "search" ? `Searching the web for "${l.args[0]}"…` : l.kind === "route" ? `Looking up the route ${l.args.join(" → ")}…` : `Looking up where ${l.args[0]} is…`);
     try {
-      const text = l.kind === "place" ? await place(l.args.join(", "), towns)
-        : l.kind === "route" ? (l.args.length >= 2 ? await route(l.args.slice(0, 5)) : "A route needs two places: LOOKUP: route | from | to")
-        : (await webSearch(l.args.join(" "))).slice(0, 3000);
+      let text: string;
+      if (l.kind === "trip") {
+        const topic = l.args[0].toLowerCase().trim();
+        text = data[topic] ?? `Nothing called "${topic}". There is: ${Object.keys(data).join(", ") || "nothing"}.`;
+      } else if (l.kind === "place") text = await place(l.args.join(", "), towns, sources);
+      else if (l.kind === "route") text = l.args.length >= 2 ? await route(l.args.slice(0, 5), sources) : "A route needs two places: LOOKUP: route | from | to";
+      else { text = (await webSearch(l.args.join(" "))).slice(0, 3000); sources.push(...webSources(text)); }
       out.push(`### ${what}\n${text}`);
     } catch (e) { out.push(`### ${what}\nFailed: ${errMsg(e)}`); }
   }

@@ -39,6 +39,16 @@ export function placeUrl(p: { title: string; url?: string; address?: string; lat
   return searchUrl([p.title, p.address].filter(Boolean).join(", "), at, app);
 }
 
+/** Driving directions through several points in order (Apple Maps only takes the first and the last). */
+export function routeUrl(points: At[], app = mapsApp()) {
+  const ll = (p: At) => `${p.lat.toFixed(6)},${p.lng.toFixed(6)}`;
+  if (points.length < 2) return points[0] ? pointUrl(points[0], "", app) : "";
+  if (app === "apple") return `https://maps.apple.com/?${new URLSearchParams({ saddr: ll(points[0]), daddr: ll(points[points.length - 1]), dirflg: "d" })}`;
+  if (app === "bing") return `https://www.bing.com/maps?${new URLSearchParams({ rtp: points.map((p) => `pos.${p.lat.toFixed(6)}_${p.lng.toFixed(6)}`).join("~"), mode: "d" })}`;
+  const via = points.slice(1, -1).map(ll).join("|");
+  return `https://www.google.com/maps/dir/?${new URLSearchParams({ api: "1", origin: ll(points[0]), destination: ll(points[points.length - 1]), travelmode: "driving", ...(via ? { waypoints: via } : {}) })}`;
+}
+
 /** Directions from one place to another ("lat,lng" or a name with its town). */
 export function directionsLink(from: string, to: string, mode: TravelMode, app = mapsApp()) {
   if (app === "apple") {

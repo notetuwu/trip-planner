@@ -89,6 +89,8 @@ export interface ItineraryItem {
   fromList?: boolean;
   description: string;
   cost?: number;
+  /** Whether the cost grows with the number of travelers (tickets, meals, fares) or not (the car, parking, a taxi). */
+  costPer?: "person" | "group";
   transport?: string;
   lat?: number;
   lng?: number;
