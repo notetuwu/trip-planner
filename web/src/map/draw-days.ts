@@ -17,14 +17,14 @@ const colorFor = (x: ItineraryItem, di: number) => {
 import { highlightItem } from "./days";
 import { hoverBand, legTip } from "./legs";
 import { itemMarkers, layers } from "./map";
-import { dayLegs, legRoute } from "./routes";
-import { isTransfer } from "./travel-day";
+import { dayLegs, flightArc, legRoute } from "./routes";
+import { onMap } from "./travel-day";
 import { icon } from "../core/icons";
 
 function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
   d.items.forEach((x, xi) => {
     const color = colorFor(x, di);
-    const loc = isTransfer(x) ? null : itemLoc(x, d, byTitle);
+    const loc = onMap(x) ? itemLoc(x, d, byTitle) : null;
     if (!loc) return;
     const note = loc.elsewhere ? ` · ${icon("warn")} the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
     const m = L.marker([loc.lat, loc.lng], {
@@ -42,9 +42,16 @@ function drawLegs(d: Day, di: number, byTitle: ByTitle) {
   for (const leg of dayLegs(d, byTitle)) {
     const color = leg.group && leg.group in groups ? cssVar(`--track-${groups[leg.group]}`) || dayColor(di) : dayColor(di);
     const r = legRoute(leg);
-    const line = r ? r.c : [leg.from, leg.to];
-    // Walking: dotted along paths; road: solid; train/tram/ferry/flight (or no route found): long dashes, straight.
+    const line = r ? r.c : leg.mode === "flight" ? flightArc(leg.from, leg.to) : [leg.from, leg.to];
+    // Walking: dotted along paths; bike: short dashes along cycle paths; road, rail, tram and metro: solid; boat: long
+    // dashes and cable car: dash-dot (along their route, or straight when there's none); flight: a thin dotted arc;
+    // anything with no route found: dashes, straight.
     const style: L.PolylineOptions = r && leg.mode === "foot" ? { weight: 4, dashArray: "1 7" }
+      : r && leg.mode === "bike" ? { weight: 4, dashArray: "6 5" }
+      : leg.mode === "flight" ? { weight: 2.5, dashArray: "2 8" }
+      : leg.mode === "ferry" && r !== undefined ? { weight: r ? 4 : 3, dashArray: "14 7" }
+      // Cable car or gondola: a thin line with ticks, like the cable on a map.
+      : leg.mode === "lift" && r !== undefined ? { weight: 3, dashArray: "10 3 2 3" }
       : r ? { weight: 4 }
       : leg.mode === "straight" || r === null ? { weight: 3, dashArray: "8 8" }
       : { weight: 2, dashArray: "2 6", opacity: .4 }; // still being routed

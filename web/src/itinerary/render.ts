@@ -7,9 +7,11 @@ import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc, stopMapsUrl } from "../geo/item-loc";
 import { downloadForPhone, shareForPhone } from "../export/offline";
 import { runGeneration } from "../generate/run";
-import { renderDayChips, selectDay } from "../map/days";
+import { renderDayChips, selectDay, showOnMap } from "../map/days";
 import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
+import { openPin } from "./pin";
+import { openLegEdit } from "./leg-edit";
 import { updateLegInfo } from "../map/legs";
 import { renderTripTitle } from "../trip/title";
 import { itineraryIcs } from "../export/ics";
@@ -18,11 +20,14 @@ import { wirePacking } from "./packing";
 import { daysHtml, extrasHtml } from "./days-html";
 import { checkOpeningHours } from "./hours";
 import { searchHtml, wireSearch } from "./search";
+import { openReview, refreshReview } from "./review";
+import { cleanStop } from "./duplicates";
+import { onQueueChange, queuedJobs } from "../generate/queue";
 import { summaryHtml } from "./summary";
 import { type Section, openSection } from "./sections";
 import type { Itinerary } from "../../../shared/types";
 import { icon } from "../core/icons";
-import { checksSettled, planProblems, quickFixes } from "../generate/autofix";
+import { type Problem, type Stop, checksSettled, planDuplicates, planProblems, quickFixes, setRepeatOk } from "../generate/autofix";
 import { setMapStatus } from "../map/status";
 import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
 import { groupsFromText } from "../../../shared/groups";
@@ -112,6 +117,9 @@ function wire(out: HTMLElement) {
   for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts();
   for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
+  for (const el of $$<HTMLElement>("[data-pin]", out)) el.onclick = () => { const [d, x] = el.dataset.pin!.split("-"); openPin(+d, +x, el); };
+  for (const el of $$<HTMLElement>("[data-show]", out)) el.onclick = () => { const [d, x] = el.dataset.show!.split("-"); showOnMap(+d, +x); };
+  for (const el of $$<HTMLElement>("[data-leg-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.legEdit!.split("-"); openLegEdit(+d, +x, el); };
 }
 
 export function renderItinerary(error?: string) {
@@ -134,11 +142,14 @@ export function renderItinerary(error?: string) {
   const byTitle = byTitleMap();
   out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
   wire(out);
+  showDuplicates(it);
   wireSearch();
   updateLegInfo();
   checkOpeningHours();
   offerFix(it);
   placeInline();
+  markQueued();
+  refreshReview();
 }
 
 /** A re-plan or fix in progress shown inside the itinerary (in its day, or where the fix bar is), kept there when the
@@ -192,15 +203,68 @@ async function offerFix(it: Itinerary) {
   showFixBar(it);
 }
 
+/** Days lined up to be redone (from the problem review) say so, until their turn comes and the progress shows instead. */
+let queueWatched = false;
+function markQueued() {
+  if (!queueWatched) { queueWatched = true; onQueueChange(markQueued); }
+  for (const el of $$(".rv-queued")) el.remove();
+  for (const job of queuedJobs()) {
+    if (job.status !== "queued") continue;
+    for (const d of job.days) document.getElementById(`day-${d}`)?.insertAdjacentHTML("beforeend",
+      `<div class="inline-progress inline-wait rv-queued"><span class="wait-dot"></span>Lined up to be redone${job.days.length > 1 ? ` together with ${esc(job.days.filter((x) => x !== d).map((x) => `day ${x + 1}`).join(", "))}` : ""}, after the change being made now.</div>`);
+  }
+}
+
+const dayLabel = (it: Itinerary, i: number) => `Day ${i + 1}${it.days[i]?.date ? ` · ${fmtDate(it.days[i].date) || it.days[i].date}` : ""}`;
+
+/** Under each stop that's on another day too: where else (opens the review on it), and buttons to keep the repeat or
+ *  remove this copy. Needs no lookups, so it shows as soon as the plan does. */
+function showDuplicates(it: Itinerary) {
+  const others = new Map<string, { stops: Stop[]; key: string }>();
+  for (const { first, again, key } of planDuplicates(it)) {
+    others.set(`${first}`, { stops: [...(others.get(`${first}`)?.stops || []), again], key });
+    others.set(`${again}`, { stops: [...(others.get(`${again}`)?.stops || []), first], key });
+  }
+  for (const el of $$<HTMLElement>("[data-dup]")) {
+    const at = el.dataset.dup!.split("-").map(Number) as Stop, also = others.get(`${at}`);
+    el.hidden = !also;
+    if (!also) continue;
+    const days = [...new Set(also.stops.map((s) => s[0]))];
+    el.innerHTML = `${icon("warn")}<span>Also on ${days.map((d) => `<a href="#day-${d}" data-dup-goto title="Compare the days">${esc(dayLabel(it, d))}</a>`).join(", ")}</span>
+      <button class="link-btn" data-dup-ok title="It's meant to be on both days: stop flagging it">Fine as is</button>
+      <button class="link-btn" data-dup-remove title="Remove this stop; the other day keeps it">Remove</button>`;
+    for (const a of el.querySelectorAll<HTMLAnchorElement>("[data-dup-goto]")) a.onclick = (e) => { e.preventDefault(); openReview(at); };
+    el.querySelector<HTMLButtonElement>("[data-dup-remove]")!.onclick = () => removeStop(at[0], at[1]);
+    el.querySelector<HTMLButtonElement>("[data-dup-ok]")!.onclick = () => {
+      const name = cleanStop(it.days[at[0]].items[at[1]].place);
+      setRepeatOk(also.key, name, true);
+      save(); renderItinerary();
+      toast(`"${name}" may repeat`, () => { setRepeatOk(also.key, name, false); save(); renderItinerary(); });
+    };
+  }
+}
+
+/** The banner above the days once the checks are done: how many problems of each kind, Review (the problems with their
+ *  days side by side) and Fix all. */
 function showFixBar(it: Itinerary) {
   const bar = document.getElementById("fixBar");
   if (!bar || state.itinerary !== it || inline?.fix) return;
   const problems = planProblems(it);
   bar.hidden = !problems.length;
   if (!problems.length) return;
-  const n = problems.length, days = new Set(problems.map((p) => p.day)).size;
-  bar.innerHTML = `${icon("warn")}<span>${n} stop${n > 1 ? "s need" : " needs"} fixing on ${days} day${days > 1 ? "s" : ""}: closed at the planned time, in the wrong town, or a restaurant they already eat at.</span>
-    <button class="btn" data-fix>Fix ${n > 1 ? "them" : "it"}</button>`;
+  const count = (k: Problem["kind"]) => problems.filter((p) => p.kind === k).length;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const parts = [
+    count("dup") && plural(count("dup"), "duplicate", "duplicates"),
+    count("hours") && plural(count("hours"), "stop closed when planned", "stops closed when planned"),
+    count("far") && plural(count("far"), "stop in the wrong town", "stops in the wrong town"),
+  ].filter(Boolean);
+  const n = problems.length;
+  bar.className = "fix-bar";
+  bar.innerHTML = `${icon("warn")}<span>${esc(parts.join(" · "))}</span>
+    <button class="btn" data-review>Review</button>
+    <button class="btn" data-fix title="The planner replaces each problem stop in one go; for duplicates the later day keeps the place">Fix ${n > 1 ? "all" : "it"}</button>`;
+  bar.querySelector<HTMLButtonElement>("[data-review]")!.onclick = () => openReview();
   bar.querySelector<HTMLButtonElement>("[data-fix]")!.onclick = () => {
     // Stops just before opening time move by themselves; the model gets only what's left.
     if (quickFixes(it)) {
@@ -211,6 +275,6 @@ function showFixBar(it: Itinerary) {
       runGeneration({ fix: { itinerary: it, problems: left } });
       return;
     }
-    runGeneration({ fix: { itinerary: it, problems: planProblems(it) } });
+    runGeneration({ fix: { itinerary: it, problems } });
   };
 }

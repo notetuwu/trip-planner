@@ -107,7 +107,16 @@ export interface ItineraryItem {
   mustSee?: boolean;
   /** lat/lng come from a real lookup (an address, a booking's spot, a stop added in the chat), not the model's guess. */
   fixed?: boolean;
+  /** lat/lng were set by the travelers themselves ("Set location"): always where it is. */
+  pinned?: boolean;
+  /** How they get here from the stop before, set by the travelers themselves (the map otherwise reads it from
+   *  "transport"): a mode for each part, through the places on the way (modes has one more entry than via). */
+  leg?: { modes: LegChoice[]; via: { name: string; lat: number; lng: number }[] };
 }
+
+/** A part of a leg as the travelers set it: on foot, by bike, by road, by tram/metro/bus line, by train, by boat, by
+ *  cable car/gondola/funicular, a flight (an arc), or a straight line (anything with no route). */
+export type LegChoice = "foot" | "bike" | "car" | "bus" | "transit" | "train" | "ferry" | "lift" | "flight" | "straight";
 
 export interface Day {
   date: string;

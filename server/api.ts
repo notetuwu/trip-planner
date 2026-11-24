@@ -6,6 +6,7 @@ import { findClaude } from "./ai/claude-bin";
 import { VERSION, errMsg } from "./config";
 import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
+import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, routeStops, setLinesDir } from "./geo/transit-lines";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
@@ -81,6 +82,35 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const body = await readJson(req);
       sendJson(res, 200, routeBatch(Array.isArray(body?.legs) ? body.legs : []));
     }
+    // The map's transport line overlays, by grid cell ("?cells=940_166,940_167").
+    else if (method === "GET" && path === "/api/lines") sendJson(res, 200, linesFor((url.searchParams.get("cells") || "").split(",")));
+    // Downloading the trip's areas ahead, in the background (the list replaces the last one); and what's on disk.
+    else if (method === "POST" && path === "/api/lines/prefetch") {
+      const body = await readJson(req);
+      const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
+      sendJson(res, 200, { ...prefetchLines(list(body?.cells), list(body?.first)), disk: linesOnDisk() });
+    }
+    // For the map's area grid: which cells are downloaded, being fetched, waiting or failed.
+    else if (method === "POST" && path === "/api/lines/status") {
+      const body = await readJson(req);
+      sendJson(res, 200, cellStatus(Array.isArray(body?.cells) ? body.cells.map(String) : []));
+    }
+    else if (method === "GET" && path === "/api/lines/disk") sendJson(res, 200, { ...linesOnDisk(), location: linesLocation() });
+    // Keeping the downloads in another folder (what's there is moved across); "" = back to the app's cache folder.
+    else if (method === "POST" && path === "/api/lines/location") {
+      const body = await readJson(req);
+      try { sendJson(res, 200, { location: await setLinesDir(String(body?.dir ?? "")), ...linesOnDisk() }); }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
+    else if (method === "GET" && path === "/api/lines/progress") sendJson(res, 200, linesProgress());
+    // A line's stops in order (the map's stop card), fetched once and kept.
+    else if (method === "GET" && path === "/api/lines/route") {
+      try {
+        const r = await routeStops(Number(url.searchParams.get("id")));
+        sendJson(res, r ? 200 : 404, r || { error: "No such line" });
+      } catch (e) { sendJson(res, 502, { error: `Couldn't get the line's stops: ${errMsg(e)}` }); }
+    }
+    else if (method === "DELETE" && path === "/api/lines") { clearLines(); sendJson(res, 200, linesOnDisk()); }
     // Start fetching real places for the trip's stays in the background, so generating doesn't have to wait.
     else if (method === "POST" && path === "/api/nearby/warm") {
       const body = await readJson(req);

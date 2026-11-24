@@ -9,6 +9,9 @@ import { transferEnds } from "../trip/modes";
 
 /** Movements ("Lucerne → Feldkirch", "Drive to the hotel") aren't places to pin. */
 export const isTransfer = (x: ItineraryItem) => x.kind === "transfer" || !!transferEnds(x);
+/** On the map as a point: every stop, and a transfer ("Rigi Kulm → Vitznau") once they've set where it ends (then it's
+ *  a point the way goes through, like the foot of the mountain). */
+export const onMap = (x: ItineraryItem) => !isTransfer(x) || !!x.pinned;
 
 /** The stay a day arrives at (index > 0), when the day is a travel day. */
 export function arrivalStay(d: Day): number {

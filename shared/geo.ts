@@ -45,7 +45,8 @@ export interface Route {
 }
 
 /** Along footpaths, roads, or the railway (a real train connection, from a public transport router). */
-export type RouteMode = "foot" | "car" | "train";
+/** lift: gondolas, cable cars, chairlifts and funiculars; transit: trams, metros and bus lines. */
+export type RouteMode = "foot" | "bike" | "car" | "train" | "ferry" | "lift" | "transit";
 
 export interface Poi {
   name: string;

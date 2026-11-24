@@ -24,6 +24,8 @@ export interface CompanionRequest {
   images?: AskImage[];
   /** Where the stays are, for lookups ("12 km from Vaduz"). */
   towns?: Town[];
+  /** Where they sleep each day (1-based day → lat, lng): stops the chat adds are looked up around there first. */
+  dayAt?: Record<string, [number, number]>;
   /** What the page knows beyond the trip text, looked up on demand ("LOOKUP: trip | costs"): topic → text. */
   data?: Record<string, string>;
   /** The chat's mode: "ask" answers only (no changes offered); "manual" and "auto" may offer changes. */
@@ -33,11 +35,11 @@ export interface CompanionRequest {
  *  instruction for the planner. */
 export interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string }
 /** Anything else the travelers can change by hand, made straight away by the page (see EDITS_DOC in the prompt). */
-export interface EditOp { op: string; [k: string]: string | number | undefined }
+export interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
 const EDIT_OPS: Record<string, string[]> = {
   set: ["field", "value"], stayNights: ["stay", "nights"], stayHotel: ["stay", "value"], stayTravel: ["stay", "value"], addStay: ["city", "after", "nights"], removeStay: ["stay"],
   moveStop: ["day", "place", "toDay", "time"], swapDays: ["day", "toDay"], setCost: ["day", "place", "value"], addBooking: ["name", "date", "from", "to"], removeBooking: ["name"],
-  booked: ["day", "place"], must: ["place"], skip: ["place"], setCar: ["fuel", "per100"], note: ["value"], idea: ["value"],
+  booked: ["item", "day", "place", "done"], packed: ["item", "done"], packAdd: ["value"], packRemove: ["value"], must: ["place"], skip: ["place"], setCar: ["fuel", "per100"], note: ["value"], idea: ["value"],
 };
 const SET_FIELDS = ["travelers", "dailyBudget", "currency", "pace", "fitness", "dayStart", "breakfast", "interests", "wishes"];
 /** Edits that only make sense with a day-by-day plan. */
@@ -53,6 +55,7 @@ export function editOps(v: unknown, days = 0): EditOp[] | null {
     for (const k of keys) {
       const val = x[k];
       if (typeof val === "number" && Number.isFinite(val)) e[k] = val;
+      else if (typeof val === "boolean") e[k] = val;
       else if (typeof val === "string") e[k] = val.trim().slice(0, k === "value" ? 600 : 140);
     }
     if (e.op === "set" && !SET_FIELDS.includes(String(e.field))) return null;
@@ -89,7 +92,7 @@ export interface TripOps {
   /** Places that stop being must-sees (they stay in their places as ideas). */
   removeMust?: string[];
   /** The plan's costs worked out again for another number of travelers, without re-planning. */
-  rescaleCosts?: { from: number; to: number };
+  rescaleCosts?: { from: number; to: number; days?: number[]; after?: string };
 }
 
 const MAX_CONTEXT = 60_000, MAX_TURN = 4_000, MAX_ROUNDS = 2;
@@ -108,7 +111,7 @@ The chat is in Ask mode: answer and look things up, but never offer a change (no
 The travelers can change their ${days}-day itinerary through you. When their message asks for a change to it (or says yes to a change you suggested), write one or two sentences on what will change, then end your reply with one last line exactly like this:
 CHANGE: {"title": "a short headline of the change, under 60 characters", "days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation"}
 "days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
-Small edits don't need the planner: adding a stop at a time that's free, removing a stop, or moving a stop to another time. Write those as "stops" instead of "request" (and "days": []); the page makes them straight away, without re-planning the day:
+Small edits don't need the planner: adding a stop at a time that's free and close to that day's other stops (a few minutes away, so nothing else has to move), removing a stop, or moving a stop to another time. A stop that is further away, or that pushes later stops, dinner or the drive back, is a "request" for the planner for that day ("add X at about 14:00 and re-plan the rest of the day around it"), never an "add". Write those as "stops" instead of "request" (and "days": []); the page makes them straight away, without re-planning the day:
 CHANGE: {"days": [], "request": "", "stops": [{"op": "add", "day": 5, "time": "14:30", "place": "Aussichtsturm Gaflei", "where": "Gafleistrasse, Triesenberg, Liechtenstein", "description": "what it is and why go, how to get there, how long to allow", "cost": 0, "kind": "sight"}]}
 Other ops: {"op": "remove", "day": 5, "place": "the stop's name exactly as in the plan"} and {"op": "time", "day": 5, "place": "the stop's name exactly as in the plan", "time": "08:00"} (e.g. breakfast moved to when the café opens). For an added stop, "where" is its address or "place, town, country" (it's looked up on the map, so it must be the real location). Use "request" instead when other stops would have to move or the day needs rearranging.
 Add "trip" only when the trip's setup changes too (the day-by-day plan is made from it), with just the parts that change, for example: "trip": {"onTheWay": ["Burg Hohenwerfen"]}. Its parts:
@@ -117,12 +120,14 @@ Add "trip" only when the trip's setup changes too (the day-by-day plan is made f
 - "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}] for the day trips listed under the stays.
 - "addPlaces": [{"name": "the place's real name", "where": "town, country", "must": true}] adds places to their places (for example one you recognised in a picture they sent), as a must-see when they want to go for sure.
 - "removeMust": ["place"] takes places off their must-see list (the place stays among their ideas, it just isn't required any more). Use it when they say they no longer need or want to see a must-see, or when the conversation settles that it can't work (they swapped it for something else, it's closed on the days there, it's far off the route and they agreed to drop it). Use the place's name exactly as in "What they want to see" or their must-see list above; for a stop that is only in the day plan (not a must-see), change the day instead.
-- "rescaleCosts": {"from": 1, "to": 2} works the plan's costs out again for a new number of travelers, without re-planning: meals, tickets and fares are per person and scale; the car, parking and fuel stay as they are. Use it when the number of travelers changed and they want the costs to match ("from" is the number the plan was made for: the trip says so when it's known, otherwise ask). A change that is only about costs or numbers never goes to the planner ("request" stays empty).
+- "rescaleCosts": {"from": 2, "to": 3, "days": [2, 3], "after": "14:00"} works the plan's costs out again for a different number of travelers, without re-planning (leave out "days" for the whole trip). When someone joins or leaves for part of the trip, list only the days they're there, and "after": the time they join on the first of those days (what's before it, such as stops on the drive there, stays as it is); ask when they join if it isn't clear. Never change costs one by one with "setCost" for a change in travelers. For "rescaleCosts": meals, tickets and fares are per person and scale; the car, parking and fuel stay as they are. Use it when the number of travelers changed and they want the costs to match ("from" is the number the plan was made for: the trip says so when it's known, otherwise ask). A change that is only about costs or numbers never goes to the planner ("request" stays empty).
 "edits" changes anything else you can change by hand, straight away and without re-planning; a list of these (use the names exactly as in the trip above):
 - {"op": "set", "field": "travelers" | "dailyBudget" (per person) | "currency" (ISO code) | "pace" ("relaxed" | "balanced" | "packed") | "fitness" ("easy" | "average" | "fit") | "dayStart" ("09:00", "" for any) | "breakfast" ("hotel" | "out" | "brunch" | "skip") | "interests" | "wishes", "value": …}
 - {"op": "stayNights", "stay": "town", "nights": 3}, {"op": "stayHotel", "stay": "town", "value": "hotel name"}, {"op": "stayTravel", "stay": "town", "value": "car|train|bus|walk|bike|ferry|flight"} (how they get there), {"op": "addStay", "city": "town, country", "after": "town it comes after", "nights": 2}, {"op": "removeStay", "stay": "town"}
 - {"op": "moveStop", "day": 3, "place": "the stop's name as in the plan", "toDay": 4, "time": "14:00"}, {"op": "swapDays", "day": 3, "toDay": 4} (what they do on two days, swapped; dates stay), {"op": "setCost", "day": 2, "place": "the stop", "value": 30}
-- {"op": "addBooking", "name": "what", "date": "YYYY-MM-DD", "from": "HH:MM", "to": "HH:MM"}, {"op": "removeBooking", "name": "what"}, {"op": "booked", "day": 2, "place": "the stop"} (ticks it off in "Book ahead")
+- {"op": "addBooking", "name": "what", "date": "YYYY-MM-DD", "from": "HH:MM", "to": "HH:MM"}, {"op": "removeBooking", "name": "what"} (things they have booked)
+- {"op": "booked", "item": "the entry as in the Book ahead list", "done": true} ticks an entry of their "Book ahead" checklist off ("done": false unticks it); look up "bookings" first for the entries
+- {"op": "packed", "item": "the item as in the packing list", "done": true} ticks a packing item ("done": false unticks it), {"op": "packAdd", "value": "item"} and {"op": "packRemove", "value": "item"} (only their own items); look up "packing" first
 - {"op": "must", "place": "place"}, {"op": "skip", "place": "place"} (one of their places they don't want)
 - {"op": "setCar", "fuel": "petrol|diesel|electric|", "per100": 6.5}
 - {"op": "note", "value": "a sentence for their notes for the plan"} (a lasting preference they state, e.g. "No drives over 4 hours a day": offer to remember it this way), {"op": "idea", "value": "a line for their ideas & notes"}
@@ -143,7 +148,9 @@ CHANGE: {"days": [], "request": "", "trip": {"addPlaces": [{"name": "the place's
 - {"op": "set", "field": "travelers" | "dailyBudget" (per person) | "currency" (ISO code) | "pace" ("relaxed" | "balanced" | "packed") | "fitness" ("easy" | "average" | "fit") | "dayStart" ("09:00", "" for any) | "breakfast" ("hotel" | "out" | "brunch" | "skip") | "interests" | "wishes", "value": …}
 - {"op": "stayNights", "stay": "town", "nights": 3}, {"op": "stayHotel", "stay": "town", "value": "hotel name"}, {"op": "stayTravel", "stay": "town", "value": "car|train|bus|walk|bike|ferry|flight"} (how they get there), {"op": "addStay", "city": "town, country", "after": "town it comes after", "nights": 2}, {"op": "removeStay", "stay": "town"}
 - {"op": "moveStop", "day": 3, "place": "the stop's name as in the plan", "toDay": 4, "time": "14:00"}, {"op": "swapDays", "day": 3, "toDay": 4} (what they do on two days, swapped; dates stay), {"op": "setCost", "day": 2, "place": "the stop", "value": 30}
-- {"op": "addBooking", "name": "what", "date": "YYYY-MM-DD", "from": "HH:MM", "to": "HH:MM"}, {"op": "removeBooking", "name": "what"}, {"op": "booked", "day": 2, "place": "the stop"} (ticks it off in "Book ahead")
+- {"op": "addBooking", "name": "what", "date": "YYYY-MM-DD", "from": "HH:MM", "to": "HH:MM"}, {"op": "removeBooking", "name": "what"} (things they have booked)
+- {"op": "booked", "item": "the entry as in the Book ahead list", "done": true} ticks an entry of their "Book ahead" checklist off ("done": false unticks it); look up "bookings" first for the entries
+- {"op": "packed", "item": "the item as in the packing list", "done": true} ticks a packing item ("done": false unticks it), {"op": "packAdd", "value": "item"} and {"op": "packRemove", "value": "item"} (only their own items); look up "packing" first
 - {"op": "must", "place": "place"}, {"op": "skip", "place": "place"} (one of their places they don't want)
 - {"op": "setCar", "fuel": "petrol|diesel|electric|", "per100": 6.5}
 - {"op": "note", "value": "a sentence for their notes for the plan"} (a lasting preference they state, e.g. "No drives over 4 hours a day": offer to remember it this way), {"op": "idea", "value": "a line for their ideas & notes"}
@@ -220,10 +227,15 @@ export function stopOps(v: unknown, days = 0): StopOp[] | null {
 }
 
 /** Added stops get their real spot from their address (not the model's idea of the coordinates). */
-async function locateStops(stops: StopOp[]) {
+async function locateStops(stops: StopOp[], dayAt: Record<string, [number, number]> = {}) {
   for (const s of stops.filter((x) => x.op === "add")) {
-    const hit = await geocodeOne(s.where || s.place).catch(() => null) || (s.where ? await geocodeOne(s.place).catch(() => null) : null);
-    if (hit) { s.lat = hit.lat; s.lng = hit.lng; }
+    // First around where they sleep that day (a "Gasthaus Muster" by Bregenz, not the one near Bayreuth), then anywhere.
+    const near = Array.isArray(dayAt[s.day]) && dayAt[s.day].length === 2 && dayAt[s.day].every(Number.isFinite) ? dayAt[s.day] : null;
+    const tries: [string, [number, number] | null][] = [[s.where || s.place, near], ...(s.where ? [[s.place, near]] as [string, [number, number] | null][] : []), ...(near ? [[s.where || s.place, null]] as [string, null][] : [])];
+    for (const [q, at] of tries) {
+      const hit = await geocodeOne(q, undefined, at).catch(() => null);
+      if (hit) { s.lat = hit.lat; s.lng = hit.lng; break; }
+    }
   }
 }
 
@@ -249,7 +261,11 @@ export function tripOps(t: any): TripOps | null {
   };
   for (const k of Object.keys(ops) as (keyof TripOps)[]) if (!(ops[k] as unknown[]).length) delete ops[k];
   const from = Number(t.rescaleCosts?.from), to = Number(t.rescaleCosts?.to);
-  if ([from, to].every((n) => Number.isInteger(n) && n >= 1 && n <= 30) && from !== to) ops.rescaleCosts = { from, to };
+  if ([from, to].every((n) => Number.isInteger(n) && n >= 1 && n <= 30) && from !== to) {
+    const days = (Array.isArray(t.rescaleCosts.days) ? t.rescaleCosts.days : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 1).slice(0, 60);
+    const after = /^\d{1,2}:\d{2}$/.test(String(t.rescaleCosts.after || "")) ? String(t.rescaleCosts.after).padStart(5, "0") : "";
+    ops.rescaleCosts = { from, to, ...(days.length ? { days } : {}), ...(after && days.length ? { after } : {}) };
+  }
   return Object.keys(ops).length ? ops : null;
 }
 
@@ -262,13 +278,25 @@ ${summary ? `\n## Summary of what came before\n${clip(summary, 8_000)}\n` : ""}
 ${text}`;
 }
 
+/** A summary as "- " bullets, also when the model answered with JSON ({"summary": [...]}). */
+export function summaryText(text: string) {
+  const t = text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+  if (!/^[[{]/.test(t)) return text.trim();
+  try {
+    const j = JSON.parse(t);
+    const v = Array.isArray(j) ? j : j.summary ?? j.bullets ?? j.points ?? Object.values(j)[0];
+    const list = (Array.isArray(v) ? v : String(v ?? "").split("\n")).map((x) => String(x).trim().replace(/^[-*•]\s*/, "")).filter(Boolean);
+    return list.map((x) => `- ${x}`).join("\n");
+  } catch { return text.trim(); }
+}
+
 export async function compactChat(req: { model: string; turns?: CompanionTurn[]; summary?: string }, report: Report, signal?: AbortSignal) {
   const turns = (Array.isArray(req.turns) ? req.turns : []).slice(-200);
   if (!turns.length) return { summary: req.summary || "" };
   report({ type: "status", text: "Summarizing the earlier conversation…" });
-  const summary = cleanAnswer(await askModel(req.model, compactPrompt(turns, req.summary), (n) => report({ type: "tokens", n }), {
-    signal, nudge: "Write the summary right away.",
-  }));
+  const summary = summaryText(cleanAnswer(await askModel(req.model, compactPrompt(turns, req.summary), (n) => report({ type: "tokens", n }), {
+    signal, text: true, nudge: "Write the summary right away.",
+  })));
   if (!summary) throw new Error("The model didn't write a summary.");
   return { summary: summary.slice(0, 8_000) };
 }
@@ -366,7 +394,7 @@ These figures in it aren't in the trip or in any lookup result: ${unsure.join(",
   const change = req.mode === "ask" ? null : req.days ? parsed
     : setup && (setup.trip || setup.edits?.length) ? { days: [], request: "", ...(setup.trip ? { trip: setup.trip } : {}), ...(setup.edits?.length ? { edits: setup.edits } : {}), ...(parsed!.title ? { title: parsed!.title } : {}) } : null;
   if (change?.request && unsure.length) change.request += ` (Not verified by a routing lookup: ${unsure.join(", ")}. Don't rely on these; use routed distances.)`;
-  if (change?.stops) { report({ type: "status", text: "Finding the new stops on the map…" }); await locateStops(change.stops); }
+  if (change?.stops) { report({ type: "status", text: "Finding the new stops on the map…" }); await locateStops(change.stops, req.dayAt || {}); }
   if (!text && !change) throw new Error("The model didn't answer properly (no text, only an empty change). Try again, or pick a different model in the chat's menu.");
   const thought = thinking.trim() ? { thinking: thinking.trim().slice(-20_000), thoughtSecs: Math.max(1, Math.round(((thinkTo || Date.now()) - thinkFrom) / 1000)) } : {};
   return { answer: text || "I'll change that.", ...(change ? { change } : {}), ...(looked.length ? { lookups: looked } : {}), ...(sources.length ? { sources: sources.slice(0, 12) } : {}), ...thought };

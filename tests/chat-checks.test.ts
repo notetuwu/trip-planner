@@ -131,3 +131,26 @@ async function runLookupsFresh(l: any[], data: Record<string, string>) {
   const { runLookups: run } = await import("../server/trip/chat-lookups");
   return run(l, [], () => {}, [], data);
 }
+
+import { summaryText } from "../server/trip/companion";
+describe("summaries and part-trip travelers", () => {
+  it("turns a JSON summary into bullets", () => {
+    expect(summaryText('{"summary": ["- Added Gaflei to the must-sees.", "Finalized 2 travelers"]}')).toBe("- Added Gaflei to the must-sees.\n- Finalized 2 travelers");
+    expect(summaryText("- already bullets")).toBe("- already bullets");
+  });
+  it("reads rescaleCosts for some days, from a time", () => {
+    expect(tripOps({ rescaleCosts: { from: 2, to: 3, days: [1, 2, 3], after: "14:00" } })).toEqual({ rescaleCosts: { from: 2, to: 3, days: [1, 2, 3], after: "14:00" } });
+    expect(tripOps({ rescaleCosts: { from: 2, to: 3, after: "14:00" } })).toEqual({ rescaleCosts: { from: 2, to: 3 } });
+  });
+  it("sends far-away stops to the planner", () => {
+    expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain('is a "request" for the planner for that day');
+  });
+});
+
+describe("book ahead and packing from the chat", () => {
+  it("keeps ticks, unticks and packing edits", () => {
+    expect(editOps([{ op: "booked", item: "Stay in Lucerne", done: false }, { op: "packed", item: "Rain jacket", done: true }, { op: "packAdd", value: "Hiking poles" }, { op: "packRemove", value: "Hiking poles" }], 5))
+      .toEqual([{ op: "booked", item: "Stay in Lucerne", done: false }, { op: "packed", item: "Rain jacket", done: true }, { op: "packAdd", value: "Hiking poles" }, { op: "packRemove", value: "Hiking poles" }]);
+    expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain('{"op": "packed"');
+  });
+});

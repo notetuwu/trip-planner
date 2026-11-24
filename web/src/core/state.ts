@@ -111,12 +111,14 @@ export interface AppState {
   routeModel?: string;
   /** Things already booked (Bookings in the sidebar). */
   bookings?: Booking[];
+  /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */
+  okRepeats?: { key: string; name: string }[];
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
   saveName?: string;
   /** What the trip chat may do: answer only, offer changes that need Apply, or make small ones by itself. */
   chatMode?: "ask" | "manual" | "auto";
   /** The trip chat so far. */
-  chat?: { role: "me" | "ai"; text: string; sources?: ChatSource[]; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number } }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
+  chat?: { role: "me" | "ai"; text: string; modelName?: string; sources?: ChatSource[]; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
 }
 
 const STORE_KEY = "trip-planner-v2";

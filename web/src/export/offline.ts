@@ -27,7 +27,7 @@ export function offlineHtml() {
   const it = state.itinerary!;
   const content = $("#output").cloneNode(true) as HTMLElement;
   // Only what works without the planner: no buttons that re-plan, open windows or change the trip.
-  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .redo, .thoughts, .stale, .it-search, .sum-icons, .replan-stay, .fix-bar, .inline-progress, .far-warn[hidden]", content)) el.remove();
+  for (const el of $$(".toolbar, .refine, .bars, .error, .gen-meta, .del, .item .pin, .redo, .thoughts, .stale, .it-search, .sum-icons, .replan-stay, .fix-bar, .inline-progress, .far-warn[hidden]", content)) el.remove();
   // Every stay unfolded, whatever was folded on screen (the arrows still fold them, see OFFLINE_SCRIPT).
   for (const el of $$(".stay-group.folded", content)) el.classList.remove("folded");
   for (const el of $$(".day.replanning", content)) el.classList.remove("replanning");

@@ -16,6 +16,7 @@ import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 import { mountSearxng } from "./searxng-panel";
 import { creditsHtml } from "./credits";
+import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-download";
 import { SEARXNG_LOCAL } from "./searxng-local";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
@@ -170,12 +171,24 @@ function generalCards() {
     </div>
     <div class="set-card">
       <b class="card-title">Map</b>
-      <div class="set-row"><div><b>Place names</b><div class="hint">What the map starts with: names in the local language and script, or in English. The menu on the map changes it until the next start.</div></div>
+      <div class="set-row"><div><b>Place names</b><div class="hint">What the map starts with: names in the local language and script, or in English. The Layers button on the map changes it until the next start.</div></div>
         <div class="segs">${seg("mapNames", "local", "Local")}${seg("mapNames", "english", "English")}</div></div>
       <div class="set-row"><div><b>Show at start</b><div class="hint">Your saved places and the routes between stops; the boxes on the map turn them on and off for now.</div></div>
         <div class="set-checks"><label class="inline-check"><input type="checkbox" data-app-check="showPlaces"${a.showPlaces ? " checked" : ""}> Places</label><label class="inline-check"><input type="checkbox" data-app-check="showRoutes"${a.showRoutes ? " checked" : ""}> Routes</label></div></div>
       <div class="set-row"><div><b>Maps app</b><div class="hint">Where the links to places and directions open (also in the phone file and the calendar).</div></div>
         <div class="segs">${seg("mapsApp", "google", "Google")}${seg("mapsApp", "apple", "Apple")}${seg("mapsApp", "bing", "Bing")}</div></div>
+      <div class="set-row"><div><b>Download transport lines</b><div class="hint">Fetches the bus, tram, metro, train, boat and cable car lines for the map's Layers around your stays and each day's stops, in the background: slowly, one area at a time, and never while a plan is being made. Then they show straight away. Kept for 90 days.</div></div>
+        <div class="segs">${seg("linesDownload", true, "On")}${seg("linesDownload", false, "Off")}</div></div>
+      <div class="set-row"><div><b>Around each stay</b><div class="hint">How far around where you sleep. Further takes longer and more space (a city's area is up to about half a megabyte).</div></div>
+        <div class="segs">${seg("linesRadius", "5", "5 km")}${seg("linesRadius", "10", "10 km")}${seg("linesRadius", "20", "20 km")}</div></div>
+      <div class="set-row"><div><b>Downloaded lines</b><div class="hint" id="linesStatus">${esc(downloadText() || "Checking…")}</div></div>
+        <button type="button" class="btn" id="linesClear" title="Delete every downloaded area (the trip's areas download again if it's on)">Clear</button></div>
+      <div class="set-row set-row-wide"><div><b>Kept in</b><div class="hint">The folder the downloaded lines are kept in, on the computer the planner runs on. Changing it moves what's there now.</div></div>
+        <div class="lines-dir">
+          <input type="text" id="linesDir" spellcheck="false" autocomplete="off" placeholder="Loading…">
+          <div class="lines-dir-btns"><button type="button" class="btn" id="linesDirSet">Move here</button><button type="button" class="link-btn" id="linesDirDefault" hidden>Back to default</button></div>
+          <span class="hint" id="linesDirNote"></span>
+        </div></div>
     </div>
     <div class="set-card">
       <b class="card-title">Start-up &amp; saving</b>
@@ -196,6 +209,37 @@ function generalCards() {
     </div>`;
 }
 
+/** "Kept in": the downloads' folder, which can be typed in (what's there is moved across) or set back to the default. */
+function wireLinesDir() {
+  const input = document.querySelector<HTMLInputElement>("#linesDir");
+  if (!input) return;
+  const set = $<HTMLButtonElement>("#linesDirSet"), back = $<HTMLButtonElement>("#linesDirDefault"), note = $("#linesDirNote");
+  type Loc = { dir: string; default: string; custom: boolean };
+  const show = (loc: Loc) => {
+    input.value = loc.dir; input.placeholder = loc.default; input.dataset.now = loc.dir;
+    back.hidden = !loc.custom;
+    note.textContent = loc.custom ? `Default: ${loc.default}` : "The app's own cache folder.";
+  };
+  api<{ location: Loc }>("/api/lines/disk").then((d) => show(d.location)).catch(() => { input.placeholder = "The planner isn't answering"; });
+  const move = async (dir: string) => {
+    set.disabled = true; back.disabled = true;
+    note.textContent = "Moving the downloads…";
+    try {
+      const r = await api<{ location: Loc }>("/api/lines/location", { method: "POST", body: JSON.stringify({ dir }) });
+      show(r.location);
+      toast(r.location.custom ? "Downloads are kept in the new folder" : "Downloads are back in the app's folder");
+      const el = document.getElementById("linesStatus");
+      if (el) el.textContent = downloadText() || el.textContent;
+    } catch (e) { note.textContent = (e as Error).message; }
+    finally { set.disabled = false; back.disabled = false; }
+  };
+  set.onclick = () => { const v = input.value.trim(); if (v && v !== input.dataset.now) move(v); };
+  input.onkeydown = (e) => { if (e.key === "Enter") set.click(); };
+  back.onclick = () => move("");
+}
+
+/** The download's progress line is followed once (the section is redrawn often; the line is looked up each time). */
+let linesHooked = false;
 function wireGeneral() {
   $$<HTMLButtonElement>("#setMain [data-app]").forEach((b) => {
     b.onclick = async () => { const raw = b.dataset.v!; await saveApp({ [b.dataset.app!]: raw === "true" ? true : raw === "false" ? false : raw } as Partial<AppPrefs>); renderGeneral(); };
@@ -206,6 +250,20 @@ function wireGeneral() {
     currency: $<HTMLSelectElement>("#ntCurrency").value, pace: $<HTMLSelectElement>("#ntPace").value,
   } });
   for (const id of ["#ntTravelers", "#ntBudget", "#ntCurrency", "#ntPace"]) document.querySelector<HTMLElement>(id)?.addEventListener("change", () => saveApp(trip()));
+  // The download's progress, as it goes; with nothing asked yet, just what's on disk.
+  const status = () => { const el = document.getElementById("linesStatus"); if (el) el.textContent = downloadText() || el.textContent; };
+  if (!linesHooked) { linesHooked = true; onDownloadChange(status); }
+  if (!downloadText()) api<{ areas: number; bytes: number }>("/api/lines/disk").then((disk) => {
+    const el = document.getElementById("linesStatus");
+    if (el && !downloadText()) el.textContent = downloadText({ total: 0, ready: 0, left: 0, failed: 0, disk });
+  }).catch(() => {});
+  wireLinesDir();
+  const clear = document.querySelector<HTMLButtonElement>("#linesClear");
+  if (clear) clear.onclick = async () => {
+    if (!confirm("Delete all downloaded transport lines?")) return;
+    clear.disabled = true;
+    try { await clearDownloaded(); toast("Downloaded lines deleted"); } finally { clear.disabled = false; status(); }
+  };
 }
 
 function renderGeneral() {

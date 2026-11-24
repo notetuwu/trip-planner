@@ -22,7 +22,7 @@
   /* Only the plan. */
   header, .settings, .map-panel, .chat-panel, .chat-toggle, .update-bar, .toast, dialog,
   .toolbar, .bars, .refine, .it-search, .fix-bar, .stale, .thoughts, .prompt-panel, .gen-meta, .inline-progress,
-  .del, .redo, .far-warn, .leg:empty, .transport a, .t-links, .dir, .item .book, .tip-links, .extras .sources, .extras div:has(> .sources),
+  .del, .redo, .item .pin, .far-warn, .leg:empty, .transport a, .t-links, .dir, .item .book, .tip-links, .extras .sources, .extras div:has(> .sources),
   .book-ahead input, .book-ahead a, .packing input, .packing button, .packing form, .ext, .split-pill, .weather, .empty { display: none !important; }
   main { display: block; padding: 0; }
   .panel { box-shadow: none; border: 0; padding: 0; background: none; }

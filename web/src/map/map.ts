@@ -1,11 +1,15 @@
 // The Leaflet map: tiles, layers, and the click-to-add behaviour.
 import * as L from "leaflet";
-import { prefs } from "../core/prefs";
+import { onAppPrefs, prefs } from "../core/prefs";
 import { $ } from "../core/dom";
 import { session } from "../core/state";
 import { openAddPopup } from "./add";
 import { drawMap } from "./draw";
 import { wirePlacePopup } from "./place-popup";
+import { initTransitLines } from "./transit-lines";
+import { type Labels, initLayerPicker } from "./layer-picker";
+import { initLinesDownload, resyncLines } from "./lines-download";
+import { initLinesGrid } from "./lines-grid";
 
 export let map: L.Map | null = null;
 export const layers = {
@@ -23,7 +27,6 @@ export const itemMarkers = new Map<string, L.Marker>();
 
 /** The map's place names: OpenStreetMap's own map, labelled in the local language and script, or OpenFreeMap's map
  *  with English names (loaded only when picked). */
-type Labels = "local" | "english";
 const LABELS_KEY = "trip-planner-map-labels";
 let base: L.Layer | null = null, wanted: Labels = "local";
 
@@ -43,12 +46,9 @@ async function setLabels(labels: Labels) {
 
 export function initMap() {
   map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
-  // Place names start as set in Settings → General; the menu changes them until the next start.
+  // Place names start as set in Settings → General; the map's layer panel changes them until the next start.
   const saved: Labels = prefs.app.mapNames === "english" ? "english" : "local";
   setLabels(saved);
-  const pick = $<HTMLSelectElement>("#mapLabels");
-  pick.value = saved;
-  pick.onchange = () => setLabels(pick.value as Labels);
   // Keep auto-fitting to new pins until the user moves the map themselves.
   for (const ev of ["pointerdown", "wheel"]) $("#map").addEventListener(ev, () => { session.userMoved = true; }, { passive: true });
   for (const layer of Object.values(layers)) layer.addTo(map);
@@ -73,6 +73,13 @@ export function initMap() {
   $<HTMLInputElement>("#showRoutes").checked = prefs.app.showRoutes;
   $<HTMLInputElement>("#showPlaces").onchange = () => drawMap();
   $<HTMLInputElement>("#showRoutes").onchange = () => drawMap();
+  initTransitLines(map);
+  initLinesGrid(map);
+  // The Layers button (bottom left): map style and transport lines.
+  initLayerPicker(map, { get: () => wanted, set: (l) => { setLabels(l); } });
+  // The trip's areas' lines, downloaded ahead in the background (Settings → General → Map); asked again when that changes.
+  initLinesDownload(map);
+  onAppPrefs(resyncLines);
 }
 
 /** Waiting for a click on the map that picks a spot (for a booking, say) instead of adding one. */

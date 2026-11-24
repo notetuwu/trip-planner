@@ -13,7 +13,7 @@ export interface OsmElement {
 const nearbyCache = diskCache<{ at: number; elements: OsmElement[] }>("nearby.json");
 // Volunteer-run servers, most reliable first. A city can take 30 s, and the main one allows only two
 // parallel queries per visitor (so callers fetch at most 2 towns at a time).
-const OVERPASS = [
+export const OVERPASS = [
   "https://overpass-api.de/api/interpreter",
   "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",

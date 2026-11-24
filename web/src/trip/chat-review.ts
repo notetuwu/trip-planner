@@ -7,9 +7,12 @@ import { money } from "../core/format";
 import { icon } from "../core/icons";
 import { type AppState, state } from "../core/state";
 import { sameName, stayLoc } from "../geo/locate";
+import { byTitleMap } from "../geo/item-loc";
+import { type Leg, dayLegs, legRoute, requestRoutes } from "../map/routes";
+import type { LatLng } from "../../../shared/types";
 
-export type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept" | "customPlaces" | "travelers" | "dailyBudget" | "currency" | "pace" | "fitness" | "dayStart" | "breakfast" | "interests" | "wishes" | "notes" | "ideas" | "bookings" | "booked" | "car" | "meta">;
-export const SNAP_KEYS: (keyof Snapshot)[] = ["itinerary", "stays", "marks", "how", "kept", "customPlaces", "travelers", "dailyBudget", "currency", "pace", "fitness", "dayStart", "breakfast", "interests", "wishes", "notes", "ideas", "bookings", "booked", "car", "meta"];
+export type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept" | "customPlaces" | "travelers" | "dailyBudget" | "currency" | "pace" | "fitness" | "dayStart" | "breakfast" | "interests" | "wishes" | "notes" | "ideas" | "bookings" | "booked" | "packed" | "packingExtra" | "car" | "meta">;
+export const SNAP_KEYS: (keyof Snapshot)[] = ["itinerary", "stays", "marks", "how", "kept", "customPlaces", "travelers", "dailyBudget", "currency", "pace", "fitness", "dayStart", "breakfast", "interests", "wishes", "notes", "ideas", "bookings", "booked", "packed", "packingExtra", "car", "meta"];
 export const snapshot = (): Snapshot => structuredClone(Object.fromEntries(SNAP_KEYS.map((k) => [k, state[k]]))) as Snapshot;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -76,45 +79,80 @@ function setupTab(a: Snapshot, b: Snapshot) {
   const bk = (s: Snapshot) => (s.bookings || []).map((x) => `${x.name} ${x.date}${x.from ? ` ${x.from}` : ""}`).join("\n");
   if (bk(a) !== bk(b)) row("Bookings", bk(a), bk(b));
   if (!same(a.car, b.car)) row("Car", a.car ? `${a.car.fuel} ${a.car.per100 || ""}` : "", b.car ? `${b.car.fuel} ${b.car.per100 || ""}` : "");
-  if (!same(a.booked, b.booked)) row("Ticked off to book", Object.keys(a.booked || {}).filter((k) => a.booked![k]).length + "", Object.keys(b.booked || {}).filter((k) => b.booked![k]).length + "");
+  const ticked = (m?: Record<string, boolean>) => Object.keys(m || {}).filter((k) => m![k]).map((k) => k.split("|").pop()).sort().join("\n");
+  if (!same(a.booked, b.booked)) row("Ticked off in Book ahead", ticked(a.booked), ticked(b.booked));
+  if (!same(a.packed, b.packed)) row("Packed", ticked(a.packed), ticked(b.packed));
+  if (!same(a.packingExtra, b.packingExtra)) row("Your own packing items", (a.packingExtra || []).join("\n"), (b.packingExtra || []).join("\n"));
   return rows.length ? `<table class="rv-table rv-setup"><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody>${rows.join("")}</tbody></table>` : "";
 }
 
-/** Where a snapshot's stays and changed days' stops are, for the maps. */
-function points(s: Snapshot, days: number[]) {
-  const stays = s.stays.filter((x) => x.city).map((x) => stayLoc(x)).filter((l): l is NonNullable<typeof l> => !!l).map((l) => [l.lat, l.lng] as L.LatLngTuple);
-  const stops = days.flatMap((i) => (s.itinerary?.days[i]?.items || []).filter((x) => typeof x.lat === "number" && typeof x.lng === "number").map((x) => ({ at: [x.lat!, x.lng!] as L.LatLngTuple, name: x.place, key: itemKey(x) })));
-  return { stays, stops };
+/** A snapshot's lines for the map: the drives between stays and the changed days' legs, along the real roads and paths
+ *  where the routing service has them (the same routes as the main map), with the driving on those days added up. */
+function mapLines(s: Snapshot, days: number[]) {
+  const byTitle = byTitleMap(), segs: { pts: LatLng[]; routed: boolean; stay: boolean }[] = [], want: Pick<Leg, "mode" | "from" | "to">[] = [];
+  let km = 0, mins = 0;
+  const st = s.stays.filter((x) => x.city);
+  for (let i = 1; i < st.length; i++) {
+    const a = stayLoc(st[i - 1]), b = stayLoc(st[i]);
+    if (!a || !b) continue;
+    const leg = { mode: "car" as const, from: [a.lat, a.lng] as LatLng, to: [b.lat, b.lng] as LatLng };
+    const r = st[i].travel === "car" ? legRoute(leg) : null;
+    if (st[i].travel === "car" && !r) want.push(leg);
+    segs.push({ pts: r ? r.c : [leg.from, leg.to], routed: !!r, stay: true });
+  }
+  for (const i of days) {
+    const d = s.itinerary?.days[i];
+    if (!d) continue;
+    for (const l of dayLegs(d, byTitle)) {
+      const r = legRoute(l);
+      if (!r && l.mode !== "straight") want.push(l);
+      if (r && l.mode === "car") { km += r.d / 1000; mins += r.t / 60; }
+      segs.push({ pts: r ? r.c : [l.from, l.to], routed: !!r, stay: false });
+    }
+  }
+  const stops = days.flatMap((i) => (s.itinerary?.days[i]?.items || []).filter((x) => typeof x.lat === "number" && typeof x.lng === "number").map((x) => ({ at: [x.lat!, x.lng!] as LatLng, name: x.place, key: itemKey(x) })));
+  return { segs, want, km, mins, stops, stays: st.map((x) => stayLoc(x)).filter((l): l is NonNullable<typeof l> => !!l).map((l) => [l.lat, l.lng] as LatLng) };
 }
 
-let maps: L.Map[] = [];
-function drawMaps(a: Snapshot, b: Snapshot) {
+const drive = (km: number, mins: number) => (km ? `${Math.round(km).toLocaleString()} km, ${Math.floor(mins / 60)} h ${Math.round(mins % 60)} min driving on the changed days` : "");
+
+let maps: L.Map[] = [], retry = 0;
+function drawMaps(a: Snapshot, b: Snapshot, tries = 0): boolean {
   for (const m of maps) m.remove();
   maps = [];
+  clearTimeout(retry);
   const days = changedDays(a, b);
-  const pa = points(a, days), pb = points(b, days);
+  const pa = mapLines(a, days), pb = mapLines(b, days);
   const keysA = new Set(pa.stops.map((p) => p.key)), keysB = new Set(pb.stops.map((p) => p.key));
   const all = [...pa.stays, ...pb.stays, ...pa.stops.map((p) => p.at), ...pb.stops.map((p) => p.at)];
   if (!all.length) return false;
-  const make = (id: string, p: ReturnType<typeof points>, other: Set<string>, side: "before" | "after") => {
+  const make = (id: string, p: ReturnType<typeof mapLines>, other: Set<string>, side: "before" | "after") => {
     const m = L.map(id, { zoomControl: true, attributionControl: true });
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(m);
-    if (p.stays.length > 1) L.polyline(p.stays, { color: side === "before" ? "#8a8a8a" : "#2f6fed", weight: 4, opacity: .85 }).addTo(m);
-    p.stays.forEach((at, i) => L.circleMarker(at, { radius: 7, color: "#fff", weight: 2, fillColor: side === "before" ? "#8a8a8a" : "#2f6fed", fillOpacity: 1 }).bindTooltip(`${i + 1}`).addTo(m));
+    const color = side === "before" ? "#8a8a8a" : "#2f6fed";
+    for (const g of p.segs) L.polyline(g.pts as L.LatLngTuple[], { color, weight: g.stay ? 4 : 3, opacity: g.stay ? .55 : .9, ...(g.routed ? {} : { dashArray: "6 6" }) }).addTo(m);
+    p.stays.forEach((at, i) => L.circleMarker(at as L.LatLngTuple, { radius: 7, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1 }).bindTooltip(`Stay ${i + 1}`).addTo(m));
     for (const s of p.stops) {
-      const changed = !other.has(s.key);
-      const color = changed ? (side === "before" ? "#d64545" : "#2e9d5b") : "#999";
-      L.circleMarker(s.at, { radius: changed ? 6 : 4, color, fillColor: color, fillOpacity: .9, weight: 1 }).bindTooltip(esc(s.name)).addTo(m);
+      const changed = !other.has(s.key), c = changed ? (side === "before" ? "#d64545" : "#2e9d5b") : color;
+      L.circleMarker(s.at as L.LatLngTuple, { radius: changed ? 7 : 4, color: "#fff", weight: 1.5, fillColor: c, fillOpacity: 1 }).bindTooltip(esc(s.name)).addTo(m);
     }
-    m.fitBounds(L.latLngBounds(all), { padding: [20, 20], maxZoom: 13 });
+    m.fitBounds(L.latLngBounds(all as L.LatLngTuple[]), { padding: [20, 20], maxZoom: 13 });
     return m;
   };
   const ma = make("rvMapA", pa, keysB, "before"), mb = make("rvMapB", pb, keysA, "after");
+  const head = (id: string, label: string, p: ReturnType<typeof mapLines>) => { const el = document.getElementById(id); if (el) el.innerHTML = `${label}<span class="rv-drive">${esc(drive(p.km, p.mins))}</span>`; };
+  head("rvHeadA", "Before", pa); head("rvHeadB", "After", pb);
   // Pan and zoom together.
   let syncing = false;
   const link = (from: L.Map, to: L.Map) => from.on("move", () => { if (syncing) return; syncing = true; to.setView(from.getCenter(), from.getZoom(), { animate: false }); syncing = false; });
   link(ma, mb); link(mb, ma);
   maps = [ma, mb];
+  // Routes not known yet (a new stop): asked for, and the maps drawn again when they're in.
+  const want = [...pa.want, ...pb.want];
+  if (want.length && tries < 12) {
+    requestRoutes(want);
+    retry = window.setTimeout(() => { if (document.getElementById("rvMapA")) { const v = ma.getCenter(), z = ma.getZoom(); drawMaps(a, b, tries + 1); maps[0]?.setView(v, z, { animate: false }); } }, 1500);
+  }
   return true;
 }
 
@@ -132,9 +170,9 @@ export function openReview(title: string, a: Snapshot, b: Snapshot, actions: Rev
   el.innerHTML = `<div class="rv-modal" role="dialog" aria-label="Before and after">
     <div class="rv-head"><b>${esc(title)}</b><button type="button" class="icon-btn" data-rv-close title="Close">${icon("x")}</button></div>
     <div class="rv-impact">${esc(impactLine(a, b) || "")}</div>
-    ${tabs.length ? `<div class="rv-tabs">${tabs.map(([k, label], i) => `<button type="button" class="seg${i ? "" : " on"}" data-rv-tab="${k}">${label}</button>`).join("")}</div>
+    ${tabs.length ? `<div class="rv-tabs">${tabs.map(([k, label], i) => `<button type="button" class="rv-tab${i ? "" : " on"}" data-rv-tab="${k}">${label}</button>`).join("")}</div>
     <div class="rv-legend"><span><i class="rv-sw before"></i> Before</span><span><i class="rv-sw after"></i> After</span><span class="add">added</span><span class="rm">removed</span><span class="mod">changed</span></div>
-    ${tabs.map(([k, , html], i) => `<div class="rv-pane" data-rv-pane="${k}"${i ? " hidden" : ""}>${k === "map" ? `<div class="rv-pair"><div class="rv-col"><div class="rv-col-head">Before</div><div id="rvMapA" class="rv-map"></div></div><div class="rv-col"><div class="rv-col-head">After</div><div id="rvMapB" class="rv-map"></div></div></div>` : html}</div>`).join("")}`
+    ${tabs.map(([k, , html], i) => `<div class="rv-pane" data-rv-pane="${k}"${i ? " hidden" : ""}>${k === "map" ? `<div class="rv-pair"><div class="rv-col"><div class="rv-col-head" id="rvHeadA">Before</div><div id="rvMapA" class="rv-map"></div></div><div class="rv-col"><div class="rv-col-head" id="rvHeadB">After</div><div id="rvMapB" class="rv-map"></div></div></div>` : html}</div>`).join("")}`
       : `<p class="hint">Nothing in the trip changes.</p>`}
     <div class="rv-actions">${actions.map((x, i) => `<button type="button" class="btn${x.primary ? " solid" : ""}" data-rv-act="${i}">${esc(x.label)}</button>`).join("")}</div></div>`;
   document.body.appendChild(el);
@@ -152,6 +190,7 @@ export function openReview(title: string, a: Snapshot, b: Snapshot, actions: Rev
 }
 
 export function closeReview() {
+  clearTimeout(retry);
   for (const m of maps) m.remove();
   maps = [];
   document.querySelector("#rvModal")?.remove();

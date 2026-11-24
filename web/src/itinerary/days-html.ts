@@ -13,6 +13,7 @@ import { distKm, placeLoc, stayLoc } from "../geo/locate";
 import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
+import { isTransfer, onMap } from "../map/travel-day";
 
 /** The stop's name links to it in the maps app: a saved place's own link (see placeUrl), the exact spot where it's known,
  *  else a search for "name, town" (for a meal without a place: what's there to eat). */
@@ -44,6 +45,12 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
   const links = [dir, bookLink(x, d, di, xi)].filter(Boolean).join(" · ");
   const badge = x.booking === "essential" ? `<span class="book-badge" title="${esc(x.bookAhead ? `Book ${x.bookAhead}` : "Book ahead")}">book ahead</span>` : "";
   const must = isMustSee(x), listed = x.fromList || byTitle.has(x.place);
+  // Transfers ("Rigi Kulm → Vitznau") have no single spot until they set where it ends; anything else placed only
+  // roughly gets its "Set location" button highlighted.
+  const transfer = isTransfer(x), where = onMap(x) ? itemLoc(x, d, byTitle) : null;
+  const pinGuess = !transfer && !x.pinned && (!where || !!where.approx);
+  const pinTitle = transfer ? (x.pinned ? "Change where this leg ends on the map" : "Set where this leg ends, to draw it on the map (like the foot of the mountain)")
+    : pinGuess ? "The location is only estimated: set where it really is" : "Set where this stop is";
   return `
     <li class="item${must ? " must" : listed ? " listed" : ""}" data-k="${di}-${xi}">
       <div class="item-top">
@@ -51,13 +58,19 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         <span class="n">${xi + 1}</span>
         <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
+        <span class="item-acts">
+        ${where ? `<button class="pin${x.leg ? " set" : ""}" data-leg-edit="${di}-${xi}" title="${x.leg ? "How you get here is set by hand: change it" : "How you get here: walk, road, train, boat, places on the way"}">${icon("route")}</button>` : ""}
+        ${where ? `<button class="pin show-on-map" data-show="${di}-${xi}" title="Show on the map">${icon("pin")}</button>` : ""}
+        <button class="pin${pinGuess ? " guess" : ""}" data-pin="${di}-${xi}" title="${pinTitle}">${icon("crosshair")}</button>
         <button class="del" data-del="${di}-${xi}" title="Remove this stop">${icon("x")}</button>
+        </span>
       </div>
       ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
       ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${links ? `<span class="t-links">${x.transport ? " · " : ""}${links}</span>` : ""}</div>` : ""}
       <div class="leg" data-leg="${di}-${xi}"></div>
       <div class="far-warn" data-far="${di}-${xi}" hidden></div>
       <div class="far-warn" data-hours="${di}-${xi}" hidden></div>
+      <div class="far-warn dup-warn" data-dup="${di}-${xi}" hidden></div>
     </li>`;
 }
 
@@ -121,7 +134,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
     const w = session.weather[d.date];
     html += `<div class="day ${session.selectedDay === i ? "selected" : ""}" id="day-${i}" data-i="${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">
       <div class="day-head" data-sel="${i}" title="Show this day on the map">
-        <h4><span class="date">${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
+        <h4><span class="date">Day ${i + 1} · ${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
           ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>

@@ -25,7 +25,7 @@ function tripGroup(place: string): { g: string; color: string } {
 import { hoverBand } from "./legs";
 import { focusStay } from "../trip/stays";
 import { cssVar, layers } from "./map";
-import { requestRoutes, routeKey, routes } from "./routes";
+import { flightArc, requestRoutes, routeKey, routes } from "./routes";
 import { icon } from "../core/icons";
 import { byTitleMap } from "../geo/item-loc";
 import { type ViaStop, viaStops } from "./travel-day";
@@ -90,6 +90,11 @@ function dayFilter() {
 }
 
 /** Draws the stays; returns their pin positions (for fitting the map). */
+const STAY_LINES = "trip-planner-stay-lines";
+/** The trip's lines between stays (and to day trips) are shown: on by default, switched in the Layers panel. */
+export const stayLinesOn = () => localStorage.getItem(STAY_LINES) !== "0";
+export function setStayLines(on: boolean) { localStorage.setItem(STAY_LINES, on ? "1" : "0"); }
+
 export function drawStays(): LatLng[] {
   const accent = cssVar("--accent");
   const pts: LatLng[] = [];
@@ -110,28 +115,30 @@ export function drawStays(): LatLng[] {
 
   const driven: { mode: RouteMode; from: LatLng; to: LatLng }[] = [];
   const tripsBy = (state.stays.flatMap((s) => (s.dayTrips || []).map((t) => t.place)).filter(Boolean));
-  for (const l of stayLegs()) {
+  // The lines between the stays and out to the day trips: a layer of their own (Layers panel), on unless switched off.
+  for (const l of stayLinesOn() ? stayLegs() : []) {
     if (only && !only.leg(l)) continue;
     if (l.trip && l.place && planGoesTo(l.place)) continue;
     const who = l.trip && l.place ? tripGroup(l.place) : { g: "", color: "" };
     const g = who.g, color = who.color || accent;
     // Day trips of different groups often share the tracks out of town: later ones drawn thinner on top.
     const wide = g ? Math.max(0, tripsBy.length - 1 - tripsBy.indexOf(l.place!)) * 3 : 0;
-    // By road, or by train along the tracks; ferries and flights stay straight lines.
-    const how: RouteMode | null = l.mode === "car" || l.mode === "bus" ? "car" : l.mode === "train" ? "train" : null;
+    // By road, by train along the tracks, by boat along its route, or by bike along cycle paths; flights are arcs.
+    const how: RouteMode | null = l.mode === "car" || l.mode === "bus" ? "car" : l.mode === "train" ? "train" : l.mode === "ferry" ? "ferry" : l.mode === "bike" ? "bike" : null;
     const byRoad = !!how;
     // Through the travel day's stops on the way: one route made of the pieces between them.
     const pts: LatLng[] = [l.from, ...(l.via || []).map((v) => v.loc), l.to];
     const pieces = pts.slice(1).map((to, k) => ({ mode: how || "car", from: pts[k], to }));
     const got = byRoad ? pieces.map((p) => routes[routeKey(p.mode, p.from, p.to)]) : [];
-    // By train, from station to station: getting to the station and on to the sights are the day's own legs.
+    // By train or boat, from station to station (pier to pier): getting there and on to the sights are the day's own legs.
     const rail = (g: (typeof got)[number]) => (g?.rail ? g.c.slice(g.rail[0], g.rail[1] + 1) : g!.c);
     const r = byRoad && got.every(Boolean)
-      ? { c: how === "train" && got.length === 1 ? rail(got[0]) : got.flatMap((g) => g!.c), d: got.reduce((n, g) => n + g!.d, 0), t: got.reduce((n, g) => n + g!.t, 0) } : null;
+      ? { c: (how === "train" || how === "ferry") && got.length === 1 ? rail(got[0]) : got.flatMap((g) => g!.c), d: got.reduce((n, g) => n + g!.d, 0), t: got.reduce((n, g) => n + g!.t, 0) } : null;
     if (byRoad) driven.push(...pieces);
     const via = l.via?.length ? ` via ${l.via.map((v) => esc(v.name)).join(", ")}` : "";
     const tip = `${modeIcon(l.mode) || icon("arrowLeftRight")} ${esc(l.label)}${via}${l.mode ? ` · ${modeName(l.mode)}` : ""}${r ? ` · ${fmtDist(r.d)}, ${fmtDur(r.t)}` : ""}`;
-    const line = r ? r.c : pts;
+    // A flight between stays: an arc, like a flight in the day's plan.
+    const line = r ? r.c : l.mode === "flight" ? pts.slice(1).flatMap((p, k) => flightArc(pts[k], p).slice(k ? 1 : 0)) : pts;
     const vis = L.polyline(line, {
       // Day trips of different groups often share the tracks out of town: earlier groups wider underneath.
       color, weight: (r ? 3 : l.trip ? 1.5 : 2) + wide,

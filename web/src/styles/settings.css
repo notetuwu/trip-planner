@@ -498,19 +498,43 @@ button.refine:hover { border-color: var(--accent); }
 /* A change card's setup changes, and older cards (the conversation moved on) toned down. */
 .cp-ops { margin: 4px 0 4px; padding-left: 16px; font-size: 12.5px; }
 .cp-change-body { display: grid; gap: 5px; min-width: 0; }
+/* "Set location" on a stop: a quiet button, highlighted when the spot is only estimated; its panel under the stop. */
+.item .pin { all: unset; cursor: pointer; color: var(--muted); opacity: .45; display: inline-flex; padding: 2px; border-radius: 6px; }
+.item .pin:hover { opacity: 1; color: var(--ink); background: var(--hover); }
+.item .pin.guess { opacity: 1; color: var(--warn); }
+.pin-panel { margin: 8px 0 4px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); display: grid; gap: 8px; }
+.pin-head { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+.pin-search { display: flex; gap: 6px; }
+.pin-search input { flex: 1; min-width: 0; }
+.pin-results { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 220px; overflow: auto; }
+.pin-results button { all: unset; cursor: pointer; display: grid; gap: 1px; width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 7px; font-size: 12.5px; }
+.pin-results button:hover { background: var(--hover); }
+.pin-results small { color: var(--muted); font-size: 11.5px; }
+.pin-foot { font-size: 12px; }
+/* "How you get here": its button (lit when set by hand) and the panel. */
+.item .pin.set { opacity: 1; color: var(--accent); }
+.lp-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.lp-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.lp-row select { max-width: 60%; }
+.lp-row .icon-btn { width: 24px; height: 24px; margin-left: auto; }
+.lp-acts { display: flex; gap: 10px; align-items: center; }
+.lp-acts .btn { height: 30px; }
 .cp-ops.pick { list-style: none; padding-left: 0; }
 .cp-ops.pick label { display: flex; gap: 6px; align-items: flex-start; cursor: pointer; }
 .cp-ops.pick input { margin-top: 2px; }
 .cp-impact { font-size: 12px; font-weight: 600; color: var(--ink); padding: 4px 8px; border-radius: 7px; background: var(--hover); }
 .cp-place { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .cp-place:hover { color: var(--accent); }
-.cp-replies { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; width: 100%; }
 .rv-backdrop { position: fixed; inset: 0; z-index: 2000; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .rv-modal { background: var(--panel); color: var(--ink); border-radius: 14px; width: min(1100px, 100%); max-height: calc(100vh - 32px); overflow: auto; padding: 16px 18px; display: grid; gap: 10px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .rv-head { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
 .rv-impact { font-size: 13px; font-weight: 600; }
 .rv-impact:empty { display: none; }
-.rv-tabs { display: flex; gap: 4px; }
+.rv-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.rv-tab { all: unset; cursor: pointer; padding: 7px 14px; font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.rv-tab:hover { color: var(--ink); }
+.rv-tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+.rv-drive { font-weight: 500; color: var(--muted); margin-left: 6px; }
 .rv-legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--muted); flex-wrap: wrap; }
 .rv-legend .add { color: #2e9d5b; } .rv-legend .rm { color: #d64545; } .rv-legend .mod { color: var(--warn); }
 .rv-sw { display: inline-block; width: 14px; height: 4px; border-radius: 2px; vertical-align: middle; }
@@ -544,6 +568,7 @@ button.refine:hover { border-color: var(--accent); }
 .cp-sources summary { cursor: pointer; color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
 .cp-sources ol { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; }
 .cp-sources .muted { color: var(--muted); }
+.cp-sources .cp-check { color: inherit; text-decoration: underline dotted; }
 .cp-mode { font-weight: 700; border: 1px solid var(--line); padding: 0 8px; gap: 5px; }
 .cp-mode-menu { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 30; width: 290px; max-width: calc(100vw - 32px); padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel, var(--field)); box-shadow: 0 10px 30px rgba(0,0,0,.18); display: grid; gap: 2px; }
 .cp-mode-head { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 4px 8px 6px; display: flex; justify-content: space-between; }
@@ -631,6 +656,18 @@ button.refine:hover { border-color: var(--accent); }
 .cp-status { margin-top: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cp-notice { align-self: stretch; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 2px 2px; }
 .chat-panel .rc-input { padding: 12px; }
+/* The message box floats over the end of the conversation, like Claude Code's: the log scrolls on underneath it. */
+.chat-panel { position: relative; }
+.chat-panel .rc-input { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; border-top: 0; padding: 18px 12px 12px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--panel) 34%); }
+.chat-panel .rc-input > * { pointer-events: auto; }
+.chat-panel .cp-log { padding-bottom: calc(var(--cp-input-h, 110px) + 8px); }
+.chat-panel .cp-box { box-shadow: 0 6px 24px rgba(0,0,0,.18), 0 0 0 1px var(--line); }
+/* A different model answering from here on: a wavy line with its name. */
+.cp-switch { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11.5px; }
+.cp-switch::before, .cp-switch::after { content: ""; flex: 1; height: 6px; opacity: .55;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='6'%3E%3Cpath d='M0 3 Q3 0 6 3 T12 3' fill='none' stroke='%23888' stroke-width='1.2'/%3E%3C/svg%3E") repeat-x center; }
+.cp-switch span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 
 /* Settings: an input with its Save button, and a note between rows. */
 .set-inline { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
@@ -751,9 +788,10 @@ button.refine:hover { border-color: var(--accent); }
   .day-head { gap: 6px 10px; }
   .day-head .right { margin-left: auto; }
   .item { padding-left: 16px; }
-  /* Time, number, name (wrapping in its own column), cost and remove on one line. */
+  /* Time, number, name (wrapping in its own column), cost and the buttons on one line; the buttons always last. */
   .items .item .item-top { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; column-gap: 6px; align-items: baseline; }
-  .item-top .n, .item-top .del { align-self: center; }
+  .item-top .n, .item-top .item-acts { align-self: center; }
+  .item-top .item-acts { grid-column: -2; margin-left: 0; }
   .item time { min-width: 0; }
   .tracks { grid-template-columns: 1fr; }
   .stay-dates { white-space: nowrap; }
@@ -788,3 +826,10 @@ button.refine:hover { border-color: var(--accent); }
 .fuel-table input { width: 86px; height: 28px; text-align: right; font-size: 12.5px; padding: 0 6px; display: inline-block; }
 .fuel .cb-stats { margin-bottom: 8px; }
 .costs-body h3 .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+/* "Kept in": the downloads' folder, a path field under its label (paths are long). */
+.set-row-wide { flex-wrap: wrap; }
+.set-row-wide > div:first-child { flex: 1 1 260px; }
+.lines-dir { flex: 1 1 100%; display: grid; gap: 6px; }
+.lines-dir input { width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.lines-dir-btns { display: flex; gap: 12px; align-items: center; }
+.lines-dir .hint { margin: 0; font-size: 11.5px; word-break: break-all; }

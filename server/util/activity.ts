@@ -21,6 +21,8 @@ export function goodbye(id: string) {
 }
 
 export const openWindows = () => pages.size;
+/** A plan is being made right now (background work waits, so it doesn't compete with it). */
+export const working = () => busy > 0;
 
 /** Runs fn as busy work: the app doesn't quit until it's done. */
 export async function busyWhile<T>(fn: () => Promise<T>): Promise<T> {

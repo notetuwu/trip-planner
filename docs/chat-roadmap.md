@@ -40,7 +40,9 @@ show what a change does before it happens.
       `costPer` field, else inferred by kind. New plans remember their traveler count; the chat offers it when that
       differs.
 - [x] A request that is only about costs or numbers never goes to the planner (prompt rule).
-- [ ] Ticking place lists and packing items from the chat.
+- [x] The "Book ahead" checklist and the packing list: the chat sees both with their ticks, ticks and unticks
+      entries, and adds or removes your own packing items.
+- [ ] Ticking place lists from the chat.
 - [ ] One cheap model call for old items the rules can't place as per person or per group.
 
 ## Phase 4: preview and compare
@@ -60,6 +62,6 @@ show what a change does before it happens.
 - [x] What-if questions: answered with what it would mean, then offered as a change to compare (prompt rule).
 - [x] "Check my plan" (first suggestion, and a quick reply), using the `checks`, `costs` and `fuel` lookups.
 - [x] The plan's stops named in answers are clickable: the map flies to them.
-- [x] Quick replies under the last answer.
+- [ ] ~~Quick replies under the last answer~~ (tried, removed: too noisy).
 - [x] Lasting preferences remembered into the trip's notes (the `note` edit, offered by the chat).
 - [x] Several changes in one card with a checklist: untick parts to leave them out (the impact updates).

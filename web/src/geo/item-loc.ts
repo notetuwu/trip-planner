@@ -267,8 +267,18 @@ function farFromDay(loc: Loc, d: Day) {
 }
 
 export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | null {
-  // Looked up from its address (a booking, a stop added in the chat): that's where it is.
-  if (x.fixed && typeof x.lat === "number" && typeof x.lng === "number") return { lat: x.lat, lng: x.lng };
+  // Set by the travelers themselves: that's where it is.
+  if (x.pinned && typeof x.lat === "number" && typeof x.lng === "number") return { lat: x.lat, lng: x.lng };
+  // Looked up from its address (a booking, a stop added in the chat): that's where it is, unless the lookup found a
+  // place of that name far from everywhere the day goes (a "Gasthaus Muster" near Bayreuth on a day by Bregenz). Then
+  // one near the day, if there is one; otherwise the day's town, marked as elsewhere so the check flags it.
+  if (x.fixed && typeof x.lat === "number" && typeof x.lng === "number") {
+    const at = { lat: x.lat, lng: x.lng }, ref = farFromDay(at, day);
+    if (!ref) return at;
+    const near = stopHit(x, day);
+    if (near?.same) return near.g;
+    return { lat: ref.lat, lng: ref.lng, approx: true, elsewhere: `${at.lat.toFixed(3)}, ${at.lng.toFixed(3)}` };
+  }
   const p = byTitle.get(x.place);
   const hotel = !p && hotelLoc(x, day);
   if (hotel) return hotel;

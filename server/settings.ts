@@ -23,6 +23,8 @@ export interface Settings {
   geoapifyKey: string;
   /** The quick-start guide was shown (it opens by itself only the first time the app starts). */
   quickstartSeen: boolean;
+  /** Where the map's downloaded transport lines are kept ("" = in the app's cache folder; Settings → General → Map). */
+  linesDir: string;
   tune: Tune;
   app: AppPrefs;
 }
@@ -43,12 +45,17 @@ export interface AppPrefs {
   startWith: "last" | "new";
   /** Save each newly generated plan to Saved trips by itself. */
   autoSave: boolean;
+  /** Download the transport lines (for the map's Layers) around the trip's stays in the background, and how far around
+   *  each stay (km). */
+  linesDownload: boolean;
+  linesRadius: number;
   /** What a new trip starts with. */
   newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
 }
 
 export const APP_DEFAULTS: AppPrefs = {
   units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false,
+  linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 const PACES = ["relaxed (2-3 main stops per day, late starts)", "balanced (3-5 stops per day)", "packed (as much as possible, early starts)"];
@@ -66,6 +73,8 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     mapsApp: pick("mapsApp", (v) => v === "google" || v === "apple" || v === "bing"),
     startWith: pick("startWith", (v) => v === "last" || v === "new"),
     autoSave: pick("autoSave", (v) => typeof v === "boolean"),
+    linesDownload: pick("linesDownload", (v) => typeof v === "boolean"),
+    linesRadius: Number(pick("linesRadius", (v) => [5, 10, 20].includes(Number(v)))),
     newTrip: {
       currency: typeof t.currency === "string" && /^[A-Z]{3}$/.test(t.currency) ? t.currency : base.newTrip.currency,
       travelers: Number.isInteger(Number(t.travelers)) && Number(t.travelers) >= 1 && Number(t.travelers) <= 30 ? Number(t.travelers) : base.newTrip.travelers,
@@ -139,6 +148,7 @@ export function readSettings(): Settings {
     searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
     geoapifyKey: typeof saved.geoapifyKey === "string" ? saved.geoapifyKey : "",
     quickstartSeen: saved.quickstartSeen === true,
+    linesDir: typeof saved.linesDir === "string" ? saved.linesDir : "",
     tune: cleanTune(saved.tune),
     app: cleanApp(saved.app),
   };
@@ -159,6 +169,8 @@ export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { 
     searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
     geoapifyKey: typeof next.geoapifyKey === "string" ? next.geoapifyKey.trim().slice(0, 100) : now.geoapifyKey,
     quickstartSeen: typeof next.quickstartSeen === "boolean" ? next.quickstartSeen : now.quickstartSeen,
+    // Set only through the lines' own call (it moves what's there first), never from the settings form.
+    linesDir: typeof next.linesDir === "string" ? next.linesDir : now.linesDir,
     tune: next.tune ? cleanTune(next.tune, now.tune) : now.tune,
     app: next.app ? cleanApp({ ...now.app, ...next.app, newTrip: { ...now.app.newTrip, ...(next.app.newTrip || {}) } }, now.app) : now.app,
   };

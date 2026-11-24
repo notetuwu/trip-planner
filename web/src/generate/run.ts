@@ -150,6 +150,8 @@ async function checkHoursOnline(it: Itinerary, view: ProgressView, signal: Abort
 }
 
 let running = false;
+/** A plan, fix or change is being made right now (only one at a time). */
+export const generationBusy = () => running;
 
 /** Generates, revises, re-plans a day or fixes; true when the new plan is shown (false: cancelled, failed or busy). */
 export async function runGeneration(change: Change = {}): Promise<boolean> {

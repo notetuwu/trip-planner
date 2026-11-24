@@ -175,6 +175,7 @@ ${partial ? "" : `
 - Give every item "lat"/"lng" coordinates (4 decimals) so it can be shown on a map.
 - All costs in ${trip.currency}.
 - Group nearby places on the same day to minimise transit: sights within about 2 km of each other (a castle and an aquarium in the same part of town, two waterfalls in the same valley) go on the same day, one after the other, and never send them back on another day to a place right next to one they already visited.
+- No duplicates: every sight, activity and restaurant appears once in the whole trip, on one day only (a day of a longer stay in the same town, like a second visit to Verona, gets new places, not the Arena or the old town again). Before answering, check each day's stops against the earlier days. Only hotels, stations and transfers may repeat.
 ${!partial || splits ? `- If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.` : ""}`;
 
   if (trip.revise?.itinerary && trip.revise?.request) {

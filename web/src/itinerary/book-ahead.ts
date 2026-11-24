@@ -63,6 +63,15 @@ function tripRows() {
   return [...hotels, ...rides].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/** Every entry of "Book ahead" (stays, transfers, then tickets and tables in trip order), with its tick key. */
+export function bookAheadList(it: Itinerary) {
+  const booked = state.booked || {};
+  const trip = tripRows().map((r) => ({ key: r.key, label: `${r.what} (${r.date}, ${r.when})`, done: !!booked[r.key] }));
+  const stops = it.days.flatMap((d, i) => d.items.filter((x) => x.booking === "essential" || x.booking === "recommended")
+    .map((x) => ({ key: bookingKey(d, x), label: `Day ${i + 1}: ${x.place} (${x.booking}${x.bookAhead ? `, book ${x.bookAhead}` : ""})`, done: !!booked[bookingKey(d, x)] })));
+  return [...trip, ...stops];
+}
+
 /** Things to book: how many there are and how many are still to do. */
 export function bookAheadCount(it: Itinerary) {
   const booked = state.booked || {};

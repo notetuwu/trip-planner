@@ -1,10 +1,10 @@
 // The day chips above the map, selecting a day, and linking itinerary stops with their pins.
 import type * as L from "leaflet";
-import { $, $$, esc } from "../core/dom";
+import { $, $$, esc, toast } from "../core/dom";
 import { dayColor, fmtShort } from "../core/format";
 import { session, state } from "../core/state";
 import { drawMap } from "./draw";
-import { itemMarkers } from "./map";
+import { itemMarkers, map } from "./map";
 
 export function renderDayChips() {
   const it = state.itinerary, sel = session.selectedDay;
@@ -30,6 +30,24 @@ export function highlightItem(di: number, xi: number) {
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.classList.toggle("flash", false); void el.offsetWidth; el.classList.toggle("flash", true);
+}
+
+/** Moves the map to a stop and opens its pin (showing its day if another one is selected). */
+export function showOnMap(di: number, xi: number) {
+  if (!map) return;
+  // An open popup holds back redraws (so the day switch below wouldn't draw this stop's pin).
+  map.closePopup();
+  // Only the selected day's pins are drawn: switch to this stop's day if another is shown.
+  if (session.selectedDay != null && session.selectedDay !== di) selectDay(di);
+  const m = itemMarkers.get(`${di}-${xi}`);
+  if (!m) { toast("This stop has no spot on the map yet: set where it is with the crosshair button"); return; }
+  // Stays where it's put: redraws (lookups and routes arriving) don't fit the map back to the whole trip.
+  session.userMoved = true;
+  // The map is above or below the plan on narrower screens: bring it into view.
+  const box = $("#map").getBoundingClientRect();
+  if (box.bottom < 60 || box.top > innerHeight - 60) $("#map").scrollIntoView({ behavior: "smooth", block: "center" });
+  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: .6 });
+  map.once("moveend", () => itemMarkers.get(`${di}-${xi}`)?.openPopup());
 }
 
 /** The pin whose name is shown because its stop is hovered in the list (only one at a time). */
