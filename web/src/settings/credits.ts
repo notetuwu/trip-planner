@@ -12,6 +12,7 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
     items: [
       { name: "OpenStreetMap", url: "https://www.openstreetmap.org/copyright", what: "The map, and the data behind places, opening hours and routes", licence: "© OpenStreetMap contributors, ODbL" },
       { name: "Nominatim", url: "https://nominatim.org", what: "Finding towns, hotels and stops by name (the OpenStreetMap Foundation's server)" },
+      { name: "Geoapify", url: "https://www.geoapify.com", what: "A faster place search, with your own free key" },
       { name: "Photon by Komoot", url: "https://photon.komoot.io", what: "Place search when Nominatim doesn't find a name" },
       { name: "Overpass API", url: "https://overpass-api.de", what: "Sights and restaurants near your stays (also the private.coffee and VK Maps servers)" },
       { name: "OpenFreeMap and OpenMapTiles", url: "https://openfreemap.org", what: "The map with English place names", licence: "© OpenMapTiles, data © OpenStreetMap contributors" },
@@ -41,7 +42,8 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
     title: "Money", ico: "wallet", intro: "Costs in your currency, and what the drives cost in fuel.",
     items: [
       { name: "Frankfurter", url: "https://frankfurter.dev", what: "Exchange rates (the European Central Bank's reference rates)" },
-      { name: "fuel-prices.eu", url: "https://www.fuel-prices.eu", what: "Weekly fuel prices per country, for the fuel estimate", licence: "CC BY 4.0" },
+      { name: "fuel-prices.eu", url: "https://www.fuel-prices.eu", what: "Weekly fuel prices per country, and Switzerland's monthly average (Swiss Federal Statistical Office), for the fuel estimate", licence: "CC BY 4.0" },
+      { name: "US Energy Information Administration", url: "https://www.eia.gov/petroleum/gasdiesel/", what: "Weekly US fuel prices, for the fuel estimate", licence: "Public domain" },
     ],
   },
   {

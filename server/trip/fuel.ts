@@ -1,12 +1,15 @@
 // Fuel prices and exchange rates for the fuel estimate in the cost breakdown.
 // Fuel: the latest weekly national average per country from fuel-prices.eu (the European Commission's Weekly Oil
-// Bulletin, CC BY 4.0: the page shows the credit next to the figures). It covers the EU, the UK and Norway; other
-// countries (Switzerland, say) the travelers fill in themselves. Exchange rates: the ECB's daily reference rates via
+// Bulletin, CC BY 4.0: the page shows the credit next to the figures). It covers the EU, the UK and Norway; for
+// Switzerland and the US an official figure is read live, and for other countries there's a table of rough typical
+// prices (see fuel-extra.ts), marked as approximate. Exchange rates: the ECB's daily reference rates via
 // frankfurter.dev. Both cached for a day.
 import { USER_AGENT, errMsg } from "../config";
 import { diskCache } from "../util/disk-cache";
+import { extraFuel } from "./fuel-extra";
 
-export interface FuelPrice { petrol?: number; diesel?: number; week?: string }
+/** `kind`: the weekly bulletin (no kind), an official figure read live, or a rough typical price; `source` says where. */
+export interface FuelPrice { petrol?: number; diesel?: number; week?: string; kind?: "official" | "approx"; source?: string }
 const DAY = 24 * 3600e3;
 const fuelCache = diskCache<{ at: number; price: FuelPrice | null }>("fuel.json");
 const fxCache = diskCache<{ at: number; rates: Record<string, number> }>("fx.json");
@@ -34,11 +37,20 @@ async function fuelFor(cc: string): Promise<FuelPrice | null> {
   }
 }
 
+/** Outside the bulletin: the live official figure (cached a day) or the rough table. */
+async function extraFor(cc: string): Promise<FuelPrice | null> {
+  const key = `x:${cc}`, hit = fuelCache.data[key];
+  if (hit && Date.now() - hit.at < DAY) return hit.price;
+  const price = await extraFuel(cc, (await eurRates()).USD);
+  if (price?.kind === "official") { fuelCache.data[key] = { at: Date.now(), price }; fuelCache.save(); }
+  return price;
+}
+
 /** Prices per country code (upper case), null where there's no figure. */
 export async function fuelPrices(ccs: string[]) {
   const list = [...new Set(ccs.map((c) => c.trim().toUpperCase()).filter((c) => /^[A-Z]{2}$/.test(c)))].slice(0, 20);
   const out: Record<string, FuelPrice | null> = {};
-  for (const cc of list) out[cc] = await fuelFor(cc === "GR" ? "EL" : cc);
+  for (const cc of list) out[cc] = (await fuelFor(cc === "GR" ? "EL" : cc)) ?? (await extraFor(cc));
   return { prices: out, attribution: { text: "Data: fuel-prices.eu, CC BY 4.0", url: "https://www.fuel-prices.eu/" } };
 }
 

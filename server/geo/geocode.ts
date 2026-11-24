@@ -1,8 +1,9 @@
-// Geocoding with a disk cache and a queue in two lanes (Nominatim and Photon, side by side); the page polls for results.
+// Geocoding with a disk cache and a queue in lanes (Nominatim and Photon, and Geoapify when a key is set, side by side); the page polls for results.
 import type { GeoHit, GeoQuery, LatLng, ReverseHit } from "../../shared/types";
 import { errMsg } from "../config";
 import { diskCache } from "../util/disk-cache";
-import { nominatim, nominatimHit, photon, photonHit } from "./providers";
+import { readSettings } from "../settings";
+import { geoapify, geoapifyHit, nominatim, nominatimHit, photon, photonHit } from "./providers";
 
 export type GeoEntry = GeoHit | ReverseHit | null;
 export const geoCache = diskCache<GeoEntry | number>("geocode.json");
@@ -51,7 +52,7 @@ export const geoKey = (q: string, cc?: string, near?: LatLng | null, stop = fals
  * is found in the right village rather than anywhere in the country.
  */
 export async function geocodeOne(q: string, cc?: string, near?: LatLng | null, stop = false): Promise<GeoHit | null> {
-  return (await byNominatim(q, cc, near, stop)) || byPhoton(q, cc, near);
+  return (await byNominatim(q, cc, near, stop)) || (await byPhoton(q, cc, near)) || (geoapifyKey() ? byGeoapify(q, cc, near) : null);
 }
 
 /** Nominatim: exact towns (the place, not the middle of its municipality), and for stops their website and names. */
@@ -121,6 +122,28 @@ async function byPhoton(q: string, cc?: string, near?: LatLng | null): Promise<G
   return null;
 }
 
+/** Geoapify: fast and good with shop and sight names; only used with a (free) key. */
+const geoapifyKey = () => readSettings().geoapifyKey || process.env.GEOAPIFY_API_KEY || "";
+async function byGeoapify(q: string, cc?: string, near?: LatLng | null): Promise<GeoHit | null> {
+  const key = geoapifyKey();
+  const ccs = (cc || "").split(",").filter(Boolean);
+  const named = countryCode(q.split(",").at(-1) || "");
+  const km = (f: any) => {
+    if (!near) return 0;
+    const [lng, lat] = f.geometry.coordinates, r = Math.PI / 180;
+    return Math.hypot((lng - near[1]) * Math.cos(lat * r), lat - near[0]) * 111;
+  };
+  for (const name of new Set([q, q.replace(/\s+[-–|(].*$/, "")])) {
+    const pp = new URLSearchParams({ text: name, limit: "5", lang: "en" });
+    const countries = named ? [named] : ccs;
+    if (countries.length) pp.set("filter", `countrycode:${countries.join(",")}`);
+    if (near) pp.set("bias", `proximity:${near[1]},${near[0]}`);
+    const f = (await geoapify(pp, key)).find((f) => (f.properties?.rank?.confidence ?? 1) >= 0.4 && km(f) < 60);
+    if (f) return geoapifyHit(f);
+  }
+  return null;
+}
+
 let countries: Map<string, string> | null = null;
 /** The ISO code of a country named in English ("Austria" → "at"), or "" if it isn't a country's name. */
 export function countryCode(name: string) {
@@ -141,20 +164,33 @@ export function countryCode(name: string) {
  * places: Photon, which is quick and good with shop and sight names) and moves to the other lane if not found there,
  * instead of holding up its lane while it waits.
  */
-type Lane = "nominatim" | "photon";
+type Lane = "nominatim" | "photon" | "geoapify";
 interface GeoJob { q: string; cc?: string; near: LatLng | null; key: string; first: boolean; stop: boolean; lane: Lane; tried: Lane[]; errored?: boolean; answered?: boolean }
 const geoQueue: GeoJob[] = [];
-const busy: Record<Lane, boolean> = { nominatim: false, photon: false };
+/** How many lookups each lane has under way at once (the services' own pace, in providers.ts, still spaces the requests). */
+const WORKERS: Record<Lane, number> = { nominatim: 1, photon: 2, geoapify: 3 };
+const GAP: Record<Lane, number> = { nominatim: 1100, photon: 300, geoapify: 220 };
+const workers: Record<Lane, number> = { nominatim: 0, photon: 0, geoapify: 0 };
 /** Being looked up right now (out of the queue meanwhile, so the page asking again doesn't queue it twice). */
 const inFlight = new Set<string>();
-const other = (l: Lane): Lane => (l === "nominatim" ? "photon" : "nominatim");
-/** A service that keeps failing (down, or unreachable from here) is left out for a while: its jobs go to the other. */
-const failures: Record<Lane, number> = { nominatim: 0, photon: 0 };
-const downUntil: Record<Lane, number> = { nominatim: 0, photon: 0 };
+/** A service that keeps failing (down, or unreachable from here) is left out for a while: its jobs go to the others. */
+const failures: Record<Lane, number> = { nominatim: 0, photon: 0, geoapify: 0 };
+const downUntil: Record<Lane, number> = { nominatim: 0, photon: 0, geoapify: 0 };
 const isDown = (l: Lane) => Date.now() < downUntil[l];
+const usable = (l: Lane) => !isDown(l) && (l !== "geoapify" || !!geoapifyKey());
+/** Where a job is tried, in order: towns and stops start with Nominatim (exact towns, websites), saved places with the fast ones. */
+const order = (j: { first: boolean; stop: boolean }): Lane[] => (j.first || j.stop ? ["nominatim", "photon", "geoapify"] : ["geoapify", "photon", "nominatim"]);
+/** The next lane a job hasn't been to, that's answering. */
+const nextLane = (j: { first: boolean; stop: boolean; tried: Lane[] }): Lane | undefined => order(j).find((l) => !j.tried.includes(l) && usable(l));
 export const startLane = (j: { first: boolean; stop: boolean }): Lane => {
-  const best: Lane = j.first || j.stop ? "nominatim" : "photon";
-  return isDown(best) && !isDown(other(best)) ? other(best) : best;
+  const lanes = order(j).filter(usable);
+  // Saved places: the shorter wait of the fast services, so a long list is shared out between them.
+  if (!j.first && !j.stop) {
+    const wait = (l: Lane) => (geoQueue.filter((x) => x.lane === l).length + 1) * GAP[l];
+    const fast = lanes.filter((l) => l !== "nominatim");
+    if (fast.length) return fast.reduce((a, b) => (wait(b) < wait(a) ? b : a));
+  }
+  return lanes[0] || order(j)[0];
 };
 
 /** What the lookups did lately, for the panel over the map ("what's it doing?"). */
@@ -166,32 +202,37 @@ export function geocodeStatus() {
   return {
     queued: geoQueue.length,
     waiting: geoQueue.slice(0, 8).map((j) => ({ q: j.q, lane: j.lane })),
-    now: [...current.entries()].map(([lane, j]) => ({ lane, q: j.q, since: j.since })),
-    down: (["nominatim", "photon"] as Lane[]).filter(isDown).map((lane) => ({ lane, until: downUntil[lane] })),
+    now: [...current].map((j) => ({ lane: j.lane, q: j.q, since: j.since })),
+    down: (["nominatim", "photon", "geoapify"] as Lane[]).filter(isDown).map((lane) => ({ lane, until: downUntil[lane] })),
     events: events.slice(-40).reverse(),
   };
 }
-const current = new Map<Lane, { q: string; since: number }>();
+const current = new Set<{ lane: Lane; q: string; since: number }>();
 
-async function runLane(lane: Lane) {
-  if (busy[lane]) return;
-  busy[lane] = true;
+/** Starts the lane's workers (up to WORKERS[lane]); each takes jobs of its lane until there are none. */
+function runLane(lane: Lane) {
+  while (workers[lane] < WORKERS[lane] && geoQueue.some((j) => j.lane === lane)) { workers[lane]++; work(lane).finally(() => { workers[lane]--; }); }
+}
+
+async function work(lane: Lane) {
   for (let i; (i = geoQueue.findIndex((j) => j.lane === lane)) >= 0;) {
     const job = geoQueue.splice(i, 1)[0];
-    // This service is left out for now: the job goes straight to the other one (if that one hasn't had it yet).
-    if (isDown(lane)) {
-      if (!job.tried.includes(other(lane)) && !isDown(other(lane))) { job.lane = other(lane); geoQueue.push(job); runLane(job.lane); continue; }
-      // Both had their go (or the other is down too): keep what's known, try again another time otherwise.
+    // This service is left out for now: the job goes straight to another one (that hasn't had it yet).
+    if (!usable(lane)) {
+      const next = nextLane(job);
+      if (next) { job.lane = next; geoQueue.push(job); runLane(next); continue; }
+      // Every lane had its go (or the others are down too): keep what's known, try again another time otherwise.
       if (job.answered) { geoCache.data[job.key] = null; geoCache.save(); }
       continue;
     }
     inFlight.add(job.key);
-    current.set(lane, { q: job.q, since: Date.now() });
+    const now = { lane, q: job.q, since: Date.now() };
+    current.add(now);
     const t0 = Date.now();
     let hit: GeoHit | null = null, failed = "";
-    try { hit = lane === "nominatim" ? await byNominatim(job.q, job.cc, job.near, job.stop) : await byPhoton(job.q, job.cc, job.near); }
+    try { hit = lane === "nominatim" ? await byNominatim(job.q, job.cc, job.near, job.stop) : lane === "photon" ? await byPhoton(job.q, job.cc, job.near) : await byGeoapify(job.q, job.cc, job.near); }
     catch (e) { failed = errMsg(e); }
-    current.delete(lane);
+    current.delete(now);
     inFlight.delete(job.key);
     job.tried.push(lane);
     if (failed) {
@@ -199,24 +240,24 @@ async function runLane(lane: Lane) {
       // Three failures in a row: the service is down or unreachable from here; leave it out for 10 minutes.
       if (++failures[lane] >= 3 && !isDown(lane)) {
         downUntil[lane] = Date.now() + 10 * 60e3;
-        console.error(`Geocode: ${lane} keeps failing (${failed}); using only the other service for 10 minutes.`);
+        console.error(`Geocode: ${lane} keeps failing (${failed}); leaving it out for 10 minutes.`);
       } else if (failures[lane] < 3) console.error(`Geocode (${lane}) failed:`, job.q, failed);
     } else { failures[lane] = 0; job.answered = true; }
-    const moving = !hit && !job.tried.includes(other(lane)) && !isDown(other(lane));
+    const next = hit ? undefined : nextLane(job);
+    const moving = !!next;
     logEvent({ at: Date.now(), q: job.q, lane, ms: Date.now() - t0, result: failed ? "error" : hit ? "found" : moving ? "moved" : "none", ...(hit ? { name: hit.label || hit.name } : {}), ...(failed ? { error: failed } : {}) });
-    if (moving) {
-      // Not found here (or failed): the other lane tries it, keeping its place among the others there.
-      job.lane = other(lane);
+    if (next) {
+      // Not found here (or failed): the next lane tries it, keeping its place among the others there.
+      job.lane = next;
       const at = geoQueue.findIndex((j) => j.lane === job.lane && !j.first && job.first);
       geoQueue.splice(at < 0 ? geoQueue.length : at, 0, job);
-      runLane(job.lane);
+      runLane(next);
       continue;
     }
     // Remember the answer, including "not found" when a service did answer; only when every try failed is nothing kept,
     // so it's tried again later (instead of coming back on every check forever).
     if (hit || job.answered) { geoCache.data[job.key] = hit; geoCache.save(); }
   }
-  busy[lane] = false;
 }
 
 /** Answers what's cached right away and queues the rest; the page asks again for those. */
@@ -240,7 +281,7 @@ export function geocodeBatch(queries: GeoQuery[]) {
       geoQueue.splice(at < 0 ? geoQueue.length : at, 0, job);
     } else if (queued < 0) geoQueue.push(job);
   }
-  runLane("nominatim"); runLane("photon");
+  runLane("nominatim"); runLane("photon"); runLane("geoapify");
   return { results, pending, queued: geoQueue.length };
 }
 

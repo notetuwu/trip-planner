@@ -19,7 +19,7 @@ import { creditsHtml } from "./credits";
 import { SEARXNG_LOCAL } from "./searxng-local";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
-interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
+interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; geoapifyKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
@@ -278,6 +278,11 @@ function renderPlanning() {
             <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? settings.searxngUrl : "")}"><button type="button" class="btn" id="searxngSave">Save</button></div></details></div></div>` : ""}
     </div>
     <div class="set-card">
+      <b class="card-title">Place lookups</b>
+      <div class="set-row"><div><b>Geoapify key</b> ${settings?.geoapifyKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Finding hundreds of saved places takes a while with the free public services (Nominatim and Photon). A free Geoapify key adds a third, faster one that works alongside them (3,000 lookups a day). Get one at <a href="https://www.geoapify.com/" target="_blank" rel="noopener">geoapify.com${ext()}</a>. It stays on this computer; without it nothing changes.</div>
+          <div class="set-inline"><input id="geoKey" type="password" autocomplete="off" placeholder="${settings?.geoapifyKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="geoSave">Save</button>${settings?.geoapifyKeySet ? `<button type="button" class="link-btn" id="geoClear">Remove</button>` : ""}</div></div></div>
+    </div>
+    <div class="set-card">
       <b class="card-title">Local models</b>
       <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Experimental: in tests with a 27B model, planning in one go gave better plans; try step by step if one go gets cut off or a smaller model can't manage the whole trip. Re-planning a day and fixes are always one request.</div></div>
         <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step (experimental)")}</div></div>
@@ -295,12 +300,14 @@ function renderPlanning() {
   $<HTMLSelectElement>("#tuneLang").onchange = (e) => saveTune({ language: (e.target as HTMLSelectElement).value });
   $<HTMLSelectElement>("#tuneLookups").onchange = (e) => saveTune({ lookups: Number((e.target as HTMLSelectElement).value) });
   $<HTMLSelectElement>("#tunePages").onchange = (e) => saveTune({ pages: (e.target as HTMLSelectElement).value });
-  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string }, done: string) => {
+  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string; geoapifyKey?: string }, done: string) => {
     settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify(part) });
     toast(done); renderPlanning();
   };
   document.querySelector<HTMLButtonElement>("#braveSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#braveKey").value.trim(); if (k) saveSearch({ braveKey: k }, "Saved the Brave key"); });
   document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
+  document.querySelector<HTMLButtonElement>("#geoSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#geoKey").value.trim(); if (k) saveSearch({ geoapifyKey: k }, "Saved the Geoapify key"); });
+  document.querySelector<HTMLButtonElement>("#geoClear")?.addEventListener("click", () => saveSearch({ geoapifyKey: "" }, "Removed the Geoapify key"));
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
   // SearXNG chosen: its steps, and Docker and it started if they're set up but stopped (unless research goes to
   // another SearXNG server).

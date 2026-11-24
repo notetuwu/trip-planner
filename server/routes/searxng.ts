@@ -41,7 +41,8 @@ export async function dockerState(): Promise<"missing" | "stopped" | "ok"> {
 async function startDocker() {
   const exe = path.join(DESKTOP_DIR, "Docker Desktop.exe");
   if (process.platform !== "win32" || !fs.existsSync(exe)) throw new Error("Docker isn't running: start Docker, then try again");
-  spawn(exe, [], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+  // -Autostart is what Windows' own start-at-login uses: Docker comes up in the tray without opening its dashboard.
+  spawn(exe, ["-Autostart"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
   for (let i = 0; i < 60; i++) { await sleep(2000); if ((await dockerState()) === "ok") return; }
   throw new Error("Docker Desktop didn't start in time: open it, wait until it says it's running, then try again");
 }

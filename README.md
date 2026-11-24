@@ -92,6 +92,7 @@ Everything has a setting in the app; these environment variables are optional:
 | `LOCAL_LLM_URLS` | More OpenAI-compatible servers to look for, comma-separated |
 | `OLLAMA_NUM_CTX` | The most context Ollama is given (default 128k; Settings → Local models can fix it) |
 | `BRAVE_API_KEY`, `SEARXNG_URL` | Search for local models' research (also in Settings → Planning) |
+| `GEOAPIFY_API_KEY` | A free Geoapify key: a faster third place search for long lists of saved places (also in Settings → Planning) |
 | `RESEARCH_MAX_LOOKUPS` | Most searches and page reads in one research round (default 30) |
 | `PLACES_CSV` | A CSV of places to import on startup |
 | `TRIP_PLANNER_NO_UPDATES` | `1` turns off the update check |

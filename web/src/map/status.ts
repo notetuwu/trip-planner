@@ -4,7 +4,7 @@
 import { $, api, esc } from "../core/dom";
 import { icon } from "../core/icons";
 
-interface GeoEvent { at: number; q: string; lane: "nominatim" | "photon"; result: "found" | "none" | "error" | "moved"; name?: string; error?: string; ms: number }
+interface GeoEvent { at: number; q: string; lane: "nominatim" | "photon" | "geoapify"; result: "found" | "none" | "error" | "moved"; name?: string; error?: string; ms: number }
 interface GeoStatus {
   queued: number;
   waiting: { q: string; lane: string }[];
@@ -13,7 +13,7 @@ interface GeoStatus {
   events: GeoEvent[];
 }
 
-const LANE: Record<string, string> = { nominatim: "Nominatim", photon: "Photon" };
+const LANE: Record<string, string> = { nominatim: "Nominatim", photon: "Photon", geoapify: "Geoapify" };
 let open = false, timer: number | undefined, text = "";
 
 const root = () => $("#mapStatus");
@@ -64,11 +64,11 @@ async function refresh() {
     : `<span class="ms-r err">${icon("warn")}</span>`;
   const detail = (e: GeoEvent) => e.result === "found" ? esc(e.name || "found")
     : e.result === "none" ? "not found"
-    : e.result === "moved" ? `not found by ${LANE[e.lane]}, asking ${LANE[e.lane === "photon" ? "nominatim" : "photon"]}`
+    : e.result === "moved" ? `not found by ${LANE[e.lane]}, asking another service`
     : `failed: ${esc(e.error || "error")}`;
   panel.innerHTML = `
     <div class="ms-head"><b>${esc(text || "Place lookups")}</b><button type="button" class="icon-btn ms-close" title="Close">${icon("x")}</button></div>
-    ${s.down.map((d) => `<div class="ms-down">${icon("warn")} ${LANE[d.lane]} isn't answering from here, so only ${LANE[d.lane === "photon" ? "nominatim" : "photon"]} is asked until ${clock(d.until)}.</div>`).join("")}
+    ${s.down.map((d) => `<div class="ms-down">${icon("warn")} ${LANE[d.lane]} isn't answering from here, so it's left out until ${clock(d.until)}.</div>`).join("")}
     <div class="ms-sec">Now</div>
     ${s.now.length ? s.now.map((n) => `<div class="ms-row"><span class="ms-lane">${LANE[n.lane]}</span><span class="ms-q">${esc(n.q)}</span><span class="ms-ms">${ago(Date.now() - n.since)}</span></div>`).join("")
       : `<div class="hint ms-row">Nothing being looked up right now.</div>`}

@@ -33,7 +33,10 @@ describe("a lookup service that can't be reached", () => {
     const res = geo.geocodeBatch(qs).results as Record<string, { name: string } | null>;
     expect(res["found 1|jp"]?.name).toBe("Found 1");
     expect(res["missing 2|jp"]).toBeNull(); // not found by Nominatim: remembered, not retried forever
-    expect(calls.filter((c) => c.startsWith("P:")), calls.join(" ")).toHaveLength(3); // Photon given up on after three failures
+    // Photon given up on after three failures (a lookup already under way beside them may add one more)
+    const photonCalls = calls.filter((c) => c.startsWith("P:")).length;
+    expect(photonCalls, calls.join(" ")).toBeGreaterThanOrEqual(3);
+    expect(photonCalls, calls.join(" ")).toBeLessThanOrEqual(4);
     const status = geo.geocodeStatus();
     expect(status.down.map((d) => d.lane)).toEqual(["photon"]);
     expect(status.events.some((e) => e.result === "error")).toBe(true);

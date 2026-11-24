@@ -19,6 +19,8 @@ export interface Settings {
   /** Research for local models: a Brave Search API key, and a SearXNG server's address (see Settings → Planning). */
   braveKey: string;
   searxngUrl: string;
+  /** A free Geoapify key: a third, fast service for place lookups (Settings → Planning). */
+  geoapifyKey: string;
   /** The quick-start guide was shown (it opens by itself only the first time the app starts). */
   quickstartSeen: boolean;
   tune: Tune;
@@ -135,6 +137,7 @@ export function readSettings(): Settings {
     checkUpdates: saved.checkUpdates !== false,
     braveKey: typeof saved.braveKey === "string" ? saved.braveKey : "",
     searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
+    geoapifyKey: typeof saved.geoapifyKey === "string" ? saved.geoapifyKey : "",
     quickstartSeen: saved.quickstartSeen === true,
     tune: cleanTune(saved.tune),
     app: cleanApp(saved.app),
@@ -154,6 +157,7 @@ export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { 
     checkUpdates: typeof next.checkUpdates === "boolean" ? next.checkUpdates : now.checkUpdates,
     braveKey: typeof next.braveKey === "string" ? next.braveKey.trim().slice(0, 200) : now.braveKey,
     searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
+    geoapifyKey: typeof next.geoapifyKey === "string" ? next.geoapifyKey.trim().slice(0, 100) : now.geoapifyKey,
     quickstartSeen: typeof next.quickstartSeen === "boolean" ? next.quickstartSeen : now.quickstartSeen,
     tune: next.tune ? cleanTune(next.tune, now.tune) : now.tune,
     app: next.app ? cleanApp({ ...now.app, ...next.app, newTrip: { ...now.app.newTrip, ...(next.app.newTrip || {}) } }, now.app) : now.app,

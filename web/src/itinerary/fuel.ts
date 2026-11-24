@@ -14,7 +14,7 @@ import { plannedMode } from "../trip/modes";
 import type { LatLng } from "../../../shared/types";
 
 type Fuel = "petrol" | "diesel" | "electric";
-interface FuelPrice { petrol?: number; diesel?: number; week?: string }
+interface FuelPrice { petrol?: number; diesel?: number; week?: string; kind?: "official" | "approx"; source?: string }
 
 /** EU weighted averages, week of 16 Nov 2026 (EU Weekly Oil Bulletin): for countries without a weekly figure. */
 const EU_AVERAGE = { petrol: 1.829, diesel: 2.05 };
@@ -72,12 +72,13 @@ export function drives(): DayDrive[] {
   });
 }
 
-/** The price a litre (EUR) in a country: theirs, the weekly average, else the EU average (then `assumed`). */
+/** The price a litre (EUR) in a country: theirs, the weekly or official figure, a rough typical price (`approx`), else
+ *  the EU average (then `assumed`). `note` says where a figure is from. */
 function priceIn(cc: string, fuel: "petrol" | "diesel") {
   const own = state.car?.prices?.[cc];
-  if (own) return { eur: own, own: true, assumed: false };
-  const p = prices[cc]?.[fuel];
-  return p ? { eur: p, own: false, assumed: false } : { eur: EU_AVERAGE[fuel], own: false, assumed: true };
+  if (own) return { eur: own, own: true, assumed: false, approx: false, note: "" };
+  const pr = prices[cc], p = pr?.[fuel];
+  return p ? { eur: p, own: false, assumed: false, approx: pr?.kind === "approx", note: pr?.source || "" } : { eur: EU_AVERAGE[fuel], own: false, assumed: true, approx: false, note: "" };
 }
 
 /** The estimate: per day and per country, in EUR and in the trip's currency. */
@@ -98,7 +99,7 @@ export function fuelEstimate() {
   const amount = km * per100 / 100;
   const eur = perDay.reduce((n, d) => n + d.eur, 0);
   const rate = rates[state.currency] || (state.currency === "EUR" ? 1 : 0);
-  return { per100, km, amount, eur, rate, perDay, countries: [...countries].map(([cc, k]) => ({ cc, km: Math.round(k), ...(car.fuel === "electric" ? { eur: car.kwhPrice || DEFAULT_KWH, own: !!car.kwhPrice, assumed: !car.kwhPrice } : priceIn(cc, car.fuel as "petrol" | "diesel")) })) };
+  return { per100, km, amount, eur, rate, perDay, countries: [...countries].map(([cc, k]) => ({ cc, km: Math.round(k), ...(car.fuel === "electric" ? { eur: car.kwhPrice || DEFAULT_KWH, own: !!car.kwhPrice, assumed: !car.kwhPrice, approx: false, note: "" } : priceIn(cc, car.fuel as "petrol" | "diesel")) })) };
 }
 
 /** Asks the server for the trip's countries' prices and the exchange rates (once per set of countries). */
@@ -130,7 +131,7 @@ export function fuelHtml() {
   const est = fuelEstimate();
   if (!est) return `${head}<p class="hint">Pick your car's fuel to estimate what the drives cost, at each country's fuel prices.</p>`;
   const inCur = (eur: number) => (est.rate ? money(eur * est.rate, cur) : money(eur, "EUR"));
-  const weeks = [...new Set(Object.values(prices).map((p) => p?.week).filter(Boolean))].sort();
+  const weeks = [...new Set(Object.values(prices).map((p) => (p?.kind ? undefined : p?.week)).filter(Boolean))].sort();
   return `${head}
     <div class="stats cb-stats">
       <div class="stat"><b>${inCur(est.eur)}</b><span>fuel for the trip${est.rate && cur !== "EUR" ? ` (${money(est.eur, "EUR")})` : ""}</span></div>
@@ -138,11 +139,11 @@ export function fuelHtml() {
       <div class="stat"><b>${Math.round(est.amount).toLocaleString()} ${unit}</b><span>at ${est.per100} ${unit} / 100 km</span></div>
     </div>
     <table class="cb-table fuel-table">${est.countries.map((c) => `<tr><td>${esc(countryName(c.cc))}</td><td class="num muted">${esc(fmtKm(c.km))}</td>
-      <td class="num">${car.fuel === "electric" ? `${money(c.eur, "EUR")} / kWh` : `<input type="number" min="0" max="5" step="0.001" data-fuel-cc="${esc(c.cc)}" value="${c.own ? c.eur : ""}" placeholder="${c.eur.toFixed(3)}" title="${c.assumed ? "No weekly figure for this country: the EU average, until you enter its price" : "The weekly national average: enter your own to change it"}"> € / l${c.assumed ? ` <span class="muted" title="EU average">*</span>` : ""}`}</td>
+      <td class="num">${car.fuel === "electric" ? `${money(c.eur, "EUR")} / kWh` : `<input type="number" min="0" max="5" step="0.001" data-fuel-cc="${esc(c.cc)}" value="${c.own ? c.eur : ""}" placeholder="${c.eur.toFixed(3)}" title="${c.assumed ? "No figure for this country: the EU average, until you enter its price" : c.approx ? `A rough typical price (${c.note}), not a live figure: enter the real one` : c.own ? "Your price" : `${c.note || "The weekly national average"}: enter your own to change it`}"> € / l${c.assumed ? ` <span class="muted" title="EU average">*</span>` : c.approx ? ` <span class="muted" title="Rough typical price">≈</span>` : ""}`}</td>
       <td class="num">${inCur(c.km * est.per100 / 100 * c.eur)}</td></tr>`).join("")}</table>
     <details class="cb-day"><summary><span class="cb-date">Per day</span><span class="cb-city"></span><span class="num">${est.perDay.length} days with driving</span></summary>
       <table class="cb-table">${est.perDay.map((d) => `<tr><td class="muted">${esc(fmtDate(state.itinerary!.days[d.di].date))}</td><td>${esc(state.itinerary!.days[d.di].city)}</td><td class="num muted">${esc(fmtKm(d.km))}</td><td class="num">${inCur(d.eur)}</td></tr>`).join("")}</table></details>
-    <p class="hint">Distances: the drives between stays you reach by car (along the road where it's routed), the driving on days there, and to the first stop and back. ${car.fuel === "electric" ? "Charging at the price you set (free chargers make it less)." : `Prices: weekly national averages${weeks.length ? ` (week of ${esc(fmtDate(weeks.at(-1)!))})` : ""}; * the EU average where there's no figure (enter the price there).`} Not added to the total above: the plan's transfer costs may already include fuel.${attribution.text && car.fuel !== "electric" ? ` <a href="${esc(attribution.url)}" target="_blank" rel="noopener">${esc(attribution.text)}</a>` : ""}${!est.rate && cur !== "EUR" ? ` No exchange rate for ${esc(cur)} right now, so in euros.` : ""}</p>`;
+    <p class="hint">Distances: the drives between stays you reach by car (along the road where it's routed), the driving on days there, and to the first stop and back. ${car.fuel === "electric" ? "Charging at the price you set (free chargers make it less)." : `Prices: weekly national averages${weeks.length ? ` (week of ${esc(fmtDate(weeks.at(-1)!))})` : ""}${est.countries.some((c) => c.approx && !c.own) ? "; ≈ rough typical prices (not live): enter the real price" : ""}${est.countries.some((c) => c.assumed) ? "; * the EU average where there's no figure (enter the price there)" : ""}${est.countries.some((c) => c.note && !c.own && !c.approx) ? ` (${esc([...new Set(est.countries.filter((c) => c.note && !c.own && !c.approx).map((c) => c.note))].join("; "))})` : ""}.`} Not added to the total above: the plan's transfer costs may already include fuel.${attribution.text && car.fuel !== "electric" ? ` <a href="${esc(attribution.url)}" target="_blank" rel="noopener">${esc(attribution.text)}</a>` : ""}${!est.rate && cur !== "EUR" ? ` No exchange rate for ${esc(cur)} right now, so in euros.` : ""}</p>`;
 }
 
 /** Changes in the fuel section: saved with the trip, then `redraw` shows the new estimate. */

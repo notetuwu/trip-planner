@@ -13,8 +13,9 @@ function ollamaLauncher(): [string, string[]] | null {
   const exists = (p: string) => { try { return fs.statSync(p).isFile() || fs.statSync(p).isDirectory(); } catch { return false; } };
   if (process.platform === "win32") {
     for (const dir of [path.join(process.env.LOCALAPPDATA || "", "Programs", "Ollama"), path.join(process.env.ProgramFiles || "", "Ollama")]) {
-      if (exists(path.join(dir, "ollama app.exe"))) return [path.join(dir, "ollama app.exe"), []]; // the tray app starts the server
+      // The bare server first: it has no window at all. The tray app can pop one open, so it's only the fallback.
       if (exists(path.join(dir, "ollama.exe"))) return [path.join(dir, "ollama.exe"), ["serve"]];
+      if (exists(path.join(dir, "ollama app.exe"))) return [path.join(dir, "ollama app.exe"), []];
     }
     return null;
   }
