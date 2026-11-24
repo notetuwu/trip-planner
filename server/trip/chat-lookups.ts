@@ -3,7 +3,7 @@
 // results go back to it and it's asked again (see companion.ts). They work the same with every model.
 import type { LatLng } from "../../shared/types";
 import { errMsg } from "../config";
-import { geocodeOne } from "../geo/geocode";
+import { bestHit, countryCode, geocodeOne } from "../geo/geocode";
 import { nominatim, nominatimHit } from "../geo/providers";
 import { waitForRoute } from "../geo/routing";
 import { webSearch } from "../research/search";
@@ -38,9 +38,49 @@ function nearest(at: { lat: number; lng: number }, towns: Town[]) {
     .map(({ t, d }) => `${d < 1 ? `${Math.round(d * 1000)} m` : `${d < 10 ? d.toFixed(1) : Math.round(d)} km`} from ${t.name}`).join(", ");
 }
 
+/** Other ways a name is written on the map: "Schloss Hohenzollern, Hechingen, Germany" is "Hohenzollern Castle" there, and
+ *  an address-like string with a town in the middle finds nothing, so also the name with only its country, and alone. */
+export function nameVariants(q: string): string[] {
+  const parts = q.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return [];
+  const [name, ...rest] = parts, country = rest.length ? rest[rest.length - 1] : "";
+  const castle = name.match(/^(?:Schloss|Burg|Ch[aâ]teau|Castello|Castillo|Castelo|Schloß)\s+(.+)$/i);
+  const names = [name, ...(castle ? [`${castle[1]} Castle`] : [])];
+  const out = [parts.join(", ")];
+  for (const n of names) {
+    if (rest.length > 1) out.push(`${n}, ${country}`);
+    if (rest.length) out.push(n);
+  }
+  if (castle) out.splice(1, 0, `${castle[1]} Castle`);
+  return [...new Set(out)];
+}
+
+const COORDS = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*[,;]\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
+
+/** A place from its name: coordinates as given, else the name tried in its other spellings on Nominatim (the first that
+ *  finds something), and only then the fuzzier search the map uses. */
+async function findPlace(q: string): Promise<{ lat: number; lng: number; label: string } | null> {
+  const c = q.match(COORDS);
+  if (c && Math.abs(+c[1]) <= 90 && Math.abs(+c[2]) <= 180) return { lat: +c[1], lng: +c[2], label: `${(+c[1]).toFixed(4)}, ${(+c[2]).toFixed(4)}` };
+  const cc = countryCode(q.split(",").at(-1) || "");
+  for (const v of nameVariants(q)) {
+    const params = new URLSearchParams({ q: v, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en" });
+    if (cc) params.set("countrycodes", cc);
+    const hit = bestHit((await nominatim("search", params)) as any[], v);
+    if (hit) { const h = nominatimHit(hit); return { lat: h.lat, lng: h.lng, label: h.label }; }
+  }
+  return geocodeOne(q);
+}
+
 async function place(name: string, towns: Town[]) {
   const params = new URLSearchParams({ q: name, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en", extratags: "1" });
-  const hits = ((await nominatim("search", params)) as any[]).map(nominatimHit);
+  let raw = (await nominatim("search", params)) as any[];
+  // Nothing under that spelling: its other spellings (see nameVariants).
+  for (const v of raw.length ? [] : nameVariants(name).slice(1)) {
+    raw = (await nominatim("search", new URLSearchParams({ q: v, format: "jsonv2", limit: "3", addressdetails: "1", "accept-language": "en", extratags: "1" }))) as any[];
+    if (raw.length) break;
+  }
+  const hits = raw.map(nominatimHit);
   if (!hits.length) return `Nothing found for "${name}" on OpenStreetMap. Try another spelling, or the place plus its town.`;
   return hits.map((h) => `- ${h.name} (${h.kind || "place"}): ${h.label} · at ${h.lat.toFixed(5)},${h.lng.toFixed(5)}${towns.length ? ` · ${nearest(h, towns)} (straight line)` : ""}${h.website ? ` · ${h.website}` : ""}`).join("\n");
 }
@@ -49,7 +89,8 @@ const duration = (mins: number) => (mins >= 60 ? `${Math.floor(mins / 60)} h ${m
 
 /** The road route through two or more places in order (the map's own routing service): each leg, and the total. */
 async function route(stops: string[]) {
-  const found = await Promise.all(stops.map((s) => geocodeOne(s)));
+  const found: Awaited<ReturnType<typeof findPlace>>[] = [];
+  for (const s of stops) found.push(await findPlace(s));
   const missing = stops.find((_, i) => !found[i]);
   if (missing) return `Couldn't find "${missing}" on the map. Try the place plus its town and country.`;
   const hits = found as NonNullable<(typeof found)[number]>[];
