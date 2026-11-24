@@ -25,7 +25,7 @@ import { drawMap } from "../map/draw";
 import { map } from "../map/map";
 
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
-interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[] }
+interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[] }
 /** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
 interface StopOp { op: "add" | "remove" | "time"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; status?: ChangeState }
@@ -152,6 +152,7 @@ function opsLines(t?: TripOps) {
     ...(t.fromStay || []).map((p) => `${p}: from where you sleep`),
     ...(t.removeDayTrips || []).map((x) => `No day trip to ${x.place}${x.stay ? ` from ${x.stay}` : ""}`),
     ...(t.addDayTrips || []).map((x) => `Day trip to ${x.place} from ${x.stay} (${x.mode})`),
+    ...(t.removeMust || []).map((p) => `${p}: no longer a must-see (it stays in your places)`),
     ...(t.addPlaces || []).map((x) => `Add ${x.name}${x.where ? ` (${x.where})` : ""} to your places${x.must ? " as a must-see" : ""}`),
   ];
 }
@@ -261,6 +262,11 @@ function applyOps(t: TripOps) {
     const title = known?.title || a.name;
     if (!known) state.customPlaces = [...state.customPlaces, { title, address: a.where, custom: true }];
     if (a.must) state.marks[title] = "must";
+  }
+  // No longer must-sees: the mark and how it was to be fitted in go; the place stays among their ideas.
+  for (const name of t.removeMust || []) {
+    const title = placeTitle(name);
+    if (state.marks[title] === "must") { delete state.marks[title]; if (state.how) delete state.how[title]; }
   }
   for (const a of t.addDayTrips || []) {
     const s = state.stays.find((x) => sameStay(x.city, a.stay));

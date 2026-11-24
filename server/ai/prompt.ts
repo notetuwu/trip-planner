@@ -1,6 +1,7 @@
 // The planning prompt. Sections with data come from prompt-sections.ts; this file holds the instructions.
 import { tune } from "../settings";
-import type { Place } from "../../shared/types";
+import { addDays } from "../config";
+import type { Day, Place } from "../../shared/types";
 import { bookingsSection, trainsSection, holidayLines, hasChosenModes, nearbySection, placeLines, requestsSection, stayLines } from "./prompt-sections";
 import { LOCAL_SCHEMA } from "./schema";
 import type { Trip } from "./types";
@@ -49,7 +50,38 @@ const DETAIL = {
   detailed: "a few sentences: what to see and do there and why it's worth it, the highlights not to miss, practical details (opening hours, whether to book ahead, best time to go, how long to allow, what to order), and a local tip.",
 } as const;
 
-export function buildPrompt(trip: Trip, places: Place[], opts: PromptOptions = {}) {
+/** The days a partial request (a change, a day redo, a fix) touches. */
+function partialDays(trip: Trip): Day[] {
+  const it = trip.edit?.itinerary || trip.redoDay?.itinerary || trip.fix?.itinerary;
+  const idx = trip.edit ? trip.edit.days : trip.redoDay ? [trip.redoDay.day] : trip.fix ? trip.fix.problems.map((p) => p.day) : [];
+  return it ? [...new Set(idx)].map((i) => it.days[i]).filter(Boolean) : [];
+}
+
+const kmApart = (a: [number, number], b: [number, number]) => {
+  const r = Math.PI / 180;
+  return Math.hypot((b[1] - a[1]) * r * Math.cos(((a[0] + b[0]) / 2) * r), (b[0] - a[0]) * r) * 6371;
+};
+
+/** For a change to a few days, only what those days can use: the nearby lists of the stays they fall in, and the saved
+ *  places near where those days go (plus every must-see and skip, and places without a location). The rest of the trip
+ *  is only context, so its long lists would just make the prompt slow and bury the change. */
+export function trimForDays(trip: Trip, places: Place[]) {
+  const days = partialDays(trip);
+  if (!days.length) return { trip, places };
+  const stays = trip.stays.filter((s) => s.start && days.some((d) => d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)));
+  const cities = new Set(stays.map((s) => s.city));
+  const nearby = (trip.nearby || []).filter((n) => cities.has(n.city));
+  const anchors = days.flatMap((d) => d.items.filter((x) => typeof x.lat === "number" && typeof x.lng === "number").map((x) => [x.lat!, x.lng!] as [number, number]));
+  const flagged = new Set([...(trip.mustSee || []), ...(trip.skip || [])]);
+  const near = (p: Place) => flagged.has(p.title) || typeof p.lat !== "number" || typeof p.lng !== "number" || !anchors.length || anchors.some((a) => kmApart(a, [p.lat!, p.lng!]) < 60);
+  return { trip: { ...trip, nearby: nearby.length ? nearby : trip.nearby }, places: places.filter(near) };
+}
+
+export function buildPrompt(full: Trip, allPlaces: Place[], opts: PromptOptions = {}) {
+  const partial = !!(full.edit || full.redoDay || full.fix);
+  const { trip, places } = partial ? trimForDays(full, allPlaces) : { trip: full, places: allPlaces };
+  /** Whether anyone in the group goes separate ways (then the rules for splitting the group are needed). */
+  const splits = Object.values(trip.mustSeeWho || {}).some((n) => n < trip.travelers) || trip.stays.some((s) => (s.dayTrips || []).some((d) => d.people && d.people < trip.travelers));
   const t = tune();
   const json = opts.notes === "json";
   const research = !!opts.webTools && !!trip.research;
@@ -96,8 +128,8 @@ ${holidays}
 ` : ""}
 ## Saved places
 ${places.length ? `The travelers' own ideas: places they saved because they want to go there. Build the itinerary primarily from these: use as many as fit the route, the days and their interests well, group them by area into themed days, and prefer them over places from the lists below or your own ideas. Only [MUST SEE] places are required; leave out the ones that don't fit well (too far off the route, or no day they suit). Places marked [MUST SEE] must be included. Never schedule [SKIP] places. Hotels in the list are accommodation candidates, not activities. Day trips from a base city are fine if reasonable. Add meals and a few unlisted highlights to fill the days; set fromList=false for those.
-Places marked "[MUST SEE for N of M travelers]" only interest part of the group. You may split the group up for those: the N go there while the others do something else (ideally another place only they want, so split places pair up). Batch split places into as few split sessions as is sensible and bring everyone back together afterwards. While split, give every item a "group" label (e.g. "Group A", "Group B") and "people" count, and list each subgroup's items in time order; items done together have no group. You can also skip splitting and take everyone if that is clearly simpler.
-${placeLines(trip, places)}` : "No saved places; choose the best things to do yourself (fromList=false)."}
+${!partial || splits ? `Places marked "[MUST SEE for N of M travelers]" only interest part of the group. You may split the group up for those: the N go there while the others do something else (ideally another place only they want, so split places pair up). Batch split places into as few split sessions as is sensible and bring everyone back together afterwards. While split, give every item a "group" label (e.g. "Group A", "Group B") and "people" count, and list each subgroup's items in time order; items done together have no group. You can also skip splitting and take everyone if that is clearly simpler.
+` : ""}${placeLines(trip, places)}` : "No saved places; choose the best things to do yourself (fromList=false)."}
 ${nearby ? `
 ## Real places around each stay (from OpenStreetMap)
 These exist, with exact locations. Use them for sights and especially for meals, writing the name exactly as listed and copying its location into "lat"/"lng". Sights are within about 8 km, food within about 2.5 km of where you sleep. Each list belongs to its stay: only use a place on days spent at that stay (or passing right by it), never on a day in another city, even if the name sounds generic.
@@ -123,27 +155,27 @@ ${nearby}
 - On travel days between cities, the transfer is its own item with departure time, duration, operator or route and price. Name it "<from> → <to> (<mode>)", e.g. "Padua → Milan (car)". Plan around check-out (about 10:00) and check-in (about 15:00).${hasChosenModes(trip) ? `
 - Where the stays above say how the travelers get somewhere ("chosen by the travelers"), use exactly that mode; don't swap it for another. By car: the route and main roads, driving time, distance, tolls or vignettes, fuel and parking costs, and a worthwhile stop on the way if there is one. By train or bus: a real connection with operator, departure time, duration and fare, and whether to book ahead. Day trips with a chosen mode are their own outbound and return items ("Milan → Rome (train)", later "Rome → Milan (train)").` : ""}
 - Road distances and driving times given with the stays come from a routing service: trust them over your own idea of geography or borders. If a drive is longer than one travel day allows, don't pretend it fits: say so plainly in the planning notes and plan that day around the drive (and suggest how to make it work, e.g. extra nights on the way).
-- A planned day trip that "only N of the M travelers" take is a split day: those N go on the trip while the others spend the day elsewhere (another such day trip, if the stay has one that the rest of the group takes, on the same day; otherwise a day of their own near the stay). Use the "group" and "people" fields on every item while they're apart (writing "Group A" only in the description isn't enough: the fields are what splits the day into columns and map lines), give each group its own meals, and bring them back together in the evening if that's sensible. Day trips the travelers set up here are part of the plan: never drop one for being far away.
-- Getting between towns (a day trip there and back, or a stop on the way) is one transfer item each way, named "<from> → <to> (<mode>)", e.g. "Osaka → Himeji (JR Special Rapid)"; its "transport" says which station to walk or ride to, and the next stop's "transport" how to get on from the station there ("Walk 15 min up Otemae-dori from JR Himeji"). Stations, platforms and the hotel are never stops of their own (no "Osaka Station" or "Hotel" item), except checking in or out. By car, the first stop's transport says where to park.
+${!partial || splits ? `- A planned day trip that "only N of the M travelers" take is a split day: those N go on the trip while the others spend the day elsewhere (another such day trip, if the stay has one that the rest of the group takes, on the same day; otherwise a day of their own near the stay). Use the "group" and "people" fields on every item while they're apart (writing "Group A" only in the description isn't enough: the fields are what splits the day into columns and map lines), give each group its own meals, and bring them back together in the evening if that's sensible. Day trips the travelers set up here are part of the plan: never drop one for being far away.
+` : ""}- Getting between towns (a day trip there and back, or a stop on the way) is one transfer item each way, named "<from> → <to> (<mode>)", e.g. "Osaka → Himeji (JR Special Rapid)"; its "transport" says which station to walk or ride to, and the next stop's "transport" how to get on from the station there ("Walk 15 min up Otemae-dori from JR Himeji"). Stations, platforms and the hotel are never stops of their own (no "Osaka Station" or "Hotel" item), except checking in or out. By car, the first stop's transport says where to park.
 - A place on the way between two stays (a mountain pass, a lake, a castle) is a stop on the drive itself: route the drive through it on the road it lies on (over the pass, through its valley; e.g. Bolzano → Sarntal → Penser Joch → Sterzing → Brenner → Innsbruck rather than the A22 motorway), with the stops in driving order. Never drive past it on the motorway, go up to it and come back the same way to carry on. The transfer item's "transport" names that road.
 - Day trips and other long excursions (anything more than about 30-45 minutes away from where you sleep) go on full days only, never on a travel day: changing cities and doing a day trip on the same day is exhausting. Travel days get the transfer plus light sightseeing near the hotel or a stop on the way that lies directly on the route. For example, with 2 nights in Padua the one full day there is the day for Venice. If a must-see day trip fits no full day, say so in the notes (or list it in "unused") rather than squeezing it into a travel day.
-
+${partial ? "" : `
 ## Trip-wide extras
 - "holidaysAndEvents": every public holiday, festival, major event or seasonal highlight in the visited places during the trip, with what it means for the plan.
 - "tips": 6-10 specific, practical tips for this trip: money and payment, transport passes or tickets worth buying (with prices; for things bought online, such as a motorway vignette, a toll account or a rail pass, end the tip with the official website to buy it, only when you know it for certain${research ? " or found it online" : ""}), reservations to make and how far ahead, etiquette, SIM/data, luggage, tipping.
 - "unused": saved places you could not fit, with a short reason: every must-see you left out, and the saved places (from their lists) near the stays that you chose not to use (up to about 25 of the most notable, e.g. "too far from the route", "closed on the days there", "similar to X, which is in the plan").${research ? `
 - "sources": the URLs you relied on most.` : ""}
-
+`}
 ## Output rules
 - "city" on each day: the town(s) it happens in; on day trips and split days name every town visited, e.g. "Osaka / Onomichi / Hiroshima".
 - "destination": the country or countries of the trip. "localCurrency": the local currency's ISO code.${t.language ? `
 - Write all text for the travelers (planning notes, summary, titles, descriptions, notes, tips, events) in ${t.language}. Keep the names of places as they are known locally (and exactly as listed above for saved places); the JSON keys stay in English.` : ""}
-- One entry in "days" for every calendar day from the first arrival to the final departure day, with dates in YYYY-MM-DD.
+- ${partial ? "Dates in YYYY-MM-DD." : 'One entry in "days" for every calendar day from the first arrival to the final departure day, with dates in YYYY-MM-DD.'}
 - "place" is only the place's name. For items from the list it must be the exact Title as written above, without the details in brackets or braces.
 - Give every item "lat"/"lng" coordinates (4 decimals) so it can be shown on a map.
 - All costs in ${trip.currency}.
 - Group nearby places on the same day to minimise transit: sights within about 2 km of each other (a castle and an aquarium in the same part of town, two waterfalls in the same valley) go on the same day, one after the other, and never send them back on another day to a place right next to one they already visited.
-- If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.`;
+${!partial || splits ? `- If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.` : ""}`;
 
   if (trip.revise?.itinerary && trip.revise?.request) {
     prompt += `
@@ -201,7 +233,7 @@ ${these.map((i) => JSON.stringify(itinerary.days[i])).join("\n")}
 ${request}
 
 ## Change only what they asked for
-Make exactly this change and nothing else. Every stop, time, description and cost the request doesn't touch stays as it is: copy it unchanged. Moving stops between these days, or swapping them, is fine when that's what they asked for (then give each stop the date it moves to). Keep day trips, travel between stays, where they sleep and anything booked as they are, unless the request is about them. Don't add places they already visit on another day. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only these ${these.length} day(s) (${dates}), each complete and with the same dates. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly say what you changed.`;
+Make exactly this change and nothing else. Every stop, time, description and cost the request doesn't touch stays as it is: copy it unchanged. Moving stops between these days, or swapping them, is fine when that's what they asked for (then give each stop the date it moves to). Keep day trips, travel between stays, where they sleep and anything booked as they are, unless the request is about them. Don't add places they already visit on another day. Distances and driving times: use the ones in the request or the stays above (both come from a routing service); a new drive that neither gives you is your own estimate, so say so in the day's notes. When the times the request asks for can't work with the real driving time, keep the change itself but let the times follow the drive, and say so plainly in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only these ${these.length} day(s) (${dates}), each complete and with the same dates. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly say what you changed.`;
 }
 
 /** Re-plan one day: the other days as context (names only, to keep it short), the day in full, and what to return. */

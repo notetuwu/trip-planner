@@ -103,3 +103,44 @@ describe("road routes in the prompt", () => {
     expect(stayLines({ stays } as any)).not.toMatch(/routing service/);
   });
 });
+
+describe("a change to one day only gets what that day needs", () => {
+  const poi = (name: string) => ({ name, kind: "museum", extras: [], lat: 1, lng: 2 });
+  const day = (date: string, city: string, lat: number, lng: number) => ({ date, city, title: "", estimatedCost: 0, items: [{ time: "10:00", place: `Stop in ${city}`, description: "", lat, lng }] });
+  const it2 = { summary: "", totalEstimatedCost: 0, days: [day("2027-09-06", "Isny", 47.58, 9.91), day("2027-09-12", "Lucerne", 47.05, 8.31)] };
+  const base = {
+    dailyBudget: 80, currency: "EUR", travelers: 2, pace: "balanced", model: "m", interests: "", notes: "", list: "", extraPlaces: [], research: false,
+    mustSee: ["Gaflei"], mustSeeWho: {}, skip: [],
+    stays: [{ city: "Isny", start: "2027-09-06", nights: 3 }, { city: "Lucerne", start: "2027-09-09", nights: 5 }],
+    nearby: [{ city: "Isny", sights: [poi("Isny Burg")], food: [poi("Isny Linde")] }, { city: "Lucerne", sights: [poi("Lucerne Kapelle")], food: [poi("Lucerne Wolf")] }],
+  } as unknown as Trip;
+  const places = [
+    { title: "Near Isny Cafe", lat: 47.6, lng: 9.9 }, { title: "Far Lucerne Museum", lat: 47.05, lng: 8.3 },
+    { title: "Gaflei", lat: 47.14, lng: 9.54 }, { title: "No Location Idea" },
+  ] as any;
+  it("keeps the stay's lists and nearby saved places, and drops the rest of the trip's", () => {
+    const edit = buildPrompt({ ...base, edit: { itinerary: it2, days: [0], request: "swap it" } }, places);
+    expect(edit).toContain("Isny Burg");
+    expect(edit).not.toContain("Lucerne Kapelle");
+    expect(edit).toContain("Near Isny Cafe");
+    expect(edit).toContain("Gaflei");
+    expect(edit).toContain("No Location Idea");
+    expect(edit).not.toContain("Far Lucerne Museum");
+    expect(edit).not.toContain("Trip-wide extras");
+    expect(edit).not.toContain("only interest part of the group");
+    expect(edit.length).toBeLessThan(buildPrompt(base, places).length);
+  });
+  it("tells the planner what to do when the asked times can't work with the real drive", () => {
+    expect(buildPrompt({ ...base, edit: { itinerary: it2, days: [0], request: "x" } }, places)).toContain("let the times follow the drive");
+  });
+  it("leaves a full plan alone", () => {
+    const full = buildPrompt(base, places);
+    expect(full).toContain("Lucerne Kapelle");
+    expect(full).toContain("Trip-wide extras");
+    expect(full).toContain("Far Lucerne Museum");
+  });
+  it("keeps the group-splitting rules when somebody splits", () => {
+    const split = buildPrompt({ ...base, mustSeeWho: { Gaflei: 1 }, edit: { itinerary: it2, days: [0], request: "x" } }, places);
+    expect(split).toContain("only interest part of the group");
+  });
+});

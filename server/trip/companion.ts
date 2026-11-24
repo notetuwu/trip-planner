@@ -53,6 +53,8 @@ export interface TripOps {
   addDayTrips?: { stay: string; place: string; mode: string }[];
   /** New places for their places (e.g. one recognised in a picture): name, where it is, and whether it's a must-see. */
   addPlaces?: { name: string; where: string; must: boolean }[];
+  /** Places that stop being must-sees (they stay in their places as ideas). */
+  removeMust?: string[];
 }
 
 const MAX_CONTEXT = 60_000, MAX_TURN = 4_000, MAX_ROUNDS = 2;
@@ -75,6 +77,7 @@ Add "trip" only when the trip's setup changes too (the day-by-day plan is made f
 - "fromStay": places to visit from where they sleep.
 - "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}] for the day trips listed under the stays.
 - "addPlaces": [{"name": "the place's real name", "where": "town, country", "must": true}] adds places to their places (for example one you recognised in a picture they sent), as a must-see when they want to go for sure.
+- "removeMust": ["place"] takes places off their must-see list (the place stays among their ideas, it just isn't required any more). Use it when they say they no longer need or want to see a must-see, or when the conversation settles that it can't work (they swapped it for something else, it's closed on the days there, it's far off the route and they agreed to drop it). Use the place's name exactly as in "What they want to see" or their must-see list above; for a stop that is only in the day plan (not a must-see), change the day instead.
 Day trips listed under the stays above stay in the trip until removed here, even if a day's plan changes, so when a place moves from a day trip to somewhere else, remove that day trip too. When only the setup changes and the days are already right, use "days": [] and "request": "".
 Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead. Never offer a change for a place you couldn't identify: if you don't know what or where a place is (and a lookup didn't settle it), say so and ask them (for its address, or a link), and offer the change once you know. Always answer in words first: the CHANGE line is never the whole reply.
 ` : `
@@ -83,6 +86,7 @@ There's no day-by-day itinerary yet, but you can change the trip's setup, which 
 CHANGE: {"days": [], "request": "", "trip": {"addPlaces": [{"name": "the place's real name", "where": "town, country", "must": true}]}}
 "trip" can have:
 - "addPlaces": [{"name": "…", "where": "town, country", "must": true}] adds places to their places, as must-sees when they want to go for sure ("must": false for an idea).
+- "removeMust": ["place"] takes places off their must-see list (they stay among their ideas), when they say they no longer need to see them or the conversation settles that it can't work.
 - "onTheWay": ["place"] visits a must-see on a travel day between two stays; "fromStay": ["place"] from where they sleep.
 - "removeDayTrips": [{"stay": "town of the stay", "place": "place"}] and "addDayTrips": [{"stay": "town of the stay", "place": "place", "mode": "car|train|bus|walk|bike|ferry"}].
 Use the place's real name and where it is (look it up first if you aren't sure). For anything about the days themselves (what's on which day), tell them to generate the itinerary first. Only add the CHANGE line when they asked for a change; always answer in words first.
@@ -96,8 +100,10 @@ ${clip(req.context, MAX_CONTEXT) || "(Nothing planned yet: no stays or itinerary
 When you aren't sure about a place (what it is, where it is, how far it is, whether it's open, how to get there), look it up instead of guessing. To do that, reply with nothing but lookup lines; you'll get the results and be asked again (up to ${MAX_ROUNDS} rounds, at most 3 lines each):
 LOOKUP: place | Gaflei, Liechtenstein
 LOOKUP: route | Vaduz | Gaflei, Triesenberg
+LOOKUP: route | Stuttgart | Hechingen | Lindau
 LOOKUP: search | Aussichtsturm Gaflei opening hours
-"place" finds where a place is on OpenStreetMap (address, coordinates, how far from the trip's towns); "route" gives the driving distance and time between two places; "search" searches the web. Don't look up what the trip above already says.
+"place" finds where a place is on OpenStreetMap (address, coordinates, how far from the trip's towns); "route" gives the driving distance and time between places, the same road routing the map uses (with three or more places it drives through them in order and adds the total); "search" searches the web. Don't look up what the trip above already says.
+Distances and driving times: never state one from memory, and never write one into a CHANGE. Look every leg up with "route" first (it's quick), and use exactly the figures it returns. If a change makes a drive longer or shorter, say by how much, from the lookup, and mention it when a day then doesn't fit.
 
 ## How to answer
 - Answer from the trip above when the question is about it (dates, days, stops, stays, costs, bookings, their ideas notes). Say which day or stay you mean.
@@ -174,6 +180,7 @@ export function tripOps(t: any): TripOps | null {
     onTheWay: names(t.onTheWay), fromStay: names(t.fromStay),
     removeDayTrips: (Array.isArray(t.removeDayTrips) ? t.removeDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place) })).filter((x: any) => x.place).slice(0, 20),
     addDayTrips: (Array.isArray(t.addDayTrips) ? t.addDayTrips : []).map((x: any) => ({ stay: name(x?.stay), place: name(x?.place), mode: MODES.includes(x?.mode) ? x.mode : "car" })).filter((x: any) => x.place && x.stay).slice(0, 20),
+    removeMust: names(t.removeMust),
     addPlaces: (Array.isArray(t.addPlaces) ? t.addPlaces : []).map((x: any) => ({ name: name(x?.name), where: name(x?.where), must: x?.must !== false })).filter((x: any) => x.name).slice(0, 10),
   };
   for (const k of Object.keys(ops) as (keyof TripOps)[]) if (!ops[k]!.length) delete ops[k];
@@ -200,6 +207,9 @@ export async function compactChat(req: { model: string; turns?: CompanionTurn[];
   return { summary: summary.slice(0, 8_000) };
 }
 
+/** Distances or driving times in a draft ("350 km", "~3.5-4h", "2 hours of driving") that a route lookup hasn't checked. */
+export const statesFigures = (text: string) => /\b\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?\s*(?:km|kilomet(?:er|re)s?|miles?)\b|\b\d+(?:[.,]\d+)?(?:\s*[-–]\s*\d+(?:[.,]\d+)?)?\s*(?:h|hrs?|hours?)\b(?!\s*(?:walk|hike))/i.test(text);
+
 export async function askCompanion(req: CompanionRequest, report: Report, signal?: AbortSignal) {
   report({ type: "status", text: "Thinking…" });
   // How long it thought: from the first thought to the first word of the answer.
@@ -207,6 +217,7 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
   const images = cleanImages(req.images);
   const towns = (Array.isArray(req.towns) ? req.towns : []).filter((t) => t?.name && Number.isFinite(t.lat) && Number.isFinite(t.lng)).slice(0, 30);
   const looked: string[] = [];
+  let checked = false;
   let prompt = companionPrompt({ ...req, images }), answer = "";
   // Up to MAX_ROUNDS of lookups: the model asks, gets the results, and is asked again.
   for (let round = 0; ; round++) {
@@ -225,7 +236,21 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
       onRetry: (message) => report({ type: "status", text: message }),
     });
     const lookups = last ? [] : parseLookups(answer);
-    if (!lookups.length) break;
+    if (!lookups.length) {
+      // A draft with distances or driving times, none of them looked up: it has to check them, not guess.
+      if (!last && !checked && !looked.some((l) => l.startsWith("route")) && statesFigures(cleanAnswer(answer) + (parseChange(answer, req.days || 0)?.request || ""))) {
+        prompt += `
+
+## Your draft
+${clip(answer, 4_000)}
+
+It states distances or driving times that you haven't looked up. Don't guess them: reply now with LOOKUP: route lines for each drive involved (several places in one line drive through them in order), or leave the figures out of your answer. Then write the answer again.`;
+        report({ type: "status", text: "Checking the distances…" });
+        checked = true;
+        continue;
+      }
+      break;
+    }
     const results = await runLookups(lookups, towns, (text) => report({ type: "status", text }));
     looked.push(...lookups.map((l) => `${l.kind}: ${l.args.join(" | ")}`));
     earlier = `${thinking}${thinking ? "\n\n" : ""}Looked up: ${lookups.map((l) => l.args.join(" → ")).join("; ")}\n\n`;

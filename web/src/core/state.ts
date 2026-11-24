@@ -106,7 +106,7 @@ export interface AppState {
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
   saveName?: string;
   /** The trip chat so far. */
-  chat?: { role: "me" | "ai"; text: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[] }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
+  chat?: { role: "me" | "ai"; text: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[] }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
 }
 
 const STORE_KEY = "trip-planner-v2";

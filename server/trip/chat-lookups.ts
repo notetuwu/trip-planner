@@ -45,14 +45,26 @@ async function place(name: string, towns: Town[]) {
   return hits.map((h) => `- ${h.name} (${h.kind || "place"}): ${h.label} · at ${h.lat.toFixed(5)},${h.lng.toFixed(5)}${towns.length ? ` · ${nearest(h, towns)} (straight line)` : ""}${h.website ? ` · ${h.website}` : ""}`).join("\n");
 }
 
-async function route(from: string, to: string) {
-  const [a, b] = await Promise.all([geocodeOne(from), geocodeOne(to)]);
-  if (!a || !b) return `Couldn't find ${!a ? `"${from}"` : `"${to}"`} on the map.`;
-  const r = await waitForRoute("car", [a.lat, a.lng] as LatLng, [b.lat, b.lng] as LatLng, 25_000);
-  const crow = km(a, b);
-  if (!r) return `${a.label} → ${b.label}: no road route found (${crow.toFixed(1)} km in a straight line).`;
-  const mins = Math.round(r.t / 60);
-  return `${a.label} → ${b.label}: ${(r.d / 1000).toFixed(1)} km by road, about ${mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`} driving (${crow.toFixed(1)} km in a straight line). Walking takes far longer when the road climbs.`;
+const duration = (mins: number) => (mins >= 60 ? `${Math.floor(mins / 60)} h ${mins % 60} min` : `${mins} min`);
+
+/** The road route through two or more places in order (the map's own routing service): each leg, and the total. */
+async function route(stops: string[]) {
+  const found = await Promise.all(stops.map((s) => geocodeOne(s)));
+  const missing = stops.find((_, i) => !found[i]);
+  if (missing) return `Couldn't find "${missing}" on the map. Try the place plus its town and country.`;
+  const hits = found as NonNullable<(typeof found)[number]>[];
+  const lines: string[] = [];
+  let meters = 0, secs = 0;
+  for (let i = 1; i < hits.length; i++) {
+    const a = hits[i - 1], b = hits[i];
+    const r = await waitForRoute("car", [a.lat, a.lng] as LatLng, [b.lat, b.lng] as LatLng, 25_000);
+    const crow = km(a, b);
+    if (!r) { lines.push(`${a.label} → ${b.label}: no road route found (${crow.toFixed(1)} km in a straight line).`); continue; }
+    meters += r.d; secs += r.t;
+    lines.push(`${a.label} → ${b.label}: ${(r.d / 1000).toFixed(1)} km by road, about ${duration(Math.round(r.t / 60))} driving (${crow.toFixed(1)} km in a straight line).`);
+  }
+  if (hits.length > 2) lines.push(`Total: ${(meters / 1000).toFixed(1)} km, about ${duration(Math.round(secs / 60))} driving, without stops.`);
+  return lines.join("\n");
 }
 
 /** Runs the lookups; each result is labelled with what was asked. */
@@ -63,7 +75,7 @@ export async function runLookups(lookups: Lookup[], towns: Town[], onStatus: (s:
     onStatus(l.kind === "search" ? `Searching the web for "${l.args[0]}"…` : l.kind === "route" ? `Looking up the route ${l.args.join(" → ")}…` : `Looking up where ${l.args[0]} is…`);
     try {
       const text = l.kind === "place" ? await place(l.args.join(", "), towns)
-        : l.kind === "route" ? (l.args.length >= 2 ? await route(l.args[0], l.args[1]) : "A route needs two places: LOOKUP: route | from | to")
+        : l.kind === "route" ? (l.args.length >= 2 ? await route(l.args.slice(0, 5)) : "A route needs two places: LOOKUP: route | from | to")
         : (await webSearch(l.args.join(" "))).slice(0, 3000);
       out.push(`### ${what}\n${text}`);
     } catch (e) { out.push(`### ${what}\nFailed: ${errMsg(e)}`); }
