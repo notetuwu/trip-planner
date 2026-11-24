@@ -287,3 +287,21 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 /* Credits sits at the bottom of the settings tabs, apart from the others (at the end of the row on phones). */
 .set-tab[data-tab="credits"] { margin-top: auto; }
 @media (max-width: 680px) { .set-tab[data-tab="credits"] { margin-top: 0; margin-left: auto; } }
+/* Whether the open trip is saved: a word after its name, in a colour. */
+.save-state.ok { color: var(--ok); }
+.save-state.warn { color: var(--warn); }
+.save-state.bad { color: var(--accent); font-weight: 600; }
+/* Recover: the copies of replaced trips and the earlier versions of a saved trip. */
+.recover-dialog { width: min(640px, 96vw); padding: 0; }
+.recover-dialog[open] { display: flex; flex-direction: column; max-height: 88vh; }
+.recover-dialog .pl-head .hint { flex: 1; margin: 0; min-width: 0; }
+.rc-body { overflow: auto; padding: 6px 20px 20px; display: grid; gap: 6px; }
+.rc-body h3 { margin: 14px 0 2px; font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.rc-body .hint { margin: 2px 0 8px; font-size: 12px; line-height: 1.45; }
+.rc-pick { margin-bottom: 8px; }
+.rc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.rc-list li { display: flex; align-items: center; gap: 12px; padding: 9px 10px 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); }
+.rc-list li > div { flex: 1; min-width: 0; display: grid; gap: 1px; font-size: 13px; }
+.rc-list li .hint { margin: 0; }
+.rc-list li.empty { display: block; border-style: dashed; background: none; color: var(--muted); font-size: 12.5px; }
+.rc-list .btn { height: 30px; flex: none; }

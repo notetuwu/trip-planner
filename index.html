@@ -131,6 +131,7 @@
       <div class="map-toggles">
         <label><input type="checkbox" id="showPlaces" checked> Places</label>
         <label><input type="checkbox" id="showRoutes" checked> Routes</label>
+        <button type="button" class="map-pill" id="photosBtn" title="Photos and videos from Google Drive folders or this computer: choose the folders, see them by day, show them on the map"><i data-icon="images"></i> Photos</button>
       </div>
     </div>
     <div class="map-wrap">
@@ -301,6 +302,7 @@
     <div class="trips-acts">
       <button class="btn" id="tripsNew" type="button"><i data-icon="plus"></i> New trip</button>
       <label class="btn" title="Open a trip file someone shared"><i data-icon="upload"></i> Import<input type="file" id="tripsImport" accept=".json,application/json" hidden></label>
+      <button class="btn" id="tripsRecover" type="button" title="Earlier versions of saved trips, and copies of trips that were replaced">Recover…</button>
       <button class="btn solid" id="tripsSave" type="button" title="Save the trip on screen">Save this trip</button>
       <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
     </div>

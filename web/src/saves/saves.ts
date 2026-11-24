@@ -3,8 +3,10 @@
 import type { ListSummary, PlaceList, SaveSummary } from "../../../shared/types";
 import { renderBookings } from "../trip/bookings";
 import { $, api, esc, toast } from "../core/dom";
+import { prefs } from "../core/prefs";
 import { initTrips, load as reloadTrips, openTrips } from "./trips";
-import { type AppState, save, session, setListPlaces, setState, state, tickedLists } from "../core/state";
+import { initRecover } from "./recover";
+import { type AppState, onSave, save, session, setListPlaces, setState, state, tickedLists } from "../core/state";
 import { geocodeStays } from "../geo/geocode";
 import { geocodeItems } from "../geo/item-loc";
 import { syncResearch } from "../generate/models";
@@ -24,10 +26,15 @@ const status = (msg: string) => {
 const picker = () => $<HTMLSelectElement>("#saveList");
 
 let saved: string[] = [];
-/** Under Your trips: the save the trip on screen belongs to. */
+/** Whether the trip on screen has changes its save doesn't have yet, and what's being done about it. */
+let unsaved = false, saving = false, failed = false;
+/** Under Your trips: the save the trip on screen belongs to, and whether it's up to date. */
 function showCurrent() {
   const current = state.saveName && saved.includes(state.saveName) ? state.saveName : "";
-  $("#currentSave").innerHTML = current ? `Saved as <b>${esc(current)}</b>` : "This trip isn't saved yet";
+  const el = $("#currentSave");
+  if (!current) { el.textContent = "This trip isn't saved yet (a copy is kept if you open another)"; el.className = "hint"; return; }
+  const [text, cls] = failed ? ["couldn't be saved just now, trying again", "bad"] : saving ? ["saving…", ""] : unsaved ? [prefs.app.liveSave ? "saving in a moment" : "unsaved changes: press Save", "warn"] : ["all changes saved", "ok"];
+  el.innerHTML = `Saved as <b>${esc(current)}</b> · <span class="save-state ${cls}">${text}</span>`;
 }
 
 export async function refreshSaves(select?: string) {
@@ -43,8 +50,23 @@ export async function refreshSaves(select?: string) {
   } catch { status("Could not reach the server to list saves."); }
 }
 
-/** Switches to another trip and redraws everything for it. */
-export async function applyState(next: Partial<AppState>) {
+/** Set while a trip is being put on screen (its own saving to the page must not count as a change to save). */
+let replacing = false;
+/** The next write of the open trip to its save keeps what the save held before (a trip just opened: the save may be an older version). */
+let keepNext = true;
+
+/** Switches to another trip and redraws everything for it. The trip that was on screen first gets a rescue copy (when it has
+ *  changes that weren't saved), so opening, importing or starting another can't lose them. */
+export async function applyState(next: Partial<AppState>, { rescue = true }: { rescue?: boolean } = {}) {
+  // (Not for a trip that's just what its save holds: opening trip after trip leaves no copies.)
+  if (rescue && (unsaved || !state.saveName)) await api("/api/rescue", { method: "POST", body: JSON.stringify({ state }) }).catch(() => { /* kept if it can */ });
+  replacing = true;
+  try { await replace(next); } finally { replacing = false; }
+  unsaved = false; failed = false; keepNext = true;
+  showCurrent();
+}
+
+async function replace(next: Partial<AppState>) {
   setState(next);
   setListPlaces(session.listPlaces);
   fillFields();
@@ -117,10 +139,47 @@ const citiesName = () => cleanSaveName(state.stays.map((s) => s.city.split(",")[
 /** Saves the trip under `name`, remembering it as this trip's save; returns the name the server used. */
 export async function saveTripAs(name: string) {
   state.saveName = name;
-  const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", body: JSON.stringify(state) });
-  state.saveName = data.name; save();
+  const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", headers: { "X-Keep-Version": "1" }, body: JSON.stringify(state) });
+  state.saveName = data.name;
+  replacing = true; save(); replacing = false;
+  unsaved = false; failed = false; keepNext = false;
   await refreshSaves(data.name);
   return data.name;
+}
+
+// ---- Keeping the open trip's save up to date by itself ----
+let timer: number | undefined;
+/** Writes the trip on screen into its save (not for a trip that has none: those get a copy when replaced). */
+async function writeBack() {
+  clearTimeout(timer);
+  const name = state.saveName;
+  if (!prefs.app.liveSave || !name || !saved.includes(name) || replacing) return;
+  // A plan being made: the trip is half changed; the end of it saves.
+  if (document.querySelector<HTMLElement>("#output")?.dataset.generating) { timer = window.setTimeout(writeBack, 5000); return; }
+  // Another window has changed the trip since this one last looked (this copy is out of date, e.g. a tab left open from earlier):
+  // it doesn't write. It takes the newer copy when it's looked at again.
+  const here = Number(localStorage.getItem("trip-planner-v2-at")) || 0;
+  const newer = await api<{ at: number }>(`/api/current?since=${here}`).then((r) => r.at > here, () => false);
+  if (newer) { timer = window.setTimeout(writeBack, 30000); return; }
+  saving = true; showCurrent();
+  try {
+    const body = JSON.stringify(state);
+    await api("/api/saves/" + encodeURIComponent(name), { method: "PUT", ...(keepNext ? { headers: { "X-Keep-Version": "1" } } : {}), body });
+    keepNext = false; failed = false;
+    // Changed again while it was being written: another write follows.
+    unsaved = JSON.stringify(state) !== body;
+    if (unsaved) timer = window.setTimeout(writeBack, 3000);
+  } catch { failed = true; timer = window.setTimeout(writeBack, 20000); }
+  finally { saving = false; showCurrent(); }
+}
+
+/** Every change to the trip on screen: marks it unsaved and writes it back a few seconds later. */
+function changed() {
+  if (replacing) return;
+  unsaved = true; showCurrent();
+  if (!prefs.app.liveSave || !state.saveName) return;
+  clearTimeout(timer);
+  timer = window.setTimeout(writeBack, 4000);
 }
 
 /** Saves the trip by itself (Settings → General): into its own save if it has one, else under a new free name. */
@@ -166,6 +225,29 @@ export async function openSave(name: string) {
   status(`Opened "${name}".`);
 }
 
+/** Opens one of the copies of a trip that was replaced; it goes back into its own save in a moment (the save as it is now is kept). */
+export async function restoreCopy(id: string) {
+  const t = await api<AppState>(`/api/rescue/${id}`);
+  const what = (t.stays || []).map((s) => s.city?.split(",")[0]).filter(Boolean).slice(0, 3).join(", ") || "an empty trip";
+  if (!confirm(`Open this copy (${what})? It replaces the trip on screen; a copy of that is kept first.`)) return false;
+  await applyState({ ...t });
+  // Its changes are the ones that were lost: they go back into its save.
+  unsaved = true; showCurrent();
+  if (prefs.app.liveSave && state.saveName && saved.includes(state.saveName)) { clearTimeout(timer); timer = window.setTimeout(writeBack, 1500); }
+  status(`Opened the copy${t.saveName ? ` of "${t.saveName}"` : ""}.${t.saveName ? "" : " Save it to keep it."}`);
+  return true;
+}
+
+/** Goes back to an earlier version of a saved trip: it becomes the open trip and the save, and the save as it is now is kept as a version. */
+export async function restoreVersion(name: string, id: string) {
+  const t = await api<AppState>(`/api/saves/${encodeURIComponent(name)}/history/${id}`);
+  if (!confirm(`Go back to this version of "${name}"? The version saved now is kept too, so you can come back.`)) return false;
+  await applyState({ ...t, saveName: name });
+  await saveTripAs(name);
+  status(`"${name}" is back to the earlier version.`);
+  return true;
+}
+
 async function saveCurrent() {
   const suggested = state.saveName || picker().value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
   const name = prompt("Save this trip as:", suggested);
@@ -184,12 +266,19 @@ async function newTrip() {
 }
 
 export function initSaves() {
+  onSave(changed);
+  // A page opened again with a trip that has a save: changes made just before it was closed may not have been written yet, so
+  // it counts as unsaved until it's written back (an out-of-date copy is never written: see writeBack).
+  if (state.saveName) { unsaved = true; timer = window.setTimeout(writeBack, 6000); }
+  // The page going to the background (a tab left, a window minimised) writes what's waiting at once.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && unsaved) writeBack(); });
   $("#exportTrip").onclick = exportTrip;
   const input = $<HTMLInputElement>("#importTrip");
   input.onchange = () => { const f = input.files?.[0]; input.value = ""; if (f) importTrip(f); };
   $("#saveBtn").onclick = saveCurrent;
   $("#newTrip").onclick = newTrip;
   $("#openTrips").onclick = openTrips;
+  initRecover({ copy: restoreCopy, version: restoreVersion });
   // The same from Your trips, which then shows the change.
   const trips = $<HTMLDialogElement>("#tripsDialog");
   $("#tripsNew").onclick = async () => { if (await newTrip()) trips.close(); };

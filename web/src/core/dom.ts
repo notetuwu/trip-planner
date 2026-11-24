@@ -17,6 +17,9 @@ export async function api<T = any>(url: string, opts: RequestInit = {}): Promise
   return data;
 }
 
+/** The address of a server route for an <img> or a link (the page can be open straight from disk). */
+export const apiUrl = (url: string) => API_BASE + url;
+
 /** The raw fetch, for streamed responses. */
 export const apiFetch = (url: string, opts: RequestInit) => fetch(API_BASE + url, opts);
 

@@ -1,6 +1,7 @@
 // Renders the itinerary column and wires up its buttons.
 import { openChat } from "../trip/companion";
 import { openCosts } from "./costs";
+import { openPhotosView } from "./photos-view";
 import { addDays, fmtDate } from "../core/format";
 import { $, $$, downloadFile, esc, toast } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
@@ -115,6 +116,7 @@ function wire(out: HTMLElement) {
   for (const el of $$("[data-sel]", out)) el.onclick = (e) => { if (!(e.target as HTMLElement).closest("a")) selectDay(+el.dataset.sel!); };
   for (const el of $$("[data-bar]", out)) el.onclick = () => selectDay(+el.dataset.bar!, { scroll: true });
   for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts();
+  for (const el of $$("[data-photos]", out)) el.onclick = () => openPhotosView();
   for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
   for (const el of $$<HTMLElement>("[data-pin]", out)) el.onclick = () => { const [d, x] = el.dataset.pin!.split("-"); openPin(+d, +x, el); };

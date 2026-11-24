@@ -2,7 +2,7 @@
 // days involved side by side. A repeat that's meant to be there can be marked fine. Each day can be redone right away (lined up behind whatever is running, its progress shown
 // in the itinerary) or put on a redo list that goes to the planner as one request.
 import type { Itinerary } from "../../../shared/types";
-import { esc } from "../core/dom";
+import { closeOnBackdrop, esc } from "../core/dom";
 import { fmtDate } from "../core/format";
 import { icon } from "../core/icons";
 import { save, state } from "../core/state";
@@ -236,6 +236,7 @@ function ensureDialog() {
       <form method="dialog"><button class="icon-btn" title="Close">${icon("x")}</button></form></div>
     <div class="rv-body"><aside class="rv-side"></aside><div class="rv-main"></div></div>`;
   document.body.append(dlg);
+  closeOnBackdrop(dlg);
   // Redos starting and ending (and the plan changing with them) show here as they happen.
   onQueueChange(render);
   return dlg;

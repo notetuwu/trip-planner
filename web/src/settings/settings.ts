@@ -20,7 +20,7 @@ import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-do
 import { SEARXNG_LOCAL } from "./searxng-local";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
-interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; geoapifyKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
+interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; geoapifyKeySet: boolean; googleKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
@@ -196,6 +196,8 @@ function generalCards() {
         <div class="segs">${seg("startWith", "last", "Last trip")}${seg("startWith", "new", "New trip")}</div></div>
       <div class="set-row"><div><b>Save new plans by themselves</b><div class="hint">After each generated plan, the trip is saved to Saved trips (into its own save if it has one, otherwise under its cities' names).</div></div>
         <div class="segs">${seg("autoSave", true, "On")}${seg("autoSave", false, "Off")}</div></div>
+      <div class="set-row"><div><b>Keep saved trips up to date by themselves</b><div class="hint">A trip that has a save is written back to it a few seconds after each change, so Save isn't needed and opening another trip can't lose work. The last 40 versions of each save are kept (Your trips → Recover), and a copy of the open trip is kept whenever it's replaced.</div></div>
+        <div class="segs">${seg("liveSave", true, "On")}${seg("liveSave", false, "Off")}</div></div>
     </div>
     <div class="set-card">
       <b class="card-title">New trips start with</b>
@@ -341,6 +343,11 @@ function renderPlanning() {
           <div class="set-inline"><input id="geoKey" type="password" autocomplete="off" placeholder="${settings?.geoapifyKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="geoSave">Save</button>${settings?.geoapifyKeySet ? `<button type="button" class="link-btn" id="geoClear">Remove</button>` : ""}</div></div></div>
     </div>
     <div class="set-card">
+      <b class="card-title">Photos on the map</b>
+      <div class="set-row"><div><b>Google API key</b> ${settings?.googleKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Shows the photos of a Google Drive folder on the map (Layers → Photos), at the spot each was taken. The folder has to be shared as "Anyone with the link". To get a free key: open the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API page${ext()}</a>, choose or create a project and press <b>Enable</b>; then under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials${ext()}</a> choose <b>Create credentials → API key</b>. The key stays on this computer.</div>
+          <div class="set-inline"><input id="googleKey" type="password" autocomplete="off" placeholder="${settings?.googleKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="googleSave">Save</button>${settings?.googleKeySet ? `<button type="button" class="link-btn" id="googleClear">Remove</button>` : ""}</div></div></div>
+    </div>
+    <div class="set-card">
       <b class="card-title">Local models</b>
       <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Experimental: in tests with a 27B model, planning in one go gave better plans; try step by step if one go gets cut off or a smaller model can't manage the whole trip. Re-planning a day and fixes are always one request.</div></div>
         <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step (experimental)")}</div></div>
@@ -358,7 +365,7 @@ function renderPlanning() {
   $<HTMLSelectElement>("#tuneLang").onchange = (e) => saveTune({ language: (e.target as HTMLSelectElement).value });
   $<HTMLSelectElement>("#tuneLookups").onchange = (e) => saveTune({ lookups: Number((e.target as HTMLSelectElement).value) });
   $<HTMLSelectElement>("#tunePages").onchange = (e) => saveTune({ pages: (e.target as HTMLSelectElement).value });
-  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string; geoapifyKey?: string }, done: string) => {
+  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string; geoapifyKey?: string; googleKey?: string }, done: string) => {
     settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify(part) });
     toast(done); renderPlanning();
   };
@@ -366,6 +373,8 @@ function renderPlanning() {
   document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
   document.querySelector<HTMLButtonElement>("#geoSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#geoKey").value.trim(); if (k) saveSearch({ geoapifyKey: k }, "Saved the Geoapify key"); });
   document.querySelector<HTMLButtonElement>("#geoClear")?.addEventListener("click", () => saveSearch({ geoapifyKey: "" }, "Removed the Geoapify key"));
+  document.querySelector<HTMLButtonElement>("#googleSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#googleKey").value.trim(); if (k) saveSearch({ googleKey: k }, "Saved the Google key"); });
+  document.querySelector<HTMLButtonElement>("#googleClear")?.addEventListener("click", () => saveSearch({ googleKey: "" }, "Removed the Google key"));
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
   // SearXNG chosen: its steps, and Docker and it started if they're set up but stopped (unless research goes to
   // another SearXNG server).

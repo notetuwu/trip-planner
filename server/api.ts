@@ -7,13 +7,16 @@ import { VERSION, errMsg } from "./config";
 import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, routeStops, setLinesDir } from "./geo/transit-lines";
+import { localThumb } from "./geo/local-photos";
+import { folderPhotos, photoFile } from "./geo/photos";
+import { pickFolder } from "./util/pick-folder";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
 import { openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
-import { handleSaves } from "./routes/saves";
+import { handleHistory, handleRescue, handleSaves } from "./routes/saves";
 import { tripCards } from "./routes/trips";
 import { handleLan, handleSettings } from "./routes/settings";
 import { handleOllama } from "./routes/ollama";
@@ -69,6 +72,10 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
     if (path === "/api/trips" && method === "GET") { sendJson(res, 200, tripCards()); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
+    // Earlier versions of a saved trip, and copies of the open trip from before it was replaced.
+    const histMatch = path.match(/^\/api\/saves\/([^/]+)\/history(?:\/(\d+))?$/), rescueMatch = path.match(/^\/api\/rescue(?:\/(\d+))?$/);
+    if (histMatch) { await handleHistory(req, res, decodeURIComponent(histMatch[1]), histMatch[2]); return true; }
+    if (rescueMatch) { await handleRescue(req, res, rescueMatch[1]); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
     if (saveMatch) await handleSaves(req, res, saveMatch[1] && decodeURIComponent(saveMatch[1]));
@@ -81,6 +88,26 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "POST" && path === "/api/routes") {
       const body = await readJson(req);
       sendJson(res, 200, routeBatch(Array.isArray(body?.legs) ? body.legs : []));
+    }
+    // The photos of a shared Google Drive folder, for the map's Photos layer ("?folder=<link or id>[&refresh=1]").
+    else if (method === "GET" && path === "/api/photos") {
+      try { sendJson(res, 200, await folderPhotos(url.searchParams.get("folder") || "", url.searchParams.get("refresh") === "1")); }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
+    // A photo's original file (the viewer swaps it in for the thumbnail): "?folder=<link or id>&id=<file id>".
+    else if (method === "GET" && path === "/api/photos/image") {
+      try { await photoFile(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", res, String(req.headers.range || "")); }
+      catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); }
+    }
+    // A small picture of a photo or video from a folder on this computer: "?folder=local:<path>&id=<file>&px=s220".
+    else if (method === "GET" && path === "/api/photos/thumb") {
+      try { await localThumb(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); }
+      catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); }
+    }
+    // The system's folder dialog on this computer, to pick the folder with the photos ("" when it's closed without one).
+    else if (method === "POST" && path === "/api/pick-folder") {
+      try { sendJson(res, 200, { path: await busyWhile(() => pickFolder("Choose the folder with your photos")) }); }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
     }
     // The map's transport line overlays, by grid cell ("?cells=940_166,940_167").
     else if (method === "GET" && path === "/api/lines") sendJson(res, 200, linesFor((url.searchParams.get("cells") || "").split(",")));

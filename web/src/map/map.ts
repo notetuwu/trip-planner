@@ -10,6 +10,8 @@ import { initTransitLines } from "./transit-lines";
 import { type Labels, initLayerPicker } from "./layer-picker";
 import { initLinesDownload, resyncLines } from "./lines-download";
 import { initLinesGrid } from "./lines-grid";
+import { initPhotos } from "./photos";
+import { openPhotosView } from "../itinerary/photos-view";
 
 export let map: L.Map | null = null;
 export const layers = {
@@ -75,6 +77,8 @@ export function initMap() {
   $<HTMLInputElement>("#showRoutes").onchange = () => drawMap();
   initTransitLines(map);
   initLinesGrid(map);
+  initPhotos(map);
+  $("#photosBtn").onclick = () => openPhotosView();
   // The Layers button (bottom left): map style and transport lines.
   initLayerPicker(map, { get: () => wanted, set: (l) => { setLabels(l); } });
   // The trip's areas' lines, downloaded ahead in the background (Settings → General → Map); asked again when that changes.

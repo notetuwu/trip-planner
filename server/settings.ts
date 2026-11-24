@@ -21,6 +21,8 @@ export interface Settings {
   searxngUrl: string;
   /** A free Geoapify key: a third, fast service for place lookups (Settings → Planning). */
   geoapifyKey: string;
+  /** A Google API key with the Drive API on: lists the photos of a shared Drive folder for the map (Settings → Planning). */
+  googleKey: string;
   /** The quick-start guide was shown (it opens by itself only the first time the app starts). */
   quickstartSeen: boolean;
   /** Where the map's downloaded transport lines are kept ("" = in the app's cache folder; Settings → General → Map). */
@@ -45,6 +47,8 @@ export interface AppPrefs {
   startWith: "last" | "new";
   /** Save each newly generated plan to Saved trips by itself. */
   autoSave: boolean;
+  /** A saved trip that's open is kept up to date by itself, a few seconds after each change (Settings → General). */
+  liveSave: boolean;
   /** Download the transport lines (for the map's Layers) around the trip's stays in the background, and how far around
    *  each stay (km). */
   linesDownload: boolean;
@@ -54,7 +58,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false,
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true,
   linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
@@ -73,6 +77,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     mapsApp: pick("mapsApp", (v) => v === "google" || v === "apple" || v === "bing"),
     startWith: pick("startWith", (v) => v === "last" || v === "new"),
     autoSave: pick("autoSave", (v) => typeof v === "boolean"),
+    liveSave: pick("liveSave", (v) => typeof v === "boolean"),
     linesDownload: pick("linesDownload", (v) => typeof v === "boolean"),
     linesRadius: Number(pick("linesRadius", (v) => [5, 10, 20].includes(Number(v)))),
     newTrip: {
@@ -147,6 +152,7 @@ export function readSettings(): Settings {
     braveKey: typeof saved.braveKey === "string" ? saved.braveKey : "",
     searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
     geoapifyKey: typeof saved.geoapifyKey === "string" ? saved.geoapifyKey : "",
+    googleKey: typeof saved.googleKey === "string" ? saved.googleKey : "",
     quickstartSeen: saved.quickstartSeen === true,
     linesDir: typeof saved.linesDir === "string" ? saved.linesDir : "",
     tune: cleanTune(saved.tune),
@@ -168,6 +174,7 @@ export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { 
     braveKey: typeof next.braveKey === "string" ? next.braveKey.trim().slice(0, 200) : now.braveKey,
     searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
     geoapifyKey: typeof next.geoapifyKey === "string" ? next.geoapifyKey.trim().slice(0, 100) : now.geoapifyKey,
+    googleKey: typeof next.googleKey === "string" ? next.googleKey.trim().slice(0, 100) : now.googleKey,
     quickstartSeen: typeof next.quickstartSeen === "boolean" ? next.quickstartSeen : now.quickstartSeen,
     // Set only through the lines' own call (it moves what's there first), never from the settings form.
     linesDir: typeof next.linesDir === "string" ? next.linesDir : now.linesDir,

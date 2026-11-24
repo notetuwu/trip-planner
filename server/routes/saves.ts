@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type { SaveSummary } from "../../shared/types";
 import { SAVES_DIR, cleanName } from "../config";
-import { type Req, type Res, readBody, sendJson } from "../util/http";
+import { type Req, type Res, readBody, readJson, sendJson } from "../util/http";
+import { keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, versionedNames } from "../util/versions";
 
 function savePath(name: string) {
   const clean = cleanName(name);
@@ -31,12 +32,44 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
     const body = await readBody(req);
     try { JSON.parse(body); } catch { return sendJson(res, 400, { error: "Invalid JSON" }); }
     fs.mkdirSync(SAVES_DIR, { recursive: true });
+    // What the save held until now is kept first (a save made by hand always keeps one; a trip updated by itself, one every 10 minutes).
+    keepVersion(SAVES_DIR, path.basename(file, ".json"), file, req.headers["x-keep-version"] === "1");
     fs.writeFileSync(file, body);
     return sendJson(res, 200, { name: path.basename(file, ".json") });
   }
   if (req.method === "DELETE") {
-    if (fs.existsSync(file)) fs.unlinkSync(file);
+    // A deleted trip stays in its history (the last version), so deleting by mistake can be undone.
+    if (fs.existsSync(file)) { keepVersion(SAVES_DIR, path.basename(file, ".json"), file, true); fs.unlinkSync(file); }
     return sendJson(res, 200, { ok: true });
+  }
+  res.writeHead(405).end();
+}
+
+/** Earlier versions of a saved trip: "GET /api/saves/<name>/history" lists them, ".../history/<id>" is one. */
+export async function handleHistory(req: Req, res: Res, name: string, id?: string) {
+  const clean = savePath(name) && path.basename(savePath(name)!, ".json");
+  if (!clean) return sendJson(res, 400, { error: "No such save." });
+  if (req.method !== "GET") return res.writeHead(405).end();
+  if (!id) return sendJson(res, 200, listVersions(SAVES_DIR, clean));
+  const text = readVersion(SAVES_DIR, clean, id);
+  if (text == null) return sendJson(res, 404, { error: "No such version." });
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(text);
+}
+
+/** Copies of the trip on screen from before it was replaced: "POST /api/rescue" keeps one, "GET /api/rescue" lists them. */
+export async function handleRescue(req: Req, res: Res, id?: string) {
+  if (req.method === "POST" && !id) {
+    const body = await readJson(req);
+    return sendJson(res, 200, { kept: keepRescue(SAVES_DIR, body?.state, SAVES_DIR) });
+  }
+  if (req.method === "GET" && !id) return sendJson(res, 200, { copies: listRescue(SAVES_DIR), versioned: versionedNames(SAVES_DIR) });
+  if (req.method === "GET" && id) {
+    const text = readRescue(SAVES_DIR, id);
+    if (text == null) return sendJson(res, 404, { error: "No such copy." });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(text);
+    return;
   }
   res.writeHead(405).end();
 }

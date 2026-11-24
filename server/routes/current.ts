@@ -18,6 +18,11 @@ export async function handleCurrent(req: Req, res: Res) {
     const body = await readJson(req);
     const at = Number(body?.at) || 0;
     if (!body?.state || typeof body.state !== "object") { sendJson(res, 400, { error: "No trip" }); return; }
+    // A window may only replace the copy when it has seen the latest: `base` is the time stamp it last sent or took. Someone
+    // saved since (so it's out of date: a tab left open from earlier) and it's refused, and takes the newer one instead.
+    // A page from before this rule (a tab left open) doesn't say what it has seen, so it can't tell it's out of date: once the
+    // computer has a copy, it's not allowed to replace it (it would send its old trip over the new one, again and again).
+    if (read().at > 0 && (typeof body.base !== "number" || body.base < read().at)) { sendJson(res, 200, { conflict: true, at: read().at }); return; }
     // An older copy (a window that was asleep) doesn't overwrite a newer one.
     if (at >= read().at) {
       cache = { at, state: body.state };

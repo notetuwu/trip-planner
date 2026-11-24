@@ -84,6 +84,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
         ${events ? sectionBtn("events", "party", "Holidays", String(events), `Holidays & events: ${it.holidaysAndEvents!.map((h) => h.name.replace(/\s*\(.*$/, "")).join(", ").slice(0, 200)}`) : ""}
         ${ahead.total ? sectionBtn("ahead", "ticket", "Book ahead", ahead.left ? `${ahead.left} left` : "done", `Book ahead: ${ahead.left ? `${ahead.left} of ${ahead.total} still to book` : `all ${ahead.total} booked`} (stays, transport and tickets)`) : ""}
         ${sectionBtn("packing", "luggage", "Packing", `${pack.done}/${pack.all}`, `Packing list: ${pack.done} of ${pack.all} packed`)}
+        <button type="button" data-photos title="The photos and videos of this trip: choose the folders, see them by day">${icon("images")}<span class="tb-label">Photos</span></button>
       </div>
     </div>
     <button type="button" class="refine" id="refineBtn">${icon("chat")}<span><b>Ask for changes</b> in the trip chat, e.g. “swap days 3 and 4” or “add a vegan lunch spot on day 6”</span></button>

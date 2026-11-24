@@ -833,3 +833,27 @@ button.refine:hover { border-color: var(--accent); }
 .lines-dir input { width: 100%; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
 .lines-dir-btns { display: flex; gap: 12px; align-items: center; }
 .lines-dir .hint { margin: 0; font-size: 11.5px; word-break: break-all; }
+/* Several pictures (the photos of a group on the map): arrows at the sides, a strip of them all along the bottom, the
+   caption and count above it. The picture leaves room for them. */
+.lightbox.gallery .lightbox-stage img { max-height: 68vh; }
+.lightbox-nav { position: absolute; top: 50%; margin-top: -24px; width: 48px; height: 48px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .15); color: #fff; display: grid; place-items: center; cursor: pointer; z-index: 2; }
+.lightbox-nav:hover { background: rgba(255, 255, 255, .3); }
+.lightbox-nav svg { width: 22px; height: 22px; }
+.lightbox-nav.prev { left: 18px; } .lightbox-nav.prev svg { transform: rotate(90deg); }
+.lightbox-nav.next { right: 18px; } .lightbox-nav.next svg { transform: rotate(-90deg); }
+.lightbox-count { color: #fff; font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+.lightbox.gallery .lightbox-bar { bottom: 104px; }
+.lightbox-strip { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: min(92vw, 1100px); display: flex; gap: 6px; padding: 6px; overflow-x: auto; border-radius: 12px; background: rgba(20, 20, 20, .85); cursor: default; scrollbar-width: thin; }
+.lightbox-strip button { all: unset; flex: none; box-sizing: border-box; width: 74px; height: 56px; border-radius: 7px; overflow: hidden; cursor: pointer; opacity: .6; outline: 2px solid transparent; outline-offset: -2px; transition: opacity .12s; }
+.lightbox-strip button:hover { opacity: 1; }
+.lightbox-strip button.on { opacity: 1; outline-color: #fff; }
+.lightbox-strip img { width: 100%; height: 100%; object-fit: cover; display: block; max-width: none; max-height: none; border-radius: 0; box-shadow: none; cursor: pointer; }
+/* A video in the viewer: its own player instead of the zoomable picture; in the strip, a play sign on its frame. */
+/* A video fills the space the viewer has (a small or upright one would otherwise sit tiny in the middle, and a frame from
+   Google's player has no size of its own): the player is the same size for every video, the picture fits inside it. */
+.lightbox video, .lightbox .lightbox-embed { width: min(94vw, 1500px); height: 82vh; max-width: none; max-height: none; border-radius: 12px; background: #000; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); cursor: default; border: 0; object-fit: contain; }
+.lightbox.gallery video, .lightbox.gallery .lightbox-embed { height: 66vh; }
+.lightbox [hidden] { display: none !important; }
+.lightbox-bar > a.btn { height: 30px; display: inline-flex; align-items: center; text-decoration: none; }
+.lightbox-strip button.vid { position: relative; }
+.lightbox-strip button.vid::after { content: ""; position: absolute; left: 50%; top: 50%; margin: -9px 0 0 -6px; border-left: 14px solid #fff; border-top: 9px solid transparent; border-bottom: 9px solid transparent; filter: drop-shadow(0 0 3px rgba(0, 0, 0, .8)); }

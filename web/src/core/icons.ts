@@ -4,14 +4,14 @@ import {
   ArrowLeftRight, ArrowUp, ArrowUpRight, BedDouble, Bike, Bus, CableCar, TramFront, Layers, CalendarDays, Car, Clock, Cloud, CloudDrizzle, CloudFog,
   Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
   KeyRound, Map, Wallet, ChevronDown, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Share2, Ship, Smartphone, Star, Sun,
-  Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles, ImagePlus,
+  Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles, ImagePlus, Images,
   Brain, ScrollText, Info, PartyPopper, Luggage, Crosshair, Rocket, LayoutGrid, List, Globe, Container, Pencil, FolderOpen, Hourglass, Terminal, Compass, History, Heart, Zap, Hand,
 } from "lucide";
 
 type IconNode = [string, Record<string, string | number | undefined>][];
 
 const ICONS = {
-  arrowLeftRight: ArrowLeftRight, arrowUp: ArrowUp, arrowUpRight: ArrowUpRight, bed: BedDouble, bike: Bike, bus: Bus, cableCar: CableCar, tram: TramFront, layers: Layers,
+  arrowLeftRight: ArrowLeftRight, arrowUp: ArrowUp, arrowUpRight: ArrowUpRight, bed: BedDouble, bike: Bike, bus: Bus, cableCar: CableCar, tram: TramFront, layers: Layers, images: Images,
   calendar: CalendarDays, car: Car, check: Check, copy: Copy, clock: Clock, cloud: Cloud, cloudDrizzle: CloudDrizzle, cloudFog: CloudFog,
   cloudLightning: CloudLightning, cloudRain: CloudRain, cloudSnow: CloudSnow, cloudSun: CloudSun, dayTrip: CornerDownRight,
   download: Download, external: ExternalLink, file: FileText, walk: Footprints, hotel: Hotel, key: KeyRound, map: Map,

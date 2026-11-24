@@ -113,6 +113,11 @@ export interface AppState {
   bookings?: Booking[];
   /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */
   okRepeats?: { key: string; name: string }[];
+  /** The shared Google Drive folders whose photos the map's Photos layer shows: each link as pasted, and shown or not.
+   *  Kept with the trip, so every trip has its own. */
+  photoFolders?: { link: string; off?: boolean }[];
+  /** From the first version, which had one folder: moved into photoFolders the first time the trip is used. */
+  photosFolder?: string;
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
   saveName?: string;
   /** What the trip chat may do: answer only, offer changes that need Apply, or make small ones by itself. */

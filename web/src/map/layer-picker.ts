@@ -8,7 +8,9 @@ import { LINE_KINDS, type LineKind, isLineOn, linesState, onLinesChange, setLine
 import { downloadState, downloadText, downloadView, onDownloadChange, viewCellCount } from "./lines-download";
 import { gridState, onGridChange, setGridOn } from "./lines-grid";
 import { setStayLines, stayLinesOn } from "./draw-stays";
+import { isPhotosOn, onPhotosChange, photosState, setPhotosOn } from "./photos";
 import { drawMap } from "./draw";
+import { openPhotosView } from "../itinerary/photos-view";
 
 export type Labels = "local" | "english";
 
@@ -58,6 +60,11 @@ const PLACES_THUMB = () => `${ground()}${[[12, 12], [30, 44], [46, 24], [60, 40]
   <path d="M36 9 l2.2 4.6 5 .6 -3.7 3.4 1 5 -4.5 -2.5 -4.5 2.5 1 -5 -3.7 -3.4 5 -.6 z" fill="#f9a825" stroke="#fff" stroke-width=".8"/>`;
 /** A checkbox above the map is on. */
 const box2 = (sel: string) => !!document.querySelector<HTMLInputElement>(sel)?.checked;
+/** Photos: two snapshots pinned on the map, one with a count. */
+const PHOTOS_THUMB = () => `${ground()}
+  <g transform="rotate(-6 24 24)"><rect x="9" y="10" width="26" height="22" rx="2.5" fill="#fff" stroke="#d6d2ca"/><rect x="11.5" y="12.5" width="21" height="14" fill="#9ec9e8"/><path d="M11.5 26.5 l7 -8 l5 5 l3 -3 l6 6 z" fill="#5b8c5a"/><circle cx="27" cy="16.5" r="2" fill="#ffd54f"/></g>
+  <g transform="rotate(5 52 34)"><rect x="40" y="22" width="26" height="22" rx="2.5" fill="#fff" stroke="#d6d2ca"/><rect x="42.5" y="24.5" width="21" height="14" fill="#f4b183"/><path d="M42.5 38.5 l6 -7 l5 4 l4 -3 l6 6 z" fill="#6d8f5e"/></g>
+  <circle cx="63" cy="22" r="6" fill="#c8102e" stroke="#fff" stroke-width="1.3"/><text x="60.6" y="24.6" font-size="7.5" font-weight="700" fill="#fff">3</text>`;
 const svg = (inner: string) => `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${inner}</svg>`;
 
 /** The button's picture: the map itself where it's looking (a few tiles, a little further out), like Google's square. */
@@ -108,7 +115,15 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
       grid: !g.on ? "" : g.far ? "Zoom in to see the areas." : g.done != null ? `In view: ${g.done} downloaded${g.waiting ? `, ${g.waiting} on the way` : ""}.` : "",
       loading: st.pending > 0,
       canDownload: viewCellCount(map) <= 160,
+      photos: photosNote(),
     };
+  };
+  /** The Photos tile's line: what's on the map, or where to set it up. */
+  const photosNote = () => {
+    const ps = photosState();
+    if (!ps.on) return "";
+    if (!ps.rows.length) return "No photo folders yet: add some in the Photos window.";
+    return `${ps.shown + ps.guessed} photo${ps.shown + ps.guessed === 1 ? "" : "s"} on the map${ps.guessed ? ` (${ps.guessed} placed by their time)` : ""}${ps.loading ? " · loading…" : ""}.`;
   };
   const buttonInner = () => {
     const shown = LINE_KINDS.filter((k) => isLineOn(k.k));
@@ -124,6 +139,9 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
         <div class="lp-grid">${tile("local", THUMBS.local(), "Local names", lab === "local")}${tile("english", THUMBS.english(), "English names", lab === "english")}</div>
         <h4>Your trip</h4>
         <div class="lp-grid">${tile("stays", STAY_THUMB(), "Stay lines", stayLinesOn())}${tile("routes", ROUTES_THUMB(), "Day routes", box2("#showRoutes"))}${tile("places", PLACES_THUMB(), "Saved places", box2("#showPlaces"))}</div>
+        <h4>Photos</h4>
+        <div class="lp-grid">${tile("photos", PHOTOS_THUMB(), "Photos", isPhotosOn())}</div>
+        <p class="hint lp-photos-line"><span data-t="photos"${t.photos ? "" : " hidden"}>${esc(t.photos)}</span> <button type="button" class="link-btn" data-photos-open title="Choose the folders, how photos are placed, and see them all by day">Photos window…</button></p>
         <h4>Transport lines</h4>
         <div class="lp-grid">${LINE_KINDS.map((k) => tile(k.k, THUMBS[k.k](), k.name, isLineOn(k.k), `<i class="lp-badge" style="--c:${k.colour}">${icon(k.ic)}</i>`)).join("")}</div>
         <p class="hint" data-t="note">${esc(t.note)}</p>
@@ -143,6 +161,7 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
       const n = downloadView(map);
       toast(n ? `Downloading ${n} new area${n > 1 ? "s" : ""} in the background` : "This area is already downloaded or on its way");
     });
+    box.querySelector<HTMLButtonElement>("[data-photos-open]")?.addEventListener("click", () => openPhotosView());
     const grid = box.querySelector<HTMLInputElement>("[data-grid]");
     if (grid) grid.onchange = () => { setGridOn(grid.checked); render(); };
     // With a mouse, hovering already opened it: a click keeps it open. On a touch screen a tap opens and closes it.
@@ -152,6 +171,7 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
         const k = b.dataset.pick!;
         if (k === "local" || k === "english") labels.set(k);
         else if (k === "stays") { setStayLines(!stayLinesOn()); drawMap(); }
+        else if (k === "photos") setPhotosOn(!isPhotosOn());
         // The same switches as the Places and Routes boxes above the map (kept in step: this flips the box).
         else if (k === "routes" || k === "places") {
           const cb = document.querySelector<HTMLInputElement>(k === "routes" ? "#showRoutes" : "#showPlaces");
@@ -174,7 +194,8 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
       if (btn.dataset.html !== inner) { btn.innerHTML = inner; btn.dataset.html = inner; }
     }
     const set = (k: string, text: string) => { const el = box.querySelector<HTMLElement>(`[data-t="${k}"]`); if (el) { el.hidden = !text; if (el.textContent !== text) el.textContent = text; } };
-    set("note", t.note); set("dl", t.dl); set("grid", t.grid);
+    set("note", t.note); set("dl", t.dl); set("grid", t.grid); set("photos", t.photos);
+
     const dlBtn = box.querySelector<HTMLElement>("[data-dl-view]"), far = box.querySelector<HTMLElement>('[data-t="far"]');
     if (dlBtn) dlBtn.hidden = !t.canDownload;
     if (far) far.hidden = t.canDownload;
@@ -229,4 +250,5 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
   onLinesChange(patch);
   onDownloadChange(patch);
   onGridChange(patch);
+  onPhotosChange(patch);
 }
