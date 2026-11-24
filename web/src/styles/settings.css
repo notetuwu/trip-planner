@@ -857,3 +857,62 @@ button.refine:hover { border-color: var(--accent); }
 .lightbox-bar > a.btn { height: 30px; display: inline-flex; align-items: center; text-decoration: none; }
 .lightbox-strip button.vid { position: relative; }
 .lightbox-strip button.vid::after { content: ""; position: absolute; left: 50%; top: 50%; margin: -9px 0 0 -6px; border-left: 14px solid #fff; border-top: 9px solid transparent; border-bottom: 9px solid transparent; filter: drop-shadow(0 0 3px rgba(0, 0, 0, .8)); }
+
+/* Settings: the search box above the tabs, its results, and the setting a result leads to (lit up for a moment). */
+.set-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+.set-side .set-nav { flex: 1; border-right: 0; padding-top: 4px; overflow: auto; }
+.set-find { position: relative; display: block; margin: 12px 10px 4px; }
+.set-find-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); display: flex; pointer-events: none; }
+.set-find input { width: 100%; height: 34px; padding-left: 32px; border-radius: 9px; font-size: 13px; }
+.set-hits { display: grid; gap: 8px; }
+.set-hit { all: unset; box-sizing: border-box; display: grid; gap: 3px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); cursor: pointer; transition: border-color .15s, background-color .15s; }
+.set-hit:hover, .set-hit:focus-visible { border-color: var(--accent); background: var(--hover); }
+.set-hit-tab { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.set-hit .hint { display: block; }
+.set-hit mark, .set-hits mark { background: color-mix(in srgb, var(--accent) 22%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+@keyframes set-flash { 0%, 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); background: var(--accent-soft); } 100% { box-shadow: 0 0 0 3px transparent; } }
+.set-flash { animation: set-flash 1.8s ease-out; border-radius: 10px; }
+.set-intro { margin: -4px 0 14px; }
+.set-main .card-title { display: inline-flex; align-items: center; gap: 6px; }
+.fit.off { color: var(--muted); background: color-mix(in srgb, var(--muted) 14%, transparent); }
+.fit svg.i { vertical-align: -1px; }
+.key-note .btn { white-space: nowrap; }
+@media (max-width: 680px) {
+  .set-side { border-right: 0; border-bottom: 1px solid var(--line); }
+  .set-side .set-nav { flex-direction: row; overflow-x: auto; }
+}
+
+/* A key field: a saved key is a row of dots with its last characters, Change and Remove; Change opens the field. */
+.kf-list { display: grid; gap: 10px; padding: 4px 0 12px; }
+.kf { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); transition: border-color .15s, opacity .15s; }
+.kf.is-set { border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+.kf.busy { opacity: .6; pointer-events: none; }
+.kf-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.kf-head .fit { margin-left: 2px; display: inline-flex; align-items: center; gap: 3px; }
+.kf-get { margin-left: auto; text-decoration: none; font-size: 12px; }
+.kf-view { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.kf-view[hidden], .kf-edit[hidden] { display: none; }
+.kf-dots { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; flex: 1 1 200px; min-width: 0; max-width: 340px; }
+.kf-bullets { color: var(--muted); letter-spacing: 2px; overflow: hidden; }
+.kf-dots code { background: none; padding: 0; font-weight: 600; color: var(--ink); }
+.kf-remove:hover { color: var(--accent); }
+.kf-edit { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.kf-edit input { flex: 1 1 220px; min-width: 0; max-width: 420px; height: 34px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.kf .hint a { white-space: nowrap; }
+.qs-keys.kf-svc { margin-top: 8px; }
+.qs-link.qs-link-key { align-items: flex-start; }
+.qs-link-key > div { flex: 1; min-width: 0; }
+.qs-keys.kf-svc { grid-template-columns: 1fr; }
+.qs-keys .kf-edit input { flex-basis: 100%; max-width: none; }
+.qs-keys .kf-dots { flex-basis: 100%; max-width: none; }
+.qs-keys .kf-get { margin-left: 0; }
+
+/* The viewer as a slideshow: title cards, and pictures drifting closer. */
+.lightbox-title { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); width: min(90vw, 1000px); text-align: center; color: #fff; text-shadow: 0 2px 24px rgba(0, 0, 0, .9); pointer-events: none; z-index: 1; }
+.lightbox-title h2 { margin: 0 0 8px; font-size: clamp(30px, 6vw, 68px); line-height: 1.1; }
+.lightbox-title p { margin: 0; font-size: clamp(14px, 2vw, 20px); }
+.lightbox.card .lightbox-stage img { filter: brightness(.45); }
+.lightbox .lightbox-stage img.drift { animation: lightbox-drift var(--drift, 5s) ease-out both; }
+@keyframes lightbox-drift { from { transform: scale(1); } to { transform: scale(1.07); } }
+@media (prefers-reduced-motion: reduce) { .lightbox .lightbox-stage img.drift { animation: none; } }
+.lightbox-bar > button[data-play] { height: 30px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }

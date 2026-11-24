@@ -82,21 +82,66 @@ const thin = (c: LatLng[], max = 1500) => { if (c.length <= max) return c; const
  * boat route; null if there's none. It asks for departures on the trip's day when it's known (`when`: a summer boat
  * doesn't run in November), then for the next ones from now.
  */
-async function fetchRail(base: string, a: LatLng, b: LatLng, modes: string, when?: string): Promise<Route | null> {
+/** The connections the router finds from a to b (walks alone left out); none is an empty list. */
+async function planIts(base: string, a: LatLng, b: LatLng, modes: string, time: string, walk: number): Promise<any[]> {
+  const q = new URLSearchParams({
+    fromPlace: `${a[0]},${a[1]}`, toPlace: `${b[0]},${b[1]}`, maxPreTransitTime: String(walk), maxPostTransitTime: String(walk),
+    transitModes: modes, ...(time ? { time } : {}),
+  });
+  const res = await fetch(`${base}?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const j: any = await res.json();
+  return (j.itineraries || []).filter((it: any) => it.legs?.some((l: any) => l.mode !== "WALK"));
+}
+
+const stationCache = diskCache<LatLng[]>("stations.json");
+const RAIL_MODES = new Set(TRANSIT.train!.split(",").filter((m) => !/METRO|SUBWAY|TRAM/.test(m)));
+/** Railway stations the router knows within about 15 km of a point, nearest first (kept on disk); [] if it can't say. */
+async function stationsNear(p: LatLng): Promise<LatLng[]> {
+  const key = `${p[0].toFixed(3)},${p[1].toFixed(3)}`;
+  if (stationCache.data[key]) return stationCache.data[key];
+  const dLat = 0.135, dLng = 0.135 / Math.max(0.2, Math.cos((p[0] * Math.PI) / 180));
+  const q = new URLSearchParams({ min: `${p[0] - dLat},${p[1] - dLng}`, max: `${p[0] + dLat},${p[1] + dLng}` });
+  try {
+    const res = await fetch(`https://api.transitous.org/api/v1/map/stops?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
+    if (!res.ok) return [];
+    const stops = (await res.json()) as any[];
+    const seen = new Set<string>();
+    const out = stops.filter((s) => (s.modes || []).some((m: string) => RAIL_MODES.has(m)))
+      .map((s) => [+(+s.lat).toFixed(5), +(+s.lon).toFixed(5)] as LatLng)
+      .filter((s) => { const k = `${s[0].toFixed(3)},${s[1].toFixed(3)}`; return !seen.has(k) && !!seen.add(k); })
+      .sort((x, y) => kmBetween(x, p) - kmBetween(y, p));
+    stationCache.data[key] = out; stationCache.save();
+    return out;
+  } catch { return []; }
+}
+
+/**
+ * The quickest train (or boat) connection, walking to and from the stations or piers included, along the real tracks or
+ * boat route; null if there's none. It asks for departures on the trip's day when it's known (`when`: a summer boat
+ * doesn't run in November), then for the next ones from now. `snap`: when no train reaches a point (a hotel up by Lake
+ * Ashi in Hakone, reached by bus, ropeway or boat the router doesn't know), the train to the station nearest it the router
+ * can reach, so a long trip between stays is still drawn along the tracks.
+ */
+async function fetchRail(base: string, a: LatLng, b: LatLng, modes: string, when?: string, snap = false): Promise<Route | null> {
   // A town's or hotel's point is often more than the router's default 15-minute walk from a station (Onomichi's is),
   // which made it answer "no connection": allow 30 minutes, then an hour.
   let its: any[] = [];
   const tries = [...(when ? [when] : []), ""].flatMap((time) => [1800, 3600].map((walk) => ({ time, walk })));
   for (const { time, walk } of tries) {
-    const q = new URLSearchParams({
-      fromPlace: `${a[0]},${a[1]}`, toPlace: `${b[0]},${b[1]}`, maxPreTransitTime: String(walk), maxPostTransitTime: String(walk),
-      transitModes: modes, ...(time ? { time } : {}),
-    });
-    const res = await fetch(`${base}?${q}`, { headers: { "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(25000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-    const j: any = await res.json();
-    its = (j.itineraries || []).filter((it: any) => it.legs?.some((l: any) => l.mode !== "WALK"));
+    its = await planIts(base, a, b, modes, time, walk);
     if (its.length) break;
+  }
+  if (!its.length && snap) {
+    // The nearest few stations at the far end, then at the near end (one end at a time, a few asks each).
+    for (const end of [b, a]) {
+      for (const s of (await stationsNear(end)).filter((s) => kmBetween(s, end) > 0.3).slice(0, 3)) {
+        await sleep(1050);
+        its = await planIts(base, end === b ? a : s, end === b ? s : b, modes, when || "", 1800);
+        if (its.length) break;
+      }
+      if (its.length) break;
+    }
   }
   if (!its.length) return null;
   const it = its.reduce((x: any, y: any) => (y.duration < x.duration ? y : x));
@@ -114,7 +159,8 @@ async function fetchRail(base: string, a: LatLng, b: LatLng, modes: string, when
 
 async function fetchRoute(mode: RouteMode, a: LatLng, b: LatLng, when?: string): Promise<Route | null> {
   if (TRANSIT[mode]) {
-    const r = await fetchRail(ROUTERS[mode][0], a, b, TRANSIT[mode]!, when);
+    // A long train trip (stay to stay, a day trip) still follows the tracks when its end is out of a train's reach.
+    const r = await fetchRail(ROUTERS[mode][0], a, b, TRANSIT[mode]!, when, mode === "train" && kmBetween(a, b) > 20);
     return r && RIDE_ONLY.includes(mode) && mostlyWalking(r) ? null : r;
   }
   let lastErr: unknown;

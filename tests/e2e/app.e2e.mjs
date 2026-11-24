@@ -767,7 +767,7 @@ test("the quick start shows what's there and what's missing; without Claude Code
   assert.equal(await page.eval(`document.querySelectorAll(".qs-check").length`), 5);
   assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(1)").textContent`), /Claude Code.*Not found/);
   assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(3)").textContent`), /Ollama.*No model yet/);
-  assert.equal(await page.eval(`document.querySelectorAll("#qsKeys .key-row").length`), 3, "the API key inputs");
+  assert.equal(await page.eval(`document.querySelectorAll("#qsKeys [data-kf]").length`), 3, "the API key inputs");
   // Choosing SearXNG shows its steps (Docker first).
   await page.eval(`document.querySelector('[data-search="searxng"]').click()`);
   await page.waitFor(`document.querySelectorAll("#qsSearxng .sx-step").length === 5`, 5000, "the SearXNG steps");

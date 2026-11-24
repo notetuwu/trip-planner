@@ -1,9 +1,11 @@
-// Settings: General (how the app opens, theme, API keys, where the data is), Planning (language, detail, how many real
-// places and web lookups, fix rounds, and how local models think), Local models (Ollama: status, the graphics card,
-// models from ollama.com that fit it, a search of the library, installs with download progress, installed models, the
-// context size), Updates (the version, Check now, the automatic check), and Phone (the planner on the home network: start/stop, status, the link and its QR code).
+// Settings, in tabs, with a search over all of them: General (how the app opens, theme, start-up and saving, units, what
+// a new trip starts with, where the data is), Map (place names, the maps app, downloading transport lines), Planning
+// (language, detail, how many real places and web lookups, fix rounds, the search engine), API keys (every key in one
+// place: AI providers, Brave, Geoapify, Google), Local models (Ollama: status, the graphics card, models from ollama.com
+// that fit it, a search of the library, installs with download progress, installed models, how they plan, the context
+// size), Phone (the planner on the home network: start/stop, status, the link and its QR code), Updates and Credits.
 import qrcode from "qrcode-generator";
-import type { GpuInfo } from "../../../shared/types";
+import type { GpuInfo, KeyStatus } from "../../../shared/types";
 import { $, $$, api, esc, toast } from "../core/dom";
 import { ext, icon } from "../core/icons";
 import { type AppPrefs, prefs, setPrefs } from "../core/prefs";
@@ -11,16 +13,18 @@ import { CURRENCIES } from "../core/format";
 import { type Choice, choice, setTheme } from "../core/theme";
 import { type UpdateInfo, install } from "../core/update";
 import { switchWindowMode } from "../core/window-mode";
-import { openKeys } from "../generate/keys";
+import { renderKeyRows } from "../generate/keys";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 import { mountSearxng } from "./searxng-panel";
 import { creditsHtml } from "./credits";
+import { keyFieldHtml, wireKeyFields } from "./key-field";
 import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-download";
 import { SEARXNG_LOCAL } from "./searxng-local";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
-interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; braveKeySet: boolean; geoapifyKeySet: boolean; googleKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
+export type ServiceKey = "brave" | "geoapify" | "google";
+interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; serviceKeys?: Record<ServiceKey, KeyStatus>; braveKeySet: boolean; geoapifyKeySet: boolean; googleKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
 interface OllamaModel { name: string; size: number; params: string; quant: string; loaded: boolean }
 interface OllamaInfo { installed: boolean; running: boolean; version: string; gpu: GpuInfo | null; models: OllamaModel[]; pulls: Pull[] }
@@ -32,8 +36,17 @@ interface Rec { model: string; tag: string; sizeGb: number; context: string; cap
 
 interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean }
 
-type Tab = "general" | "planning" | "models" | "updates" | "phone" | "credits";
+type Tab = "general" | "map" | "planning" | "keys" | "models" | "phone" | "updates" | "credits";
+const TABS: [Tab, Parameters<typeof icon>[0], string][] = [
+  ["general", "settings", "General"], ["map", "map", "Map"], ["planning", "sliders", "Planning"], ["keys", "key", "API keys"],
+  ["models", "cpu", "Local models"], ["phone", "phone", "Phone"], ["updates", "refresh", "Updates"], ["credits", "heart", "Credits"],
+];
+const tabName = (t: Tab) => TABS.find((x) => x[0] === t)![2];
 let tab: Tab = "general", settings: Settings | null = null, ollama: OllamaInfo | null = null, lan: LanStatus | null = null;
+/** The search box's text; while it has some, the page shows the settings that match instead of a tab. */
+let find = "";
+/** A key was added or removed while Settings was open: the Model menu lists the models again when it closes. */
+let keysChanged = false, onKeysClosed: (() => void) | null = null;
 let poll: number | undefined, loadError = "";
 // The library: recommendations, the last search and its results, and the sizes of models opened in the results.
 let recs: Rec[] | null = null, recsError = "", query = "", cap = "tools", results: LibModel[] | null = null, searching = false, searchError = "";
@@ -47,9 +60,11 @@ const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(bytes > 10 * 1024 *
 const count = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
 const dialog = () => $<HTMLDialogElement>("#settingsDialog");
 
-export async function openSettings(which: Tab = tab) {
-  tab = which;
-  dialog().showModal();
+/** Opens Settings at a tab; onKeyChange runs when it closes, if an AI key was added or removed meanwhile. */
+export async function openSettings(which: Tab = tab, onKeyChange?: () => void) {
+  tab = which; find = "";
+  keysChanged = false; onKeysClosed = onKeyChange || null;
+  if (!dialog().open) dialog().showModal();
   render();
   await load();
 }
@@ -69,7 +84,7 @@ async function load() {
 
 async function loadUpdates() {
   updates = await api<UpdateState>("/api/update/state").catch(() => updates);
-  if (tab === "updates") renderUpdates();
+  if (tab === "updates" && !find) renderUpdates();
 }
 
 function loadModelsTab() {
@@ -131,19 +146,126 @@ async function saveTune(part: Partial<Tune>) {
 // ---- Rendering ----
 
 function render() {
-  const nav = (t: Tab, ico: Parameters<typeof icon>[0], label: string) =>
-    `<button type="button" class="set-tab${tab === t ? " on" : ""}" data-tab="${t}">${icon(ico)}<span>${label}</span></button>`;
-  $("#settingsBody").innerHTML = `
-    <nav class="set-nav">${nav("general", "settings", "General")}${nav("planning", "sliders", "Planning")}${nav("models", "cpu", "Local models")}${nav("updates", "refresh", "Updates")}${nav("phone", "phone", "Phone")}${nav("credits", "heart", "Credits")}</nav>
-    <div class="set-main" id="setMain"></div>`;
-  $$<HTMLButtonElement>("#settingsBody [data-tab]").forEach((b) => { b.onclick = () => { tab = b.dataset.tab as Tab; render(); if (tab === "models") loadModelsTab(); if (tab === "updates") loadUpdates(); }; });
-  if (tab === "general") renderGeneral();
+  const nav = ([t, ico, label]: (typeof TABS)[number]) =>
+    `<button type="button" class="set-tab${tab === t && !find ? " on" : ""}" data-tab="${t}">${icon(ico)}<span>${label}</span></button>`;
+  // The search box stays put (and keeps its focus) while the rest redraws.
+  if (!document.querySelector("#setFind")) {
+    $("#settingsBody").innerHTML = `
+      <div class="set-side">
+        <label class="set-find"><span class="set-find-icon">${icon("search")}</span><input id="setFind" type="search" placeholder="Search settings" autocomplete="off" spellcheck="false"></label>
+        <nav class="set-nav" id="setNav"></nav>
+      </div>
+      <div class="set-main" id="setMain"></div>`;
+    const input = $<HTMLInputElement>("#setFind");
+    input.oninput = () => { find = input.value.trim(); render(); };
+    input.onkeydown = (e) => {
+      // Escape empties the search first (and only closes Settings when it's empty); Enter opens the first match.
+      if (e.key === "Escape" && input.value) { e.preventDefault(); input.value = ""; find = ""; render(); }
+      if (e.key === "Enter") document.querySelector<HTMLButtonElement>("#setMain [data-hit]")?.click();
+    };
+  }
+  const input = $<HTMLInputElement>("#setFind");
+  if (input.value.trim() !== find) input.value = find;
+  $("#setNav").innerHTML = TABS.map(nav).join("");
+  $$<HTMLButtonElement>("#setNav [data-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.tab as Tab); });
+  if (find) renderFind();
+  else if (tab === "general") renderGeneral();
   else if (tab === "credits") $("#setMain").innerHTML = creditsHtml();
   else if (loadError) $("#setMain").innerHTML = `<p class="hint">${esc(loadError)}</p>`;
+  else if (tab === "map") renderMap();
   else if (tab === "planning") renderPlanning();
+  else if (tab === "keys") renderKeys();
   else if (tab === "models") renderModels();
   else if (tab === "updates") renderUpdates();
   else renderPhone();
+}
+
+function showTab(t: Tab) {
+  tab = t; find = "";
+  render();
+  $("#setMain").scrollTop = 0;
+  if (tab === "models") loadModelsTab();
+  if (tab === "updates") loadUpdates();
+}
+
+// ---- Search ----
+
+/** more: the rest of the row's words (its choices, "Miles, °F"), searched but not shown. */
+interface Hit { tab: Tab; title: string; hint: string; more?: string }
+
+/** Settings on the tabs that are drawn from live state (models, phone, updates), so the search finds them too. */
+const LIVE_HITS: Hit[] = [
+  { tab: "models", title: "Ollama", hint: "Install or start Ollama, which runs AI models on your own computer." },
+  { tab: "models", title: "Graphics card", hint: "The GPU the models run on, and how much memory it has." },
+  { tab: "models", title: "Installed", hint: "The models on this computer; delete one to free space." },
+  { tab: "models", title: "Recommended", hint: "Models from ollama.com that fit your graphics card." },
+  { tab: "models", title: "Find models", hint: "Search the ollama.com library, or install a model by its exact name." },
+  { tab: "models", title: "Context size", hint: "How much a local model can read and write at once." },
+  { tab: "phone", title: "Phone access", hint: "Use the planner on your phone over Wi-Fi: a link and a QR code." },
+  { tab: "phone", title: "Away from home", hint: "Use the planner anywhere with Tailscale, a free private network." },
+  { tab: "updates", title: "Version", hint: "Which version you have, and what's new." },
+  { tab: "updates", title: "Check now", hint: "Look for a new version of Trip Planner." },
+  { tab: "updates", title: "Check automatically", hint: "Look for updates every hour while the app runs." },
+  { tab: "credits", title: "Credits", hint: "The maps, data and open-source software the planner uses." },
+];
+
+/** Every setting's title and description, read from the tabs' own markup (so the search can't drift from them). */
+function hits(): Hit[] {
+  if (!settings) return LIVE_HITS;
+  const out: Hit[] = [];
+  const read = (t: Tab, html: string) => {
+    const box = document.createElement("div");
+    box.innerHTML = html;
+    // Not the short notes that point to a key on another tab (the key itself is found under API keys).
+    for (const row of $$<HTMLElement>(".set-row:not(.key-note), .kf", box)) {
+      const title = row.querySelector("b")?.textContent?.trim();
+      const hint = row.querySelector(".hint")?.textContent?.trim() || "";
+      const more = [...row.querySelectorAll("button, option, label")].map((e) => e.textContent?.trim()).join(" ");
+      if (title && !out.some((h) => h.tab === t && h.title === title)) out.push({ tab: t, title, hint, more });
+    }
+  };
+  read("general", generalHtml()); read("map", mapHtml()); read("planning", planningHtml(true)); read("keys", keysHtml(true)); read("models", localPlanHtml());
+  return [...out, ...LIVE_HITS];
+}
+
+function renderFind() {
+  const words = find.toLowerCase().split(/\s+/).filter(Boolean);
+  const head = (h: Hit) => `${h.title} ${tabName(h.tab)}${h.tab === "keys" ? " api key token" : ""}`.toLowerCase();
+  const text = (h: Hit) => `${head(h)} ${h.hint} ${h.more || ""}`.toLowerCase();
+  // Matches in the title (or the tab's name: every key for "key") first, then the ones only in the description.
+  const top = (h: Hit) => Number(words.every((w) => head(h).includes(w)));
+  const found = hits().filter((h) => words.every((w) => text(h).includes(w))).sort((a, b) => top(b) - top(a));
+  const mark = (s: string) => {
+    let out = esc(s);
+    for (const w of words) out = out.replace(new RegExp(`(${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/&/g, "&amp;")})`, "gi"), "<mark>$1</mark>");
+    return out;
+  };
+  const snip = (s: string) => {
+    const at = Math.max(0, ...words.map((w) => s.toLowerCase().indexOf(w)));
+    return s.length <= 160 ? s : `${at > 80 ? "…" : ""}${s.slice(Math.max(0, at - 60), Math.max(0, at - 60) + 160)}…`;
+  };
+  $("#setMain").innerHTML = `
+    <h3>${found.length ? `${found.length} setting${found.length > 1 ? "s" : ""} match “${esc(find)}”` : `Nothing matches “${esc(find)}”`}</h3>
+    ${found.length ? `<div class="set-hits">${found.map((h, i) => `<button type="button" class="set-hit" data-hit="${i}">
+        <span class="set-hit-tab">${icon(TABS.find((t) => t[0] === h.tab)![1])} ${esc(tabName(h.tab))}</span>
+        <b>${mark(h.title)}</b>${h.hint ? `<span class="hint">${mark(snip(h.hint))}</span>` : ""}</button>`).join("")}</div>`
+      : `<p class="hint">Try another word: “key”, “miles”, “language”, “photos”, “phone”…</p>`}`;
+  $$<HTMLButtonElement>("#setMain [data-hit]").forEach((b) => { b.onclick = () => jumpTo(found[+b.dataset.hit!]); });
+  $("#setMain").scrollTop = 0;
+}
+
+/** Opens the setting's tab and shows it, lit up for a moment. */
+function jumpTo(h: Hit) {
+  showTab(h.tab);
+  // Some tabs draw after loading: look for the row a few times.
+  let tries = 0;
+  const look = () => {
+    const row = $$<HTMLElement>("#setMain .set-row, #setMain .kf, #setMain .set-card").find((r) => r.querySelector("b")?.textContent?.trim() === h.title);
+    if (!row) { if (++tries < 20) setTimeout(look, 150); return; }
+    row.scrollIntoView({ block: "center", behavior: "smooth" });
+    row.classList.remove("set-flash"); void row.offsetWidth; row.classList.add("set-flash");
+  };
+  look();
 }
 
 /** Saves part of Settings → General; the page redraws in the new units and formats (see prefs.ts). */
@@ -153,13 +275,38 @@ async function saveApp(part: Partial<AppPrefs>) {
   toast("Saved");
 }
 
-/** Units and formats, map defaults, start-up and saving, and what a new trip starts with. */
-function generalCards() {
-  const a = settings?.app || prefs.app;
-  const seg = (k: keyof AppPrefs, v: string | boolean, label: string) => `<button type="button" class="seg${String(a[k]) === String(v) ? " on" : ""}" data-app="${k}" data-v="${v}">${label}</button>`;
+const appSeg = (a: AppPrefs) => (k: keyof AppPrefs, v: string | boolean, label: string) => `<button type="button" class="seg${String(a[k]) === String(v) ? " on" : ""}" data-app="${k}" data-v="${v}">${label}</button>`;
+
+/** General: how it opens and looks, start-up and saving, units and formats, what a new trip starts with, the data. */
+function generalHtml() {
+  const s = settings, th = choice(), a = settings?.app || prefs.app, seg = appSeg(a);
+  const themeSeg = (c: Choice, label: string) => `<button type="button" class="seg${th === c ? " on" : ""}" data-theme-choice="${c}">${label}</button>`;
   const opt = (v: string | number, label: string, now: string | number) => `<option value="${v}"${String(v) === String(now) ? " selected" : ""}>${label}</option>`;
   const t = a.newTrip;
   return `
+    <h3>General</h3>
+    <div class="set-card">
+      <b class="card-title">Look &amp; feel</b>
+      ${s?.packaged && s.appWindow ? `<div class="set-row"><div><b>Opens in</b><div class="hint">How the planner opens when you start it.</div></div>
+        <select id="setWindow"><option value="app">Its own window</option><option value="browser">A browser tab</option></select></div>` : ""}
+      <div class="set-row"><div><b>Theme</b><div class="hint">Light, dark, or following your system${loadError ? " (on this device)" : ""}.</div></div>
+        <div class="segs">${themeSeg("system", "System")}${themeSeg("light", "Light")}${themeSeg("dark", "Dark")}</div></div>
+    </div>
+    ${loadError ? `<p class="hint">The other settings are on the computer the planner runs on.</p>` : `
+    <div class="set-card">
+      <b class="card-title">Start-up &amp; saving</b>
+      <div class="set-row"><div><b>On start</b><div class="hint">Open the trip you had open, or start a new one. With a new one, the trip that was open is kept in Saved trips first.</div></div>
+        <div class="segs">${seg("startWith", "last", "Last trip")}${seg("startWith", "new", "New trip")}</div></div>
+      <div class="set-row"><div><b>Save new plans by themselves</b><div class="hint">After each generated plan, the trip is saved to Saved trips (into its own save if it has one, otherwise under its cities' names).</div></div>
+        <div class="segs">${seg("autoSave", true, "On")}${seg("autoSave", false, "Off")}</div></div>
+      <div class="set-row"><div><b>Keep saved trips up to date by themselves</b><div class="hint">A trip that has a save is written back to it a few seconds after each change, so Save isn't needed and opening another trip can't lose work. The last 40 versions of each save are kept (Your trips → Recover), and a copy of the open trip is kept whenever it's replaced.</div></div>
+        <div class="segs">${seg("liveSave", true, "On")}${seg("liveSave", false, "Off")}</div></div>
+    </div>
+    <div class="set-card">
+      <b class="card-title">Pictures</b>
+      <div class="set-row"><div><b>Pictures of places from Wikimedia</b><div class="hint">For the trip preview: each stop is looked up on Wikipedia (its name and town are sent) and shown with a freely licensed picture where one is found. Your own photos always come first.</div></div>
+        <div class="segs">${seg("placePictures", true, "On")}${seg("placePictures", false, "Off")}</div></div>
+    </div>
     <div class="set-card">
       <b class="card-title">Units &amp; formats</b>
       <div class="set-row"><div><b>Units</b><div class="hint">Distances on the map and in the plan, and temperatures in the forecast.</div></div>
@@ -170,13 +317,38 @@ function generalCards() {
         <div class="segs">${seg("dates", "auto", "System")}${seg("dates", "dmy", "2 Nov")}${seg("dates", "mdy", "Nov 2")}</div></div>
     </div>
     <div class="set-card">
-      <b class="card-title">Map</b>
+      <b class="card-title">New trips start with</b>
+      <div class="set-grid">
+        <label>Travelers<input type="number" min="1" max="30" id="ntTravelers" value="${t.travelers}"></label>
+        <label>Budget per person / day<input type="number" min="0" id="ntBudget" value="${t.dailyBudget}"></label>
+        <label>Currency<select id="ntCurrency">${CURRENCIES.map((c) => opt(c, c, t.currency)).join("")}</select></label>
+        <label>Pace<select id="ntPace">${opt("relaxed (2-3 main stops per day, late starts)", "Relaxed", t.pace)}${opt("balanced (3-5 stops per day)", "Balanced", t.pace)}${opt("packed (as much as possible, early starts)", "Packed", t.pace)}</select></label>
+      </div>
+      <p class="hint">New trips keep the model you plan with.</p>
+    </div>
+    <div class="set-card">
+      <div class="set-row"><div><b>Your data</b><div class="hint">Saved trips, place lists, caches and settings live in this folder on your computer.</div>
+        <code class="set-path">${esc(s?.dataDir || "")}</code></div>
+        <button type="button" class="btn" id="setCopyPath">${icon("copy")} Copy</button></div>
+    </div>`}`;
+}
+
+/** Map: what it starts with, where links open, and the transport lines downloaded for the Layers. */
+function mapHtml() {
+  const a = settings?.app || prefs.app, seg = appSeg(a);
+  return `
+    <h3>Map</h3>
+    <div class="set-card">
+      <b class="card-title">The map</b>
       <div class="set-row"><div><b>Place names</b><div class="hint">What the map starts with: names in the local language and script, or in English. The Layers button on the map changes it until the next start.</div></div>
         <div class="segs">${seg("mapNames", "local", "Local")}${seg("mapNames", "english", "English")}</div></div>
       <div class="set-row"><div><b>Show at start</b><div class="hint">Your saved places and the routes between stops; the boxes on the map turn them on and off for now.</div></div>
         <div class="set-checks"><label class="inline-check"><input type="checkbox" data-app-check="showPlaces"${a.showPlaces ? " checked" : ""}> Places</label><label class="inline-check"><input type="checkbox" data-app-check="showRoutes"${a.showRoutes ? " checked" : ""}> Routes</label></div></div>
       <div class="set-row"><div><b>Maps app</b><div class="hint">Where the links to places and directions open (also in the phone file and the calendar).</div></div>
         <div class="segs">${seg("mapsApp", "google", "Google")}${seg("mapsApp", "apple", "Apple")}${seg("mapsApp", "bing", "Bing")}</div></div>
+    </div>
+    <div class="set-card">
+      <b class="card-title">Transport lines</b>
       <div class="set-row"><div><b>Download transport lines</b><div class="hint">Fetches the bus, tram, metro, train, boat and cable car lines for the map's Layers around your stays and each day's stops, in the background: slowly, one area at a time, and never while a plan is being made. Then they show straight away. Kept for 90 days.</div></div>
         <div class="segs">${seg("linesDownload", true, "On")}${seg("linesDownload", false, "Off")}</div></div>
       <div class="set-row"><div><b>Around each stay</b><div class="hint">How far around where you sleep. Further takes longer and more space (a city's area is up to about half a megabyte).</div></div>
@@ -189,25 +361,6 @@ function generalCards() {
           <div class="lines-dir-btns"><button type="button" class="btn" id="linesDirSet">Move here</button><button type="button" class="link-btn" id="linesDirDefault" hidden>Back to default</button></div>
           <span class="hint" id="linesDirNote"></span>
         </div></div>
-    </div>
-    <div class="set-card">
-      <b class="card-title">Start-up &amp; saving</b>
-      <div class="set-row"><div><b>On start</b><div class="hint">Open the trip you had open, or start a new one. With a new one, the trip that was open is kept in Saved trips first.</div></div>
-        <div class="segs">${seg("startWith", "last", "Last trip")}${seg("startWith", "new", "New trip")}</div></div>
-      <div class="set-row"><div><b>Save new plans by themselves</b><div class="hint">After each generated plan, the trip is saved to Saved trips (into its own save if it has one, otherwise under its cities' names).</div></div>
-        <div class="segs">${seg("autoSave", true, "On")}${seg("autoSave", false, "Off")}</div></div>
-      <div class="set-row"><div><b>Keep saved trips up to date by themselves</b><div class="hint">A trip that has a save is written back to it a few seconds after each change, so Save isn't needed and opening another trip can't lose work. The last 40 versions of each save are kept (Your trips → Recover), and a copy of the open trip is kept whenever it's replaced.</div></div>
-        <div class="segs">${seg("liveSave", true, "On")}${seg("liveSave", false, "Off")}</div></div>
-    </div>
-    <div class="set-card">
-      <b class="card-title">New trips start with</b>
-      <div class="set-grid">
-        <label>Travelers<input type="number" min="1" max="30" id="ntTravelers" value="${t.travelers}"></label>
-        <label>Budget per person / day<input type="number" min="0" id="ntBudget" value="${t.dailyBudget}"></label>
-        <label>Currency<select id="ntCurrency">${CURRENCIES.map((c) => opt(c, c, t.currency)).join("")}</select></label>
-        <label>Pace<select id="ntPace">${opt("relaxed (2-3 main stops per day, late starts)", "Relaxed", t.pace)}${opt("balanced (3-5 stops per day)", "Balanced", t.pace)}${opt("packed (as much as possible, early starts)", "Packed", t.pace)}</select></label>
-      </div>
-      <p class="hint">New trips keep the model you plan with.</p>
     </div>`;
 }
 
@@ -242,16 +395,26 @@ function wireLinesDir() {
 
 /** The download's progress line is followed once (the section is redrawn often; the line is looked up each time). */
 let linesHooked = false;
-function wireGeneral() {
+/** The on/off and choice buttons of General and Map: saved at once, then the tab is drawn again. */
+function wireAppChoices(redraw: () => void) {
   $$<HTMLButtonElement>("#setMain [data-app]").forEach((b) => {
-    b.onclick = async () => { const raw = b.dataset.v!; await saveApp({ [b.dataset.app!]: raw === "true" ? true : raw === "false" ? false : raw } as Partial<AppPrefs>); renderGeneral(); };
+    b.onclick = async () => { const raw = b.dataset.v!; await saveApp({ [b.dataset.app!]: raw === "true" ? true : raw === "false" ? false : raw } as Partial<AppPrefs>); redraw(); };
   });
   $$<HTMLInputElement>("#setMain [data-app-check]").forEach((c) => { c.onchange = () => saveApp({ [c.dataset.appCheck!]: c.checked } as Partial<AppPrefs>); });
+}
+
+function wireGeneral() {
+  wireAppChoices(renderGeneral);
   const trip = () => ({ newTrip: {
     travelers: Number($<HTMLInputElement>("#ntTravelers").value) || 1, dailyBudget: Number($<HTMLInputElement>("#ntBudget").value) || 0,
     currency: $<HTMLSelectElement>("#ntCurrency").value, pace: $<HTMLSelectElement>("#ntPace").value,
   } });
   for (const id of ["#ntTravelers", "#ntBudget", "#ntCurrency", "#ntPace"]) document.querySelector<HTMLElement>(id)?.addEventListener("change", () => saveApp(trip()));
+}
+
+function renderMap() {
+  $("#setMain").innerHTML = mapHtml();
+  wireAppChoices(renderMap);
   // The download's progress, as it goes; with nothing asked yet, just what's on disk.
   const status = () => { const el = document.getElementById("linesStatus"); if (el) el.textContent = downloadText() || el.textContent; };
   if (!linesHooked) { linesHooked = true; onDownloadChange(status); }
@@ -269,25 +432,8 @@ function wireGeneral() {
 }
 
 function renderGeneral() {
-  const s = settings, th = choice();
-  const seg = (c: Choice, label: string) => `<button type="button" class="seg${th === c ? " on" : ""}" data-theme-choice="${c}">${label}</button>`;
-  $("#setMain").innerHTML = `
-    <h3>General</h3>
-    <div class="set-card">
-      ${s?.packaged && s.appWindow ? `<div class="set-row"><div><b>Opens in</b><div class="hint">How the planner opens when you start it.</div></div>
-        <select id="setWindow"><option value="app">Its own window</option><option value="browser">A browser tab</option></select></div>` : ""}
-      <div class="set-row"><div><b>Theme</b><div class="hint">Light, dark, or following your system${loadError ? " (on this device)" : ""}.</div></div>
-        <div class="segs">${seg("system", "System")}${seg("light", "Light")}${seg("dark", "Dark")}</div></div>
-      ${s ? `<div class="set-row"><div><b>API keys</b><div class="hint">Anthropic, OpenAI or OpenRouter, for planning with a paid account.</div></div>
-        <button type="button" class="btn" id="setKeys">${icon("key")} Manage keys</button></div>` : ""}
-    </div>
-    ${loadError ? `<p class="hint">The other settings are on the computer the planner runs on.</p>` : `
-    ${generalCards()}
-    <div class="set-card">
-      <div class="set-row"><div><b>Your data</b><div class="hint">Saved trips, place lists, caches and settings live in this folder on your computer.</div>
-        <code class="set-path">${esc(s?.dataDir || "")}</code></div>
-        <button type="button" class="btn" id="setCopyPath">${icon("copy")} Copy</button></div>
-    </div>`}`;
+  const s = settings;
+  $("#setMain").innerHTML = generalHtml();
   const win = document.querySelector<HTMLSelectElement>("#setWindow");
   if (win && s) {
     win.value = s.window;
@@ -295,18 +441,24 @@ function renderGeneral() {
   }
   $$<HTMLButtonElement>("[data-theme-choice]").forEach((b) => { b.onclick = () => { setTheme(b.dataset.themeChoice as Choice); renderGeneral(); }; });
   if (!loadError) wireGeneral();
-  document.querySelector<HTMLButtonElement>("#setKeys")?.addEventListener("click", () => openKeys(() => { refreshModels(); }));
   document.querySelector<HTMLButtonElement>("#setCopyPath")?.addEventListener("click", () => navigator.clipboard.writeText(s?.dataDir || "").then(() => toast("Copied the folder path")));
 }
 
 const LANGUAGES = ["", "Deutsch", "Français", "Español", "Italiano", "Português", "Nederlands", "Polski", "Čeština", "Svenska", "Dansk", "Norsk", "Suomi", "Türkçe", "日本語", "한국어", "中文"];
 
-function renderPlanning() {
-  const t = settings?.tune;
-  if (!t) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
-  const opt = (v: string | number, label: string, now: string | number) => `<option value="${v}"${String(v) === String(now) ? " selected" : ""}>${label}</option>`;
-  const seg = (k: keyof Tune, v: string, label: string) => `<button type="button" class="seg${String(t[k]) === v ? " on" : ""}" data-tune="${k}" data-v="${v}">${label}</button>`;
-  $("#setMain").innerHTML = `
+const tuneOpt = (v: string | number, label: string, now: string | number) => `<option value="${v}"${String(v) === String(now) ? " selected" : ""}>${label}</option>`;
+const tuneSeg = (t: Tune) => (k: keyof Tune, v: string, label: string) => `<button type="button" class="seg${String(t[k]) === v ? " on" : ""}" data-tune="${k}" data-v="${v}">${label}</button>`;
+/** A saved key, briefly, where a setting depends on it (the full field is under API keys). */
+const keyNote = (k: ServiceKey, name: string) => {
+  const s = settings?.serviceKeys?.[k];
+  return `<div class="set-row key-note"><div><b>${icon("key")} ${name}</b><div class="hint">${s?.set ? `Saved, ending in <code>${esc(s.hint.replace("…", ""))}</code>.` : "Not set yet: until it is, research uses the automatic choice."}</div></div>
+    <button type="button" class="btn${s?.set ? "" : " solid"}" data-to-keys="${k}">${s?.set ? "Change in API keys" : `${icon("key")} Add the key`}</button></div>`;
+};
+
+/** Planning: the plan, and researching online. `all`: every row, whatever is chosen (for the search). */
+function planningHtml(all = false) {
+  const t = settings!.tune, seg = tuneSeg(t), opt = tuneOpt;
+  return `
     <h3>Planning</h3>
     <div class="set-card">
       <b class="card-title">The plan</b>
@@ -321,34 +473,30 @@ function renderPlanning() {
     </div>
     <div class="set-card">
       <b class="card-title">Researching online</b>
-      <div class="set-row"><div><b>Web lookups</b><div class="hint">With "Research online" on: the most searches and page reads per plan. More finds more (opening hours, prices, events) but takes longer.</div></div>
-        <select id="tuneLookups">${[5, 10, 20, 30, 45].map((n) => opt(n, `Up to ${n}`, t.lookups)).join("")}</select></div>
-      <p class="hint set-note">These apply to local models: the planner searches and reads pages for them. Claude and API models use their provider's own web search.</p>
-      <div class="set-row"><div><b>Opening web pages</b><div class="hint">Which pages the model may read. "Found" ones came up in a search or are linked from a page it read; letting it open pages it knows (an official site it remembers) helps when searches come back thin. Pages on this computer or your home network are never opened.</div></div>
-        <select id="tunePages">${opt("found", "Only pages it found", t.pages)}${opt("known", "Found, plus up to 6 it knows", t.pages)}${opt("any", "Any public page", t.pages)}</select></div>
+      <p class="hint set-note">For local models: the planner searches and reads pages for them. Claude and API models use their provider's own web search.</p>
       <div class="set-row"><div><b>Search engine</b><div class="hint">Automatic uses Brave or SearXNG when set up, otherwise DuckDuckGo (which often shows a bot check after a few searches), then Wikipedia and Wikivoyage.</div></div>
         <div class="segs">${seg("search", "auto", "Automatic")}${seg("search", "brave", "Brave")}${seg("search", "searxng", "SearXNG")}</div></div>
-      ${t.search === "brave" ? `<div class="set-row"><div><b>Brave Search API key</b> ${settings?.braveKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Reliable web search; the free plan covers a good number of searches a month. Get a key at <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api${ext()}</a>. It stays on this computer.</div>
-          <div class="set-inline"><input id="braveKey" type="password" autocomplete="off" placeholder="${settings?.braveKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="braveSave">Save</button>${settings?.braveKeySet ? `<button type="button" class="link-btn" id="braveClear">Remove</button>` : ""}</div>
-          ${settings?.braveKeySet ? "" : `<div class="hint set-warn">Until a key is saved, research uses the automatic choice.</div>`}</div></div>` : ""}
-      ${t.search === "searxng" ? `<div class="set-row sx-row"><div><b>${icon("container")} SearXNG on this computer</b><div class="hint">A free search engine that asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. It runs in Docker, only reachable from this computer; with SearXNG chosen here, the planner starts Docker and it whenever they're needed.</div>
+      ${t.search === "brave" || all ? keyNote("brave", "Brave Search API key") : ""}
+      ${t.search === "searxng" || all ? `<div class="set-row sx-row"><div><b>${icon("container")} SearXNG on this computer</b><div class="hint">A free search engine that asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. It runs in Docker, only reachable from this computer; with SearXNG chosen here, the planner starts Docker and it whenever they're needed.</div>
           <div id="sxPanel"></div>
           <details class="sx-own"${settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? " open" : ""}><summary>Use your own SearXNG server instead</summary>
             <div class="hint">On a home server, say: turn on its JSON format, then enter its address, e.g. http://192.168.1.20:8080.</div>
             <div class="set-inline"><input id="searxngUrl" type="url" autocomplete="off" placeholder="http://…" value="${esc(settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? settings.searxngUrl : "")}"><button type="button" class="btn" id="searxngSave">Save</button></div></details></div></div>` : ""}
+      <div class="set-row"><div><b>Web lookups</b><div class="hint">With "Research online" on: the most searches and page reads per plan. More finds more (opening hours, prices, events) but takes longer.</div></div>
+        <select id="tuneLookups">${[5, 10, 20, 30, 45].map((n) => opt(n, `Up to ${n}`, t.lookups)).join("")}</select></div>
+      <div class="set-row"><div><b>Opening web pages</b><div class="hint">Which pages the model may read. "Found" ones came up in a search or are linked from a page it read; letting it open pages it knows (an official site it remembers) helps when searches come back thin. Pages on this computer or your home network are never opened.</div></div>
+        <select id="tunePages">${opt("found", "Only pages it found", t.pages)}${opt("known", "Found, plus up to 6 it knows", t.pages)}${opt("any", "Any public page", t.pages)}</select></div>
     </div>
-    <div class="set-card">
-      <b class="card-title">Place lookups</b>
-      <div class="set-row"><div><b>Geoapify key</b> ${settings?.geoapifyKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Finding hundreds of saved places takes a while with the free public services (Nominatim and Photon). A free Geoapify key adds a third, faster one that works alongside them (3,000 lookups a day). Get one at <a href="https://www.geoapify.com/" target="_blank" rel="noopener">geoapify.com${ext()}</a>. It stays on this computer; without it nothing changes.</div>
-          <div class="set-inline"><input id="geoKey" type="password" autocomplete="off" placeholder="${settings?.geoapifyKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="geoSave">Save</button>${settings?.geoapifyKeySet ? `<button type="button" class="link-btn" id="geoClear">Remove</button>` : ""}</div></div></div>
-    </div>
-    <div class="set-card">
-      <b class="card-title">Photos on the map</b>
-      <div class="set-row"><div><b>Google API key</b> ${settings?.googleKeySet ? `<span class="fit ok">set</span>` : ""}<div class="hint">Shows the photos of a Google Drive folder on the map (Layers → Photos), at the spot each was taken. The folder has to be shared as "Anyone with the link". To get a free key: open the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API page${ext()}</a>, choose or create a project and press <b>Enable</b>; then under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials${ext()}</a> choose <b>Create credentials → API key</b>. The key stays on this computer.</div>
-          <div class="set-inline"><input id="googleKey" type="password" autocomplete="off" placeholder="${settings?.googleKeySet ? "A key is set (paste a new one to replace it)" : "Paste the key"}"><button type="button" class="btn" id="googleSave">Save</button>${settings?.googleKeySet ? `<button type="button" class="link-btn" id="googleClear">Remove</button>` : ""}</div></div></div>
-    </div>
-    <div class="set-card">
-      <b class="card-title">Local models</b>
+    <p class="hint">How local models think, and their context size, are under <button type="button" class="link-btn" data-to-tab="models">Local models</button>. Keys are under <button type="button" class="link-btn" data-to-tab="keys">API keys</button>.</p>`;
+}
+
+/** How local models plan: in one go or step by step, thinking, creativity, how long they stay loaded. */
+function localPlanHtml() {
+  const t = settings?.tune;
+  if (!t) return "";
+  const seg = tuneSeg(t), opt = tuneOpt;
+  return `<div class="set-card">
+      <b class="card-title">How local models plan</b>
       <div class="set-row"><div><b>How they plan</b><div class="hint">In one go: the whole trip in one big request. Step by step: first an outline (which day goes where, with which of your places), then research for exactly those days, then each day on its own with only its places. Experimental: in tests with a 27B model, planning in one go gave better plans; try step by step if one go gets cut off or a smaller model can't manage the whole trip. Re-planning a day and fixes are always one request.</div></div>
         <div class="segs">${seg("localPlan", "whole", "In one go")}${seg("localPlan", "steps", "Step by step (experimental)")}</div></div>
       <div class="set-row"><div><b>Thinking</b><div class="hint">Models that can think first plan more carefully; off answers straight away (much faster, sometimes sloppier).</div></div>
@@ -357,43 +505,117 @@ function renderPlanning() {
         <input type="range" id="tuneTemp" min="0" max="1" step="0.1" value="${t.temperature}" class="set-range"></div>
       <div class="set-row"><div><b>Keep the model loaded</b><div class="hint">After a plan, how long Ollama keeps the model in graphics memory, so the next plan or fix starts at once. Longer keeps the memory busy.</div></div>
         <select id="tuneKeep">${opt("5m", "5 minutes", t.keepAlive)}${opt("30m", "30 minutes", t.keepAlive)}${opt("2h", "2 hours", t.keepAlive)}${opt("-1", "Until Ollama stops", t.keepAlive)}</select></div>
-    </div>
-    <p class="hint">The context size for local models is under Local models.</p>`;
+    </div>`;
+}
+
+/** The tune buttons and lists on the tab that's open (Planning or Local models), saved at once. */
+function wireTune(redraw: () => void) {
   $$<HTMLButtonElement>("#setMain [data-tune]").forEach((b) => {
-    b.onclick = async () => { const k = b.dataset.tune as keyof Tune, raw = b.dataset.v!; await saveTune({ [k]: k === "fixRounds" ? Number(raw) : raw }); renderPlanning(); };
+    b.onclick = async () => { const k = b.dataset.tune as keyof Tune, raw = b.dataset.v!; await saveTune({ [k]: k === "fixRounds" ? Number(raw) : raw }); redraw(); };
   });
-  $<HTMLSelectElement>("#tuneLang").onchange = (e) => saveTune({ language: (e.target as HTMLSelectElement).value });
-  $<HTMLSelectElement>("#tuneLookups").onchange = (e) => saveTune({ lookups: Number((e.target as HTMLSelectElement).value) });
-  $<HTMLSelectElement>("#tunePages").onchange = (e) => saveTune({ pages: (e.target as HTMLSelectElement).value });
-  const saveSearch = async (part: { braveKey?: string; searxngUrl?: string; geoapifyKey?: string; googleKey?: string }, done: string) => {
-    settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify(part) });
-    toast(done); renderPlanning();
-  };
-  document.querySelector<HTMLButtonElement>("#braveSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#braveKey").value.trim(); if (k) saveSearch({ braveKey: k }, "Saved the Brave key"); });
-  document.querySelector<HTMLButtonElement>("#braveClear")?.addEventListener("click", () => saveSearch({ braveKey: "" }, "Removed the Brave key"));
-  document.querySelector<HTMLButtonElement>("#geoSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#geoKey").value.trim(); if (k) saveSearch({ geoapifyKey: k }, "Saved the Geoapify key"); });
-  document.querySelector<HTMLButtonElement>("#geoClear")?.addEventListener("click", () => saveSearch({ geoapifyKey: "" }, "Removed the Geoapify key"));
-  document.querySelector<HTMLButtonElement>("#googleSave")?.addEventListener("click", () => { const k = $<HTMLInputElement>("#googleKey").value.trim(); if (k) saveSearch({ googleKey: k }, "Saved the Google key"); });
-  document.querySelector<HTMLButtonElement>("#googleClear")?.addEventListener("click", () => saveSearch({ googleKey: "" }, "Removed the Google key"));
-  document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", () => saveSearch({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }, "Saved the SearXNG address"));
+  const on = (id: string, f: (v: string) => Partial<Tune>) => { const el = document.querySelector<HTMLSelectElement>(id); if (el) el.onchange = () => saveTune(f(el.value)); };
+  on("#tuneLang", (v) => ({ language: v }));
+  on("#tuneLookups", (v) => ({ lookups: Number(v) }));
+  on("#tunePages", (v) => ({ pages: v }));
+  on("#tuneKeep", (v) => ({ keepAlive: v }));
+  const temp = document.querySelector<HTMLInputElement>("#tuneTemp");
+  if (temp) {
+    temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };
+    temp.onchange = () => saveTune({ temperature: Number(temp.value) });
+  }
+  // Links to other tabs ("Add the key" goes to API keys and lights the key up).
+  $$<HTMLButtonElement>("#setMain [data-to-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.toTab as Tab); });
+  $$<HTMLButtonElement>("#setMain [data-to-keys]").forEach((b) => {
+    b.onclick = () => jumpTo({ tab: "keys", title: SERVICE_KEYS.find((k) => k.id === b.dataset.toKeys)!.name, hint: "" });
+  });
+}
+
+function renderPlanning() {
+  if (!settings?.tune) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
+  $("#setMain").innerHTML = planningHtml();
+  wireTune(renderPlanning);
+  document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", async () => {
+    settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }) });
+    toast("Saved the SearXNG address"); renderPlanning();
+  });
   // SearXNG chosen: its steps, and Docker and it started if they're set up but stopped (unless research goes to
   // another SearXNG server).
   const sx = document.querySelector<HTMLElement>("#sxPanel");
   if (sx) mountSearxng(sx, {
     autoStart: !settings?.searxngUrl || settings.searxngUrl === SEARXNG_LOCAL,
-    onChange: async () => { settings = await api<Settings>("/api/settings"); if (tab === "planning") renderPlanning(); },
+    onChange: async () => { settings = await api<Settings>("/api/settings"); if (tab === "planning" && !find) renderPlanning(); },
   });
-  $<HTMLSelectElement>("#tuneKeep").onchange = (e) => saveTune({ keepAlive: (e.target as HTMLSelectElement).value });
-  const temp = $<HTMLInputElement>("#tuneTemp");
-  temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };
-  temp.onchange = () => saveTune({ temperature: Number(temp.value) });
+}
+
+// ---- API keys ----
+
+const SERVICE_KEYS: { id: ServiceKey; field: "braveKey" | "geoapifyKey" | "googleKey"; name: string; env: string; url: string; note: string }[] = [
+  { id: "brave", field: "braveKey", name: "Brave Search API key", env: "BRAVE_API_KEY", url: "https://brave.com/search/api/",
+    note: "Reliable web search for local models' research; the free plan covers a good number of searches a month. Used when Planning → Search engine is Brave (or Automatic)." },
+  { id: "geoapify", field: "geoapifyKey", name: "Geoapify key", env: "GEOAPIFY_API_KEY", url: "https://www.geoapify.com/",
+    note: "Finding hundreds of saved places takes a while with the free public services (Nominatim and Photon). A free Geoapify key adds a third, faster one that works alongside them (3,000 lookups a day). Without it nothing changes." },
+  { id: "google", field: "googleKey", name: "Google API key", env: "GOOGLE_API_KEY", url: "https://console.cloud.google.com/apis/credentials",
+    note: `Shows the photos of a Google Drive folder on the map (Layers → Photos), at the spot each was taken; the folder has to be shared as "Anyone with the link". To get a free key: open the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API page${ext()}</a>, choose or create a project and press <b>Enable</b>; then under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials${ext()}</a> choose <b>Create credentials → API key</b>.` },
+];
+/** A Brave, Geoapify or Google key field; `brief`: without the long explanation (the quick-start guide has its own). */
+export const serviceKeyField = (k: ServiceKey, status?: KeyStatus, brief = false) => {
+  const f = SERVICE_KEYS.find((x) => x.id === k)!;
+  return keyFieldHtml({ id: f.id, name: f.name, status, env: f.env, url: f.url, note: brief ? "" : f.note });
+};
+/** Saves (or with "" removes) a Brave, Geoapify or Google key; what's set now comes back. */
+export async function saveServiceKey(k: ServiceKey, key: string) {
+  const f = SERVICE_KEYS.find((x) => x.id === k)!;
+  const s = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ [f.field]: key }) });
+  toast(key ? `Saved the ${f.name}` : `Removed the ${f.name}`);
+  return s;
+}
+
+/** API keys: the AI providers' (planning with a paid account), then web search, place lookups and photos. `all`: with
+ *  the AI providers' rows written out (for the search; on the page they're filled in after loading). */
+function keysHtml(all = false) {
+  const k = settings?.serviceKeys;
+  const ai = all ? `<div class="kf"><b>Anthropic</b><div class="hint">Claude models with Anthropic's web search.</div></div><div class="kf"><b>OpenAI</b><div class="hint">GPT models with OpenAI's web search.</div></div><div class="kf"><b>OpenRouter</b><div class="hint">One key for many labs' models.</div></div>` : "";
+  return `
+    <h3>API keys</h3>
+    <p class="hint set-intro">Every key in one place. All are optional and stay on this computer: kept in the planner's folder, only ever sent to their own service, and never in saves or exports.</p>
+    <div class="set-card kf-card">
+      <b class="card-title">${icon("sparkles")} AI models</b>
+      <p class="hint">Plan with cloud models that search the web themselves. You pay the provider per use (a long trip with research on a top model can cost a euro or two; smaller models much less; the cost is shown after each plan where known).</p>
+      <div id="aiKeys" class="kf-list">${ai || `<p class="hint">Loading…</p>`}</div>
+    </div>
+    <div class="set-card kf-card">
+      <b class="card-title">${icon("search")} Web search</b>
+      <div class="kf-list kf-svc">${serviceKeyField("brave", k?.brave)}</div>
+    </div>
+    <div class="set-card kf-card">
+      <b class="card-title">${icon("pin")} Finding places</b>
+      <div class="kf-list kf-svc">${serviceKeyField("geoapify", k?.geoapify)}</div>
+    </div>
+    <div class="set-card kf-card">
+      <b class="card-title">${icon("images")} Photos on the map</b>
+      <div class="kf-list kf-svc">${serviceKeyField("google", k?.google)}</div>
+    </div>`;
+}
+
+function renderKeys() {
+  if (!settings) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
+  $("#setMain").innerHTML = keysHtml();
+  renderKeyRows($("#aiKeys"), () => { keysChanged = true; refreshModels(); });
+  wireServiceKeys($("#setMain"), (s) => { settings = s; if (tab === "keys" && !find) renderKeys(); });
+}
+
+/** Wires the Brave, Geoapify and Google key fields inside `root` (each in a .kf-svc box); after() gets the settings
+ *  once one is saved or removed. */
+export function wireServiceKeys(root: ParentNode, after: (s: Settings) => void) {
+  const names = Object.fromEntries(SERVICE_KEYS.map((k) => [k.id, k.name.replace(/ (API )?key$/, "")]));
+  for (const box of $$(".kf-svc", root)) wireKeyFields(box, async (id, key) => after(await saveServiceKey(id as ServiceKey, key)), names);
 }
 
 const time = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
 function renderUpdates() {
   const main = document.querySelector<HTMLElement>("#setMain");
-  if (!main || tab !== "updates") return;
+  if (!main || tab !== "updates" || find) return;
   const u = updates, info = u?.info, s = settings;
   const waiting = !!u && u.waitUntil > Date.now();
   const status = !u ? `<span class="dot"></span> Loading…`
@@ -473,7 +695,7 @@ It downloads Ollama (a large download) and installs it for your user.`)) return;
 
 function renderModels() {
   const main = document.querySelector<HTMLElement>("#setMain");
-  if (!main || tab !== "models") return;
+  if (!main || tab !== "models" || find) return;
   const o = ollama, gpu = o?.gpu || null;
   const installed = new Set((o?.models || []).map((m) => m.name));
   const base = (name: string) => name.split(":")[0];
@@ -590,6 +812,7 @@ function renderModels() {
       <div class="pull-other"><input id="setPullName" placeholder="Or a model by its exact name, e.g. llama3.3:70b or hf.co/user/repo"><button type="button" class="btn" id="setPullGo" ${o?.running ? "" : "disabled"}>${icon("download")} Install</button></div>
       ${others.map((p) => `<div class="model-row"><div class="m-name"><code>${esc(p.name)}</code></div><div class="m-act">${action(p.name)}</div></div>`).join("")}
     </div>
+    ${localPlanHtml()}
     <div class="set-card">
       <div class="set-row"><div><b>Context size</b><div class="hint">How much a local model can read and write at once. Automatic sizes it for each trip; a fixed size uses that much every time (more needs more graphics memory, and the model's own limit still applies).</div></div>
         <select id="setCtx">${ctxOpts.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></div>
@@ -598,6 +821,7 @@ function renderModels() {
   const ctx = $<HTMLSelectElement>("#setCtx");
   ctx.value = String(settings?.numCtx || 0);
   ctx.onchange = async () => { settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ numCtx: +ctx.value }) }); toast("Saved: used for the next plan"); };
+  wireTune(renderModels);
   const startPull = async (name: string) => {
     try { await api("/api/ollama/pull", { method: "POST", body: JSON.stringify({ name }) }); await loadOllama(); }
     catch (e) { toast((e as Error).message); }
@@ -715,4 +939,8 @@ function awayCard(l: LanStatus) {
 
 export function initSettings() {
   $("#settingsBtn").onclick = () => openSettings();
+  dialog().addEventListener("close", () => {
+    if (keysChanged) onKeysClosed?.();
+    keysChanged = false; onKeysClosed = null;
+  });
 }

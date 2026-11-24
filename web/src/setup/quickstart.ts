@@ -7,7 +7,7 @@ import { $, api, esc } from "../core/dom";
 import { ext, icon } from "../core/icons";
 import { renderKeyRows } from "../generate/keys";
 import { refreshModels } from "../generate/models";
-import { openSettings } from "../settings/settings";
+import { type ServiceKey, openSettings, serviceKeyField, wireServiceKeys } from "../settings/settings";
 import { type SearxngInfo, mountSearxng } from "../settings/searxng-panel";
 import { SEARXNG_LOCAL } from "../settings/searxng-local";
 
@@ -24,6 +24,8 @@ interface Setup {
 
 type Mark = "ok" | "warn" | "off" | "wait";
 let setup: Setup | null = null, loading = false, error = "";
+/** The Brave, Geoapify and Google keys: set or not, and their last characters. */
+let serviceKeys: Partial<Record<ServiceKey, KeyStatus>> = {};
 /** The sections slide in and the ticks pop once, when the first answers arrive after opening (not on every redraw). */
 let animated = false;
 const dialog = () => $<HTMLDialogElement>("#quickstartDialog");
@@ -90,7 +92,7 @@ function modelSection(s: Setup) {
     <article class="qs-opt wide${anyKey(s) ? " on" : ""}">
       <div class="qs-opt-head"><span class="qs-opt-icon">${icon("key")}</span><b>An API key</b>${chip(anyKey(s) ? "ok" : "off", anyKey(s) ? "Set" : "None yet")}</div>
       <p>Pay per use with Anthropic, OpenAI or OpenRouter (a long trip with research on a top model costs a euro or two). Keys stay on this computer.</p>
-      <div id="qsKeys" class="qs-keys"></div><div class="counts" id="qsKeyStatus"></div>
+      <div id="qsKeys" class="qs-keys"></div>
     </article>
   </div>`;
   return section(1, "A model to plan with", "The planner needs at least one. You can switch between them any time in the Model menu.",
@@ -99,9 +101,7 @@ function modelSection(s: Setup) {
 
 function researchSection(s: Setup) {
   const seg = (v: Setup["search"], label: string) => `<button type="button" class="seg${s.search === v ? " on" : ""}" data-search="${v}">${label}</button>`;
-  const detail = s.search === "brave" ? `<div class="qs-brave">
-      <p>${s.braveKey ? chip("ok", "Brave key saved") : "Reliable web search; the free plan covers a good number of searches a month."} Get a key at <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api${ext()}</a>.</p>
-      <div class="set-inline"><input id="qsBrave" type="password" autocomplete="off" placeholder="${s.braveKey ? "A key is set (paste a new one to replace it)" : "Paste the Brave Search API key"}"><button type="button" class="btn solid" id="qsBraveSave">Save</button></div></div>`
+  const detail = s.search === "brave" ? `<div class="qs-brave qs-keys kf-svc">${serviceKeyField("brave", serviceKeys.brave, true)}</div>`
     : s.search === "searxng" ? (s.searxngUrl && s.searxngUrl !== SEARXNG_LOCAL
       ? `<p class="hint">${chip("ok", "Your own server")} Research goes to <code>${esc(s.searxngUrl)}</code>. To run one on this computer instead, change it in Settings → Planning.</p>`
       : `<div id="qsSearxng"></div>`)
@@ -117,8 +117,13 @@ function extrasSection() {
   const row = (ico: Parameters<typeof icon>[0], title: string, text: string, tab: string, label: string) => `<div class="qs-link">
     <span class="qs-opt-icon">${icon(ico)}</span><div><b>${title}</b><p>${text}</p></div><button type="button" class="btn" data-settings="${tab}">${label}</button></div>`;
   return section(3, "Make it yours", "Optional, and all in Settings.", `<span class="qs-badge">Optional</span>`, `<div class="qs-links">
-    ${row("map", "Units, maps app and new trips", "Kilometres or miles, 24 or 12-hour times, Google, Apple or Bing Maps for links, and what a new trip starts with.", "general", "General")}
-    ${row("sliders", "How plans are made", "The plan's language, how much each stop says, how many real places and web lookups, how local models think.", "planning", "Planning")}
+    <div class="qs-link qs-link-key"><span class="qs-opt-icon">${icon("images")}</span><div><b>Your photos on the map</b><p>With a free Google key, the photos of a Google Drive folder (shared as "Anyone with the link") show on the map at the spot each was taken. Settings → API keys says how to get one.</p>
+      <div class="qs-keys kf-svc">${serviceKeyField("google", serviceKeys.google, true)}</div></div></div>
+    <div class="qs-link qs-link-key"><span class="qs-opt-icon">${icon("pin")}</span><div><b>Faster place lookups</b><p>A free Geoapify key finds hundreds of saved places much faster (3,000 lookups a day).</p>
+      <div class="qs-keys kf-svc">${serviceKeyField("geoapify", serviceKeys.geoapify, true)}</div></div></div>
+    ${row("map", "Units and formats", "Kilometres or miles, 24 or 12-hour times, and what a new trip starts with.", "general", "General")}
+    ${row("layers", "The map", "Local or English place names, Google, Apple or Bing Maps for links, transport lines for the Layers.", "map", "Map")}
+    ${row("sliders", "How plans are made", "The plan's language, how much each stop says, how many real places and web lookups.", "planning", "Planning")}
     ${row("phone", "Your phone", "Use the planner on your phone over Wi-Fi, or anywhere with Tailscale.", "phone", "Phone")}
     ${row("refresh", "Updates", "The app looks for new versions by itself and updates in a click.", "updates", "Updates")}
   </div>`);
@@ -142,16 +147,11 @@ function render() {
   if (!setup) return;
   if (!animated) { animated = true; body.classList.add("intro"); setTimeout(() => body.classList.remove("intro"), 2400); }
   const s = setup;
-  renderKeyRows($("#qsKeys"), $("#qsKeyStatus"), () => { refreshModels(); check(); }, s.keys);
+  renderKeyRows($("#qsKeys"), () => { refreshModels(); check(); }, s.keys);
+  wireServiceKeys(body, (now) => { serviceKeys = now.serviceKeys || {}; check(); });
   body.querySelectorAll<HTMLButtonElement>("[data-settings]").forEach((b) => { b.onclick = () => toSettings(b.dataset.settings as Parameters<typeof openSettings>[0]); });
   body.querySelectorAll<HTMLButtonElement>("[data-search]").forEach((b) => { b.onclick = () => setSearch(b.dataset.search as Setup["search"]); });
   body.querySelectorAll<HTMLButtonElement>("[data-go]").forEach((b) => { b.onclick = () => go(b.dataset.go!); });
-  document.querySelector<HTMLButtonElement>("#qsBraveSave")?.addEventListener("click", async () => {
-    const key = $<HTMLInputElement>("#qsBrave").value.trim();
-    if (!key) return;
-    await api("/api/settings", { method: "POST", body: JSON.stringify({ braveKey: key }) });
-    check();
-  });
   const sx = document.querySelector<HTMLElement>("#qsSearxng");
   if (sx) mountSearxng(sx, { autoStart: true, compact: true, onChange: () => check() });
 }
@@ -181,7 +181,10 @@ async function check() {
   loading = true; error = "";
   const btn = document.querySelector<HTMLButtonElement>("#qsRecheck");
   btn?.classList.add("spinning");
-  try { setup = await api<Setup>("/api/setup"); }
+  try {
+    const [now, settings] = await Promise.all([api<Setup>("/api/setup"), api<{ serviceKeys?: Record<ServiceKey, KeyStatus> }>("/api/settings").catch(() => null)]);
+    setup = now; serviceKeys = settings?.serviceKeys || {};
+  }
   catch (e) { error = `Couldn't check this computer: ${(e as Error).message}`; }
   loading = false; btn?.classList.remove("spinning");
   if (dialog().open) render();

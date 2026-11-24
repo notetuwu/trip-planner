@@ -16,6 +16,8 @@ export interface AppPrefs {
   autoSave: boolean;
   /** A saved trip that's open is kept up to date by itself, a few seconds after each change. */
   liveSave: boolean;
+  /** Look the plan's places up on Wikimedia for the trip preview's pictures (off unless switched on). */
+  placePictures: boolean;
   /** Download the map's transport lines around the trip's stays in the background, and how far around each (km). */
   linesDownload: boolean;
   linesRadius: number;
@@ -23,7 +25,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true,
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
   linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };

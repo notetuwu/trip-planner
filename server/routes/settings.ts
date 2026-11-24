@@ -1,15 +1,23 @@
 // GET /api/settings: how the app opens (own window or browser tab), the local models' context size, where the data
 // is. POST: change them (and open the app the new way now, if asked). /api/lan: phone access, its status, start/stop.
+import type { KeyStatus } from "../../shared/types";
 import { PACKAGED, PORT, ROOT, VERSION } from "../config";
 import { lanStatus, startLan, stopLan } from "../lan";
 import { appBrowser, openWindow } from "../launcher";
 import { newToken, readSettings, writeSettings } from "../settings";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 
-/** The settings as the page sees them (never the phone link's secret, nor the Brave key: only whether it's set). */
+/** Whether a service key is set, where from, and its last characters (never the key itself). */
+const keyView = (saved: string | undefined, envName: string): KeyStatus => {
+  const env = (process.env[envName] || "").trim(), key = env || (saved || "").trim();
+  return { set: !!key, source: env ? "env" : key ? "file" : "", hint: key ? `…${key.slice(-4)}` : "" };
+};
+
+/** The settings as the page sees them (never the phone link's secret, nor the keys: only whether they're set). */
 const view = () => {
   const { lanToken: _secret, braveKey, geoapifyKey, googleKey, ...s } = readSettings();
-  return { ...s, braveKeySet: !!(braveKey || process.env.BRAVE_API_KEY), geoapifyKeySet: !!(geoapifyKey || process.env.GEOAPIFY_API_KEY), googleKeySet: !!(googleKey || process.env.GOOGLE_API_KEY), packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
+  const serviceKeys = { brave: keyView(braveKey, "BRAVE_API_KEY"), geoapify: keyView(geoapifyKey, "GEOAPIFY_API_KEY"), google: keyView(googleKey, "GOOGLE_API_KEY") };
+  return { ...s, serviceKeys, braveKeySet: serviceKeys.brave.set, geoapifyKeySet: serviceKeys.geoapify.set, googleKeySet: serviceKeys.google.set, packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
 };
 
 export async function handleSettings(req: Req, res: Res) {

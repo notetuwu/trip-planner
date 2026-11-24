@@ -305,3 +305,15 @@ export interface TripCard {
   bookings: number;
   mustSees: number;
 }
+
+/** A freely licensed picture of a place, from Wikimedia (POST /api/place-pictures). */
+export interface PlacePicture {
+  /** The picture, 1280 px wide. */
+  url: string;
+  /** Its own page, with the full licence. */
+  page: string;
+  /** The article it illustrates. */
+  title: string;
+  author: string;
+  licence: string;
+}

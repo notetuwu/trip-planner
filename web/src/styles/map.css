@@ -126,6 +126,8 @@
 .leaflet-popup-content .pop-actions button.on { background: var(--ok); border-color: var(--ok); color: #fff; }
 .leaflet-container { cursor: crosshair; }
 .leaflet-interactive, .leaflet-marker-icon { cursor: pointer; }
+/* Chromium (the desktop app) draws a focus box around a clicked SVG line or area. */
+.leaflet-container path.leaflet-interactive:focus { outline: none; }
 .add-form { display: grid; gap: 6px; }
 .add-form b { margin: 0; }
 .add-form input, .add-form select { padding: 6px 8px; font-size: 13px; }
@@ -286,3 +288,44 @@
 .photo-play::after { content: ""; position: absolute; left: 8px; top: 5px; border-left: 8px solid #fff; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .ph-play { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 4px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .ph-play i { width: 0; height: 0; margin-left: 2px; border-left: 7px solid #fff; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+
+/* The trip preview. */
+.preview-dialog { width: min(1180px, 97vw); max-width: none; padding: 0; }
+.preview-dialog[open] { display: flex; flex-direction: column; height: min(920px, 92vh); }
+.preview-dialog .pl-head { flex-wrap: wrap; gap: 10px; }
+.preview-dialog .pl-head .hint { flex: 1; margin: 0; min-width: 0; }
+.preview-dialog .pl-head .ph-check { margin: 0; white-space: nowrap; }
+.preview-dialog .pl-head > .btn { display: inline-flex; align-items: center; gap: 6px; }
+.pv-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 20px 24px; }
+.pv-body button { all: unset; box-sizing: border-box; position: relative; display: block; overflow: hidden; cursor: pointer; border-radius: 10px; background: rgba(128, 128, 128, .16); }
+.pv-body button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.pv-body button img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s; }
+.pv-body button:hover img { filter: brightness(1.08); }
+.pv-body button b { position: absolute; right: 6px; top: 6px; padding: 2px 7px; border-radius: 10px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 12px; }
+.pv-body button span { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 7px; background: linear-gradient(transparent, rgba(0, 0, 0, .75)); color: #fff; font-size: 13px; font-weight: 600; line-height: 1.25; }
+.pv-body button span:empty { display: none; }
+.pv-hero { position: relative; display: grid; grid-template-columns: 2fr 1fr 1fr; grid-template-rows: 170px 170px; gap: 6px; border-radius: 14px; overflow: hidden; background: #26313a; }
+.pv-hero .pv-hi { border-radius: 0; }
+.pv-hero .pv-hi:first-child { grid-row: span 2; }
+.pv-hero.n0 { grid-template-rows: 90px 90px; }
+.pv-hero.n1 .pv-hi:first-child { grid-column: 1 / -1; }
+.pv-hero.n2 .pv-hi:nth-child(2) { grid-column: span 2; grid-row: span 2; }
+.pv-hero.n3 .pv-hi:nth-child(n+2) { grid-column: span 2; }
+.pv-hero.n4 .pv-hi:nth-child(2) { grid-column: span 2; }
+.pv-title { position: absolute; left: 0; right: 0; bottom: 0; padding: 50px 20px 16px; background: linear-gradient(transparent, rgba(0, 0, 0, .8)); color: #fff; pointer-events: none; }
+.pv-title h3 { margin: 0 0 2px; font-size: 28px; color: #fff; }
+.pv-title p { margin: 0; font-size: 13.5px; }
+.pv-offer { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(128, 128, 128, .35); border-radius: 12px; }
+.pv-offer p { flex: 1 1 380px; margin: 0; font-size: 13px; }
+.pv-body .pv-offer button { all: revert; }
+.pv-stay > h4 { margin: 22px 0 6px; font-size: 19px; }
+.pv-day h5 { margin: 12px 0 8px; font-size: 13.5px; }
+.pv-day h5 span { font-weight: 400; opacity: .75; }
+.pv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.pv-body .pv-card { aspect-ratio: 4 / 3; }
+.pv-extras { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.pv-body .pv-extra { width: 96px; height: 72px; }
+.pv-credits { margin-top: 24px; font-size: 12px; }
+.pv-credits summary { cursor: pointer; }
+.pv-credits ul { padding-left: 18px; }
+@media (max-width: 700px) { .pv-hero { grid-template-rows: 120px 120px; } .pv-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }

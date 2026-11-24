@@ -84,6 +84,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
         ${events ? sectionBtn("events", "party", "Holidays", String(events), `Holidays & events: ${it.holidaysAndEvents!.map((h) => h.name.replace(/\s*\(.*$/, "")).join(", ").slice(0, 200)}`) : ""}
         ${ahead.total ? sectionBtn("ahead", "ticket", "Book ahead", ahead.left ? `${ahead.left} left` : "done", `Book ahead: ${ahead.left ? `${ahead.left} of ${ahead.total} still to book` : `all ${ahead.total} booked`} (stays, transport and tickets)`) : ""}
         ${sectionBtn("packing", "luggage", "Packing", `${pack.done}/${pack.all}`, `Packing list: ${pack.done} of ${pack.all} packed`)}
+        <button type="button" data-preview title="The trip in pictures: highlights, day by day, and a slideshow">${icon("play")}<span class="tb-label">Preview</span></button>
         <button type="button" data-photos title="The photos and videos of this trip: choose the folders, see them by day">${icon("images")}<span class="tb-label">Photos</span></button>
       </div>
     </div>

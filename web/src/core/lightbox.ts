@@ -26,22 +26,31 @@ export interface ViewItem {
   embed?: string;
   /** How far to turn the small picture in the strip (a preview stored unrotated), in degrees. */
   turn?: number;
+  /** What the link to `open` says (otherwise Google Drive). */
+  openLabel?: string;
+  /** A title card of a slideshow: big words over the picture (which may be none: `src` ""). */
+  title?: { head: string; sub: string };
 }
 
 /** A picture on its own, with "Search with Google". */
 export function showPicture(src: string) { open([{ src }], 0, true); }
 
-/** Pictures to go through (arrows, keys, the strip along the bottom), starting at `index`. */
-export function showGallery(items: ViewItem[], index = 0) { open(items, index, false); }
+/** How long the slideshow stays on a picture, and on a title card (milliseconds). */
+const SLIDE = 4500, CARD = 3500;
 
-function open(items: ViewItem[], start: number, search: boolean) {
+/** Pictures to go through (arrows, keys, the strip along the bottom), starting at `index`. */
+export function showGallery(items: ViewItem[], index = 0, opts: { play?: boolean } = {}) { open(items, index, false, !!opts.play); }
+
+function open(items: ViewItem[], start: number, search: boolean, play = false) {
   const many = items.length > 1;
   const box = document.createElement("div");
   box.className = `lightbox${many ? " gallery" : ""}`;
   box.innerHTML = `<div class="lightbox-stage"><img alt="" draggable="false" referrerpolicy="no-referrer"><video controls playsinline preload="metadata" hidden></video><iframe class="lightbox-embed" allow="autoplay; fullscreen" allowfullscreen hidden></iframe></div>
+    <div class="lightbox-title" hidden><h2></h2><p></p></div>
     <button type="button" class="lightbox-x" title="Close (Esc)">${icon("x")}</button>
     ${many ? `<button type="button" class="lightbox-nav prev" title="Previous (←)">${icon("chevronDown")}</button><button type="button" class="lightbox-nav next" title="Next (→)">${icon("chevronDown")}</button>` : ""}
     <div class="lightbox-bar"><a class="btn" data-open target="_blank" rel="noopener" hidden>Open in Google Drive</a>${search ? `<button type="button" class="btn solid" data-lens>${icon("search")} Search with Google</button>` : ""}
+      ${many ? `<button type="button" class="btn" data-play></button>` : ""}
       ${many || !search ? `<span class="lightbox-count" data-count></span>` : ""}<span class="hint" data-hint>${search ? "Scroll to zoom · drag to move" : ""}</span></div>
     ${many ? `<div class="lightbox-strip">${items.map((it, i) => `<button type="button" data-i="${i}"${it.video ? ' class="vid"' : ""}><img src="${esc(it.thumb || it.src)}" alt="" loading="lazy" draggable="false" referrerpolicy="no-referrer"${it.turn ? ` style="transform:rotate(${it.turn}deg)"` : ""}></button>`).join("")}</div>` : ""}`;
   const img = box.querySelector<HTMLImageElement>(".lightbox-stage img")!, hint = box.querySelector<HTMLElement>("[data-hint]")!;
@@ -52,8 +61,41 @@ function open(items: ViewItem[], start: number, search: boolean) {
   let scale = 1, x = 0, y = 0, dragged = false;
   const apply = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${scale})`; img.classList.toggle("zoomed", scale > 1); };
   const reset = () => { scale = 1; x = 0; y = 0; apply(); };
+
+  // The slideshow: each picture stays a while (drifting closer), a video until it ends; it stops at the last one, and
+  // when a picture is zoomed into.
+  let playing = play && many, timer: number | undefined;
+  const title = box.querySelector<HTMLElement>(".lightbox-title")!, playBtn = box.querySelector<HTMLButtonElement>("[data-play]");
+  const playLabel = () => { if (playBtn) playBtn.innerHTML = playing ? `${icon("pause")} Pause` : `${icon("play")} Play`; };
+  const advance = () => { if (cur < items.length - 1) go(cur + 1); else setPlaying(false); };
+  /** Starts the time of the picture on screen (once it's there). */
+  const wait = () => {
+    clearTimeout(timer);
+    img.classList.remove("drift");
+    const it = items[cur];
+    if (!playing || !it) return;
+    if (it.video) { if (!vid.hidden) { vid.play().catch(() => { timer = window.setTimeout(advance, SLIDE); }); } else timer = window.setTimeout(advance, SLIDE * 2); return; }
+    const ms = it.title ? CARD : SLIDE;
+    // (Reading the width restarts the drift for this picture.)
+    void img.offsetWidth;
+    img.style.setProperty("--drift", `${ms + 600}ms`);
+    img.classList.add("drift");
+    timer = window.setTimeout(advance, ms);
+  };
+  const setPlaying = (yes: boolean) => {
+    // Pressed on the last picture: from the beginning.
+    if (yes && cur === items.length - 1) { playing = true; playLabel(); go(0); return; }
+    playing = yes; playLabel();
+    if (!yes) { clearTimeout(timer); img.classList.remove("drift"); } else wait();
+  };
+  playBtn?.addEventListener("click", () => setPlaying(!playing));
+  playLabel();
+  vid.addEventListener("ended", () => { if (playing) advance(); });
+  img.addEventListener("load", () => { if (items[cur] && img.getAttribute("src") === items[cur].src) wait(); });
+  img.addEventListener("error", () => { if (playing) { clearTimeout(timer); timer = window.setTimeout(advance, 600); } });
   const zoomAt = (cx: number, cy: number, next: number) => {
     next = Math.min(8, Math.max(1, next));
+    if (next > 1 && playing) setPlaying(false);
     const r = img.getBoundingClientRect();
     // Keep the point under the pointer where it is.
     const px = cx - (r.left + r.width / 2), py = cy - (r.top + r.height / 2);
@@ -83,14 +125,25 @@ function open(items: ViewItem[], start: number, search: boolean) {
     cur = i;
     const it = items[i];
     reset();
+    clearTimeout(timer);
+    img.classList.remove("drift");
+    title.hidden = !it.title;
+    box.classList.toggle("card", !!it.title);
+    if (it.title) { title.querySelector("h2")!.textContent = it.title.head; title.querySelector("p")!.textContent = it.title.sub; }
     // A video plays in its own player (with a frame from it until it starts); a picture is zoomed and moved.
     vid.pause();
     frame.hidden = true; frame.removeAttribute("src");
-    img.hidden = !!it.video; vid.hidden = !it.video;
+    img.hidden = !!it.video || !it.src; vid.hidden = !it.video;
     openLink.hidden = !it.open;
-    if (it.open) openLink.href = it.open;
+    if (it.open) { openLink.href = it.open; openLink.textContent = it.openLabel || "Open in Google Drive"; }
     if (it.video) { vid.poster = it.src; vid.src = it.video; hint.textContent = "Video"; }
-    else { vid.removeAttribute("src"); vid.load(); img.src = it.src; }
+    else {
+      vid.removeAttribute("src"); vid.load();
+      // The same picture as before (a title card's, then the stop's own) loads no second time: its time starts now.
+      const same = img.getAttribute("src") === it.src;
+      if (it.src) img.src = it.src; else img.removeAttribute("src");
+      if (!it.src || (same && img.complete)) wait();
+    }
     if (count) count.textContent = [many ? `${i + 1} / ${items.length}` : "", it.caption].filter(Boolean).join(" · ");
     if (strip) {
       strip.querySelectorAll<HTMLElement>("button.on").forEach((b) => b.classList.remove("on"));
@@ -106,7 +159,8 @@ function open(items: ViewItem[], start: number, search: boolean) {
       // Not every original can be shown (a phone's HEIC, say): the picture already on screen stays.
       big.onerror = () => { if (cur === i) hint.textContent = "Scroll to zoom · drag to move"; };
       big.src = it.full;
-    } else if (!search && !it.video) hint.textContent = "Scroll to zoom · drag to move";
+    } else if (!search && !it.video) hint.textContent = it.title ? "" : "Scroll to zoom · drag to move";
+    if (it.video) wait();
   };
   strip?.addEventListener("click", (e) => { const b = (e.target as HTMLElement).closest<HTMLElement>("button[data-i]"); if (b) go(+b.dataset.i!); });
   box.querySelector(".lightbox-nav.prev")?.addEventListener("click", () => go(cur - 1));
@@ -117,14 +171,17 @@ function open(items: ViewItem[], start: number, search: boolean) {
   vid.onerror = () => {
     if (!vid.getAttribute("src")) return;
     const it = items[cur];
+    if (playing) { clearTimeout(timer); timer = window.setTimeout(advance, SLIDE * 2); }
     if (it?.embed) { vid.hidden = true; frame.hidden = false; frame.src = it.embed; hint.textContent = "This browser can't play the file itself: shown through Google Drive."; }
     else { hint.textContent = it?.open ? "This browser can't play this video. Open it in Google Drive." : "This browser can't play this video (phones' HEVC often can't)."; openLink.hidden = !it?.open; }
   };
-  const close = () => { vid.pause(); box.classList.remove("show"); setTimeout(() => box.remove(), 180); document.removeEventListener("keydown", onKey); };
+  const close = () => { playing = false; clearTimeout(timer); vid.pause(); box.classList.remove("show"); setTimeout(() => box.remove(), 180); document.removeEventListener("keydown", onKey); };
   const onKey = (e: KeyboardEvent) => {
     // The player's own arrow keys seek in the video.
     if (e.target instanceof HTMLVideoElement && (e.key === "ArrowLeft" || e.key === "ArrowRight")) return;
-    if (e.key === "Escape") close();
+    // (Escape closes the viewer only, not the window it's open over.)
+    if (e.key === "Escape") { e.preventDefault(); close(); }
+    else if (many && e.key === " " && !(e.target instanceof HTMLVideoElement)) { e.preventDefault(); setPlaying(!playing); }
     else if (many && e.key === "ArrowLeft") go(cur - 1);
     else if (many && e.key === "ArrowRight") go(cur + 1);
   };

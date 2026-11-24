@@ -9,6 +9,7 @@ import { routeBatch } from "./geo/routing";
 import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, routeStops, setLinesDir } from "./geo/transit-lines";
 import { localThumb } from "./geo/local-photos";
 import { folderPhotos, photoFile } from "./geo/photos";
+import { placePictures } from "./geo/wiki-photos";
 import { pickFolder } from "./util/pick-folder";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
@@ -103,6 +104,17 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "GET" && path === "/api/photos/thumb") {
       try { await localThumb(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); }
       catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); }
+    }
+    // Pictures of places from Wikimedia, for the trip preview; only when switched on.
+    else if (method === "POST" && path === "/api/place-pictures") {
+      if (!readSettings().app.placePictures) sendJson(res, 403, { error: "Pictures from Wikimedia are switched off" });
+      else {
+        const body = await readJson(req);
+        const places = (Array.isArray(body?.places) ? body.places : []).slice(0, 20)
+          .filter((p: any) => p && typeof p.name === "string" && p.name.trim() && Number.isFinite(p.lat) && Number.isFinite(p.lng))
+          .map((p: any) => ({ id: String(p.id), name: p.name.slice(0, 120), city: String(p.city || "").slice(0, 80), cc: String(p.cc || "").slice(0, 2), lat: p.lat, lng: p.lng }));
+        sendJson(res, 200, await busyWhile(() => placePictures(places, !!body?.quick)));
+      }
     }
     // The system's folder dialog on this computer, to pick the folder with the photos ("" when it's closed without one).
     else if (method === "POST" && path === "/api/pick-folder") {

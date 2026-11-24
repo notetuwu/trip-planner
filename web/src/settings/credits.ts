@@ -39,6 +39,12 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
     ],
   },
   {
+    title: "Pictures", ico: "images", intro: "The trip preview's pictures of places, when switched on.",
+    items: [
+      { name: "Wikimedia Commons", url: "https://commons.wikimedia.org", what: "Pictures of places, found through their Wikipedia articles; each shows its author and licence", licence: "Free licences, per picture" },
+    ],
+  },
+  {
     title: "Money", ico: "wallet", intro: "Costs in your currency, and what the drives cost in fuel.",
     items: [
       { name: "Frankfurter", url: "https://frankfurter.dev", what: "Exchange rates (the European Central Bank's reference rates)" },

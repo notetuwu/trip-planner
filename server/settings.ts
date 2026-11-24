@@ -49,6 +49,8 @@ export interface AppPrefs {
   autoSave: boolean;
   /** A saved trip that's open is kept up to date by itself, a few seconds after each change (Settings → General). */
   liveSave: boolean;
+  /** Look the plan's places up on Wikimedia for the trip preview's pictures (off unless switched on). */
+  placePictures: boolean;
   /** Download the transport lines (for the map's Layers) around the trip's stays in the background, and how far around
    *  each stay (km). */
   linesDownload: boolean;
@@ -58,7 +60,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true,
+  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
   linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
@@ -78,6 +80,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     startWith: pick("startWith", (v) => v === "last" || v === "new"),
     autoSave: pick("autoSave", (v) => typeof v === "boolean"),
     liveSave: pick("liveSave", (v) => typeof v === "boolean"),
+    placePictures: pick("placePictures", (v) => typeof v === "boolean"),
     linesDownload: pick("linesDownload", (v) => typeof v === "boolean"),
     linesRadius: Number(pick("linesRadius", (v) => [5, 10, 20].includes(Number(v)))),
     newTrip: {
