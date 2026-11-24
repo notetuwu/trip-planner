@@ -1,10 +1,15 @@
 // Fuel prices for countries the EU's Weekly Oil Bulletin doesn't cover. Two have an official figure that's read live:
-// Switzerland (the Federal Statistical Office's monthly average, shown on fuel-prices.eu) and the United States (the
-// Energy Information Administration's weekly average, public domain). The rest come from a short table of rough
-// typical prices, marked approximate: enough for an estimate, and the traveler can type the real price in.
+// Switzerland (the Federal Statistical Office's monthly average, shown on fuel-prices.eu), the United States (the
+// Energy Information Administration's weekly average, public domain), Canada (Natural Resources Canada's weekly
+// averages) and Australia (the Australian Institute of Petroleum's weekly petrol average). The rest come from a short
+// table of rough typical prices, marked as estimates: enough for a budget, and the traveler can type the real price in.
 import { USER_AGENT } from "../config";
 
-export interface ExtraPrice { petrol?: number; diesel?: number; week?: string; kind: "official" | "approx"; source: string }
+/** `dieselApprox`: the petrol figure is official but the diesel one is a rough typical price. */
+export interface ExtraPrice { petrol?: number; diesel?: number; week?: string; kind: "official" | "approx"; source: string; dieselApprox?: boolean }
+
+/** How many of each currency one euro buys. */
+type Rates = Record<string, number>;
 
 /** Rough typical pump prices in euros a litre (petrol, diesel), around late 2025: not live figures. */
 const APPROX_AS_OF = "2025";
@@ -56,11 +61,39 @@ export function parseUs(t: string, usdPerEur: number): ExtraPrice | null {
   return { petrol: Math.round(petrol * 1000) / 1000, diesel: Math.round(diesel * 1000) / 1000, week: p.date, kind: "official", source: `US Energy Information Administration, week of ${p.date}` };
 }
 
+/** Canada: the national weekly average in cents a litre (CAD) from the last row of Natural Resources Canada's table. */
+export function parseNrcan(t: string, cadPerEur: number): { eur: number; date: string } | null {
+  const rows = [...t.matchAll(/(\d{4}-\d\d-\d\d) ([\d.]+) /g)];
+  const last = rows.at(-1);
+  const eur = last && cadPerEur > 0 ? +last[2] / 100 / cadPerEur : NaN;
+  return last && sane(eur) ? { eur: Math.round(eur * 1000) / 1000, date: last[1] } : null;
+}
+
+/** Australia: the national average petrol price in cents a litre (AUD) from the AIP's pump-price table. */
+export function parseAip(t: string, audPerEur: number): { eur: number; week: string } | null {
+  const m = t.match(/Week ending \w+, (\d+)\w* (\w+ \d{4})[\s\S]{0,200}?National Average ([\d.]+)/);
+  const eur = m && audPerEur > 0 ? +m[3] / 100 / audPerEur : NaN;
+  return m && sane(eur) ? { eur: Math.round(eur * 1000) / 1000, week: `${m[1]} ${m[2]}` } : null;
+}
+
+const NRCAN = (product: number) => `https://www2.nrcan.gc.ca/eneene/sources/pripri/prices_bycity_e.cfm?productID=${product}&locationID=66,8,39,17&frequency=W`;
+
 /** A price for a country outside the Bulletin: the official one where it's read live, else the rough table, else null. */
-export async function extraFuel(cc: string, usdPerEur: number): Promise<ExtraPrice | null> {
+export async function extraFuel(cc: string, rates: Rates): Promise<ExtraPrice | null> {
   try {
     if (cc === "CH") { const p = parseSwiss(await text("https://www.fuel-prices.eu/Switzerland/")); if (p) return p; }
-    if (cc === "US") { const p = parseUs(await text("https://www.eia.gov/petroleum/gasdiesel/"), usdPerEur); if (p) return p; }
+    if (cc === "US") { const p = parseUs(await text("https://www.eia.gov/petroleum/gasdiesel/"), rates.USD); if (p) return p; }
+    if (cc === "CA") {
+      const [p, d] = await Promise.all([text(NRCAN(1)), text(NRCAN(5))]);
+      const petrol = parseNrcan(p, rates.CAD), diesel = parseNrcan(d, rates.CAD);
+      if (petrol && diesel) return { petrol: petrol.eur, diesel: diesel.eur, week: petrol.date, kind: "official", source: `Natural Resources Canada, week ending ${petrol.date}` };
+    }
+    if (cc === "AU") {
+      // The page loads its table with this request; only the petrol average is published that way.
+      const res = await fetch("https://aip.com.au/wp-admin/admin-ajax.php", { method: "POST", headers: { "User-Agent": USER_AGENT, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ action: "load_fuel_table", post_id: "1196", current_url: "https://aip.com.au/pricing/pump-prices/" }), signal: AbortSignal.timeout(15_000) });
+      const p = parseAip((await res.text()).replace(/<[^>]+>/g, " ").replace(/\s+/g, " "), rates.AUD);
+      if (p && APPROX.AU) return { petrol: p.eur, diesel: APPROX.AU[1], week: p.week, kind: "official", dieselApprox: true, source: `Australian Institute of Petroleum, week ending ${p.week} (petrol; diesel is a rough typical price)` };
+    }
   } catch { /* the rough table below */ }
   const a = APPROX[cc];
   return a ? { petrol: a[0], diesel: a[1], kind: "approx", source: `rough typical price, ${APPROX_AS_OF}` } : null;

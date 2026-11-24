@@ -9,7 +9,7 @@ import { diskCache } from "../util/disk-cache";
 import { extraFuel } from "./fuel-extra";
 
 /** `kind`: the weekly bulletin (no kind), an official figure read live, or a rough typical price; `source` says where. */
-export interface FuelPrice { petrol?: number; diesel?: number; week?: string; kind?: "official" | "approx"; source?: string }
+export interface FuelPrice { petrol?: number; diesel?: number; week?: string; kind?: "official" | "approx"; source?: string; dieselApprox?: boolean }
 const DAY = 24 * 3600e3;
 const fuelCache = diskCache<{ at: number; price: FuelPrice | null }>("fuel.json");
 const fxCache = diskCache<{ at: number; rates: Record<string, number> }>("fx.json");
@@ -41,7 +41,7 @@ async function fuelFor(cc: string): Promise<FuelPrice | null> {
 async function extraFor(cc: string): Promise<FuelPrice | null> {
   const key = `x:${cc}`, hit = fuelCache.data[key];
   if (hit && Date.now() - hit.at < DAY) return hit.price;
-  const price = await extraFuel(cc, (await eurRates()).USD);
+  const price = await extraFuel(cc, await eurRates());
   if (price?.kind === "official") { fuelCache.data[key] = { at: Date.now(), price }; fuelCache.save(); }
   return price;
 }

@@ -43,6 +43,8 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
     items: [
       { name: "Frankfurter", url: "https://frankfurter.dev", what: "Exchange rates (the European Central Bank's reference rates)" },
       { name: "fuel-prices.eu", url: "https://www.fuel-prices.eu", what: "Weekly fuel prices per country, and Switzerland's monthly average (Swiss Federal Statistical Office), for the fuel estimate", licence: "CC BY 4.0" },
+      { name: "Natural Resources Canada", url: "https://natural-resources.canada.ca/energy-sources-distribution/fuel-prices", what: "Weekly Canadian fuel prices, for the fuel estimate", licence: "Open Government Licence – Canada" },
+      { name: "Australian Institute of Petroleum", url: "https://aip.com.au/pricing/pump-prices/", what: "Weekly Australian petrol prices, for the fuel estimate" },
       { name: "US Energy Information Administration", url: "https://www.eia.gov/petroleum/gasdiesel/", what: "Weekly US fuel prices, for the fuel estimate", licence: "Public domain" },
     ],
   },
