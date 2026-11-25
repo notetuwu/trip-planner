@@ -24,11 +24,12 @@ import { keepVersion, keepVersionText, stable } from "../util/versions";
 import { merge3 } from "../../shared/merge";
 import * as g from "./google";
 import * as store from "./store";
+import * as box from "./dropbox";
 import { fsCheck } from "../util/fs-browse";
 import { KIND_LABEL, folderKind } from "../util/folder-kind";
 
 /** Whether there's anything to sync with now: Drive (signed in), or a folder on this computer. */
-const canSync = () => store.driveReady() || state().folders.some((f) => store.isLocalId(f.id));
+const canSync = () => store.driveReady() || state().folders.some((f) => store.ready(store.providerOf(f.id)));
 
 const STATE_FILE = () => path.join(g.SYNC_DIR, "state.json");
 const CACHE_DIR = () => path.join(g.SYNC_DIR, "cache");
@@ -220,7 +221,8 @@ async function content(id: string, md5: string): Promise<{ text: string; md5: st
 }
 
 async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
-  if (store.isDriveFolder(f.id) && !store.driveReady()) { f.error = "Sign in with Google (Settings → Sync) to sync with this folder."; return null; }
+  const p = store.providerOf(f.id);
+  if (!store.ready(p)) { f.error = store.notReady(p); return null; }
   try {
     const info = await store.folderInfo(f.id);
     f.name = info.name; f.canWrite = info.canWrite;
@@ -243,9 +245,14 @@ async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
 
 /** Adds a sync folder: a Google Drive folder (its link or id) or a folder on this computer ("local:<path>", or the path). */
 export async function addFolder(link: string, label: string): Promise<SyncFolder> {
-  const id = folderIdOf(link);
-  if (!id) throw new Error("That isn't a Google Drive folder link or a folder on this computer.");
-  if (store.isDriveFolder(id) && !store.driveReady()) throw new Error("Sign in with Google first (Settings → Sync) to use a Google Drive folder.");
+  const text = String(link || "").trim();
+  // Dropbox: a folder from the browser (one shared with you is added to your Dropbox), or its shared link.
+  const dropboxLink = /dropbox\.com\/(scl\/fo|sh)\//i.test(text);
+  if ((text.startsWith(box.PREFIX) || dropboxLink) && !box.ready()) throw new Error("Sign in to Dropbox first (Settings → Sync) to use a Dropbox folder.");
+  const id = text.startsWith(box.PREFIX) ? await box.resolveFolder(text) : dropboxLink ? await box.folderFromLink(text) : folderIdOf(text);
+  if (!id) throw new Error("That isn't a Google Drive or Dropbox folder link, or a folder on this computer.");
+  const p = store.providerOf(id);
+  if (!store.ready(p)) throw new Error(p === "drive" ? "Sign in with Google first (Settings → Sync) to use a Google Drive folder." : store.notReady(p));
   return putFolder(await store.folderInfo(id), label);
 }
 export async function newFolder(name: string, label: string): Promise<SyncFolder> {
@@ -457,7 +464,8 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
  *  the page puts into the open trip. */
 export async function setTripSync(name: string, folderIds: string[], mode?: "edit" | "view"): Promise<{ sync: TripShare | null }> {
   const me = store.me();
-  if (folderIds.some((id) => store.isDriveFolder(id)) && !store.driveReady()) throw new Error("Sign in with Google first (Settings → Sync) to sync with a Google Drive folder.");
+  const off = folderIds.map((id) => store.providerOf(id)).find((p) => !store.ready(p));
+  if (off) throw new Error(off === "drive" ? "Sign in with Google first (Settings → Sync) to sync with a Google Drive folder." : store.notReady(off));
   const local = readLocal(name);
   if (!local) throw new Error("Save the trip first.");
   const s = state();
@@ -560,6 +568,7 @@ export function status(): SyncStatus {
   }
   return {
     configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids,
+    dropbox: { configured: !!box.appKey(), keyFrom: box.keyFrom(), ...box.account(), ...box.signInState() },
     folders: s.folders, trips, running: !!current, lastRun, error: lastError, notices: s.notices,
   };
 }

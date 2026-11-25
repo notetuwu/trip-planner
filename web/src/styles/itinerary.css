@@ -98,9 +98,15 @@ label.check.off { opacity: .5; }
 @media (max-width: 640px) { .book-ahead li { grid-template-columns: 1fr; } }
 @media print { .redo, .book-ahead input { display: none; } }
 .fix-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 14px 0 4px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); color: var(--ink); font-size: 13px; }
-.fix-bar > svg.i { color: var(--warn); font-size: 16px; }
-.fix-bar span { flex: 1; min-width: 180px; }
-.fix-bar .btn { height: 30px; }
+.fix-msg { flex: 1 1 200px; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.fix-msg > svg.i { flex: none; color: var(--warn); font-size: 16px; }
+.fix-acts { display: flex; gap: 8px; margin-left: auto; }
+.fix-bar .btn { height: 30px; white-space: nowrap; }
+/* Too narrow for all on one line (a phone): the buttons go under the message and share its width. */
+@media (max-width: 560px) {
+  .fix-acts { flex: 1 1 100%; margin-left: 0; }
+  .fix-acts .btn { flex: 1; justify-content: center; }
+}
 .dup-warn { flex-wrap: wrap; }
 .dup-warn a { color: inherit; text-decoration: underline; }
 .dup-warn .link-btn { font-size: 12px; }
@@ -231,6 +237,19 @@ label.check.off { opacity: .5; }
 .rv-tray .btn { margin-left: auto; height: 30px; }
 @media (max-width: 760px) {
   .rv-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-  .rv-side { border-right: 0; border-bottom: 1px solid var(--line); max-height: 30vh; }
   .rv-days { grid-template-columns: 1fr; }
+  /* The problems as a strip of cards to swipe through (the day they're on gets the rest of the screen). */
+  .rv-side { border-right: 0; border-bottom: 1px solid var(--line); max-height: none; overflow-x: auto; overflow-y: hidden; padding: 10px 12px; display: flex; gap: 8px; scrollbar-width: none; }
+  .rv-side::-webkit-scrollbar { display: none; }
+  .rv-side h3 { display: none; }
+  .rv-side ul { display: flex; gap: 8px; }
+  .rv-issue { width: auto; min-width: 180px; max-width: 240px; flex: none; border-color: var(--line); background: var(--panel); }
+  .rv-issue b, .rv-issue > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-none { margin: 4px; white-space: nowrap; }
+  .rv-main { padding: 12px; }
+  /* The whole screen. */
+  .review-dialog { width: 100%; max-width: none; margin: 0; border-radius: 0; border: 0; }
+  .review-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
 }
+
+.review-dialog:focus { outline: none; }

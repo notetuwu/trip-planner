@@ -404,10 +404,21 @@ button.refine:hover { border-color: var(--accent); }
 .places-dialog { width: min(1480px, 97vw); max-width: none; padding: 0; }
 .places-dialog[open] { display: flex; flex-direction: column; height: 92vh; }
 .pl-head { display: flex; align-items: center; gap: 12px; padding: 16px 16px 12px 22px; border-bottom: 1px solid var(--line); }
-.pl-head h2 { margin: 0; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; gap: 8px; align-items: center; }
+.pl-head h2 { margin: 0; font-size: 17px; text-transform: none; letter-spacing: 0; color: var(--ink); display: inline-flex; gap: 8px; align-items: center; justify-content: flex-start; }
 .pl-head h2 .i { color: var(--accent); }
 .pl-head #listMeta { flex: 1; margin: 0; }
 .pl-head form { margin: 0; }
+/* A phone: the title and Close on one line, the explanation under them across the full width (beside the title it was
+   squeezed into a column of a few words a line). */
+@media (max-width: 640px) {
+  .pl-head { flex-wrap: wrap; row-gap: 6px; padding: 12px 12px 10px 16px; }
+  .pl-head h2 { flex: 1; min-width: 0; font-size: 16px; }
+  .pl-head > .hint, .pl-head > #listMeta { order: 3; flex: 1 1 100% !important; font-size: 12.5px; }
+  /* Whatever else a header has (Preview's checkboxes and Play): on the lines under the title, not squeezed beside it. */
+  .pl-head > h2 { order: 1; }
+  .pl-head > form { order: 2; margin-left: auto; }
+  .pl-head > :not(h2):not(form) { order: 3; }
+}
 .pl-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(250px, 300px) minmax(0, 1fr); }
 .pl-lists, .pl-places { min-height: 0; overflow: auto; padding: 16px 20px 20px; }
 .pl-lists { border-right: 1px solid var(--line); }
@@ -656,8 +667,10 @@ button.refine:hover { border-color: var(--accent); }
 .cp-status { margin-top: 6px; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cp-notice { align-self: stretch; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12px; color: var(--muted); padding: 2px 2px; }
 .chat-panel .rc-input { padding: 12px; }
-/* The message box floats over the end of the conversation, like Claude Code's: the log scrolls on underneath it. */
-.chat-panel { position: relative; }
+/* The message box floats over the end of the conversation, like Claude Code's: the log scrolls on underneath it. (The
+   panel is its frame: as a column it's positioned here; as a drawer or on a phone it's fixed, which frames it too. Only
+   as a column, so this doesn't undo those, which put the chat into the page on a phone.) */
+@media (min-width: 1180px) { .chat-panel { position: relative; } }
 .chat-panel .rc-input { position: absolute; left: 0; right: 0; bottom: 0; z-index: 5; border-top: 0; padding: 18px 12px 12px; pointer-events: none;
   background: linear-gradient(to bottom, transparent, var(--panel) 34%); }
 .chat-panel .rc-input > * { pointer-events: auto; }
@@ -754,7 +767,9 @@ button.refine:hover { border-color: var(--accent); }
 /* Phones. */
 @media (max-width: 760px) {
   /* Windows fill the screen. */
-  .keys-dialog { width: 100vw; max-width: 100vw; max-height: 100dvh; margin: 0; border-radius: 0; border: 0; }
+  .keys-dialog { width: 100%; max-width: 100%; max-height: 100dvh; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
+  /* Except the small questions (rename, delete…): a card in the middle, as on a computer. */
+  .keys-dialog.ask-dialog { width: calc(100% - 32px); max-width: 440px; margin: auto; border-radius: 14px; border: 1px solid var(--line); }
   .places-dialog[open], .section-dialog[open], .costs-dialog[open] { height: 100dvh; display: flex; flex-direction: column; }
   .section-body, .costs-body { max-height: none; flex: 1; min-height: 0; }
   .pl-head { padding: 12px 10px 10px 16px; }
@@ -879,8 +894,22 @@ button.refine:hover { border-color: var(--accent); }
 .fit svg.i { vertical-align: -1px; }
 .key-note .btn { white-space: nowrap; }
 @media (max-width: 680px) {
+  /* The tabs in a row that scrolls sideways, inside the screen (a column's content may not widen it: it pushed the whole
+     window off the side of a phone). The search above them, the tab below. */
+  .set-body { grid-template-rows: auto minmax(0, 1fr); }
+  .set-side, .set-main { min-width: 0; }
   .set-side { border-right: 0; border-bottom: 1px solid var(--line); }
-  .set-side .set-nav { flex-direction: row; overflow-x: auto; }
+  .set-side .set-nav { flex: none; flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 4px 10px 8px; scrollbar-width: none; }
+  .set-side .set-nav::-webkit-scrollbar { display: none; }
+  .set-tab { flex: none; white-space: nowrap; padding: 7px 11px; }
+  .set-find { margin: 0 12px 6px !important; }
+  .set-main { padding: 14px 14px 24px; }
+  .settings-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; padding-top: 12px; box-sizing: border-box; overflow: hidden; }
+  .settings-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
+  .settings-dialog > h2 { padding: 0 16px; }
+  .settings-dialog .keys-close { top: 6px; right: 8px; }
+  .set-row > div:first-child { min-width: 0; flex: 1 1 200px; }
+  .set-main .sync-add input, .set-main .secret-field { flex: 1 1 100%; }
 }
 
 /* A key field: a saved key is a row of dots with its last characters, Change and Remove; Change opens the field. */

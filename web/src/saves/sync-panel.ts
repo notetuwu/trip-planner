@@ -35,7 +35,7 @@ export function openSyncPanel(name: string, done: () => void) {
       const on = ticked.has(f.id), can = on || (canEdit && f.canWrite);
       const why = on ? "" : !f.canWrite ? "you can only view this folder" : !canEdit ? "this trip is view only for you" : f.error || "";
       return `<label class="sync-folder${can ? "" : " off"}"><input type="checkbox" data-folder="${esc(f.id)}"${on ? " checked" : ""}${can ? "" : " disabled"}>
-        <span><b>${icon(f.id.startsWith("local:") ? "monitor" : "drive")} ${esc(f.label)}</b>${f.id.startsWith("local:") ? ` <span class="hint">(on this computer)</span>` : f.name && f.name !== f.label ? ` <span class="hint">(${esc(f.name)} in Drive)</span>` : ""}${why ? `<span class="hint">${esc(why)}</span>` : ""}</span></label>`;
+        <span><b>${icon(f.id.startsWith("local:") ? "monitor" : f.id.startsWith("dropbox:") ? "box" : "drive")} ${esc(f.label)}</b>${f.id.startsWith("local:") ? ` <span class="hint">(${esc(f.kind || "on this computer")})</span>` : f.name && f.name !== f.label ? ` <span class="hint">(${esc(f.name)} in ${f.id.startsWith("dropbox:") ? "Dropbox" : "Drive"})</span>` : ""}${why ? `<span class="hint">${esc(why)}</span>` : ""}</span></label>`;
     }).join("");
     const who = share && !mine
       ? `<p class="hint">${icon("users")} Shared by <b>${esc(ownerName(share))}</b>: ${share.mode === "view" ? "view only. Changes you make here stay on this computer and are replaced when they update it; make your own copy to change it." : "everyone with it can change it."}</p>`

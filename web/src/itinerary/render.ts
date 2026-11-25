@@ -266,9 +266,10 @@ function showFixBar(it: Itinerary) {
   ].filter(Boolean);
   const n = problems.length;
   bar.className = "fix-bar";
-  bar.innerHTML = `${icon("warn")}<span>${esc(parts.join(" · "))}</span>
-    <button class="btn" data-review>Review</button>
-    <button class="btn" data-fix title="The planner replaces each problem stop in one go; for duplicates the later day keeps the place">Fix ${n > 1 ? "all" : "it"}</button>`;
+  // The message, then the two buttons as one group (on a narrow screen they go under it together, side by side).
+  bar.innerHTML = `<span class="fix-msg">${icon("warn")}<span>${esc(parts.join(" · "))}</span></span>
+    <span class="fix-acts"><button class="btn" data-review>Review</button>
+    <button class="btn solid" data-fix title="The planner replaces each problem stop in one go; for duplicates the later day keeps the place">Fix ${n > 1 ? "all" : "it"}</button></span>`;
   bar.querySelector<HTMLButtonElement>("[data-review]")!.onclick = () => openReview();
   bar.querySelector<HTMLButtonElement>("[data-fix]")!.onclick = () => {
     // Stops just before opening time move by themselves; the model gets only what's left.

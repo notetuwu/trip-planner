@@ -451,3 +451,18 @@ textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
 .drive-paste-btn:hover { color: var(--ink); }
 .sync-folder-row b { display: inline-flex; align-items: center; gap: 6px; }
 .sync-folder-row .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }
+
+/* Your trips on a phone: the buttons wrap under the title (they ran off the screen); the table keeps the trip, when, and
+   its buttons (the other columns are on the cards). */
+@media (max-width: 640px) {
+  .trips-head { padding: 12px 12px 10px 16px; }
+  .trips-acts { flex-wrap: wrap; gap: 6px; }
+  .trips-acts .btn { height: 34px; padding: 0 10px; font-size: 13px; }
+  .trips-acts form { margin-left: auto; }
+  .trips-tools { padding: 0 12px 12px; }
+  .trips-table th:not(:nth-child(-n+3)):not(:last-child), .trips-table td:not(:nth-child(-n+3)):not(:last-child), .trips-table th:first-child, .trips-table td:first-child { display: none; }
+  .trips-table td, .trips-table th { padding: 8px 6px; }
+  .trips-table td:nth-child(2) { padding-left: 12px; }
+  .tt-name { flex-wrap: wrap; row-gap: 3px; }
+  .tt-tools .icon-btn { width: 28px; }
+}

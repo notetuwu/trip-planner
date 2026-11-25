@@ -128,7 +128,7 @@ function dayHtml(it: Itinerary, d: number, list: Issue[], shown: Issue | undefin
   const stops = day.items.map((x, xi) => {
     const mine = shown?.stops.some((s) => s[0] === d && s[1] === xi), other = !mine && here(xi).length > 0;
     const others = mine && shown?.kind === "dup" ? shown.stops.filter((s) => s[0] !== d) : [];
-    const note = mine ? (shown!.kind === "dup" ? `Also on ${others.map((s) => esc(dayLabel(it, s[0]))).join(", ")}` : esc(shown!.note)) : other ? esc(here(xi).map((i) => (i.kind === "dup" ? "A duplicate" : i.note)).join(" ")) : "";
+    const note = mine ? (shown!.kind === "dup" ? `Also on ${others.map((s) => esc(dayLabel(it, s[0]))).join(", ")}` : esc(shown!.note)) : other ? esc([...new Set(here(xi).map((i) => (i.kind === "dup" ? "A duplicate" : i.note)))].join(" · ")) : ""; // (each kind once: a stop in three duplicates is "A duplicate", not three times)
     return `<li class="${mine ? "rv-hit" : other ? "rv-other" : ""}">
       <span class="rv-time">${esc(x.time || "")}</span>
       <span class="rv-place">${esc(x.place)}${note ? `<span class="rv-note">${icon("warn")} ${note}</span>` : ""}</span>
@@ -251,7 +251,11 @@ export function openReview(stop?: Stop) {
     const i = issues(it).find((x) => x.stops.some((s) => s[0] === stop[0] && s[1] === stop[1]));
     if (i) picked = pick(i);
   }
-  if (!d.open) d.showModal();
+  if (!d.open) {
+    d.showModal();
+    // Not on Close (a ring around it on a phone, and Enter would close it): the window itself has the focus.
+    d.tabIndex = -1; d.focus();
+  }
   render();
 }
 

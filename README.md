@@ -35,7 +35,7 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 **Take it with you**
 - **For phone:** one offline HTML file with the map and the days. **Calendar:** every stop in your calendar (.ics). **Print / PDF:** a clean printout with a cover page.
 - **Share a trip:** export it as a file that someone else imports.
-- **Sync through Google Drive:** sign in with Google (Settings → Sync), add Drive folders (your own, or ones friends shared with you), and pick per trip which folders it syncs to. Your other computers and your friends get the trip in Your trips, and changes go both ways. Per trip, whoever shared it decides whether others can edit or only view it. Changed in two places at once? Nothing is overwritten: you pick which version to keep. Nothing is ever deleted in Drive. Uses your own free Google client ID, set up once with the guide in Settings → Sync ([docs/google-sync.md](docs/google-sync.md)).
+- **Sync through shared folders:** in Google Drive, Dropbox, or on your computer (a network drive, or a folder OneDrive or iCloud keeps in step). Add folders in Settings → Sync (your own, or ones friends shared with you) and pick per trip which folders it syncs to. Your other computers and your friends get the trip in Your trips, and changes go both ways. Per trip, whoever shared it decides whether others can edit or only view it. Changed in two places at once? Nothing is overwritten: you pick which version to keep. Nothing is ever deleted in a sync folder. Google Drive and Dropbox use your own free app, set up once with the guide in Settings → Sync ([Google Drive](docs/google-sync.md), [Dropbox](docs/dropbox-sync.md)); folders on your computer need nothing.
 - **Phone access:** Settings → Phone serves the planner on your home network behind a secret link with a QR code, and the open trip stays in step.
 
 ## Download
@@ -97,6 +97,7 @@ Everything has a setting in the app; these environment variables are optional:
 | `RESEARCH_MAX_LOOKUPS` | Most searches and page reads in one research round (default 30) |
 | `PLACES_CSV` | A CSV of places to import on startup |
 | `TRIP_PLANNER_NO_UPDATES` | `1` turns off the update check |
+| `DROPBOX_APP_KEY` | Your Dropbox app's key for syncing trips through Dropbox (or enter it in Settings → Sync; see [docs/dropbox-sync.md](docs/dropbox-sync.md)) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your Google client for syncing trips through Drive (or enter it in Settings → Sync; see [docs/google-sync.md](docs/google-sync.md)); also read from a `.env` file |
 
 ## Services it uses

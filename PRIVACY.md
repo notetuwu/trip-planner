@@ -26,6 +26,24 @@ Sync is off unless you set it up with your own Google client ID and secret and s
 
 Data from your Google account is not sold, used for advertising, or sent to the developer.
 
+## Dropbox sync (optional)
+
+Sync with Dropbox is off unless you set it up with your own Dropbox app key and sign in to Dropbox.
+
+- **Access:** the app asks for "Full Dropbox" access, because that is what it takes to see folders other people shared
+  with you. It only uses the folders you add in Settings → Sync: it reads their names and trip files, writes the trips
+  you choose to sync, makes a new folder when you ask it to, and adds a folder shared with you to your Dropbox when you
+  choose it. It never deletes anything in your Dropbox.
+- **Your account:** your name and email address are read to show who is signed in and to record who shared a trip.
+- **Shared trips** and **storage** work as for Google Drive above: the token and app key stay in the app's data folder and
+  are sent only to Dropbox.
+- **Removing it:** sign out in Settings → Sync, or remove the app at <https://www.dropbox.com/account/connected_apps>.
+
+## Folders on your computer (optional)
+
+A sync folder can also be a folder on your computer or a network drive. Trip files are written there and read from there;
+whatever carries that folder further (OneDrive, iCloud, a network share) does so under its own terms.
+
 ## Other services the app talks to
 
 To do its job the app sends the necessary parts of your requests directly from your computer to other services, each

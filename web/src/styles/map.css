@@ -353,3 +353,9 @@
 .ride-board .line-chip { display: inline-block; text-align: center; vertical-align: middle; min-width: 22px; padding: 0 5px; max-width: 110px; height: 20px; line-height: 16px; font-size: 12px; border: 2px solid #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
 .ride-board .line-chip svg { width: 12px; height: 12px; vertical-align: -2px; }
 .leg-tip-pop .leaflet-popup-content { margin: 6px 10px; font-weight: 600; }
+
+/* A phone: the Photos and Preview windows fill the screen like the others. */
+@media (max-width: 760px) {
+  .photos-dialog, .preview-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
+  .photos-dialog[open], .preview-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
+}

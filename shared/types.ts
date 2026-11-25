@@ -302,7 +302,7 @@ export interface TripShare {
 
 /** A sync folder in Drive (Settings → Sync). */
 export interface SyncFolder {
-  /** A Google Drive folder's id, or "local:<path>" for a folder on this computer (or a network drive, or a folder a cloud
+  /** A Google Drive folder's id, "dropbox:id:…" for a Dropbox folder, or "local:<path>" for a folder on this computer (or a network drive, or a folder a cloud
    *  app like OneDrive keeps in step here). */
   id: string;
   /** The name it has in this app ("Friends"). */
@@ -348,6 +348,8 @@ export interface SyncStatus {
   running: boolean;
   lastRun: number;
   error: string;
+  /** Dropbox: an app key set up (Settings → Sync), and whether signed in. */
+  dropbox: { configured: boolean; keyFrom: "app" | "env" | ""; signedIn: boolean; expired: boolean; email: string; name: string; signingIn: boolean; signInError: string };
   /** Who this is (the Google account, this computer's user): trips shared by any of these are this person's. */
   identities: string[];
   /** Things the person should know about (a trip removed from a folder in Drive, so it stopped syncing there). */

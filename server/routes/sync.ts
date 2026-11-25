@@ -4,6 +4,7 @@
 import type { RemoteTripCard } from "../../shared/types";
 import { errMsg } from "../config";
 import { placesByName, tripCard } from "./trips";
+import * as box from "../sync/dropbox";
 import { browse, clientShown, createFolder, parseClient, setClient, startSignIn } from "../sync/google";
 import { addFolder, checkTrip, dismissNotices, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setTripSync, signOut, status, tripName } from "../sync/sync";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
@@ -29,6 +30,18 @@ export async function handleSync(req: Req, res: Res, path: string) {
     if (method === "GET" && path === "/api/sync/kind") {
       const p = fsCheck(new URL(req.url || "/", "http://x").searchParams.get("path") || "").path, kind = await folderKind(p);
       return sendJson(res, 200, { path: p, kind, label: KIND_LABEL[kind], shared: kind !== "local" });
+    }
+    // Dropbox: the app key, signing in and out, and its folders for the folder browser.
+    if (path.startsWith("/api/sync/dropbox/")) {
+      const sub = path.slice("/api/sync/dropbox/".length), q = new URL(req.url || "/", "http://x").searchParams;
+      if (method === "GET" && sub === "key") return sendJson(res, 200, { key: box.keyFrom() === "app" ? box.appKey() : "" });
+      if (method === "GET" && sub === "browse") return sendJson(res, 200, await box.browse(q.get("in") || "root"));
+      const b = method === "POST" ? await readJson(req) : null;
+      if (method === "POST" && sub === "key") { await box.setAppKey(String(b?.key || "")); return sendJson(res, 200, status()); }
+      if (method === "POST" && sub === "signin") return sendJson(res, 200, { url: await box.startSignIn() });
+      if (method === "POST" && sub === "signout") { await box.signOut(); return sendJson(res, 200, status()); }
+      if (method === "POST" && sub === "mkdir") return sendJson(res, 200, await box.createFolder(String(b?.name || ""), String(b?.parent || "root")));
+      return sendJson(res, 404, { error: "Not found" });
     }
     if (method === "POST" && path === "/api/sync/notices") { dismissNotices(); return sendJson(res, 200, status()); }
     if (method === "GET" && path === "/api/sync/remote") {

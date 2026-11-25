@@ -153,13 +153,14 @@ function wireSide(d: HTMLDialogElement) {
     say("[data-ph-err]", /^local:/i.test(link) || /^([a-z]:[\\/]|\\\\|\/|~)/i.test(local) ? addLocalFolder(local) : addPhotosFolder(link));
   };
   q<HTMLButtonElement>("[data-ph-add]").onclick = async () => {
-    const f = await pickFolder({ title: "Choose a folder with photos", note: "Its photos and videos show on the map, with those in its folders (two levels down)." });
+    const f = await pickFolder({ providers: ["local", "drive"], title: "Choose a folder with photos", note: "Its photos and videos show on the map, with those in its folders (two levels down)." });
     if (f) add(f.link);
   };
   q<HTMLButtonElement>("[data-ph-paste]").onclick = async () => {
     const text = await askText({ title: "Paste a link or path", text: "A Google Drive folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  D:\\Photos\\Japan", ok: "Add", required: true });
     if (!text) return;
     const c = classifyLink(text);
+    if (c.kind === "dropbox") return void tell({ title: "Dropbox photo folders aren't supported yet", text: "If the Dropbox app keeps the folder on this computer, add it from there: Add a folder → This computer." });
     if (c.kind === "cloud") return void tell({ title: `${c.name} links can't be opened here yet`, text: `If the ${c.name} app keeps the folder on this computer, add it from there: Add a folder → This computer.` });
     if (c.kind === "unknown") return say("[data-ph-err]", "That isn't a Google Drive link or a folder's path.");
     add(c.kind === "local" ? `local:${c.path}` : text);

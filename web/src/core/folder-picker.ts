@@ -12,7 +12,7 @@ import { classifyLink } from "../../../shared/folder-link";
 
 export { classifyLink };
 
-type Provider = "local" | "drive";
+type Provider = "local" | "drive" | "dropbox";
 interface Entry { id: string; name: string; folder: boolean; canWrite: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file"; place?: string }
 /** A folder chosen: where it is, its id (a Drive id, or the path), and what the app stores for it ("local:<path>", or
  *  the Drive link). */
@@ -25,6 +25,10 @@ const DRIVE_TOPS = [
   { id: "root", name: "My Drive", ic: "drive", hint: "Your own folders" },
   { id: "shared", name: "Shared with me", ic: "users", hint: "Folders others shared with you" },
   { id: "drives", name: "Shared drives", ic: "globe", hint: "Your team's shared drives" },
+] as const;
+const DROPBOX_TOPS = [
+  { id: "root", name: "Dropbox", ic: "box", hint: "Your Dropbox" },
+  { id: "shared", name: "Shared with me", ic: "users", hint: "Folders others shared with you in Dropbox" },
 ] as const;
 const PLACE_ICON: Record<string, Parameters<typeof icon>[0]> = { home: "hotel", desktop: "monitor", documents: "file", pictures: "images", downloads: "download", cloud: "cloud", drive: "drive" };
 const KIND_ICON = { image: "image", video: "play", trip: "file", file: "file" } as const;
@@ -52,13 +56,14 @@ function crumbsOf(p: string): Crumb[] {
 }
 
 /** Opens the folder browser; resolves with the folder chosen, or null when closed. */
-export function pickFolder(o: { title: string; note?: string; start?: Provider }): Promise<PickedFolder | null> {
+export function pickFolder(o: { title: string; note?: string; start?: Provider; /** Where folders may come from (all by default). */ providers?: Provider[] }): Promise<PickedFolder | null> {
+  const allowed = o.providers || ["local", "drive", "dropbox"];
   return new Promise((resolve) => {
     const d = document.createElement("dialog");
     d.className = "keys-dialog drive-picker";
     document.body.append(d);
     closeOnBackdrop(d);
-    let places: Entry[] = [], driveOk = false;
+    let places: Entry[] = [], driveOk = false, dropboxOk = false;
     let spot: Spot = { provider: o.start || "local", top: o.start === "drive" ? "root" : "", trail: [] };
     let back: Spot[] = [];
     let entries: Entry[] | null = null, more = false, error = "", selected = "", done = false, seq = 0;
@@ -66,7 +71,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
     d.addEventListener("close", () => finish(null));
 
     const here = (): Crumb | null => spot.trail[spot.trail.length - 1] || null;
-    const picked = (c: Crumb, provider = spot.provider): PickedFolder => ({ provider, id: c.id, name: c.name, canWrite: c.canWrite, link: provider === "local" ? `local:${c.id}` : driveLink(c.id) });
+    const picked = (c: Crumb, provider = spot.provider): PickedFolder => ({ provider, id: c.id, name: c.name, canWrite: c.canWrite, link: provider === "local" ? `local:${c.id}` : provider === "dropbox" ? c.id : driveLink(c.id) });
     /** What Choose takes: the folder selected, else the one we're in (not a place's own list). */
     const target = (): Crumb | null => {
       const e = entries?.find((x) => x.id === selected && x.folder);
@@ -86,7 +91,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
           if (!h) entries = places;
           else { const r = await api<{ entries: Entry[]; more: boolean }>(`/api/fs/list?path=${encodeURIComponent(h.id)}`); if (mine === seq) { entries = r.entries; more = r.more; } }
         } else {
-          const r = await api<{ entries: Entry[]; more: boolean }>(`/api/sync/browse?in=${encodeURIComponent(here()?.id || spot.top)}`);
+          const r = await api<{ entries: Entry[]; more: boolean }>(`/api/sync/${spot.provider === "dropbox" ? "dropbox/" : ""}browse?in=${encodeURIComponent(here()?.id || spot.top)}`);
           if (mine === seq) { entries = r.entries; more = r.more; }
         }
       } catch (e) { if (mine === seq) error = (e as Error).message; }
@@ -96,8 +101,12 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
     const side = () => {
       const local = places.map((p) => `<button type="button" data-place="${esc(p.id)}" title="${esc(p.id)}">${icon(PLACE_ICON[p.place || "drive"] || "folder")}<span>${esc(p.name)}</span></button>`).join("");
       const drive = driveOk ? DRIVE_TOPS.map((t) => `<button type="button" data-top="${t.id}" title="${esc(t.hint)}">${icon(t.ic)}<span>${esc(t.name)}</span></button>`).join("")
-        : `<button type="button" data-signin title="Settings → Sync">${icon("key")}<span>Sign in to use Drive</span></button>`;
-      return `<div class="dp-group">${icon("monitor")} This computer</div>${local}<div class="dp-group">${icon("drive")} Google Drive</div>${drive}`;
+        : `<button type="button" data-signin title="Sign in with Google to use Drive (Settings → Sync)">${icon("key")}<span>Sign in…</span></button>`;
+      const dropbox = dropboxOk ? DROPBOX_TOPS.map((t) => `<button type="button" data-dtop="${t.id}" title="${esc(t.hint)}">${icon(t.ic)}<span>${esc(t.name)}</span></button>`).join("")
+        : `<button type="button" data-signin title="Sign in to Dropbox to use it (Settings → Sync)">${icon("key")}<span>Sign in…</span></button>`;
+      return (allowed.includes("local") ? `<div class="dp-group">${icon("monitor")} This computer</div>${local}` : "")
+        + (allowed.includes("drive") ? `<div class="dp-group">${icon("drive")} Google Drive</div>${drive}` : "")
+        + (allowed.includes("dropbox") ? `<div class="dp-group">${icon("box")} Dropbox</div>${dropbox}` : "");
     };
 
     d.innerHTML = `<div class="dp-head"><div><h2>${esc(o.title)}</h2>${o.note ? `<p class="hint">${esc(o.note)}</p>` : ""}</div>
@@ -123,17 +132,20 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
       d.querySelector(".dp-places")!.innerHTML = side();
       $$<HTMLButtonElement>("[data-place]", d).forEach((b) => { b.onclick = () => { const p = places.find((x) => x.id === b.dataset.place)!; go({ provider: "local", top: "", trail: crumbsOf(p.id).map((c, i, all) => (i === all.length - 1 ? { ...c, name: p.name, canWrite: p.canWrite } : c)) }); }; });
       $$<HTMLButtonElement>("[data-top]", d).forEach((b) => { b.onclick = () => go({ provider: "drive", top: b.dataset.top!, trail: b.dataset.top === "root" ? [{ id: "root", name: "My Drive", canWrite: true }] : [] }); });
-      d.querySelector<HTMLButtonElement>("[data-signin]")?.addEventListener("click", () => { finish(null); document.dispatchEvent(new CustomEvent("open-settings", { detail: "sync" })); });
+      $$<HTMLButtonElement>("[data-dtop]", d).forEach((b) => { b.onclick = () => go({ provider: "dropbox", top: b.dataset.dtop!, trail: b.dataset.dtop === "root" ? [{ id: "root", name: "Dropbox", canWrite: true }] : [] }); });
+      $$<HTMLButtonElement>("[data-signin]", d).forEach((b) => b.addEventListener("click", () => { finish(null); document.dispatchEvent(new CustomEvent("open-settings", { detail: "sync" })); }));
     };
     const drawList = () => {
       const h = here(), local = spot.provider === "local";
       // Which place on the left is lit: the one this folder is in (the longest place path it starts with).
       const lit = local && h ? places.filter((p) => h.id.toLowerCase().startsWith(p.id.toLowerCase())).sort((a, b) => b.id.length - a.id.length)[0]?.id : "";
       $$<HTMLButtonElement>("[data-place]", d).forEach((b) => b.classList.toggle("on", b.dataset.place === lit));
-      $$<HTMLButtonElement>("[data-top]", d).forEach((b) => b.classList.toggle("on", !local && spot.top === b.dataset.top));
-      const topName = local ? "This computer" : DRIVE_TOPS.find((t) => t.id === spot.top)?.name || "Google Drive";
+      $$<HTMLButtonElement>("[data-top]", d).forEach((b) => b.classList.toggle("on", spot.provider === "drive" && spot.top === b.dataset.top));
+      $$<HTMLButtonElement>("[data-dtop]", d).forEach((b) => b.classList.toggle("on", spot.provider === "dropbox" && spot.top === b.dataset.dtop));
+      const tops = spot.provider === "dropbox" ? DROPBOX_TOPS : DRIVE_TOPS;
+      const topName = local ? "This computer" : tops.find((t) => t.id === spot.top)?.name || "";
       const crumbs = local ? [{ id: "", name: topName, canWrite: false }, ...spot.trail] : spot.top === "root" ? spot.trail : [{ id: "", name: topName, canWrite: false }, ...spot.trail];
-      d.querySelector(".dp-path")!.innerHTML = crumbs.map((x, i) => `<button type="button" data-crumb="${i}"${i === crumbs.length - 1 ? ' class="on"' : ""}>${i === 0 ? icon(local ? "monitor" : DRIVE_TOPS.find((t) => t.id === spot.top)?.ic || "drive") : ""}${esc(x.name)}</button>`).join(`<span class="dp-sep">›</span>`);
+      d.querySelector(".dp-path")!.innerHTML = crumbs.map((x, i) => `<button type="button" data-crumb="${i}"${i === crumbs.length - 1 ? ' class="on"' : ""}>${i === 0 ? icon(local ? "monitor" : tops.find((t) => t.id === spot.top)?.ic || "drive") : ""}${esc(x.name)}</button>`).join(`<span class="dp-sep">›</span>`);
       d.querySelector<HTMLButtonElement>("[data-back]")!.disabled = !back.length;
       d.querySelector<HTMLButtonElement>("[data-up]")!.disabled = !h || (!local && spot.top === "root" && spot.trail.length === 1);
       d.querySelector<HTMLButtonElement>("[data-new]")!.disabled = !h || !h.canWrite;
@@ -185,7 +197,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
       try {
         const f = spot.provider === "local"
           ? await api<Entry>("/api/fs/mkdir", { method: "POST", body: JSON.stringify({ parent: h.id, name }) })
-          : await api<Entry>("/api/sync/mkdir", { method: "POST", body: JSON.stringify({ name, parent: h.id }) });
+          : await api<Entry>(`/api/sync/${spot.provider === "dropbox" ? "dropbox/" : ""}mkdir`, { method: "POST", body: JSON.stringify({ name, parent: h.id }) });
         await load();
         select(f.id);
         list.querySelector(".dp-row.sel")?.scrollIntoView({ block: "nearest" });
@@ -204,6 +216,9 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
       } else if (c.kind === "drive") {
         if (!driveOk) { finish({ provider: "drive", id: c.id, name: "Google Drive folder", canWrite: false, link: driveLink(c.id) }); return; }
         go({ provider: "drive", top: "shared", trail: [{ id: c.id, name: "Pasted folder", canWrite: true }] });
+      } else if (c.kind === "dropbox") {
+        if (!allowed.includes("dropbox")) await tell({ title: "Dropbox folders can't be used here yet", text: "If the Dropbox app keeps the folder on this computer, choose it under This computer." });
+        else finish({ provider: "dropbox", id: c.url, name: "Dropbox folder", canWrite: true, link: c.url });
       } else if (c.kind === "cloud") {
         await tell({ title: `${c.name} links can't be opened here yet`, text: `If the ${c.name} app keeps the folder on this computer, choose it under This computer (${c.name} is listed there when it's set up). Otherwise copy the folder to Google Drive or this computer.` });
       } else toast("That isn't a Google Drive link or a folder's path.");
@@ -225,7 +240,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider }
     drawSide(); drawList();
     // The places on this computer and whether Drive can be used, then the first list.
     Promise.all([api<{ entries: Entry[] }>("/api/fs/places").catch(() => ({ entries: [] as Entry[] })), loadSyncStatus()]).then(([p, s]) => {
-      places = p.entries; driveOk = !!s?.signedIn;
+      places = p.entries; driveOk = !!s?.signedIn; dropboxOk = !!s?.dropbox?.signedIn;
       if (spot.provider === "drive" && !driveOk) spot = { provider: "local", top: "", trail: [] };
       // On this computer, it starts in Pictures (or home) rather than the bare list of places.
       if (spot.provider === "local" && !spot.trail.length) {

@@ -31,6 +31,36 @@ const GUIDE = () => `<ol class="set-steps sync-guide">
 
 /** The client entered here, to show in its fields (fetched when the tab opens; it's the person's own, on their computer). */
 let shownClient: { id: string; secret: string } | null = null;
+/** The Dropbox app key entered here (fetched when the tab opens), and whether its guide is open. */
+let shownKey: string | null = null, dropboxGuideOpen = false;
+
+/** Registering your own Dropbox app, step by step (the same as docs/dropbox-sync.md). */
+const DROPBOX_GUIDE = () => `<ol class="set-steps sync-guide">
+  <li><b>Open the Dropbox App Console</b> and sign in with your Dropbox account. It's free.<br>${link("https://www.dropbox.com/developers/apps", "Dropbox App Console")}</li>
+  <li><b>Create app:</b> choose <i>Scoped access</i>, then <b>Full Dropbox</b> (needed to see folders others shared with you; the app only opens your sync folders). Name it anything not taken yet, like “Trip Planner” and your name. Press <i>Create app</i>.</li>
+  <li><b>Permissions</b> tab: tick these, then press <i>Submit</i> at the bottom:<br>${["files.metadata.read", "files.content.read", "files.content.write", "sharing.read", "sharing.write"].map((x) => `<code>${x}</code>`).join(" ")}</li>
+  <li><b>Settings</b> tab, under <i>OAuth 2</i> → <i>Redirect URIs</i>: paste this and press <i>Add</i>: ${copyable("http://localhost:47618/")}Leave <i>Allow public clients (Implicit Grant &amp; PKCE)</i> on <i>Allow</i>.</li>
+  <li><b>Copy the App key</b> from the top of the Settings tab, paste it below and press <i>Save</i>. (The app secret isn't needed.)</li>
+  <li><b>Sign in to Dropbox</b> and allow the app.</li>
+</ol>
+<p class="hint">On your other computers, paste the same app key. A new Dropbox app can only be used by your own account at first: friends make their own the same way, or you press <i>Enable additional users</i> on its Settings tab to let them use yours (then they count towards its limit of 500 users).</p>`;
+
+function dropboxCards(s: SyncStatus) {
+  const d = s.dropbox;
+  const account = !d?.configured ? `<p class="hint">To sync with Dropbox folders, set up your own Dropbox app once below (about 5 minutes). If the Dropbox app is installed on this computer, you can instead add its folder from <i>This computer</i>.</p>`
+    : d.signedIn
+      ? `<div class="set-row"><div><b class="status"><span class="dot ok"></span> Signed in as ${esc(d.name || d.email)}</b><div class="hint">${esc(d.email)}</div></div>
+          <button type="button" class="btn" id="dbxOut">Sign out</button></div>`
+      : `<div class="set-row"><div><b class="status"><span class="dot ${d.expired ? "warn" : "off"}"></span> ${d.expired ? "Dropbox signed this computer out" : "Not signed in"}</b>
+          <div class="hint">${d.signingIn ? "Finish signing in in your browser (the page Dropbox opened). Closed it, or Dropbox showed an error? Open it again." : "Your browser opens Dropbox's sign-in page; allow the app there."}</div></div>
+          <button type="button" class="btn solid" id="dbxIn">${icon("key")} ${d.signingIn ? "Open Dropbox again" : "Sign in to Dropbox"}</button></div>
+         ${d.signInError ? `<p class="error-text">${icon("warn")} ${esc(d.signInError)}</p>` : ""}`;
+  const guide = `<details class="sync-guide-box" id="dbxGuide"${dropboxGuideOpen || !d?.configured ? " open" : ""}><summary>${d?.configured ? "How to make a Dropbox app" : "Step-by-step: make your own Dropbox app (about 5 minutes, once)"}</summary>${DROPBOX_GUIDE()}</details>`;
+  const key = d?.keyFrom === "env" ? `<p class="hint">App key from the DROPBOX_APP_KEY environment variable.</p>`
+    : `<div class="sync-add"><input id="dbxKey" type="text" placeholder="App key (from the app's Settings tab)" autocomplete="off" spellcheck="false" value="${esc(shownKey || "")}"><button type="button" class="btn solid" id="dbxKeySave">${icon("check")} Save</button>${d?.configured ? `<button type="button" class="btn" id="dbxKeyRemove">Remove</button>` : ""}</div>`;
+  return `<div class="set-card"><b class="card-title">${icon("box")} Dropbox</b>${account}</div>
+    <div class="set-card"><div class="set-row"><div><b>Your Dropbox app</b><div class="hint">Syncing with Dropbox signs in through your own free Dropbox app, so nobody shares anyone else's. Its key stays on this computer.</div></div></div>${key}${guide}</div>`;
+}
 
 function clientCard(s: SyncStatus) {
   const c = shownClient || { id: "", secret: "" };
@@ -56,19 +86,20 @@ export function renderSync(main: HTMLElement, again: () => void) {
   wire(main, again);
   if (!s) loadSyncStatus().then(again);
   // The client's fields show what's saved (once per opening of the tab).
+  if (s?.dropbox?.keyFrom === "app" && shownKey === null) api<{ key: string }>("/api/sync/dropbox/key").then((k) => { shownKey = k.key; again(); }, () => {});
   if (s?.clientFrom === "app" && !shownClient) api<{ id: string; secret: string }>("/api/sync/client").then((c) => { shownClient = c; again(); }, () => {});
 }
 
 export function syncHtml(s: SyncStatus | null) {
   const intro = `<h3>Sync</h3>
-    <p class="hint set-intro">Keep trips in step between your computers and with other people, through shared folders: in Google Drive, or on this computer (a network drive, or a folder OneDrive, Dropbox or iCloud keeps in step). Pick per trip which folders it goes to (Your trips → ${icon("cloud")} on a trip).</p>`;
+    <p class="hint set-intro">Keep trips in step between your computers and with other people, through shared folders: in Google Drive or Dropbox, or on this computer (a network drive, or a folder OneDrive, Dropbox or iCloud keeps in step). Pick per trip which folders it goes to (Your trips → ${icon("cloud")} on a trip).</p>`;
   if (!s) return `${intro}<p class="hint">Loading…</p>`;
   const folders = `
     <div class="set-card">
       <b class="card-title">${icon("folder")} Sync folders</b>
       ${s.folders.length ? `<div class="sync-folder-list">${s.folders.map(folderRow).join("")}</div>` : `<p class="hint">None yet. Add a folder: one in your Google Drive, one a friend shared with you, or one on this computer.</p>`}
       <div class="drive-add">
-        <button type="button" class="drive-tile" id="syncBrowse"><span class="dt-ic">${icon("plus")}</span><span class="dt-text"><b>Add a folder</b><span>From this computer or your Google Drive, or make a new one</span></span></button>
+        <button type="button" class="drive-tile" id="syncBrowse"><span class="dt-ic">${icon("plus")}</span><span class="dt-text"><b>Add a folder</b><span>From this computer, Google Drive or Dropbox, or make a new one</span></span></button>
         <button type="button" class="link-btn drive-paste-btn" id="syncPaste">${icon("link")} Or paste a link or path</button>
       </div>
       ${s.lastRun || s.running ? `<div class="set-row"><div><div class="hint">${s.running ? "Syncing…" : `Last synced ${esc(new Date(s.lastRun).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }))}`}</div>${s.error ? `<p class="error-text">${icon("warn")} ${esc(s.error)}</p>` : ""}</div>
@@ -83,7 +114,7 @@ export function syncHtml(s: SyncStatus | null) {
        ${s.signInError ? `<p class="error-text">${icon("warn")} ${esc(s.signInError)}</p>` : ""}`;
   const google = `<div class="set-card"><b class="card-title">${icon("drive")} Google Drive</b>
     ${account}${s.configured ? "" : `<p class="hint">To use Google Drive folders (and Drive photo folders that aren't shared publicly), set up your own Google client once below. Folders on this computer work without it.</p>`}</div>${clientCard(s)}`;
-  return `${intro}${folders}${google}
+  return `${intro}${folders}${google}${dropboxCards(s)}
     <div class="set-card">
       <b class="card-title">Good to know</b>
       <ul class="set-list">
@@ -91,7 +122,7 @@ export function syncHtml(s: SyncStatus | null) {
         <li>Changed here and somewhere else since the last sync? Changes to different things are joined; only when both changed the same thing does Your trips ask which version to keep, and the other one stays in Recover….</li>
         <li>Per trip, the person who shares it decides whether others can <b>edit</b> it or only <b>view</b> it.</li>
         <li>Nothing is ever deleted in a sync folder. Deleting a trip here, unticking a folder or removing a folder below only stops syncing there.</li>
-        <li>A folder on this computer can be a network drive or a folder a cloud app keeps in step (OneDrive, Dropbox, iCloud Drive): the trips go wherever that folder goes.</li>
+        <li>A folder on this computer can be a network drive or a folder a cloud app keeps in step (OneDrive, iCloud Drive, or Dropbox's app): the trips go wherever that folder goes.</li>
         <li>Your Google sign-in stays on this computer. It's never in a trip, a folder or on a phone. Photo folders on this computer and the prompts sent to the AI aren't shared either.</li>
         <li>For Drive the app may use your whole Drive (Google has no narrower permission for shared folders), but it only opens the folders listed here. To remove its access completely: sign out, or remove your app at myaccount.google.com → Security → Third-party connections.</li>
       </ul>
@@ -99,11 +130,12 @@ export function syncHtml(s: SyncStatus | null) {
 }
 
 function folderRow(f: SyncFolder) {
-  const local = f.id.startsWith("local:"), where = local ? `${f.kind ? `${f.kind} · ` : ""}${f.id.slice(6)}` : `“${f.name}” in Google Drive`;
-  return `<div class="set-row sync-folder-row" data-id="${esc(f.id)}"><div><b>${icon(local ? "monitor" : "drive")} ${esc(f.label)}</b>
+  const local = f.id.startsWith("local:"), dbx = f.id.startsWith("dropbox:");
+  const where = local ? `${f.kind ? `${f.kind} · ` : ""}${f.id.slice(6)}` : `“${f.name}” in ${dbx ? "Dropbox" : "Google Drive"}`;
+  return `<div class="set-row sync-folder-row" data-id="${esc(f.id)}"><div><b>${icon(local ? "monitor" : dbx ? "box" : "drive")} ${esc(f.label)}</b>
       <div class="hint" title="${esc(where)}">${esc(where)} · ${f.canWrite ? "you can add trips" : "you can only open its trips, not add or change them"}</div>
       ${f.error ? `<div class="error-text">${icon("warn")} ${esc(f.error)}</div>` : ""}</div>
-    <span class="set-inline">${local ? "" : `<a class="icon-btn" href="https://drive.google.com/drive/folders/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Open in Drive">${icon("external")}</a>`}
+    <span class="set-inline">${local || dbx ? "" : `<a class="icon-btn" href="https://drive.google.com/drive/folders/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Open in Drive">${icon("external")}</a>`}
       <button type="button" class="icon-btn" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="icon-btn" data-remove title="Stop syncing with this folder">${icon("trash")}</button></span></div>`;
 }
 
@@ -113,11 +145,11 @@ function watchSignIn(again: () => void) {
   const until = Date.now() + 11 * 60_000;
   watching = window.setInterval(async () => {
     const s = await loadSyncStatus();
-    if (!s?.signingIn || Date.now() > until) {
+    if ((!s?.signingIn && !s?.dropbox?.signingIn) || Date.now() > until) {
       clearInterval(watching);
-      if (s?.signedIn) toast(`Signed in as ${s.email}`);
+      if (s?.signedIn || s?.dropbox?.signedIn) toast("Signed in");
     }
-    if (document.querySelector("#syncIn, #syncOut")) again();
+    if (document.querySelector("#syncIn, #syncOut, #dbxIn, #dbxOut")) again();
   }, 2000);
 }
 
@@ -142,6 +174,24 @@ function wire(main: HTMLElement, again: () => void) {
   main.querySelector<HTMLButtonElement>("#syncClientRemove")?.addEventListener("click", async () => {
     if (!await askConfirm({ title: "Remove your Google client?", text: "The client ID and secret are deleted from this computer. You're signed out and trips stop syncing; nothing is deleted, here or in Drive.", ok: "Remove", danger: true })) return;
     setSyncStatus(await post("/api/sync/client/remove")); shownClient = null; again();
+  });
+  // Dropbox: the app key, signing in and out.
+  main.querySelector<HTMLDetailsElement>("#dbxGuide")?.addEventListener("toggle", (e) => { dropboxGuideOpen = (e.target as HTMLDetailsElement).open; });
+  main.querySelector<HTMLButtonElement>("#dbxKeySave")?.addEventListener("click", async () => {
+    try { setSyncStatus(await post("/api/sync/dropbox/key", { key: main.querySelector<HTMLInputElement>("#dbxKey")!.value })); shownKey = null; dropboxGuideOpen = false; toast(syncStatus?.dropbox.signedIn ? "Saved" : "Saved. Now sign in to Dropbox."); again(); }
+    catch (e) { toast((e as Error).message); }
+  });
+  main.querySelector<HTMLButtonElement>("#dbxKeyRemove")?.addEventListener("click", async () => {
+    if (!await askConfirm({ title: "Remove your Dropbox app key?", text: "It's deleted from this computer. You're signed out of Dropbox and its folders stop syncing; nothing is deleted, here or in Dropbox.", ok: "Remove", danger: true })) return;
+    setSyncStatus(await post("/api/sync/dropbox/key", { key: "" })); shownKey = null; again();
+  });
+  main.querySelector<HTMLButtonElement>("#dbxIn")?.addEventListener("click", async () => {
+    try { await post("/api/sync/dropbox/signin"); await loadSyncStatus(); again(); watchSignIn(again); }
+    catch (e) { toast((e as Error).message); }
+  });
+  main.querySelector<HTMLButtonElement>("#dbxOut")?.addEventListener("click", async () => {
+    if (!await askConfirm({ title: "Sign out of Dropbox?", text: "Dropbox folders stop syncing until you sign in again. Nothing is deleted, here or in Dropbox.", ok: "Sign out" })) return;
+    setSyncStatus(await post("/api/sync/dropbox/signout")); again();
   });
   main.querySelector<HTMLButtonElement>("#syncIn")?.addEventListener("click", async () => {
     try { await post("/api/sync/signin"); await loadSyncStatus(); again(); watchSignIn(again); }
@@ -171,7 +221,7 @@ function wire(main: HTMLElement, again: () => void) {
     if (f) add(f.link, f.name);
   });
   main.querySelector<HTMLButtonElement>("#syncPaste")?.addEventListener("click", async () => {
-    const text = await askText({ title: "Paste a link or path", text: "A Google Drive folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  C:\\…", ok: "Add", required: true });
+    const text = await askText({ title: "Paste a link or path", text: "A Google Drive or Dropbox folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  C:\\…", ok: "Add", required: true });
     if (!text) return;
     const c = classifyLink(text);
     if (c.kind === "cloud") return void tell({ title: `${c.name} links can't be opened here yet`, text: `If the ${c.name} app keeps the folder on this computer, add it from there: Add a folder → This computer.` });

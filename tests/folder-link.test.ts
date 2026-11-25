@@ -15,7 +15,8 @@ describe("classifyLink", () => {
   });
   it("names other clouds' links, and knows nothing of anything else", () => {
     expect(classifyLink("https://1drv.ms/f/s!abc")).toEqual({ kind: "cloud", name: "OneDrive" });
-    expect(classifyLink("https://www.dropbox.com/scl/fo/xyz")).toEqual({ kind: "cloud", name: "Dropbox" });
+    expect(classifyLink("https://www.dropbox.com/scl/fo/xyz/abc?rlkey=1")).toEqual({ kind: "dropbox", url: "https://www.dropbox.com/scl/fo/xyz/abc?rlkey=1" });
+    expect(classifyLink("https://www.dropbox.com/s/abc/file.jpg")).toEqual({ kind: "cloud", name: "Dropbox" });
     expect(classifyLink("hello")).toEqual({ kind: "unknown" });
   });
 });

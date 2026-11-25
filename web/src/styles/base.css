@@ -110,12 +110,13 @@ main {
 @media (min-width: 1500px) {
   main { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr) minmax(0, 1fr); }
 }
+/* The handle under the map: only where the map is over the plan on a computer (never on a phone). */
+.map-resize { display: none; }
 /* Where the map is still over the plan (narrower windows, or the chat taking a column): it's as tall as it was dragged to
    (the handle under it), else a third of the window. */
 @media (min-width: 901px) {
   body.app.map-stacked .map-panel { display: block; }
   body.app.map-stacked #map { height: var(--map-h, min(360px, 34vh)); }
-  .map-resize { display: none; }
   body.app.map-stacked .map-resize { display: flex; justify-content: center; align-items: center; height: 12px; margin: 6px -18px -14px; cursor: ns-resize; color: var(--muted); touch-action: none; user-select: none; }
   body.app.map-stacked .map-resize:hover, body.app.map-stacked .map-resize.drag { color: var(--accent); }
   body.app.map-stacked .map-resize svg { font-size: 16px; }
@@ -233,8 +234,11 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
   .pane-btns, .map-full-btn { display: none; }
   body.app { padding-bottom: calc(62px + env(safe-area-inset-bottom)); }
   body.app:not(.m-settings) .settings, body.app:not(.m-output) #output, body.app:not(.m-map) .map-panel { display: none; }
-  body.app main { grid-template-areas: "map" "settings" "output"; }
-  body.app.m-map .map-panel { position: fixed; top: var(--mhead, 60px); left: 0; right: 0; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 5; border-radius: 0; border-width: 1px 0 0; padding: 8px; display: flex; flex-direction: column; }
+  /* One tab at a time, all in the same place: the same gap under the header whichever is shown (as rows, the hidden ones
+     still left their gaps above the plan). */
+  body.app main { grid-template-areas: "pane"; grid-template-rows: auto; }
+  body.app .settings, body.app #output, body.app .map-panel { grid-area: pane; }
+  body.app.m-map .map-panel { position: fixed; top: calc(var(--mhead, 60px) + 10px); left: 16px; right: 16px; bottom: calc(62px + 10px + env(safe-area-inset-bottom)); z-index: 5; padding: 0; display: flex; flex-direction: column; }
   body.app.m-map .map-wrap { flex: 1; min-height: 0; }
   body.app.m-map #map { height: 100%; }
   .m-tabs { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; padding: 4px 6px env(safe-area-inset-bottom); background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(0, 0, 0, .08); }
