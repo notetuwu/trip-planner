@@ -208,8 +208,22 @@ export interface TripRequest {
   fix?: { itinerary: Itinerary; problems: { day: number; text: string }[] };
   /** Re-plan one day (index into itinerary.days), keeping the rest. */
   redoDay?: { itinerary: Itinerary; day: number; request: string };
-  /** A change the travelers asked for (the trip chat), to these days only (0-based); only they come back, the rest stays. */
-  edit?: { itinerary: Itinerary; days: number[]; request: string };
+  /** A change the travelers asked for (the trip chat), to these days only (0-based); only they come back, the rest stays.
+   *  agreed: the stops they settled with the chat, which the planner keeps exactly (and which are put back if it doesn't). */
+  edit?: { itinerary: Itinerary; days: number[]; request: string; agreed?: AgreedStop[] };
+}
+
+/** A stop the travelers and the chat settled on for a day: the planner keeps it as it is and fills in the details. */
+export interface AgreedStop {
+  /** The day's number in the plan (from 1), and its date (filled in by the page before it goes to the planner). */
+  day: number;
+  date?: string;
+  time: string;
+  place: string;
+  where?: string;
+  kind?: ItineraryItem["kind"];
+  cost?: number;
+  note?: string;
 }
 
 export type CloudProvider = "anthropic" | "openai" | "openrouter";

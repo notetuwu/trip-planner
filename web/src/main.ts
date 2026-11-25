@@ -11,7 +11,7 @@ import { initTheme } from "./core/theme";
 import { session, state } from "./core/state";
 import { geocodeStays, onGeocoded } from "./geo/geocode";
 import { byTitleMap, geocodeItems, itemLoc } from "./geo/item-loc";
-import { countryCodes, geocodePlaces, warmNearby } from "./geo/locate";
+import { countryCodes, geocodePlaces, stayLoc, warmNearby } from "./geo/locate";
 import { initModels, refreshModels } from "./generate/models";
 import { runGeneration } from "./generate/run";
 import { offlineHtml } from "./export/offline";
@@ -52,7 +52,8 @@ onGeocoded(() => {
   geocodeItems(); // asks only for stops not looked up yet, e.g. once their day's town is known
   warmNearby();
 });
-setOnRouted(() => { drawMap(); updateLegInfo(); });
+// A suggested journey (a travel day without its rides) fills in once the way between the stays is found.
+setOnRouted(() => { drawMap(); updateLegInfo(); if (document.querySelector(".journey.suggested")) renderItinerary(); });
 // Stops whose words were changed to the timetable's line: drawn again (their leg may now go another way).
 setOnPlanChanged(() => { renderItinerary(); drawMap(); });
 initRideStops(goToStop);
@@ -69,7 +70,7 @@ $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.
 Object.assign(window, {
-  planner: { state: () => state, session, applyState, importTrip, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, directionsUrl, offlineHtml },
+  planner: { state: () => state, session, applyState, importTrip, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, stayLoc, directionsUrl, offlineHtml },
 });
 
 // Tells the server this window is open, and when it closes (the packaged app quits after its last window closes).

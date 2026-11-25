@@ -255,3 +255,14 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
   .m-town { flex: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-left: 4px; }
   .m-town:first-child { padding-left: 0; }
 }
+
+/* Radio buttons, like the checkboxes: round, with the accent dot when picked (not stretched like a text field). */
+input[type="radio"] {
+  appearance: none; -webkit-appearance: none; flex: none; width: 16px; height: 16px; padding: 0; margin: 0;
+  display: inline-grid; place-content: center; vertical-align: -3px; cursor: pointer;
+  background: var(--field); border: 1.5px solid var(--line-strong); border-radius: 50%;
+  transition: border-color .15s, box-shadow .15s;
+}
+input[type="radio"]::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .12s; }
+input[type="radio"]:checked { border-color: var(--accent); }
+input[type="radio"]:checked::before { transform: scale(1); }

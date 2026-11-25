@@ -27,6 +27,10 @@ export function distKm(a: { lat: number; lng: number }, b: { lat: number; lng: n
 /** A stay's position: the hotel if it can be found near the city, else the city. */
 export function stayLoc(s: Stay): GeoHit | null {
   const city = s.city ? geo[geoKey(s.city)] : null;
+  // Put on the map by hand: exactly there (the country from the town, for links and the planner).
+  if (s.pin && Number.isFinite(s.pin.lat) && Number.isFinite(s.pin.lng)) {
+    return { lat: s.pin.lat, lng: s.pin.lng, name: s.hotel || s.city, label: s.pin.label, country: city?.country || "", cc: city?.cc || "", kind: "pin" };
+  }
   const hotel = s.hotel ? geo[geoKey(`${s.hotel}, ${s.city}`, city?.cc)] : null;
   if (hotel && (!city || distKm(hotel, city) < 60)) return { ...hotel, country: hotel.country || city?.country || "", cc: hotel.cc || city?.cc || "" };
   return city || null;

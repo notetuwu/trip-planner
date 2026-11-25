@@ -1,7 +1,7 @@
 // The stays editor: one card per stay, the transport between them, and day trips.
 import type { TravelMode } from "../../../shared/types";
 import { mapsName } from "../core/maps-links";
-import { $, $$, esc } from "../core/dom";
+import { $, $$, esc, toast } from "../core/dom";
 import { addDays, fmtDate } from "../core/format";
 import { type Stay, save, state } from "../core/state";
 import { geo, geoKey, geocodeStays } from "../geo/geocode";
@@ -13,6 +13,7 @@ import { renderTripTitle } from "./title";
 import { ext, icon } from "../core/icons";
 import { bookableMode, hotelUrl, transportUrl } from "../itinerary/travel-links";
 import { openStopsForm } from "./stops";
+import { wherePanel } from "../itinerary/pin";
 
 /** Each stay after the first starts where the previous one ends, unless the user overrides it. */
 export function chainDates() {
@@ -35,7 +36,10 @@ function legHtml(i: number) {
 
 function stayHtml(s: Stay, i: number) {
   const loc = stayLoc(s);
-  const geoLine = !s.city ? "" : loc ? `${icon("pin")} ${esc(loc.label)}` : geoKey(s.city) in geo ? `${icon("pin")} Not found — try a bigger nearby town` : `${icon("pin")} Locating…`;
+  const geoLine = s.pin ? `${icon("pin")} ${esc(s.pin.label)} <span class="muted">· set by hand</span>`
+    : !s.city ? "" : loc ? `${icon("pin")} ${esc(loc.label)}` : geoKey(s.city) in geo ? `${icon("pin")} Not found — try a bigger nearby town` : `${icon("pin")} Locating…`;
+  // Their own spot for the stay (the hotel's door), when the lookup can't find it or finds the wrong one.
+  const pinBtn = s.city || s.pin ? `<button type="button" class="link-btn stay-pin-btn" data-act="pin" title="Put the stay exactly where it is: search for it, or click it on the map">${icon("crosshair")} ${s.pin ? "Move on the map" : "Set on the map"}</button>` : "";
   return `${i ? legHtml(i) : ""}
     <div class="stay" data-i="${i}">
       <div class="stay-head">
@@ -53,9 +57,9 @@ function stayHtml(s: Stay, i: number) {
         <div><label>Arrival</label><input type="date" data-k="start" value="${esc(s.start)}"></div>
         <div><label>Nights</label><input type="number" min="0" data-k="nights" value="${esc(s.nights)}"></div>
       </div>
-      ${!geoLine ? "" : loc
+      <div class="stay-where">${!geoLine ? "" : loc
         ? `<a class="stay-geo" href="${esc(stayMapsUrl(s))}" target="_blank" rel="noopener" title="${esc(`${loc.label}: open in ${mapsName()}`)}">${geoLine}${ext()}</a>`
-        : `<div class="stay-geo">${geoLine}</div>`}
+        : `<div class="stay-geo">${geoLine}</div>`}${pinBtn}</div>
       ${s.city && s.start && Number(s.nights) > 0 ? `<a class="stay-hotels" href="${esc(hotelUrl(s, Number(state.travelers) || 1, loc))}" target="_blank" rel="noopener" title="Hotels for these dates on Booking.com">${icon("bed")} Hotels on Booking.com${ext()}</a>` : ""}
       <div class="day-trips">
         ${(s.dayTrips || []).map((t, ti) => `
@@ -130,9 +134,28 @@ function onClick(e: Event) {
     save(); renderStays(); drawMap(); renderItinerary();
     return;
   }
+  if (act === "pin") { openStayPin(i, btn.closest<HTMLElement>(".stay")!); return; }
   if (act === "del") state.stays.splice(i, 1);
   if (act === "up") [state.stays[i - 1], state.stays[i]] = [state.stays[i], state.stays[i - 1]];
   save(); renderStays(); renderTripTitle(); drawMap({ fit: true });
+}
+
+/** "Set on the map": the stay's spot, searched near it or clicked on the map; "Use the address again" undoes it. */
+function openStayPin(i: number, host: HTMLElement) {
+  const s = state.stays[i];
+  const redraw = () => { save(); renderStays(); renderItinerary(); drawMap({ fit: false }); };
+  wherePanel({
+    host, near: stayLoc(s),
+    title: `Where is ${s.hotel || `your stay in ${s.city}`}?`,
+    query: s.hotel ? `${s.hotel}${s.city && !s.hotel.toLowerCase().includes(s.city.toLowerCase()) ? `, ${s.city}` : ""}` : s.city,
+    mapLabel: s.hotel || `your stay in ${s.city}`,
+    ...(s.pin ? { extra: { html: `${icon("refresh")} Use the address again`, onClick: () => { delete s.pin; redraw(); toast(`${s.city}: back to the address`); } } } : {}),
+    onPick: (lat, lng, label) => {
+      s.pin = { lat, lng, label: label === "the spot you clicked" ? (s.hotel || `Set on the map`) : label };
+      redraw();
+      toast(`${s.city}: set to ${label}`);
+    },
+  });
 }
 
 export function initStays() {

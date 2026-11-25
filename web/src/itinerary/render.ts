@@ -13,13 +13,14 @@ import { renderDayChips, selectDay, showOnMap } from "../map/days";
 import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
 import { openPin } from "./pin";
-import { openLegEdit } from "./leg-edit";
+import { openStopEdit } from "./stop-edit";
 import { updateLegInfo } from "../map/legs";
 import { renderTripTitle } from "../trip/title";
 import { itineraryIcs } from "../export/ics";
 import { wireBookAhead } from "./book-ahead";
 import { wirePacking } from "./packing";
 import { daysHtml, extrasHtml } from "./days-html";
+import { useSuggestedJourney } from "./journey";
 import { checkOpeningHours } from "./hours";
 import { searchHtml, wireSearch } from "./search";
 import { openReview, refreshReview } from "./review";
@@ -122,9 +123,18 @@ function wire(out: HTMLElement) {
   for (const el of $$("[data-preview]", out)) el.onclick = () => openPreview();
   for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
+  // A suggested journey between two stays, written into the travel day as its stops (Undo takes them out again).
+  for (const el of $$<HTMLButtonElement>("[data-journey-use]", out)) el.onclick = () => {
+    const di = +el.dataset.journeyUse!, day = state.itinerary!.days[di], before = [...day.items];
+    if (!useSuggestedJourney(di)) return;
+    save(); renderItinerary(); drawMap();
+    toast("Added the journey to the day", () => { day.items = before; save(); renderItinerary(); drawMap(); });
+  };
   for (const el of $$<HTMLElement>("[data-pin]", out)) el.onclick = () => { const [d, x] = el.dataset.pin!.split("-"); openPin(+d, +x, el); };
   for (const el of $$<HTMLElement>("[data-show]", out)) el.onclick = () => { const [d, x] = el.dataset.show!.split("-"); showOnMap(+d, +x); };
-  for (const el of $$<HTMLElement>("[data-leg-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.legEdit!.split("-"); openLegEdit(+d, +x, el); };
+  for (const el of $$<HTMLElement>("[data-leg-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.legEdit!.split("-"); openStopEdit(+d, +x, "leg"); };
+  // The stop's edit window: everything about it at once.
+  for (const el of $$<HTMLElement>("[data-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.edit!.split("-"); openStopEdit(+d, +x); };
 }
 
 export function renderItinerary(error?: string) {

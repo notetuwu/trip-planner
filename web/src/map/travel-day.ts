@@ -5,7 +5,8 @@ import type { Day, ItineraryItem, LatLng } from "../../../shared/types";
 import { state } from "../core/state";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
-import { transferEnds } from "../trip/modes";
+import { chosenMode, modeOf, transferEnds } from "../trip/modes";
+import { type JourneyRun, journeyRuns, namesRide } from "../itinerary/journey-model";
 
 /** Movements ("Lucerne → Feldkirch", "Drive to the hotel") aren't places to pin. */
 export const isTransfer = (x: ItineraryItem) => x.kind === "transfer" || !!transferEnds(x);
@@ -16,6 +17,30 @@ export const onMap = (x: ItineraryItem) => !isTransfer(x) || !!x.pinned;
 /** The stay a day arrives at (index > 0), when the day is a travel day. */
 export function arrivalStay(d: Day): number {
   return state.stays.findIndex((s, i) => i > 0 && s.start && s.start === d.date);
+}
+
+/** A travel day's journey: the stay it arrives at, and the runs of its stops that are the journey (see journey-model). */
+export function journeyOf(d: Day): { arrive: number; runs: JourneyRun[] } | null {
+  const arrive = arrivalStay(d);
+  return arrive > 0 ? { arrive, runs: journeyRuns(d.items, (x) => isTransfer(x) || namesRide(x)) } : null;
+}
+
+/** Whether the map draws the travel day's own journey (its rides, leg by leg) instead of the stays' line between the two
+ *  towns: when the day spells out its rides and they say more than that line does. A drive between the stays is one
+ *  road route through the stops on the way, so a day of the same driving keeps it; by public transport, or with a ride
+ *  of another kind (the taxi up to the hotel after the train), the day's own rides are the way. */
+export function ownsJourney(d: Day) {
+  const j = journeyOf(d);
+  if (!j?.runs.length) return false;
+  const stay = state.stays[j.arrive].travel || "";
+  if (stay !== "car" && stay !== "bike") return true;
+  return j.runs.some((r) => r.items.some((i) => { const m = chosenMode(d.items[i]) || modeOf(d.items[i]); return !!m && m !== stay; }));
+}
+
+/** Whether the travel day into stay i spells out its own journey. */
+export function stayLegOwned(i: number) {
+  const d = state.itinerary?.days.find((x) => x.date === state.stays[i]?.start);
+  return !!d && ownsJourney(d);
 }
 
 /** Legs longer than this on a travel day are part of the drive between the stays. */

@@ -28,7 +28,7 @@ import { cssVar, layers } from "./map";
 import { flightArc, requestRoutes, routeKey, routes } from "./routes";
 import { icon } from "../core/icons";
 import { byTitleMap } from "../geo/item-loc";
-import { type ViaStop, viaStops } from "./travel-day";
+import { type ViaStop, stayLegOwned, viaStops } from "./travel-day";
 
 /** `i`: the stay it arrives at (or the stay a day trip starts from), for jumping to it in the list. */
 /** The plan has the travel day into stay i (then its stops are the way; otherwise the must-sees on the leg are). */
@@ -119,6 +119,8 @@ export function drawStays(): LatLng[] {
   for (const l of stayLinesOn() ? stayLegs() : []) {
     if (only && !only.leg(l)) continue;
     if (l.trip && l.place && planGoesTo(l.place)) continue;
+    // A travel day that spells out its own journey draws it itself (leg by leg): no second line between the towns.
+    if (!l.trip && stayLegOwned(l.i)) continue;
     const who = l.trip && l.place ? tripGroup(l.place) : { g: "", color: "" };
     const g = who.g, color = who.color || accent;
     // Day trips of different groups often share the tracks out of town: later ones drawn thinner on top.

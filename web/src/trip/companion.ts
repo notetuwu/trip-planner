@@ -7,7 +7,7 @@
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
 import { moveTo } from "../map/move";
-import type { GeoHit, ItineraryItem, LegChoice, MustSeeHow } from "../../../shared/types";
+import type { AgreedStop, GeoHit, ItineraryItem, LegChoice, MustSeeHow } from "../../../shared/types";
 import { stayLoc, stayOn } from "../geo/locate";
 import { $, api, esc, toast } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
@@ -33,15 +33,17 @@ import * as mapModule from "../map/map";
 import { routeKey, routes } from "../map/routes";
 import { askConfirm } from "../core/ask";
 
-type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
+/** "revised": sent back with an edit, for the chat to offer again with it made. */
+type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }
 /** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
 interface StopOp { op: "add" | "remove" | "time" | "where"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
 /** Anything else they can change by hand (see EDITS_DOC in server/trip/companion.ts). */
 interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
-interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string }
+interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string; agreed?: AgreedStop[] }
 type Source = ChatSource;
-type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask };
+/** revises: their message is an edit to the change offered just before it (sent back from its card). */
+type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean };
 /** A question the chat asked, with answers to pick from, and what they answered (once they have). */
 type Ask = { q: string; options: string[]; multi?: boolean; answered?: string };
 
@@ -364,9 +366,13 @@ const chat = (): Turn[] => state.chat || [];
 const dayList = (days: number[]) => days.length === 1 ? `day ${days[0]}` : days.length ? `days ${days.slice(0, -1).join(", ")} and ${days.at(-1)}` : "the whole plan";
 
 /** What the model is told about an earlier change, so it can build on it ("and day 4 too", or one that wasn't applied). */
-function changeNote(c: PlanChange) {
-  const what = [c.request, ...opsLines(c.trip), ...stopLines(c.stops)].filter(Boolean).join("; ");
+function changeNote(change: PlanChange) {
+  // Sent back: what they kept ticked is the proposal they want edited.
+  const c = change.status === "revised" ? chosen(change) : change;
+  const agreed = c.agreed?.length ? `agreed stops: ${c.agreed.map((a) => `Day ${a.day} ${a.time} ${a.place}`).join(", ")}` : "";
+  const what = [c.request, agreed, ...opsLines(c.trip), ...stopLines(c.stops), ...(c.edits || []).map(editLine)].filter(Boolean).join("; ");
   const st = c.status === "applied" ? "applied" : c.status === "undone" ? "applied, then undone: the trip is as before it"
+    : c.status === "revised" ? "offered, then sent back by the traveler with an edit (their next message): nothing was applied"
     : "offered but not applied (the traveler moved on; include it again if they still want it)";
   return `Change ${st}: ${what}`;
 }
@@ -427,12 +433,71 @@ function opsLines(t?: TripOps) {
 /** A question with answers to pick from: buttons (checkboxes and Send when several can apply), and their own answer.
  *  Answered (or no longer the latest message): what they said. */
 function askCard(a: Ask, k: number, live: boolean) {
-  if (a.answered || !live) return `<div class="cp-ask done"><b>${esc(a.q)}</b>${a.answered ? `<span class="hint">${icon("check")} ${esc(a.answered)}</span>` : ""}</div>`;
-  const opts = a.multi
-    ? `<div class="cp-ask-multi">${a.options.map((o) => `<label class="ph-check"><input type="checkbox" value="${esc(o)}"> ${esc(o)}</label>`).join("")}<button type="button" class="btn solid" data-ask-send="${k}">Send</button></div>`
-    : `<div class="cp-ask-opts">${a.options.map((o) => `<button type="button" class="btn" data-ask="${k}" data-answer="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
-  return `<div class="cp-ask" data-ask-card="${k}"><b>${esc(a.q)}</b>${opts}
-    <form class="cp-ask-own" data-ask-own="${k}"><input type="text" maxlength="400" placeholder="Or write your own answer…"><button type="submit" class="btn">Send</button></form></div>`;
+  const head = (hint: string) => `<div class="cp-ask-head"><span class="cp-ask-chip">${icon("chat")} Question</span>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
+  if (a.answered || !live) return `<div class="cp-ask done">${head("")}<div class="cp-ask-q">${esc(a.q)}</div>${a.answered ? `<div class="cp-ask-answer">${icon("check")} ${esc(a.answered)}</div>` : ""}</div>`;
+  // Numbered rows with a radio (pick one) or a checkbox (pick any); the last, "Other", opens a box for their own answer.
+  // Each input has its own name: a shared one would let the arrow keys pick (and send) as they move.
+  const type = a.multi ? "checkbox" : "radio";
+  const row = (value: string, n: number, text: string) => `<label class="cp-opt${value === OTHER ? " other" : ""}"><input type="${type}" name="ask-${k}-${n}" value="${esc(value)}"><span class="cp-opt-n">${n}</span><span class="cp-opt-text">${text}</span></label>`;
+  const n = a.options.length + 1;
+  return `<div class="cp-ask${a.multi ? " multi" : ""}" data-ask-card="${k}">${head(a.multi ? "Pick any" : "Pick one")}<div class="cp-ask-q">${esc(a.q)}</div>
+    <div class="cp-ask-list" role="group">${a.options.map((o, i) => row(o, i + 1, esc(o))).join("")}${row(OTHER, n, `Other <span class="hint">· write your own answer</span>`)}
+      <div class="cp-ask-other" hidden><textarea rows="2" maxlength="400" placeholder="Your answer…"></textarea></div></div>
+    <div class="cp-ask-foot"><span class="hint"><kbd>↑</kbd><kbd>↓</kbd> or <kbd>1</kbd>–<kbd>${n}</kbd> to pick${a.multi ? ", <kbd>Space</kbd> to tick" : ""} · <kbd>Enter</kbd> to send</span><button type="button" class="btn solid" data-ask-send disabled>Send</button></div></div>`;
+}
+
+const OTHER = "__other__";
+
+/** The question card's picking: a single answer goes as soon as it's picked; ticked ones (or their own) with Send. */
+function wireAsk(card: HTMLElement) {
+  const k = +card.dataset.askCard!, multi = card.classList.contains("multi");
+  const inputs = [...card.querySelectorAll<HTMLInputElement>(".cp-opt input")];
+  const other = inputs[inputs.length - 1], box = card.querySelector<HTMLElement>(".cp-ask-other")!, text = box.querySelector("textarea")!;
+  const send = card.querySelector<HTMLButtonElement>("[data-ask-send]")!;
+  const picked = () => {
+    const own = other.checked ? text.value.trim() : "";
+    return [...inputs.filter((x) => x.checked && x !== other).map((x) => x.value), ...(own ? [own] : [])];
+  };
+  const sync = () => {
+    box.hidden = !other.checked;
+    for (const x of inputs) x.closest(".cp-opt")!.classList.toggle("on", x.checked);
+    send.disabled = !picked().length;
+    // A single answer that isn't their own goes straight away: Send is only for ticks and their own words.
+    card.querySelector<HTMLElement>(".cp-ask-foot")!.classList.toggle("wait", !multi && !other.checked);
+  };
+  const go = () => { const p = picked(); if (p.length) answer(k, p.join(", ")); };
+  const pick = (x: HTMLInputElement) => {
+    if (!multi) { for (const y of inputs) y.checked = y === x; }
+    else x.checked = !x.checked;
+    sync();
+    if (x === other && other.checked) text.focus();
+    else if (!multi) go();
+  };
+  for (const x of inputs) {
+    // The row's own click, not "change": the keyboard handler below decides what Enter and Space do.
+    x.closest("label")!.onclick = (e) => { e.preventDefault(); x.focus(); pick(x); };
+  }
+  text.oninput = sync;
+  send.onclick = go;
+  card.onkeydown = (e) => {
+    if (e.target === text) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); }
+      else if (e.key === "Escape") { e.stopPropagation(); other.checked = false; sync(); other.focus(); }
+      return;
+    }
+    const at = inputs.indexOf(document.activeElement as HTMLInputElement);
+    const num = /^[1-9]$/.test(e.key) ? +e.key - 1 : -1;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      inputs[(Math.max(0, at) + (e.key === "ArrowDown" ? 1 : inputs.length - 1)) % inputs.length].focus();
+    } else if (num >= 0 && num < inputs.length) { e.preventDefault(); inputs[num].focus(); pick(inputs[num]); }
+    else if (e.key === " " && at >= 0) { e.preventDefault(); pick(inputs[at]); }
+    else if (e.key === "Enter" && at >= 0) {
+      e.preventDefault();
+      if (multi && picked().length) go(); else pick(inputs[at]);
+    }
+  };
+  sync();
 }
 
 /** Answers the chat's question: noted on its card, and sent as their next message. */
@@ -457,9 +522,10 @@ function changeCard(c: PlanChange, k: number, latest: boolean) {
   const inChain = chain?.cards.includes(k) ? chain.cards.length : 0;
   const actions = !latest
     ? (status === "applying" ? `<span class="hint">Changing the plan…</span>`
-      : `<span class="hint">${status === "applied" ? `${icon("check")} Applied` : status === "undone" ? "Undone" : "Not applied"}</span>`)
-    : status === "skipped" ? `<span class="hint">Not applied.</span><button type="button" class="link-btn" data-apply="${k}">Apply after all</button>`
-    : status === "offered" ? `<button type="button" class="btn solid" data-apply="${k}">${icon("check")} Apply</button>${c.request ? `<button type="button" class="btn" data-try="${k}" title="Make the change, then compare before and after; keep it or put everything back">${icon("arrowLeftRight")} Try it &amp; compare</button>` : `<button type="button" class="btn" data-review="${k}" title="See before and after side by side">${icon("arrowLeftRight")} Review</button>`}<button type="button" class="link-btn" data-skip="${k}">Not now</button>`
+      : `<span class="hint">${status === "applied" ? `${icon("check")} Applied` : status === "undone" ? "Undone" : status === "revised" ? `${icon("pencil")} Sent back with changes` : "Not applied"}</span>`)
+    : status === "skipped" || status === "revised" ? `<span class="hint">${status === "revised" ? "Sent back with changes." : "Not applied."}</span><button type="button" class="link-btn" data-apply="${k}">Apply after all</button>`
+    : status === "offered" && revising === k ? ""
+    : status === "offered" ? `<button type="button" class="btn solid" data-apply="${k}">${icon("check")} Apply</button>${c.request ? `<button type="button" class="btn" data-try="${k}" title="Make the change, then compare before and after; keep it or put everything back">${icon("arrowLeftRight")} Try it &amp; compare</button>` : `<button type="button" class="btn" data-review="${k}" title="See before and after side by side">${icon("arrowLeftRight")} Review</button>`}<button type="button" class="btn" data-revise="${k}" title="Send it back with what should be different; the chat offers it again with that changed">${icon("pencil")} Change something</button><button type="button" class="link-btn" data-skip="${k}">Not now</button>`
     : status === "applying" ? `<span class="hint">Changing the plan… (progress in the itinerary)</span>`
     : status === "applied" ? `<span class="ok-text">${icon("check")} Done</span>${inChain ? `<button type="button" class="link-btn" data-undo="${k}">${inChain > 1 ? `Undo all ${inChain} changes` : "Undo"}</button>` : ""}`
     : status === "failed" ? `<span class="hint">Didn't work out.</span><button type="button" class="link-btn" data-apply="${k}">Try again</button>`
@@ -471,7 +537,32 @@ function changeCard(c: PlanChange, k: number, latest: boolean) {
   if (offered && direct(chosen(c))) { try { const w = wouldBe(chosen(c)); impact = impactLine(w.before, w.after); } catch { /* as it was */ } }
   const chips = c.days.length ? `<div class="cp-chips">${c.days.map((d) => `<span class="cp-chip">Day ${d}</span>`).join("")}</div>` : c.request ? `<div class="cp-chips"><span class="cp-chip">Whole plan</span></div>` : "";
   return `<div class="cp-change${latest ? "" : " old"}"><div class="cp-change-what">${icon("route")} <div class="cp-change-body"><b class="cp-change-title">${esc(head)}</b>${chips}${listed.length ? `<ul class="cp-ops${offered && parts.length > 1 ? " pick" : ""}">${listed.map((p) => offered && parts.length > 1
-    ? `<li><label><input type="checkbox" data-part="${k}" value="${esc(p.key)}"${(c.skip || []).includes(p.key) ? "" : " checked"}> ${esc(p.text)}</label></li>` : `<li>${esc(p.text)}</li>`).join("")}</ul>` : ""}${impact ? `<div class="cp-impact">${esc(impact)}</div>` : ""}${c.request ? `<details class="cp-request"><summary>What the planner is told</summary><p>${esc(c.request)}</p></details>` : ""}<span class="hint">${what}</span></div></div><div class="cp-change-act">${actions}</div></div>`;
+    ? `<li><label><input type="checkbox" data-part="${k}" value="${esc(p.key)}"${(c.skip || []).includes(p.key) ? "" : " checked"}> ${esc(p.text)}</label></li>` : `<li>${esc(p.text)}</li>`).join("")}</ul>` : ""}${impact ? `<div class="cp-impact">${esc(impact)}</div>` : ""}${agreedHtml(c)}${c.request ? `<details class="cp-request"><summary>What the planner is told</summary><p>${esc(c.request)}</p></details>` : ""}<span class="hint">${what}</span></div></div>${offered && revising === k ? reviseForm(k) : ""}<div class="cp-change-act">${actions}</div></div>`;
+}
+
+/** The stops agreed for the days a change rebuilds, by day: what the plan will be (the planner only adds details). */
+function agreedHtml(c: PlanChange) {
+  if (!c.agreed?.length) return "";
+  const days = [...new Set(c.agreed.map((a) => a.day))];
+  return `<div class="cp-agreed">${days.map((d) => `<div class="cp-agreed-day"><span class="hint">${days.length > 1 || c.days.length > 1 ? `Day ${d}: ` : ""}the stops, as agreed</span><ol>${c.agreed!.filter((a) => a.day === d).map((a) => `<li><span class="cp-agreed-time">${esc(a.time || "–")}</span> ${esc(a.place)}</li>`).join("")}</ol></div>`).join("")}</div>`;
+}
+
+/** The offered change whose "Change something" box is open, and what they've written in it so far. */
+let revising: number | null = null, reviseDraft = "";
+function reviseForm(k: number) {
+  return `<form class="cp-revise" data-revise-form="${k}"><label class="hint" for="cpRevise">What should be different? The chat offers the change again with it.</label>
+    <textarea id="cpRevise" rows="2" maxlength="1000" placeholder="e.g. keep lunch at 12:30, or do it on Day 5 instead">${esc(reviseDraft)}</textarea>
+    <div class="cp-revise-act"><button type="submit" class="btn solid">${icon("refresh")} Send back</button><button type="button" class="link-btn" data-revise-cancel>Cancel</button><span class="hint"><kbd>Enter</kbd> to send · <kbd>Esc</kbd> to cancel</span></div></form>`;
+}
+
+/** Sends an offered change back with their edit: the card says so, and the chat is asked to offer it again with it. */
+function revise(k: number, text: string) {
+  const t = chat()[k];
+  if (!t?.change || !text.trim() || running) return;
+  t.change.status = "revised";
+  revising = null; reviseDraft = "";
+  save();
+  ask({ text: text.trim(), pictures: [], revise: true });
 }
 
 /** The model's thinking above its answer, folded like Claude's: "Thought for 12s" (open and live while it thinks). */
@@ -556,7 +647,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     while (j >= 0 && (turns[j].role !== "ai" || !turns[j].modelName)) j--;
     return j >= 0 && turns[j].modelName !== t.modelName ? `<div class="cp-switch"><span>${icon("sparkles")} Switched to ${esc(t.modelName)}</span></div>` : "";
   };
-  const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${esc(t.text)}</div>` : ""}${marker(k)}`
+  const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${t.revises ? `<span class="cp-revise-tag">${icon("pencil")} Change to the proposal</span>` : ""}${esc(t.text)}</div>` : ""}${marker(k)}`
     : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.ask ? askCard(t.ask, k, k === last && pending == null) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
@@ -573,15 +664,19 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
   log.querySelectorAll<HTMLButtonElement>("[data-q]").forEach((b) => { b.onclick = () => { box().value = b.dataset.q!; ask(); }; });
   log.querySelectorAll<HTMLButtonElement>("[data-apply]").forEach((b) => { b.onclick = () => apply(+b.dataset.apply!); });
   // The chat's question: an answer picked, several ticked and sent, or their own written.
-  log.querySelectorAll<HTMLButtonElement>("[data-ask]").forEach((b) => { b.onclick = () => answer(+b.dataset.ask!, b.dataset.answer!); });
-  log.querySelectorAll<HTMLButtonElement>("[data-ask-send]").forEach((b) => {
-    b.onclick = () => {
-      const picked = [...b.closest(".cp-ask")!.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")].map((c) => c.value);
-      if (picked.length) answer(+b.dataset.askSend!, picked.join(", "));
+  log.querySelectorAll<HTMLElement>(".cp-ask[data-ask-card]").forEach(wireAsk);
+  // Sending an offered change back with an edit.
+  log.querySelectorAll<HTMLButtonElement>("[data-revise]").forEach((b) => { b.onclick = () => { revising = +b.dataset.revise!; render(); log.querySelector<HTMLTextAreaElement>("#cpRevise")?.focus(); }; });
+  log.querySelectorAll<HTMLFormElement>("[data-revise-form]").forEach((f) => {
+    const box = f.querySelector("textarea")!;
+    const cancel = () => { revising = null; reviseDraft = ""; render(); };
+    box.oninput = () => { reviseDraft = box.value; };
+    box.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); f.requestSubmit(); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); }
     };
-  });
-  log.querySelectorAll<HTMLFormElement>("[data-ask-own]").forEach((f) => {
-    f.onsubmit = (e) => { e.preventDefault(); answer(+f.dataset.askOwn!, f.querySelector("input")!.value); };
+    f.onsubmit = (e) => { e.preventDefault(); revise(+f.dataset.reviseForm!, box.value); };
+    f.querySelector<HTMLButtonElement>("[data-revise-cancel]")!.onclick = cancel;
   });
   log.querySelectorAll<HTMLButtonElement>("[data-skip]").forEach((b) => { b.onclick = () => setStatus(+b.dataset.skip!, "skipped"); });
   log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(); });
@@ -681,7 +776,9 @@ async function apply(k: number) {
   let ok = true;
   if (c.request && it) {
     const days = c.days.filter((d) => d >= 1 && d <= it.days.length).map((d) => d - 1);
-    ok = await runGeneration(days.length ? { edit: { itinerary: state.itinerary!, days, request: c.request } } : { revise: { itinerary: state.itinerary!, request: c.request } });
+    // The stops they agreed on go along with their dates: the planner keeps them, and any it drops are put back.
+    const agreed = (c.agreed || []).filter((a) => days.includes(a.day - 1)).map((a) => ({ ...a, date: it.days[a.day - 1].date }));
+    ok = await runGeneration(days.length ? { edit: { itinerary: state.itinerary!, days, request: c.request, ...(agreed.length ? { agreed } : {}) } } : { revise: { itinerary: state.itinerary!, request: c.request } });
     // The plan couldn't be changed: the setup goes back too, so nothing is half done.
     if (!ok && (c.trip || c.edits?.length || c.stops?.length)) { Object.assign(state, now); refreshAll(); }
   }
@@ -905,7 +1002,7 @@ function renderPictures() {
 }
 
 /** A message as the model gets it: changes with how they went. */
-const turnText = (t: Turn) => ({ role: t.role, text: `${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
+const turnText = (t: Turn) => ({ role: t.role, text: `${t.revises ? "(Sent the proposed change back with this edit) " : ""}${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
 
 /** About how many tokens some text is (a token is roughly 4 characters). */
 const tokensIn = (text: string) => Math.round(text.length / 4);
@@ -1003,21 +1100,25 @@ function retry() {
   }).filter((p) => p.data);
   state.chat = turns.slice(0, u);
   if (chain && chain.cards.some((k) => k >= u)) chain = null;
-  ask({ text: me.text, pictures: pics });
+  ask({ text: me.text, pictures: pics, revise: me.revises });
 }
 
-async function ask(again?: { text: string; pictures: Picture[] }) {
+async function ask(again?: { text: string; pictures: Picture[]; revise?: boolean }) {
   const typed = again ? again.text : box().value.trim();
   const sent = again ? again.pictures : pictures;
-  const question = typed || (sent.length ? "What is this place?" : "");
+  // Sent back from a change's card: the chat makes their edit to that proposal and offers all of it again.
+  const question = again?.revise && typed
+    ? `I'm sending your last proposed change back with this edit (nothing has been applied): ${typed}
+Make exactly this edit to that proposal and offer the whole revised change again, with its CHANGE line; keep everything else in it as it was.`
+    : typed || (sent.length ? "What is this place?" : "");
   if (!question || running || compacting) return;
   if (!again) { pictures = []; renderPictures(); }
-  notice = "";
+  notice = ""; revising = null;
   // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
   if (contextUse().fill >= 1) await compact(chat().length - KEEP_RECENT);
   // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
   const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - COMPACT_MESSAGES)).map(turnText);
-  state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}) }];
+  state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}), ...(again?.revise ? { revises: true } : {}) }];
   save();
   jumpToEnd = true;
   if (!again) { box().value = ""; fit(); }

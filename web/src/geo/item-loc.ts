@@ -7,6 +7,7 @@ import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
 import { splitGroup, transferEnds } from "../trip/modes";
 import { activityTown } from "./stop-text";
+import { namesRide } from "../itinerary/journey-model";
 import { pointUrl, searchUrl } from "../core/maps-links";
 
 export { activityTown };
@@ -152,8 +153,12 @@ const HOTEL_STOP = /^(hotel\b|breakfast at (the )?hotel|check[- ]?(in|out)\b)|\b
 function hotelLoc(x: ItineraryItem, d: Day): Loc | null {
   if (!HOTEL_STOP.test(String(x.place))) return null;
   const on = state.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0));
-  // Check-in is at the stay you arrive at; breakfast and check-out at the one you wake up in.
-  const stay = /check[- ]?in/i.test(x.place) ? on.at(-1) : on.find((s) => s.start < d.date) || on.at(-1);
+  // Check-in is at the stay you arrive at; breakfast and check-out at the one you wake up in. On a travel day, any other
+  // hotel stop after checking in, arriving or one of the day's rides ("Rest at the hotel" at 17:00) is at the new one.
+  const before = d.items.slice(0, Math.max(0, d.items.indexOf(x)));
+  const arrived = !/check[- ]?out|checkout|breakfast/i.test(x.place)
+    && before.some((y) => /check[- ]?in|checkin|\barriv/i.test(y.place) || y.kind === "transfer" || !!transferEnds(y) || namesRide(y));
+  const stay = /check[- ]?in/i.test(x.place) || arrived ? on.at(-1) : on.find((s) => s.start < d.date) || on.at(-1);
   return stay ? stayLoc(stay) : null;
 }
 

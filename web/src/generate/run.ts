@@ -2,6 +2,7 @@
 import { prefs } from "../core/prefs";
 import { saveByItself } from "../saves/saves";
 import type { Itinerary, RunResult, StreamEvent, TripRequest } from "../../../shared/types";
+import { restoreAgreed } from "../../../shared/agreed";
 import { $, apiFetch, toast } from "../core/dom";
 import { type Meta, groupBudget, save, session, state, staysKey } from "../core/state";
 import { geocodeItems } from "../geo/item-loc";
@@ -184,7 +185,15 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
     else if (fix && state.itinerary) spliceFixed(state.itinerary, data, view, fix.problems.length);
     // Only the changed days come back; every other day stays exactly as it was.
-    else if (edit && state.itinerary) spliceFixed(state.itinerary, data, view, 0, `Changed ${editWhat}: ${edit.request}`);
+    else if (edit && state.itinerary) {
+      // What they agreed on with the chat is what they get: stops the planner left out (or tidied away) go back in.
+      for (const d of data.itinerary.days || []) {
+        const agreed = (edit.agreed || []).filter((a) => a.date === d.date);
+        const back = agreed.length ? restoreAgreed(d, agreed) : 0;
+        if (back) d.notes = `${d.notes ? `${d.notes} ` : ""}(${back} of the stops agreed in the chat ${back > 1 ? "were" : "was"} missing from the planner's version and ${back > 1 ? "were" : "was"} put back.)`;
+      }
+      spliceFixed(state.itinerary, data, view, 0, `Changed ${editWhat}: ${edit.request}`);
+    }
     else {
       state.itinerary = data.itinerary;
       const meta: Meta = {

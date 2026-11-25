@@ -14,6 +14,7 @@ import { tipHtml } from "./tips";
 import { wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
 import { isTransfer, onMap } from "../map/travel-day";
+import { dayJourney, journeyCard, suggestedJourney } from "./journey";
 
 /** The stop's name links to it in the maps app: a saved place's own link (see placeUrl), the exact spot where it's known,
  *  else a search for "name, town" (for a meal without a place: what's there to eat). */
@@ -59,6 +60,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener"${transfer && x.transportWas !== undefined ? ` title="The line is from the timetable. The plan said: ${esc(x.transportWas)}"` : ""}>${transfer && x.transportWas !== undefined ? `<span class="from-timetable">${icon("clock")}</span>` : ""}${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
         <span class="item-acts">
+        <button class="pin" data-edit="${di}-${xi}" title="Edit everything about this stop: time, name, description, cost, booking, how you get here">${icon("pencil")}</button>
         ${where ? `<button class="pin${x.leg ? " set" : ""}" data-leg-edit="${di}-${xi}" title="${x.leg ? "How you get here is set by hand: change it" : "How you get here: walk, road, train, boat, places on the way"}">${icon("route")}</button>` : ""}
         ${where ? `<button class="pin show-on-map" data-show="${di}-${xi}" title="Show on the map">${icon("pin")}</button>` : ""}
         <button class="pin${pinGuess ? " guess" : ""}" data-pin="${di}-${xi}" title="${pinTitle}">${icon("crosshair")}</button>
@@ -93,8 +95,16 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
     out += `<li class="fork"><div class="fork-label">Group splits up</div><div class="tracks">${cols.join("")}</div></li>`;
     run = [];
   };
+  // A travel day: its rides as one journey card (or, with none, the stays' way between the towns, offered to add).
+  const journey = dayJourney(d);
+  if (journey && !journey.runs.length) out += suggestedJourney(di, journey);
   d.items.forEach((x, i) => {
-    if (splitGroup(x)) run.push({ x, i });
+    if (journey?.start.has(i)) {
+      flush();
+      const k = journey.start.get(i)!;
+      out += journeyCard(d, journey, k, journey.runs[k].items.map((xi) => item(d.items[xi], xi)).join(""), cur);
+    } else if (journey?.inRun.has(i)) return;
+    else if (splitGroup(x)) run.push({ x, i });
     else { flush(); out += item(x, i); }
   });
   flush();

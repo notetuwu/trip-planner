@@ -6,7 +6,7 @@ import { distKm, stayLoc, stayOn } from "../geo/locate";
 import { state } from "../core/state";
 import { chosenMode, cleanStop, modeOf, splitGroup } from "../trip/modes";
 import { setMapStatus } from "./status";
-import { DRIVE_KM, arrivalStay, isTransfer, onMap, viaStops } from "./travel-day";
+import { DRIVE_KM, arrivalStay, isTransfer, journeyOf, onMap, ownsJourney, viaStops } from "./travel-day";
 
 /** Route key -> route, or null if there is none. */
 export const routes: Record<string, Route | null> = {};
@@ -159,7 +159,10 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   // line with the stays (see travel-day.ts), and other legs follow the mode picked for that drive.
   const pts = d.items.map((x, xi) => ({ x, xi, loc: onMap(x) ? itemLoc(x, d, byTitle) : null })).filter((p) => p.loc);
   const arrive = arrivalStay(d);
-  const drive = arrive > 0 && !!stayLoc(state.stays[arrive - 1]) && !!stayLoc(state.stays[arrive]);
+  // A travel day that spells out its own journey (its rides are stops) is drawn leg by leg, from the last stay's hotel;
+  // otherwise the stays' own line is the journey, and the day's long legs aren't drawn again on top of it.
+  const journey = journeyOf(d), owns = ownsJourney(d);
+  const drive = !owns && arrive > 0 && !!stayLoc(state.stays[arrive - 1]) && !!stayLoc(state.stays[arrive]);
   // Between two stops on the way, the drive line is the route, however short.
   const via = new Set(drive ? viaStops(arrive, byTitle).map((v) => v.xi) : []);
   const dayMode = arrive > 0 ? state.stays[arrive].travel || "" : "";
@@ -211,15 +214,27 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   };
   // Where they slept: the day starts there. Drawn when the first stop is out of town (the boat to Alpnachstad), not
   // for a café round the corner; a travel day's start is the drive between the stays instead.
-  const stay = arrive > 0 ? undefined : stayOn(d), home = stay ? stayLoc(stay) : undefined;
+  const stay = arrive > 0 ? (owns ? state.stays[arrive - 1] : undefined) : stayOn(d), home = stay ? stayLoc(stay) : undefined;
+  const away = owns ? stayLoc(state.stays[arrive]) : undefined, lastRide = owns ? Math.max(...journey!.runs.flatMap((r) => r.items).filter((i) => isTransfer(d.items[i]))) : -1;
   for (const path of paths) {
     const first = path[0];
-    if (home && first && kmBetween([home.lat, home.lng], [first.loc!.lat, first.loc!.lng]) > 1.5) connect({ x: null, xi: -1, loc: home }, first as Pt);
+    // A journey starts at the hotel they leave, however close the first stop.
+    if (home && first && (owns || kmBetween([home.lat, home.lng], [first.loc!.lat, first.loc!.lng]) > 1.5)) connect({ x: null, xi: -1, loc: home }, first as Pt);
+    // A journey with no stop on the map at all: from the hotel they leave straight to the new one, by its rides.
+    if (owns && home && away && !first) {
+      // By the journey's main ride (the train, not the taxi at the end).
+      const rides = journey!.runs.flatMap((r) => r.items).filter((i) => isTransfer(d.items[i]));
+      const main = rides.find((i) => ["train", "flight", "ferry"].includes(chosenMode(d.items[i]) || modeOf(d.items[i]))) ?? lastRide;
+      connect({ x: null, xi: -1, loc: home }, { x: d.items[main], xi: lastRide, loc: away });
+    }
     for (let i = 1; i < path.length; i++) {
       const from: LatLng = [path[i - 1].loc!.lat, path[i - 1].loc!.lng], to: LatLng = [path[i].loc!.lat, path[i].loc!.lng];
       if (drive && (distKm({ lat: from[0], lng: from[1] }, { lat: to[0], lng: to[1] }) > DRIVE_KM || (via.has(path[i - 1].xi) && via.has(path[i].xi)))) continue;
       connect(path[i - 1] as Pt, path[i] as Pt);
     }
+    // Rides after the last stop on the map (the taxi up to the hotel, with no check-in stop): on to the new stay.
+    const last = path[path.length - 1];
+    if (owns && away && last && lastRide > last.xi) connect(last as Pt, { x: d.items[lastRide], xi: lastRide, loc: away });
   }
   return [...legs.values()];
 }

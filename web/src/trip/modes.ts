@@ -2,6 +2,8 @@
 import type { ItineraryItem, TravelMode } from "../../../shared/types";
 import { state } from "../core/state";
 import { type IconName, icon } from "../core/icons";
+import { modeOf } from "./mode-of";
+export { modeOf };
 
 /** "" lets the planner choose. */
 export const TRAVEL_MODES: [TravelMode, string][] = [["", "Planner decides"], ["car", "Car"], ["train", "Train"], ["bus", "Bus"], ["flight", "Flight"], ["ferry", "Ferry"], ["bike", "Bike"]];
@@ -38,21 +40,6 @@ export function chosenMode(x: ItineraryItem): TravelMode {
   }
   for (const s of state.stays) for (const t of s.dayTrips || []) {
     if (t.mode && t.place && ((sameCity(a, s.city) && sameCity(b, t.place)) || (sameCity(a, t.place) && sameCity(b, s.city)))) return t.mode;
-  }
-  return "";
-}
-
-/** What a transfer stop says about how it goes: "(train)" in its name first, else its transport line. */
-export function modeOf(x: ItineraryItem): TravelMode {
-  const tag = String(x.place).match(/\(([^)]*)\)\s*$/)?.[1] || "";
-  for (const text of [tag, String(x.transport || "")]) {
-    const t = text.toLowerCase();
-    if (/\b(flight|fly|flying|plane|airline|air)\b/.test(t)) return "flight";
-    if (/\b(ferry|boat|ship|steamer|steamboat|cruise|vaporetto|schiff)\b/.test(t)) return "ferry";
-    if (/\b(train|rail|railway|shinkansen|ice|tgv|railjet|jr|metro|subway|s-bahn|bahn|tram|intercity|express|cog ?wheel|cog railway|rack railway|funicular)\b/.test(t)) return "train";
-    if (/\b(bus|coach|flixbus)\b/.test(t)) return "bus";
-    if (/\b(car|drive|driving|motorway|autobahn)\b/.test(t)) return "car";
-    if (/\b(bike|bicycle|cycling)\b/.test(t)) return "bike";
   }
   return "";
 }

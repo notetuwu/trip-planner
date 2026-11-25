@@ -120,3 +120,35 @@
 .ride-all summary::-webkit-details-marker { display: none; }
 .ride-list { display: block; margin: 2px 0 2px 10px; }
 .ride-list .ride-stop { display: block; padding: 1px 0; }
+
+/* The journey between two stays on a travel day: its rides as one card on the day's line, from the hotel they leave to
+   the one they arrive at. Suggested (not in the plan yet, only on the map): dashed, with "Use this". */
+.journey { position: relative; padding: 2px 0 14px 18px; list-style: none; }
+.journey::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: var(--rail); }
+.journey::before { content: ""; position: absolute; z-index: 1; left: 0; top: 10px; width: 14px; height: 14px; transform: translateX(-50%); border-radius: 4px; background: var(--c); box-shadow: 0 0 0 3px var(--panel); }
+.journey > .journey-head, .journey > .journey-end, .journey > .items, .journey > .journey-rides, .journey > .journey-act, .journey > .journey-none { margin-left: 0; }
+.journey { --j: var(--c); }
+.journey > * { position: relative; }
+.journey-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 7px 10px; border: 1px solid color-mix(in srgb, var(--j) 35%, var(--line)); border-bottom: 0; border-radius: 10px 10px 0 0; background: color-mix(in srgb, var(--j) 10%, var(--panel)); font-size: 13px; }
+.journey-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--j); color: #fff; }
+.journey-icon .i { width: 14px; height: 14px; }
+.journey-meta { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.journey-head .hint { font-size: 11.5px; }
+.journey-end, .journey > .items, .journey-rides, .journey-act, .journey-none { border-left: 1px solid color-mix(in srgb, var(--j) 35%, var(--line)); border-right: 1px solid color-mix(in srgb, var(--j) 35%, var(--line)); background: color-mix(in srgb, var(--j) 4%, var(--panel)); }
+.journey-end { display: flex; align-items: center; gap: 7px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+.journey-end .i { width: 14px; height: 14px; color: var(--j); }
+.journey > :last-child { border-bottom: 1px solid color-mix(in srgb, var(--j) 35%, var(--line)); border-radius: 0 0 10px 10px; }
+.journey > .items { margin: 0; padding: 4px 10px 0 24px; --rail: color-mix(in srgb, var(--j) 40%, var(--line)); }
+.journey > .items .item { padding-bottom: 10px; }
+.journey-rides { list-style: none; margin: 0; padding: 4px 10px 6px; display: grid; gap: 4px; font-size: 12.5px; }
+.journey-rides li { display: flex; align-items: center; gap: 8px; }
+.journey-rides time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 40px; }
+.journey-ride-icon .i { width: 14px; height: 14px; color: var(--j); }
+.journey-none { margin: 0; padding: 6px 10px; font-size: 12px; }
+.journey-act { display: flex; align-items: center; gap: 10px; justify-content: space-between; padding: 7px 10px; font-size: 12px; border-top: 1px dashed color-mix(in srgb, var(--j) 35%, var(--line)); }
+.journey-act .btn { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.journey.suggested > * { border-left-style: dashed; border-right-style: dashed; }
+.journey.suggested > .journey-head { border-top-style: dashed; }
+.journey.suggested > :last-child { border-bottom-style: dashed; }
+.journey.suggested::before { background: var(--panel); border: 2px dashed var(--c); box-shadow: none; }
+@media print { .journey-act { display: none; } }

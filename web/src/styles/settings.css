@@ -29,6 +29,12 @@
 .stay-geo { font-size: 11.5px; color: var(--muted); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stay-geo svg.i { color: var(--accent); }
 a.stay-geo { display: block; text-decoration: none; }
+/* The stay's place and "Set on the map" beside it (the place shortens to fit). */
+.stay-where { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.stay-where .stay-geo { flex: 1; min-width: 0; }
+.stay-pin-btn { flex: none; font-size: 11.5px; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; }
+.stay-pin-btn .i { width: 12px; height: 12px; }
+.stay .pin-panel { margin-top: 8px; }
 a.stay-geo:hover { color: var(--accent); text-decoration: underline; }
 .icon-btn { display: inline-grid; place-items: center; background: none; border: 0; color: var(--muted); cursor: pointer; width: 28px; height: 28px; padding: 0; border-radius: 7px; font-size: 15px; }
 .icon-btn:hover { background: var(--hover); color: var(--ink); }
@@ -948,14 +954,90 @@ button.refine:hover { border-color: var(--accent); }
 .lightbox-bar > button[data-play] { height: 30px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
 /* A question from the chat, with answers to pick from. */
-.cp-ask { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; gap: 8px; }
-.cp-ask b { margin: 0; }
-.cp-ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
-.cp-ask-opts .btn { height: auto; min-height: 30px; padding: 5px 12px; white-space: normal; text-align: left; }
-.cp-ask-multi { display: grid; gap: 4px; justify-items: start; }
-.cp-ask-multi .btn { margin-top: 4px; }
-.cp-ask-own { display: flex; gap: 6px; }
-.cp-ask-own input { flex: 1; height: 32px; }
-.cp-ask-own .btn { height: 32px; }
-.cp-ask.done { gap: 2px; opacity: .85; }
-.cp-ask.done .hint { display: flex; align-items: center; gap: 5px; }
+/* Like a terminal's prompt, styled: a chip, the question, numbered rows with a radio (pick one) or a checkbox (pick
+   any), the row in focus marked with ❯, and "Other" last, which opens a box for their own answer. */
+.cp-ask { margin-top: 10px; padding: 10px 6px 8px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; gap: 6px; }
+.cp-ask-head { display: flex; align-items: center; gap: 8px; padding: 0 6px; }
+.cp-ask-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 600 11px/1.5 Inter, system-ui, sans-serif; letter-spacing: .02em; }
+.cp-ask-chip .i { width: 12px; height: 12px; }
+.cp-ask-head .hint { font-size: 11px; }
+.cp-ask-q { padding: 0 6px; font-weight: 600; font-size: 13px; line-height: 1.4; }
+.cp-ask-list { display: grid; gap: 1px; }
+.cp-opt { position: relative; display: flex; align-items: flex-start; gap: 9px; padding: 6px 8px 6px 22px; border-radius: 7px; cursor: pointer; font-size: 12.5px; line-height: 1.4; }
+.cp-opt:hover { background: var(--hover); }
+.cp-opt:has(input:focus-visible) { background: var(--hover); }
+.cp-opt:has(input:focus-visible)::before { content: "❯"; position: absolute; left: 8px; top: 6px; color: var(--accent); font-weight: 700; }
+.cp-opt input { appearance: none; flex: none; width: 15px; height: 15px; margin: 1px 0 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--field); display: grid; place-content: center; cursor: pointer; outline: none; transition: border-color .12s; }
+.cp-ask.multi .cp-opt input { border-radius: 4px; }
+.cp-opt input::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .12s; }
+.cp-opt input::before { content: none; }
+.cp-ask.multi .cp-opt input::after { width: 9px; height: 9px; border-radius: 0; background: var(--accent-ink); clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 26%, 86% 12%, 38% 72%); }
+.cp-opt input:checked { border-color: var(--accent); }
+.cp-ask.multi .cp-opt input:checked { background: var(--accent); }
+.cp-opt input:checked::after { transform: scale(1); }
+.cp-opt-n { flex: none; min-width: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cp-opt.on .cp-opt-text { color: var(--accent); font-weight: 600; }
+.cp-opt.on .cp-opt-n { color: var(--accent); }
+.cp-opt.other .cp-opt-text .hint { font-weight: 400; }
+.cp-opt.other { margin-top: 3px; border-top: 1px dashed var(--line); border-radius: 0 0 7px 7px; padding-top: 8px; }
+.cp-opt.other:has(input:focus-visible)::before { top: 8px; }
+.cp-ask-other { padding: 0 8px 2px 46px; }
+.cp-ask-other textarea { width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: 12.5px; padding: 7px 9px; border-radius: 7px; }
+.cp-ask-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 6px 0; border-top: 1px solid var(--line); margin-top: 2px; padding-top: 7px; }
+.cp-ask-foot .hint { font-size: 11px; }
+.cp-ask-foot .btn { height: 28px; padding: 0 12px; font-size: 12.5px; }
+.cp-ask-foot.wait .btn { display: none; }
+.cp-ask kbd, .cp-revise kbd { font: 600 10px/1 Inter, system-ui, sans-serif; padding: 2px 4px; margin: 0 1px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--field); color: var(--muted); }
+.cp-ask.done { gap: 4px; padding-bottom: 9px; opacity: .85; }
+.cp-ask-answer { display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 12.5px; color: var(--ok); }
+.cp-ask-answer .i { flex: none; }
+
+/* Sending an offered change back with an edit: the box on its card, and the tag on their message. */
+.cp-revise { display: grid; gap: 6px; padding: 8px 0 0; border-top: 1px dashed var(--line); }
+.cp-revise textarea { width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: 12.5px; padding: 7px 9px; border-radius: 7px; }
+.cp-revise-act { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 12.5px; }
+.cp-revise-act .btn { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.cp-revise-act .hint { margin-left: auto; font-size: 11px; }
+.cp-revise-tag { display: flex; align-items: center; gap: 5px; margin-bottom: 3px; font-size: 11px; font-weight: 600; color: var(--accent); }
+.cp-revise-tag .i { width: 12px; height: 12px; }
+
+/* A change that rebuilds a day from stops agreed in the chat: those stops, in order, on its card. */
+.cp-agreed { display: grid; gap: 6px; }
+.cp-agreed-day .hint { font-size: 11px; }
+.cp-agreed ol { list-style: none; margin: 3px 0 0; padding: 0; display: grid; gap: 2px; font-size: 12.5px; }
+.cp-agreed li { display: flex; gap: 8px; line-height: 1.4; }
+.cp-agreed-time { flex: none; min-width: 38px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* A stop's edit window: everything about it, in rows of fields; "Getting here" and "Who goes" as sections. */
+.stop-edit { width: min(600px, 94vw); max-height: min(88vh, 900px); padding: 0; display: none; }
+.stop-edit[open] { display: flex; flex-direction: column; }
+.se-head { display: flex; align-items: center; gap: 10px; padding: 14px 18px 10px; border-bottom: 1px solid var(--line); }
+.se-head h3 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.se-head h3 .i { color: var(--accent); }
+.se-head .hint { font-size: 12px; }
+.se-head .icon-btn { margin-left: auto; }
+.se-body { overflow: auto; padding: 14px 18px; display: grid; gap: 12px; }
+.se-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.se-f { display: grid; gap: 4px; min-width: 0; font-size: 12.5px; }
+.se-f > span { font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.se-f > span small { font-weight: 400; }
+.se-f input, .se-f select, .se-f textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; }
+.se-f textarea { resize: vertical; padding: 7px 9px; border-radius: 7px; line-height: 1.45; }
+.se-grow { flex: 1 1 200px; }
+.se-time { flex: 0 0 110px; }
+.se-check { display: flex; align-items: center; gap: 7px; font-size: 12.5px; padding-bottom: 8px; cursor: pointer; }
+.se-section { margin: 0; padding: 10px 12px 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 10px; }
+.se-section legend { padding: 0 6px; font-size: 12px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.se-section legend .i { width: 14px; height: 14px; color: var(--accent); }
+.se-where { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.se-where .i { width: 14px; height: 14px; color: var(--accent); }
+.se-where .link-btn { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+.se-acts { display: flex; align-items: center; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.se-acts .se-gap { flex: 1; }
+.se-acts .link-btn.danger { color: var(--accent); display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; }
+/* How they get here: automatic or by hand, then the parts. */
+.lp-how { display: grid; gap: 6px; font-size: 12.5px; }
+.lp-how label { display: flex; align-items: center; gap: 8px; cursor: pointer; flex-wrap: wrap; }
+.lp-how .hint { font-size: 11.5px; }
+.lp-hand { display: grid; gap: 8px; }
+.lp-hand[hidden] { display: none; }

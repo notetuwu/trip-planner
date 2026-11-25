@@ -1,14 +1,13 @@
 // "How you get here" on a stop: the way from the stop before, set by hand when the map reads it wrong from the
 // transport text. A mode for each part, through places on the way ("train down to Vitznau, then the boat back").
-import type { GeoHit, LegChoice } from "../../../shared/types";
-import { api, esc, toast } from "../core/dom";
+// The controls go in the stop's edit window (see stop-edit.ts).
+import type { GeoHit, ItineraryItem, LegChoice } from "../../../shared/types";
+import { api, esc } from "../core/dom";
 import { icon } from "../core/icons";
-import { save, state } from "../core/state";
+import { state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { stayLoc, stayOn } from "../geo/locate";
-import { drawMap } from "../map/draw";
 import { dayLegs, legStart } from "../map/routes";
-import { renderItinerary } from "./render";
 
 const CHOICES: [LegChoice, string][] = [
   ["foot", "On foot"], ["bike", "By bike"], ["car", "By car or taxi"], ["bus", "By bus (its line, else the road)"], ["transit", "By tram or metro"],
@@ -16,23 +15,21 @@ const CHOICES: [LegChoice, string][] = [
   ["straight", "Straight line (no route)"],
 ];
 
-/** Opens the panel under the stop. */
-export function openLegEdit(di: number, xi: number, anchor: HTMLElement) {
-  document.querySelector(".leg-panel")?.remove();
-  const d = state.itinerary?.days[di], x = d?.items[xi];
-  if (!d || !x) return;
+type Leg = NonNullable<ItineraryItem["leg"]>;
+
+/** The way to a stop, editable in `host`: automatic (read from the transport text) or set by hand, a mode per part.
+ *  read() gives the leg to keep (null: automatic). */
+export function legControls(host: HTMLElement, di: number, xi: number) {
+  const d = state.itinerary!.days[di], x = d.items[xi];
   const byTitle = byTitleMap();
   // Where the leg starts: the stop before it on the map (the one the leg is drawn from).
   const legs = dayLegs(d, byTitle).filter((l) => l.xi === xi);
   const fromName = legs.length ? legStart(d, legs[0]) : "";
   // Starts from what's set, else from how the map reads it now.
   const now: LegChoice = !legs[0] ? "straight" : legs[0].bus ? "bus" : legs[0].mode;
-  const draft: NonNullable<typeof x.leg> = x.leg ? structuredClone(x.leg) : { modes: [now], via: [] };
+  const draft: Leg = x.leg ? structuredClone(x.leg) : { modes: [now], via: [] };
+  let byHand = !!x.leg;
   const near = itemLoc(x, d, byTitle) || (stayOn(d) ? stayLoc(stayOn(d)!) : undefined);
-
-  const panel = document.createElement("div");
-  panel.className = "pin-panel leg-panel";
-  anchor.closest("li.item")?.appendChild(panel);
 
   const render = () => {
     const options = (sel: LegChoice) => CHOICES.map(([k, t]) => `<option value="${k}"${k === sel ? " selected" : ""}>${t}</option>`).join("");
@@ -41,19 +38,20 @@ export function openLegEdit(di: number, xi: number, anchor: HTMLElement) {
         <span>to <b>${esc(k < draft.via.length ? draft.via[k].name : x.place)}</b></span>
         ${k < draft.via.length ? `<button type="button" class="icon-btn" data-unvia="${k}" title="Not through here">${icon("x")}</button>` : ""}
       </li>`).join("");
-    panel.innerHTML = `<div class="pin-head"><b>How you get here${fromName ? ` from ${esc(fromName)}` : ""}</b><button type="button" class="icon-btn" data-close title="Close">${icon("x")}</button></div>
-      <ol class="lp-rows">${rows}</ol>
-      <form class="pin-search"><input type="search" placeholder="Add a stop on the way, e.g. Vitznau"><button class="btn">Add</button></form>
-      <ul class="pin-results"></ul>
-      <div class="lp-acts"><button type="button" class="btn solid" data-save>Save</button>${x.leg ? `<button type="button" class="link-btn" data-auto title="Read it from the transport text again">Back to automatic</button>` : ""}</div>`;
-    panel.querySelectorAll<HTMLSelectElement>("[data-mode]").forEach((s) => { s.onchange = () => { draft.modes[+s.dataset.mode!] = s.value as LegChoice; }; });
-    panel.querySelectorAll<HTMLButtonElement>("[data-unvia]").forEach((b) => { b.onclick = () => { const k = +b.dataset.unvia!; draft.via.splice(k, 1); draft.modes.splice(k, 1); render(); }; });
-    panel.querySelector<HTMLButtonElement>("[data-close]")!.onclick = () => panel.remove();
-    panel.querySelector<HTMLButtonElement>("[data-save]")!.onclick = () => done(draft);
-    const auto = panel.querySelector<HTMLButtonElement>("[data-auto]");
-    if (auto) auto.onclick = () => done(null);
-    const input = panel.querySelector<HTMLInputElement>("input")!, list = panel.querySelector<HTMLElement>(".pin-results")!;
-    panel.querySelector("form")!.onsubmit = async (e) => {
+    host.innerHTML = `<div class="lp-how">
+        <label><input type="radio" name="lp-how-${di}-${xi}" value="auto"${byHand ? "" : " checked"}> Automatic <span class="hint">· read from the transport text${legs[0] ? ` (now: ${esc(CHOICES.find(([k]) => k === now)?.[1].toLowerCase() || now)})` : ""}</span></label>
+        <label><input type="radio" name="lp-how-${di}-${xi}" value="hand"${byHand ? " checked" : ""}> Set by hand${fromName ? ` <span class="hint">· from ${esc(fromName)}</span>` : ""}</label>
+      </div>
+      <div class="lp-hand"${byHand ? "" : " hidden"}>
+        <ol class="lp-rows">${rows}</ol>
+        <form class="pin-search"><input type="search" placeholder="Add a stop on the way, e.g. Vitznau"><button class="btn">Add</button></form>
+        <ul class="pin-results"></ul>
+      </div>`;
+    host.querySelectorAll<HTMLInputElement>(`input[name="lp-how-${di}-${xi}"]`).forEach((r) => { r.onchange = () => { byHand = r.value === "hand"; render(); }; });
+    host.querySelectorAll<HTMLSelectElement>("[data-mode]").forEach((s) => { s.onchange = () => { draft.modes[+s.dataset.mode!] = s.value as LegChoice; }; });
+    host.querySelectorAll<HTMLButtonElement>("[data-unvia]").forEach((b) => { b.onclick = () => { const k = +b.dataset.unvia!; draft.via.splice(k, 1); draft.modes.splice(k, 1); render(); }; });
+    const input = host.querySelector<HTMLInputElement>(".lp-hand input")!, list = host.querySelector<HTMLElement>(".lp-hand .pin-results")!;
+    host.querySelector<HTMLFormElement>(".lp-hand form")!.onsubmit = async (e) => {
       e.preventDefault();
       const q = input.value.trim();
       if (!q) return;
@@ -75,13 +73,6 @@ export function openLegEdit(di: number, xi: number, anchor: HTMLElement) {
       } catch (err) { list.innerHTML = `<li class="hint">${esc((err as Error).message)}</li>`; }
     };
   };
-
-  const done = (leg: typeof draft | null) => {
-    if (leg) x.leg = leg; else delete x.leg;
-    panel.remove();
-    save(); renderItinerary(); drawMap({ fit: false });
-    toast(leg ? `How you get to ${x.place} is set` : `${x.place}: read from the transport text again`);
-  };
-
   render();
+  return { read: (): Leg | null => (byHand ? draft : null) };
 }

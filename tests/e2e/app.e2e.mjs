@@ -10,7 +10,7 @@ const STUBS = `(() => {
   const TOWNS = {
     padua: [45.4064, 11.8768, "it", "Italy"], venice: [45.4408, 12.3155, "it", "Italy"], milano: [45.4642, 9.19, "it", "Italy"],
     lucerne: [47.0502, 8.3093, "ch", "Switzerland"], bregenz: [47.5031, 9.7471, "at", "Austria"],
-    osaka: [34.6937, 135.5023, "jp", "Japan"], kyoto: [35.0116, 135.7681, "jp", "Japan"],
+    osaka: [34.6937, 135.5023, "jp", "Japan"], kyoto: [35.0116, 135.7681, "jp", "Japan"], hakone: [35.2324, 139.1069, "jp", "Japan"],
     tunis: [36.8065, 10.1815, "tn", "Tunisia"], "cape town": [-33.9249, 18.4241, "za", "South Africa"],
     cairo: [30.0444, 31.2357, "eg", "Egypt"], nairobi: [-1.2921, 36.8219, "ke", "Kenya"],
   };
@@ -387,6 +387,98 @@ test("a travel day draws the drive once: no transfer pins, no long day legs", as
   const legs = await page.eval(`planner.dayLegs(planner.state().itinerary.days[0], planner.byTitleMap()).map((l) => [l.fromXi, l.xi, l.mode])`);
   assert.deepEqual(legs, [], "the drive (and the walk between stops on the way) isn't drawn as day legs");
   assert.equal(await page.eval(`document.querySelectorAll(".num-pin").length`), 4, "transfers have no pins");
+});
+
+test("a travel day's rides are one journey card; without them, the stays' way is offered and Use this adds it", async () => {
+  await trip({
+    stays: [{ city: "Osaka", start: "2027-04-01", nights: 2, hotel: "around the Garden Court Hotel" }, { city: "Hakone", start: "2027-04-03", nights: 2, hotel: "Maple Stay Hakone", travel: "train" }],
+    list: "", listChosen: true, autoFix: false,
+  });
+  await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [
+    day("2027-04-02", "Osaka", [stop("10:00", "Osaka Castle")]),
+    day("2027-04-03", "Osaka → Hakone", [stop("09:00", "Check out & Osaka Metro to Shin-Osaka", { kind: "transfer", cost: 6 }),
+      stop("12:15", "Shinkansen Shin-Osaka to Odawara", { kind: "sight", cost: 282 }), stop("14:30", "Uber Odawara → Maple Stay Hakone", { kind: "transfer", cost: 125 }),
+      stop("16:13", "Arrive Maple Stay Hakone – check in"), stop("17:00", "Rest at the hotel")]) ] } })`);
+  await page.waitFor(`!!document.querySelector(".journey")`);
+  const card = await page.eval(`(() => { const j = document.querySelector(".journey"); return { head: j.querySelector(".journey-head").textContent.replace(/\\s+/g, " ").trim(),
+    ends: [...j.querySelectorAll(".journey-end")].map((e) => e.textContent.trim()), stops: [...j.querySelectorAll(".item .name a")].map((a) => a.textContent) }; })()`);
+  assert.match(card.head, /Osaka → Hakone/);
+  assert.match(card.head, /09:00 → 16:13/);
+  assert.deepEqual(card.ends, ["Leave Garden Court Hotel", "Arrive at Maple Stay Hakone"]);
+  assert.equal(card.stops.length, 4, "check-out, Shinkansen, Uber and check-in are in the card; resting at the hotel isn't");
+  assert.equal(await page.eval(`document.querySelector('[data-i="1"] > .items > .item .name a').textContent`), "Rest at the hotel");
+  // "Rest at the hotel" after the journey is at the new stay (Hakone), not the one they left that morning.
+  const rest = await page.eval(`(() => { const d = planner.state().itinerary.days[1]; const l = planner.itemLoc(d.items[4], d, planner.byTitleMap()); return l && [l.lat, l.lng]; })()`);
+  assert.ok(rest && Math.abs(rest[0] - 35.2324) < 0.05 && Math.abs(rest[1] - 139.1069) < 0.05, `at Hakone, not Osaka: ${JSON.stringify(rest)}`);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/journey.png`, ".journey");
+
+  // The same day with no rides written in: the way between the stays is suggested, and Use this puts it in the day.
+  const key = await page.eval(`(() => { const [a, b] = planner.state().stays.map((s) => planner.stayLoc(s)); return { a: [a.lat, a.lng], b: [b.lat, b.lng] }; })()`);
+  await page.eval(`planner.routes["train:" + ${JSON.stringify(key.a)}.map((n) => n.toFixed(5)).join(",") + ">" + ${JSON.stringify(key.b)}.map((n) => n.toFixed(5)).join(",")] = { d: 452000, t: 11220, c: [${JSON.stringify(key.a)}, ${JSON.stringify(key.b)}],
+      rides: [{ mode: "HIGHSPEED_RAIL", line: "Hikari 650", on: { n: "Shin-Osaka", lat: 34.733, lng: 135.5 }, off: { n: "Odawara", lat: 35.256, lng: 139.155 }, stops: [], dep: "11:15", to: "Tokyo" },
+        { mode: "BUS", line: "H", on: { n: "Odawara", lat: 35.256, lng: 139.155 }, off: { n: "Moto-Hakone", lat: 35.2, lng: 139.03 }, stops: [], dep: "13:40", to: "Moto-Hakone" }] };
+    const s = planner.state(); s.itinerary.days[1].items = [stop("17:00", "Rest at the hotel")]; planner.applyState(s)`);
+  await page.waitFor(`!!document.querySelector(".journey.suggested [data-journey-use]")`);
+  assert.match(await page.eval(`document.querySelector(".journey.suggested").textContent`), /Hikari 650: Shin-Osaka → Odawara/);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/journey-suggested.png`, ".journey.suggested");
+  await page.eval(`document.querySelector("[data-journey-use]").click()`);
+  await page.waitFor(`!document.querySelector(".journey.suggested") && !!document.querySelector(".journey")`);
+  assert.deepEqual(await page.eval(`planner.state().itinerary.days[1].items.map((x) => x.time + " " + x.place)`),
+    ["11:15 High-speed train Hikari 650 Shin-Osaka → Odawara", "13:40 Bus H Odawara → Moto-Hakone", "17:00 Rest at the hotel"]);
+});
+
+test("a stay can be put on its exact spot by hand, and back on its address", async () => {
+  await trip({
+    stays: [{ city: "Osaka", start: "2027-04-01", nights: 2, hotel: "" }, { city: "Hakone", start: "2027-04-03", nights: 2, hotel: "Maple Stay Hakone", travel: "train" }],
+    list: "", listChosen: true, autoFix: false,
+  });
+  await page.waitFor(`!!document.querySelector('.stay[data-i="1"] [data-act="pin"]')`);
+  assert.match(await page.eval(`document.querySelector('.stay[data-i="1"] [data-act="pin"]').textContent`), /Set on the map/);
+  // As if picked: the stay is there from now on (its pin, the journey, the planner).
+  await page.eval(`(() => { const s = planner.state(); s.stays[1].pin = { lat: 35.2001, lng: 139.0298, label: "Maple STAY Hakone, Route 1" }; planner.applyState(s); })()`);
+  await page.waitFor(`/set by hand/.test(document.querySelector('.stay[data-i="1"] .stay-where').textContent)`);
+  assert.deepEqual(await page.eval(`(() => { const l = planner.stayLoc(planner.state().stays[1]); return [l.lat, l.lng, l.cc]; })()`), [35.2001, 139.0298, "jp"]);
+  await page.eval(`document.querySelector('.stay[data-i="1"] [data-act="pin"]').click()`);
+  await page.waitFor(`!!document.querySelector('.stay[data-i="1"] .pin-panel [data-pin-extra]')`);
+  assert.match(await page.eval(`document.querySelector('.stay[data-i="1"] .pin-panel input').value`), /^Maple Stay Hakone$/);
+  await page.eval(`document.querySelector('.stay[data-i="1"] .pin-panel [data-pin-extra]').click()`);
+  await page.waitFor(`!planner.state().stays[1].pin`);
+  assert.deepEqual(await page.eval(`(() => { const l = planner.stayLoc(planner.state().stays[1]); return [l.lat, l.lng]; })()`), [35.2324, 139.1069], "back to the town's spot");
+});
+
+test("a stop's edit window changes everything about it at once; Cancel changes nothing", async () => {
+  await trip({ ...PADUA_MILANO, travelers: 2 });
+  await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [
+    stop("09:00", "Caffè Pedrocchi", { kind: "meal", cost: 12, lat: 45.4077, lng: 11.8766, pinned: true }), stop("10:30", "Cappella degli Scrovegni", { kind: "sight", cost: 30, transport: "Walk 10 min", lat: 45.4115, lng: 11.8795, pinned: true })])] } })`);
+  await page.waitFor(`!!document.querySelector('[data-edit="0-1"]')`);
+  await page.eval(`document.querySelector('[data-edit="0-1"]').click()`);
+  await page.waitFor(`!!document.querySelector("dialog.stop-edit[open]")`);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/stop-edit.png`, "dialog.stop-edit");
+  // Cancel: nothing changes.
+  await page.eval(`(() => { const d = document.querySelector("dialog.stop-edit"); d.querySelector('[data-f="place"]').value = "Changed"; d.querySelector("[data-se-cancel]").click(); })()`);
+  await page.waitFor(`!document.querySelector("dialog.stop-edit")`);
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[1].place`), "Cappella degli Scrovegni");
+  // The route button opens it too, at how they get here; set by hand to a train, with everything else changed.
+  await page.eval(`document.querySelector('[data-leg-edit="0-1"]').click()`);
+  await page.waitFor(`!!document.querySelector("dialog.stop-edit[open] .lp-how")`);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/stop-edit-leg.png`, "dialog.stop-edit .se-section");
+  await page.eval(`(() => { const d = document.querySelector("dialog.stop-edit"), f = (k, v) => { const e = d.querySelector('[data-f="' + k + '"]'); e.value = v; };
+    f("time", "11:15"); f("place", "Scrovegni Chapel"); f("description", "Giotto's frescoes."); f("cost", "34"); f("costPer", "person");
+    f("booking", "essential"); f("bookAhead", "1 week before"); f("transport", "Tram to Eremitani"); f("group", "Group A"); f("people", "1");
+    const hand = d.querySelector('.lp-how input[value="hand"]'); hand.checked = true; hand.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(`!document.querySelector("dialog.stop-edit .lp-hand").hidden`);
+  await page.eval(`(() => { const s = document.querySelector('dialog.stop-edit [data-mode="0"]'); s.value = "transit"; s.dispatchEvent(new Event("change")); document.querySelector("dialog.stop-edit [data-se-save]").click(); })()`);
+  await page.waitFor(`!document.querySelector("dialog.stop-edit")`);
+  const x = await page.eval(`planner.state().itinerary.days[0].items[1]`);
+  assert.deepEqual([x.time, x.place, x.description, x.cost, x.costPer, x.booking, x.bookAhead, x.transport, x.group, x.people, x.leg.modes],
+    ["11:15", "Scrovegni Chapel", "Giotto's frescoes.", 34, "person", "essential", "1 week before", "Tram to Eremitani", "Group A", 1, ["transit"]]);
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].estimatedCost`), 46, "the day's cost follows");
+  // Back to automatic: the hand-set way goes.
+  await page.eval(`document.querySelector('[data-edit="0-1"]').click()`);
+  await page.waitFor(`!!document.querySelector("dialog.stop-edit[open]")`);
+  await page.eval(`(() => { const a = document.querySelector('dialog.stop-edit .lp-how input[value="auto"]'); a.checked = true; a.dispatchEvent(new Event("change")); document.querySelector("dialog.stop-edit [data-se-save]").click(); })()`);
+  await page.waitFor(`!document.querySelector("dialog.stop-edit")`);
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[1].leg`), undefined);
 });
 
 test("links in the app's own window go to the default browser", async () => {
@@ -866,13 +958,15 @@ test("the chat can ask with answers to pick from; the one picked is sent as the 
   await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
   await page.eval(`window.__e2e.companion = { answer: "To bring the transport up to date I need to know one thing.", question: { q: "How do you get around?", options: ["Public transport and the odd taxi", "By car"] } };
     (() => { const q = document.querySelector("#cpQ"); q.value = "bring my trip up to date"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
-  await page.waitFor(`document.querySelectorAll(".cp-ask [data-ask]").length === 2`, 10000, "the question's answers");
+  // Two answers and "Other" last, as radio rows.
+  await page.waitFor(`document.querySelectorAll(".cp-ask .cp-opt input[type=radio]").length === 3`, 10000, "the question's answers");
   assert.match(await page.eval(`document.querySelector(".cp-ask").textContent`), /How do you get around\?/);
-  await page.eval(`window.__e2e.companion = { answer: "Got it, by car." }; document.querySelectorAll(".cp-ask [data-ask]")[1].click()`);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/question.png`, ".cp-ask");
+  await page.eval(`window.__e2e.companion = { answer: "Got it, by car." }; document.querySelectorAll(".cp-ask .cp-opt")[1].click()`);
   await page.waitFor(`window.__e2e.companionAsked.question === "By car"`, 10000, "the answer sent");
   await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 2`, 10000, "the reply");
   assert.match(await page.eval(`document.querySelector(".cp-ask.done").textContent`), /By car/, "the card says what they answered");
-  assert.equal(await page.eval(`document.querySelectorAll(".cp-ask [data-ask]").length`), 0, "no buttons any more");
+  assert.equal(await page.eval(`document.querySelectorAll(".cp-ask .cp-opt").length`), 0, "no answers to pick any more");
   assert.match(await page.eval(`JSON.stringify(window.__e2e.companionAsked.history)`), /Asked: How do you get around\?/);
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });

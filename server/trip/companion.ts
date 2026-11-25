@@ -6,6 +6,8 @@
 // Nothing from here goes into plan generation: the chat is its own request, with its own prompt.
 import { type AskImage, askModel } from "../ai/ask";
 import { geocodeOne } from "../geo/geocode";
+import { planKind } from "../../shared/agreed";
+import type { AgreedStop } from "../../shared/types";
 import type { Report } from "../util/progress-stream";
 import { type Source, type Town, parseLookups, runLookups, withoutLookups } from "./chat-lookups";
 
@@ -33,7 +35,7 @@ export interface CompanionRequest {
 }
 /** A change to the plan the traveler asked for: the days it touches (1-based; empty = all over the plan) and the
  *  instruction for the planner. */
-export interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string }
+export interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; agreed?: AgreedStop[] }
 /** A question for the travelers with answers to pick from (they can also write their own): "multi" lets them pick several. */
 export interface ChatQuestion { q: string; options: string[]; multi?: boolean }
 /** Anything else the travelers can change by hand, made straight away by the page (see EDITS_DOC in the prompt). */
@@ -118,6 +120,7 @@ The chat is in Ask mode: answer and look things up, but never offer a change (no
 The travelers can change their ${days}-day itinerary through you. When their message asks for a change to it (or says yes to a change you suggested), write one or two sentences on what will change, then end your reply with one last line exactly like this:
 CHANGE: {"title": "a short headline of the change, under 60 characters", "days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation"}
 "days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
+When the change rebuilds a day (or part of one) from stops you and the travelers settled in the conversation (a list with times you offered and they said yes to, or that they gave you), also give every one of those stops, in order, as "agreed": [{"day": 7, "time": "09:00", "place": "Check out & metro to Shin-Osaka", "where": "its address, or place, town", "kind": "sight|activity|meal|transfer|other", "cost": 6, "note": "what to know about it, in a sentence or two"}]. The planner keeps exactly those stops, at those times and under those names, and only fills in the details; any it leaves out are put back. Leave "agreed" out when the planner should choose the stops itself.
 Small edits don't need the planner: adding a stop at a time that's free and close to that day's other stops (a few minutes away, so nothing else has to move), removing a stop, or moving a stop to another time. A stop that is further away, or that pushes later stops, dinner or the drive back, is a "request" for the planner for that day ("add X at about 14:00 and re-plan the rest of the day around it"), never an "add". Write those as "stops" instead of "request" (and "days": []); the page makes them straight away, without re-planning the day:
 CHANGE: {"days": [], "request": "", "stops": [{"op": "add", "day": 5, "time": "14:30", "place": "Aussichtsturm Gaflei", "where": "Gafleistrasse, Triesenberg, Liechtenstein", "description": "what it is and why go, how to get there, how long to allow", "cost": 0, "kind": "sight"}]}
 Other ops: {"op": "remove", "day": 5, "place": "the stop's name exactly as in the plan"} and {"op": "time", "day": 5, "place": "the stop's name exactly as in the plan", "time": "08:00"} (e.g. breakfast moved to when the café opens), and {"op": "where", "day": 5, "place": "the stop's name exactly as in the plan", "where": "its real address, or place, town, country"} when a stop is in the wrong place on the map or they tell you where it really is (they give an address, or say which branch or which side of town): it's moved there, nothing else changes. Give each day's stop its own "where" when the same place is on several days. For an added stop, "where" is its address or "place, town, country" (it's looked up on the map, so it must be the real location). Use "request" instead when other stops would have to move or the day needs rearranging.
@@ -241,8 +244,25 @@ export function parseChange(text: string, days = 0): PlanChange | null {
     if (!request && !trip && !stops && !edits) return null;
     const list = (Array.isArray(c.days) ? c.days : []).map(Number).filter((d: number) => Number.isInteger(d) && d >= 1 && (!days || d <= days));
     const title = typeof c.title === "string" ? c.title.trim().slice(0, 80) : "";
-    return { days: request ? [...new Set<number>(list)].sort((a, b) => a - b) : [], request, ...(trip ? { trip } : {}), ...(stops ? { stops } : {}), ...(edits ? { edits } : {}), ...(title ? { title } : {}) };
+    const dayList = request ? [...new Set<number>(list)].sort((a, b) => a - b) : [];
+    // Agreed stops only go with a request, and only for the days it changes.
+    const agreed = request ? agreedOps(c.agreed, days).filter((a) => dayList.includes(a.day)) : [];
+    return { days: dayList, request, ...(trip ? { trip } : {}), ...(stops ? { stops } : {}), ...(edits ? { edits } : {}), ...(title ? { title } : {}), ...(agreed.length ? { agreed } : {}) };
   } catch { return null; }
+}
+
+/** Only well-formed agreed stops (a day in the plan, a time as HH:MM, a name), at most 40. */
+export function agreedOps(v: unknown, days = 0): AgreedStop[] {
+  if (!Array.isArray(v)) return [];
+  const str = (x: unknown, n: number) => (typeof x === "string" ? x.trim().slice(0, n) : "");
+  return v.slice(0, 40).map((x: any): AgreedStop | null => {
+    const day = Number(x?.day), place = str(x?.place, 140), time = str(x?.time, 5);
+    if (!place || !Number.isInteger(day) || day < 1 || (days && day > days)) return null;
+    const cost = Number(x?.cost);
+    return { day, time: /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, "0") : "", place,
+      ...(str(x?.where, 200) ? { where: str(x.where, 200) } : {}), ...(planKind(x?.kind) ? { kind: planKind(x.kind) } : {}),
+      ...(Number.isFinite(cost) && cost >= 0 ? { cost } : {}), ...(str(x?.note, 600) ? { note: str(x.note, 600) } : {}) };
+  }).filter((x): x is AgreedStop => !!x);
 }
 
 /** Only well-formed stop edits (a known op, a day in the plan, a name; a time as HH:MM); null when there are none. */

@@ -12,6 +12,8 @@ export interface Stay {
   manualStart?: boolean;
   travel?: TravelMode;
   dayTrips?: DayTrip[];
+  /** Where the stay really is, set by hand (searched or clicked on the map): used instead of looking up the hotel. */
+  pin?: { lat: number; lng: number; label: string };
 }
 
 export interface Lookup { query?: string; url?: string }
@@ -130,7 +132,7 @@ export interface AppState {
   /** What the trip chat may do: answer only, offer changes that need Apply, or make small ones by itself. */
   chatMode?: "ask" | "manual" | "auto";
   /** The trip chat so far. */
-  chat?: { role: "me" | "ai"; text: string; modelName?: string; sources?: ChatSource[]; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" } }[];
+  chat?: { role: "me" | "ai"; text: string; modelName?: string; sources?: ChatSource[]; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised" }; revises?: boolean }[];
 }
 
 const STORE_KEY = "trip-planner-v2";
