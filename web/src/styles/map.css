@@ -231,7 +231,7 @@
 /* The Photos layer: a photo is a small picture with a white border at the spot it was taken; a group has a count. */
 .photo-pin { position: relative; width: 52px; height: 52px; border-radius: 10px; border: 3px solid #fff; box-sizing: border-box; background: #ddd; box-shadow: 0 2px 8px rgba(0, 0, 0, .45); cursor: pointer; transition: transform .12s; }
 .photo-pin:hover { transform: scale(1.12); z-index: 5; }
-.photo-pin img { width: 100%; height: 100%; object-fit: cover; border-radius: 7px; display: block; pointer-events: none; }
+.photo-pin img { width: 100% !important; height: 100% !important; object-fit: cover; border-radius: 7px; display: block; pointer-events: none; }
 /* A group looks like a small stack, with its count on a badge. */
 .photo-pin.many { box-shadow: 4px 4px 0 -1px #fff, 4px 4px 0 0 rgba(0, 0, 0, .3), 0 2px 8px rgba(0, 0, 0, .45); }
 .photo-pin b { position: absolute; top: -9px; right: -9px; min-width: 20px; height: 20px; padding: 0 5px; box-sizing: border-box; border-radius: 10px; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink); font-size: 11px; border: 2px solid #fff; }
@@ -300,6 +300,52 @@
 .photo-play::after { content: ""; position: absolute; left: 8px; top: 5px; border-left: 8px solid #fff; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
 .ph-play { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 4px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .ph-play i { width: 0; height: 0; margin-left: 2px; border-left: 7px solid #fff; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+
+/* Placing photos on the map: the photos on the left, the map on the right. */
+.ph-modes { flex: none; }
+.pp-wrap { display: none; }
+.photos-dialog.placing .ph-wrap, .photos-dialog.placing [data-ph-toggle-side], .photos-dialog.placing .ph-full-btn, .photos-dialog.placing [data-ph-count] { display: none; }
+.photos-dialog.placing .pl-head .ph-modes { margin-left: auto; }
+.photos-dialog.placing .pp-wrap { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); }
+.pp-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
+.pp-filters, .pp-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.pp-filters select { flex: 1 1 100px; min-width: 0; }
+.pp-filters [data-pp-which] { flex-basis: 100%; }
+.pp-acts .btn { height: 32px; padding: 0 10px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; }
+.pp-info { margin: 0; padding: 6px 12px; font-size: 12px; line-height: 1.45; border-bottom: 1px solid var(--line); }
+.pp-list { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 16px; }
+.pp-group > header { padding: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin: 12px 0 6px; font-size: 12px; cursor: grab; }
+.pp-group > header b { white-space: nowrap; }
+.pp-group > header span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.pp-group > header em { font-style: normal; color: var(--muted); }
+.pp-group > header small { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
+.pp-spot { margin-top: 10px; padding: 0 8px 8px; border: 1px solid var(--accent); border-radius: 10px; }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 4px; }
+.pp-tile { position: relative; aspect-ratio: 1; border-radius: 7px; overflow: hidden; background: var(--field); cursor: grab; outline-offset: -3px; }
+.pp-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.pp-tile.sel { outline: 3px solid var(--accent); }
+.pp-tile.sel img { opacity: .8; }
+.pp-tile i { position: absolute; left: 3px; bottom: 3px; padding: 1px 5px; border-radius: 6px; background: rgba(0, 0, 0, .65); color: #fff; font: 600 10px/1.5 Inter, system-ui, sans-serif; pointer-events: none; }
+.pp-zoom { all: unset; position: absolute; right: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.pp-zoom svg { width: 13px; height: 13px; }
+.pp-tile:hover .pp-zoom, .pp-zoom:focus-visible { opacity: 1; }
+.pp-zoom:hover { background: var(--accent); }
+@media (hover: none) { .pp-zoom { opacity: 1; } }
+.pp-right { position: relative; min-width: 0; min-height: 0; }
+.pp-map { position: absolute; inset: 0; }
+.pp-map.over { outline: 3px dashed var(--accent); outline-offset: -5px; }
+.pp-layers { position: absolute; right: 10px; top: 10px; z-index: 1000; display: grid; gap: 4px; padding: 8px 12px; border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow); font-size: 12.5px; }
+.pp-layers .ph-check { margin: 0; }
+.pp-layers .pp-lock { padding-top: 6px; border-top: 1px solid var(--line); }
+.pp-tile[draggable="false"] { cursor: pointer; }
+.photo-pin.placed { border-color: var(--accent); }
+.photo-pin.sel { outline: 3px solid var(--accent); outline-offset: 3px; }
+.pp-stop { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--accent); background: #fff; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.pp-tip img { display: block; max-width: 180px; max-height: 180px; border-radius: 6px; margin-bottom: 4px; }
+@media (max-width: 760px) {
+  .photos-dialog.placing .pp-wrap { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .pp-left { border-right: 0; border-bottom: 1px solid var(--line); }
+}
 
 /* The trip preview. */
 .preview-dialog { width: min(1180px, 97vw); max-width: none; padding: 0; }

@@ -857,7 +857,7 @@ button.refine:hover { border-color: var(--accent); }
 .lightbox-nav svg { width: 22px; height: 22px; }
 .lightbox-nav.prev { left: 18px; } .lightbox-nav.prev svg { transform: rotate(90deg); }
 .lightbox-nav.next { right: 18px; } .lightbox-nav.next svg { transform: rotate(-90deg); }
-.lightbox-count { color: #fff; font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60vw; }
+.lightbox-count { color: #fff; font-size: 12.5px; font-variant-numeric: tabular-nums; line-height: 1.4; max-width: 60vw; max-height: 2.8em; overflow: auto; overflow-wrap: anywhere; }
 .lightbox.gallery .lightbox-bar { bottom: 104px; }
 .lightbox-strip { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: min(92vw, 1100px); display: flex; gap: 6px; padding: 6px; overflow-x: auto; border-radius: 12px; background: rgba(20, 20, 20, .85); cursor: default; scrollbar-width: thin; }
 .lightbox-strip button { all: unset; flex: none; box-sizing: border-box; width: 74px; height: 56px; border-radius: 7px; overflow: hidden; cursor: pointer; opacity: .6; outline: 2px solid transparent; outline-offset: -2px; transition: opacity .12s; }

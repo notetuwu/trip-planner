@@ -69,3 +69,43 @@ export function spotByTime(t: string, days: DayStops[], anchors: { at: number; l
   // a straight line between them crosses).
   return min - prev.min <= next.min - min ? at(prev) : at(next);
 }
+
+/** A spot given to a photo by hand (Photos window → Place on map), or "can't place". Kept with the trip; the photo's
+ *  file is never changed. */
+export type PhotoSpot = { lat: number; lng: number } | { skip: true };
+
+/** What a photo's hand-given spot is kept under: a Drive file's id is the same everywhere; a file on a computer is
+ *  named by its folder's name and its path in it (so the same folder on another computer matches, and the same file name
+ *  in two folders doesn't). */
+export function spotKey(folder: string, id: string) {
+  if (!/^local:/i.test(folder)) return id;
+  const name = folder.slice(6).replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "";
+  return `local:${name}/${id}`;
+}
+
+/** The photo with its hand-given spot applied: `placed` (it overrides the camera's position too), or `skipped` (no
+ *  position, and none is guessed). `camera`: the file itself has a position. A spot that isn't a sensible position (a
+ *  trip file edited by hand) is ignored. */
+export function withSpot<T extends { lat?: number; lng?: number }>(p: T, spot: PhotoSpot | undefined): T & { camera: boolean; placed?: boolean; skipped?: boolean } {
+  const camera = p.lat != null && p.lng != null;
+  if (spot && "skip" in spot && spot.skip) return { ...p, lat: undefined, lng: undefined, camera, skipped: true };
+  if (spot && "lat" in spot && Number.isFinite(spot.lat) && Number.isFinite(spot.lng) && Math.abs(spot.lat) <= 90 && Math.abs(spot.lng) <= 180) return { ...p, lat: spot.lat, lng: spot.lng, camera, placed: true };
+  return { ...p, camera };
+}
+
+/** Photos taken in one go: sorted by time, a new group after a pause longer than `gap` minutes or on another day. Those
+ *  with no time are one group, last. */
+export function burstsOf<T extends { t: string }>(photos: T[], gap = 10): T[][] {
+  const timed = photos.filter((p) => p.t).sort((a, b) => a.t.localeCompare(b.t)), rest = photos.filter((p) => !p.t);
+  const out: T[][] = [];
+  let last = NaN, day = "";
+  for (const p of timed) {
+    const at = minutes(p.t), d = p.t.slice(0, 10);
+    // (A date without a clock time, NaN, groups by its day.)
+    if (!out.length || d !== day || at - last > gap) out.push([]);
+    out[out.length - 1].push(p);
+    last = at; day = d;
+  }
+  if (rest.length) out.push(rest);
+  return out;
+}

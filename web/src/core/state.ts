@@ -1,6 +1,7 @@
 // The trip being edited (saved in localStorage) plus session-only data such as the loaded place list.
 import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode, Booking, TripShare } from "../../../shared/types";
 import { prefs } from "./prefs";
+import type { PhotoSpot } from "../map/photo-spot";
 
 export interface Stay {
   city: string;
@@ -118,6 +119,8 @@ export interface AppState {
   /** The shared Google Drive folders whose photos the map's Photos layer shows: each link as pasted, and shown or not.
    *  Kept with the trip, so every trip has its own. */
   photoFolders?: { link: string; off?: boolean }[];
+  /** Photos placed on the map by hand, or marked "can't place" (Photos window → Place on map), by photo (spotKey). */
+  photoSpots?: Record<string, PhotoSpot>;
   /** From the first version, which had one folder: moved into photoFolders the first time the trip is used. */
   photosFolder?: string;
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */

@@ -9,10 +9,10 @@ import { save, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { stayLoc, stayOn } from "../geo/locate";
 import { cleanStop } from "../trip/modes";
-import { type DayStops, type Spot, anchorsOf, spotByTime } from "./photo-spot";
+import { type DayStops, type PhotoSpot, type Spot, anchorsOf, spotByTime, spotKey, withSpot } from "./photo-spot";
 import { onMap } from "./travel-day";
 
-interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number }
+interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number; /** Who uploaded it to Drive. */ by?: string }
 interface PhotoList { folder: string; name: string; at: number; photos: Photo[]; total: number; truncated: boolean; pending?: number; skipped?: number }
 /** What's known of one folder: its photos once loaded, or why not. */
 interface Loaded { list: PhotoList | null; loading: boolean; error: string }
@@ -47,16 +47,38 @@ export function setPhotosGuess(yes: boolean) {
   draw(); changed();
 }
 
+/** A folder's photos with the spots given by hand applied. */
+const placedByHand = (folder: string) => (loaded.get(folder)?.list?.photos || []).map((p) => { const key = spotKey(folder, p.id); return { ...withSpot(p, state.photoSpots?.[key]), key }; });
+
+/** Places photos by hand (or marks them "can't place"); null takes that back. Returns what they had before, to undo. */
+export function setSpots(changes: Record<string, PhotoSpot | null>): Record<string, PhotoSpot | null> {
+  const spots = { ...state.photoSpots }, before: Record<string, PhotoSpot | null> = {};
+  for (const [key, spot] of Object.entries(changes)) {
+    before[key] = spots[key] || null;
+    if (spot) spots[key] = spot; else delete spots[key];
+  }
+  if (Object.keys(spots).length) state.photoSpots = spots; else delete state.photoSpots;
+  save(); draw(); changed();
+  return before;
+}
+
 /** Looks up where a photo without a position was taken: by the trip's photos with a position taken around then (from all
  *  its shown folders), else where the plan has them at that time (the day's stops with a place on the map and a time, and
  *  where they slept). Built once for a whole list of photos. With the guess switched off, nothing is placed. */
 function placer(): (t: string) => Spot | null {
   if (!guess) return () => null;
-  const anchors = anchorsOf(folders().filter((f) => !f.off).flatMap((f) => loaded.get(f.link)?.list?.photos || []));
+  // Photos placed by hand count like those with a position of their own.
+  const anchors = anchorsOf(folders().filter((f) => !f.off).flatMap((f) => placedByHand(f.link)));
+  const days = planDays();
+  return (t) => spotByTime(t, days, anchors);
+}
+
+/** Each day of the plan: its stops with a time and a place on the map, and where they slept. */
+export function planDays(): DayStops[] {
   const it = state.itinerary;
-  if (!it) return (t) => spotByTime(t, [], anchors);
+  if (!it) return [];
   const byTitle = byTitleMap();
-  const days: DayStops[] = it.days.map((d) => {
+  return it.days.map((d) => {
     const stops: DayStops["stops"] = [];
     for (const x of d.items) {
       const tm = /^(\d{1,2}):(\d{2})/.exec(x.time || "");
@@ -67,7 +89,6 @@ function placer(): (t: string) => Spot | null {
     const s = stayOn(d), l = s ? stayLoc(s) : undefined;
     return { date: d.date, stops, ...(l && s ? { home: { lat: l.lat, lng: l.lng, name: s.hotel || s.city.split(",")[0] } } : {}) };
   });
-  return (t) => spotByTime(t, days, anchors);
 }
 export const onPhotosChange = (f: () => void) => { listeners.add(f); };
 
@@ -77,7 +98,7 @@ export function photosState() {
   const rows = folders().map((f) => {
     const l = loaded.get(f.link), photos = l?.list?.photos || [];
     let shown = 0, guessed = 0, noSpot = 0;
-    for (const p of photos) { if (p.lat != null) shown++; else if (p.t && spot(p.t)) guessed++; else noSpot++; }
+    for (const p of placedByHand(f.link)) { if (p.lat != null) shown++; else if (!p.skipped && p.t && spot(p.t)) guessed++; else noSpot++; }
     return { link: f.link, local: isLocalFolder(f.link), skipped: l?.list?.skipped || 0, off: !!f.off, pending: l?.list?.pending || 0, videos: photos.filter((p) => p.video).length, name: l?.list?.name || "", loading: !!l?.loading, error: l?.error || "", total: l?.list?.total || 0, shown, guessed, noSpot, truncated: !!l?.list?.truncated };
   });
   const live = rows.filter((r) => !r.off), sum = (k: "shown" | "guessed" | "noSpot") => live.reduce((n, r) => n + r[k], 0);
@@ -185,7 +206,19 @@ export const when = (t: string) => {
 };
 
 /** A photo with the folder it's from (its original comes through the server, by folder). */
-export type Placed = Photo & { folder: string; folderName: string; /** No GPS: put where the plan has them at that time. */ guessed?: boolean; near?: string };
+export type Placed = Photo & {
+  folder: string; folderName: string;
+  /** What a spot given by hand is kept under. */ key: string;
+  /** The file itself has a position. */ camera: boolean;
+  /** Placed on the map by hand. */ placed?: boolean;
+  /** Marked "can't place". */ skipped?: boolean;
+  /** No GPS: put where the plan has them at that time. */ guessed?: boolean; near?: string;
+};
+
+/** The folder a photo is from (with the folder inside it, if any). */
+export const folderOf = (p: Placed) => [p.folderName || p.folder.replace(/^local:/i, "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "", p.dir].filter(Boolean).join(" / ");
+/** Where a photo came from: its folder, and who uploaded it when Drive says. */
+export const sourceOf = (p: Placed) => [folderOf(p), p.by ? `uploaded by ${p.by}` : ""].filter(Boolean).join(" · ");
 
 /** A photo as the viewer shows it: a big thumbnail at once, the original file from the server when it has loaded. */
 export const viewItem = (p: Placed): ViewItem => ({
@@ -200,7 +233,7 @@ export const viewItem = (p: Placed): ViewItem => ({
     : isLocalFolder(p.folder) ? {} : { full: apiUrl(`/api/photos/image?folder=${encodeURIComponent(p.folder)}&id=${encodeURIComponent(p.id)}`) }),
   ...(p.rot ? { turn: p.rot } : {}),
   thumb: sized(p.thumb, 160),
-  caption: [p.video ? `Video${p.dur ? ` ${duration(p.dur)}` : ""} · ${p.name}` : p.name, when(p.t), p.guessed ? `placed by its time, near ${p.near}` : "", !p.t && p.up ? `no camera time (uploaded ${when(p.up)})` : ""].filter(Boolean).join(" · "),
+  caption: [p.video ? `Video${p.dur ? ` ${duration(p.dur)}` : ""} · ${p.name}` : p.name, when(p.t), sourceOf(p), p.guessed ? `placed by its time, near ${p.near}` : "", p.placed ? "placed by hand" : "", !p.t && p.up ? `no camera time (uploaded ${when(p.up)})` : ""].filter(Boolean).join(" · "),
 });
 
 /** Every photo of the trip's shown folders, with or without a spot, in the order they were taken. */
@@ -208,8 +241,8 @@ export function allPhotos(): Placed[] {
   const out: Placed[] = [], spot = placer();
   for (const f of folders()) if (!f.off) {
     const l = loaded.get(f.link)?.list;
-    for (const p of l?.photos || []) {
-      const s = p.lat == null && p.t ? spot(p.t) : null;
+    for (const p of placedByHand(f.link)) {
+      const s = p.lat == null && !p.skipped && p.t ? spot(p.t) : null;
       out.push({ ...p, folder: f.link, folderName: l?.name || "", ...(s ? { lat: s.lat, lng: s.lng, guessed: true, near: s.near } : {}) });
     }
   }

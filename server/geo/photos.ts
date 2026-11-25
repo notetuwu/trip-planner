@@ -24,6 +24,8 @@ export interface Photo {
   t: string;
   /** When it was uploaded to Drive, for photos with no camera time. */
   up?: string;
+  /** Who uploaded it to Drive (the file's owner, or in a shared drive who last changed it), when Drive says. */
+  by?: string;
   /** The folder it's in, when that's a folder inside the shared one. */
   dir?: string;
   /** A thumbnail's address with its size at the end ("=s220"): the browser swaps the size for the one it needs. */
@@ -46,7 +48,7 @@ export interface PhotoList {
   auth?: boolean;
 }
 
-const cache = diskCache<PhotoList>("photos-v2.json");
+const cache = diskCache<PhotoList>("photos-v3.json");
 const MAX_AGE = 60 * 60_000, MAX_PHOTOS = 3000, MAX_DEPTH = 2;
 const FOLDER = "application/vnd.google-apps.folder";
 
@@ -94,7 +96,7 @@ async function list(dir: string, a: Access, name: string, depth: number, out: Ph
   do {
     const q = new URLSearchParams({
       q: `'${dir}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/' or mimeType = '${FOLDER}')`,
-      fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,createdTime,imageMediaMetadata(location,time,width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
+      fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,createdTime,owners(displayName),lastModifyingUser(displayName),imageMediaMetadata(location,time,width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
       pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
       ...(pageToken ? { pageToken } : {}),
     });
@@ -113,11 +115,12 @@ async function list(dir: string, a: Access, name: string, depth: number, out: Ph
       // A photo with no time of its own (a messenger strips it) often has it in its file name ("IMG_20270910_094103.jpg").
       const t = (typeof meta.time === "string" && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}/.test(meta.time) ? meta.time.replace(/^(\d{4}):(\d{2}):(\d{2}) /, "$1-$2-$3T") : "") || timeFromName(String(f.name));
       const rot = Number(meta.rotation) || 0;
+      const by = String(f.owners?.[0]?.displayName || f.lastModifyingUser?.displayName || "").slice(0, 80);
       // Read as the account: the thumbnail comes through the planner (see thumbLinks).
       let thumb = String(f.thumbnailLink || "");
       if (thumb && a && "token" in a) { thumbLinks.data[f.id] = thumb; thumb = `/api/photos/thumb?folder=${encodeURIComponent(root)}&id=${encodeURIComponent(f.id)}&px=s220`; }
       out.push({
-        id: f.id, name: f.name, t, ...(isVideo ? { video: true as const, ...(Number(vm.durationMillis) ? { dur: Math.round(Number(vm.durationMillis) / 1000) } : {}), ...(vm.width && vm.height ? { w: vm.width, h: vm.height } : {}) } : {}), ...(!t && f.createdTime ? { up: String(f.createdTime).slice(0, 19) } : {}), ...(name ? { dir: name } : {}), thumb,
+        id: f.id, name: f.name, t, ...(isVideo ? { video: true as const, ...(Number(vm.durationMillis) ? { dur: Math.round(Number(vm.durationMillis) / 1000) } : {}), ...(vm.width && vm.height ? { w: vm.width, h: vm.height } : {}) } : {}), ...(!t && f.createdTime ? { up: String(f.createdTime).slice(0, 19) } : {}), ...(name ? { dir: name } : {}), ...(by ? { by } : {}), thumb,
         ...(loc && typeof loc.latitude === "number" && typeof loc.longitude === "number" && (loc.latitude || loc.longitude) ? { lat: +loc.latitude.toFixed(6), lng: +loc.longitude.toFixed(6) } : {}),
         // Width and height as the picture is shown (a phone photo stored sideways is turned by its rotation).
         ...(meta.width && meta.height ? (rot % 2 ? { w: meta.height, h: meta.width } : { w: meta.width, h: meta.height }) : {}),

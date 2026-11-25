@@ -16,6 +16,7 @@ import { classifyLink, pickFolder } from "../core/folder-picker";
 import { askText, tell } from "../core/ask";
 import { loadSyncStatus } from "../saves/sync-client";
 import { highlights } from "./preview-data";
+import { type PlaceTool, placeTool } from "./photo-place";
 
 /** A collage of their photos on top: one from as many days as there are, with the trip's name and when. */
 function hero(all: Placed[], index: Map<Placed, number>) {
@@ -35,11 +36,22 @@ const VIEW_KEY = "trip-planner-photos-view";
 const view: { full: boolean; noSide: boolean } = { full: false, noSide: false };
 try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || "{}")); } catch { /* the usual view */ }
 
+/** Placing photos on the map (instead of the gallery); the window fills the screen meanwhile. */
+let placing = false, tool: PlaceTool | null = null;
+
+function setPlacing(yes: boolean) {
+  placing = yes;
+  render();
+  if (yes && dlg?.open) tool!.show();
+}
+
 function applyView() {
   if (!dlg) return;
+  dlg.classList.toggle("placing", placing);
+  dlg.querySelectorAll<HTMLButtonElement>("[data-ph-mode]").forEach((b) => b.classList.toggle("on", (b.dataset.phMode === "place") === placing));
   // With no folders yet the sidebar stays: it's where one is added.
   const none = !folders().length, hidden = view.noSide && !none;
-  dlg.classList.toggle("full", view.full);
+  dlg.classList.toggle("full", view.full || placing);
   dlg.classList.toggle("no-side", hidden);
   const side = dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!, full = dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!;
   side.innerHTML = icon(hidden ? "panelOpen" : "panelClose");
@@ -141,7 +153,8 @@ function renderMain() {
   });
 }
 
-const render = () => { applyView(); renderSide(); renderMain(); };
+// (Only what's on screen is drawn: the gallery has thousands of pictures.)
+const render = () => { if (!dlg?.open) return; applyView(); if (placing) tool?.update(); else { renderSide(); renderMain(); } };
 
 /** The sidebar's own markup, made once. */
 const SIDE = () => `<aside class="ph-side">
@@ -203,13 +216,16 @@ export function openPhotosView() {
     dlg = document.createElement("dialog");
     dlg.className = "keys-dialog photos-dialog";
     dlg.innerHTML = `<div class="pl-head"><button type="button" class="icon-btn" data-ph-toggle-side></button><h2>${icon("images")} Photos</h2><span class="hint" data-ph-count></span>
+        <div class="segs ph-modes"><button type="button" class="seg" data-ph-mode="gallery">Gallery</button><button type="button" class="seg" data-ph-mode="place" title="Drag photos onto the map to say where they were taken">Place on map</button></div>
         <button type="button" class="icon-btn ph-full-btn" data-ph-full></button>
         <form method="dialog"><button class="icon-btn" title="Close">${icon("x")}</button></form></div>
-      <div class="ph-wrap">${SIDE()}<div class="ph-body"></div></div>`;
+      <div class="ph-wrap">${SIDE()}<div class="ph-body"></div></div><div class="pp-wrap"></div>`;
     document.body.append(dlg);
     // A click on the dimmed area around it closes it, like the other windows.
     closeOnBackdrop(dlg);
     wireSide(dlg);
+    tool = placeTool(dlg.querySelector<HTMLElement>(".pp-wrap")!);
+    dlg.querySelectorAll<HTMLButtonElement>("[data-ph-mode]").forEach((b) => { b.onclick = () => setPlacing(b.dataset.phMode === "place"); });
     dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!.onclick = () => setView({ noSide: !dlg!.classList.contains("no-side") });
     dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!.onclick = () => setView({ full: !view.full });
     // Sources finishing their load, or being added or taken off, show here as they happen.
@@ -219,4 +235,5 @@ export function openPhotosView() {
   // Sources not loaded yet (the layer on the map may be off).
   loadMissing();
   render();
+  if (placing) tool!.show();
 }
