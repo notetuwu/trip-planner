@@ -1,4 +1,4 @@
-// The trip's photos in a window. On the left, everything to set up: where the photos come from (Google Drive folders and
+// The trip's photos in a window. On the left (a sidebar that can be hidden), everything to set up: where the photos come from (Google Drive folders and
 // folders on this computer, as many as the trip has) and how they show on the map. On the right, every photo laid out by
 // the day of the trip it was taken on (the others by date), with or without a spot on the map. Click one to go through
 // them big (arrows, a strip along the bottom); the pin on a photo moves the map to where it was taken.
@@ -29,6 +29,31 @@ function hero(all: Placed[], index: Map<Placed, number>) {
 }
 
 let dlg: HTMLDialogElement | null = null;
+
+/** How the window is shown, kept for next time: filling the whole window, and the sidebar hidden. */
+const VIEW_KEY = "trip-planner-photos-view";
+const view: { full: boolean; noSide: boolean } = { full: false, noSide: false };
+try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || "{}")); } catch { /* the usual view */ }
+
+function applyView() {
+  if (!dlg) return;
+  // With no folders yet the sidebar stays: it's where one is added.
+  const none = !folders().length, hidden = view.noSide && !none;
+  dlg.classList.toggle("full", view.full);
+  dlg.classList.toggle("no-side", hidden);
+  const side = dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!, full = dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!;
+  side.innerHTML = icon(hidden ? "panelOpen" : "panelClose");
+  side.title = hidden ? "Show the sidebar" : "Hide the sidebar";
+  side.disabled = none;
+  full.innerHTML = icon(view.full ? "minimize" : "maximize");
+  full.title = view.full ? "Back to a window" : "Fill the whole window";
+}
+
+function setView(change: Partial<typeof view>) {
+  Object.assign(view, change);
+  localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+  applyView();
+}
 
 /** The photos in groups: each day of the trip that has some, then the other dates. */
 function groups(photos: Placed[]) {
@@ -86,7 +111,7 @@ function renderMain() {
   dlg.querySelector<HTMLElement>("[data-ph-count]")!.textContent = all.length
     ? `${all.length - videos} photo${all.length - videos === 1 ? "" : "s"}${videos ? ` · ${videos} video${videos === 1 ? "" : "s"}` : ""}${byTime ? ` · ${byTime} placed by their time` : ""}${noSpot ? ` · ${noSpot} that can't be placed` : ""}${loading ? " · loading more…" : ""}` : "";
   let body: string;
-  if (!folders().length) body = `<p class="ph-empty">No photo folders for this trip yet.<br><span class="hint">Add a Google Drive folder, or a folder from this computer, on the left.</span></p>`;
+  if (!folders().length) body = `<p class="ph-empty">No photo folders for this trip yet.<br><span class="hint">Add a Google Drive folder, or a folder from this computer, in the sidebar.</span></p>`;
   else if (!all.length) body = `${errors}<p class="ph-empty">${loading ? "Loading the photos…" : "No photos found in the shown folders."}</p>`;
   else {
     // The index in the whole list, so the viewer goes on from a photo into the next ones.
@@ -116,7 +141,7 @@ function renderMain() {
   });
 }
 
-const render = () => { renderSide(); renderMain(); };
+const render = () => { applyView(); renderSide(); renderMain(); };
 
 /** The sidebar's own markup, made once. */
 const SIDE = () => `<aside class="ph-side">
@@ -177,13 +202,16 @@ export function openPhotosView() {
   if (!dlg) {
     dlg = document.createElement("dialog");
     dlg.className = "keys-dialog photos-dialog";
-    dlg.innerHTML = `<div class="pl-head"><h2>${icon("images")} Photos</h2><span class="hint" data-ph-count></span>
+    dlg.innerHTML = `<div class="pl-head"><button type="button" class="icon-btn" data-ph-toggle-side></button><h2>${icon("images")} Photos</h2><span class="hint" data-ph-count></span>
+        <button type="button" class="icon-btn ph-full-btn" data-ph-full></button>
         <form method="dialog"><button class="icon-btn" title="Close">${icon("x")}</button></form></div>
       <div class="ph-wrap">${SIDE()}<div class="ph-body"></div></div>`;
     document.body.append(dlg);
     // A click on the dimmed area around it closes it, like the other windows.
     closeOnBackdrop(dlg);
     wireSide(dlg);
+    dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!.onclick = () => setView({ noSide: !dlg!.classList.contains("no-side") });
+    dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!.onclick = () => setView({ full: !view.full });
     // Sources finishing their load, or being added or taken off, show here as they happen.
     onPhotosChange(render);
   }
