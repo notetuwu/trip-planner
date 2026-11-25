@@ -33,6 +33,7 @@ import { type Problem, type Stop, checksSettled, planDuplicates, planProblems, q
 import { setMapStatus } from "../map/status";
 import { modeName, orderSplitRuns, plannedMode } from "../trip/modes";
 import { groupsFromText } from "../../../shared/groups";
+import { askConfirm, askText } from "../core/ask";
 
 /** The stays' "Planner decides" menus say what the current plan picked ("Planner decides (train)"). */
 function showPlannedModes() {
@@ -55,21 +56,21 @@ function clearItinerary() {
   save(); renderItinerary(); renderTripTitle(); drawMap({ fit: true });
 }
 
-function redoDay(day: number) {
+async function redoDay(day: number) {
   const it = state.itinerary, d = it?.days[day];
   if (!it || !d) return;
-  const request = prompt(`Re-plan ${d.date} (${d.city}). Anything to change? Leave empty for a fresh take.`, "");
+  const request = await askText({ title: `Re-plan day ${day + 1}`, text: `${d.date} · ${d.city}. Anything to change? Leave it empty for a fresh take.`, placeholder: "e.g. more relaxed, a vegan lunch, the castle in the morning", multiline: true, ok: "Re-plan" });
   if (request !== null) runGeneration({ redoDay: { itinerary: it, day, request: request.trim() } });
 }
 
 /** All days of one stay at once, so they can be rearranged (a booking moved a sight to another day, say). */
-function replanStay(si: number) {
+async function replanStay(si: number) {
   const it = state.itinerary, s = state.stays[si];
   if (!it || !s?.start) return;
   const end = addDays(s.start, Number(s.nights) || 0);
   const days = it.days.map((d, i) => (d.date >= s.start && d.date <= end ? i : -1)).filter((i) => i >= 0);
   if (!days.length) return;
-  const asked = prompt(`Re-plan ${s.city} (${days.length} days)? Anything to change? Leave empty to fit it around the bookings and whatever changed.`, "");
+  const asked = await askText({ title: `Re-plan ${s.city}`, text: `All ${days.length} days together. Anything to change? Leave it empty to fit them around the bookings and whatever changed.`, multiline: true, ok: "Re-plan" });
   if (asked === null) return;
   const request = `Re-plan these ${days.length} days of the stay in ${s.city} together: you may move sights between them so that everything fits (bookings on their days and times, opening days, the must-sees). Keep the arrival and departure transfers, the day trips and where they sleep.${asked.trim() ? ` They ask: ${asked.trim()}` : ""}`;
   runGeneration({ edit: { itinerary: it, days, request } });
@@ -93,7 +94,7 @@ function wire(out: HTMLElement) {
     ics: downloadCalendar,
     print: () => window.print(),
     json: () => downloadFile(new Blob([JSON.stringify(state.itinerary, null, 2)], { type: "application/json" }), "itinerary.json"),
-    clear: () => { if (confirm("Clear this itinerary?")) clearItinerary(); },
+    clear: async () => { if (await askConfirm({ title: "Clear this itinerary?", text: "The day-by-day plan goes; the stays and places stay. (The saved trip keeps earlier versions: Your trips → Recover.)", ok: "Clear", danger: true })) clearItinerary(); },
   };
   for (const b of $$("[data-tool]", out)) b.onclick = tools[b.dataset.tool!];
   out.querySelector('[data-stale="clear"]')?.addEventListener("click", clearItinerary);

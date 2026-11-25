@@ -1,5 +1,12 @@
 /* Map panel, pins, popups and the search box. */
-.map-panel { grid-area: map; padding: 0; overflow: hidden; }
+.map-panel { grid-area: map; padding: 0; overflow: hidden; container-type: inline-size; container-name: mappanel; }
+/* A narrow map column (side by side on a laptop): the switches on the first row, the days under them; nothing cut off. */
+@container mappanel (max-width: 640px) {
+  .map-bar { flex-wrap: wrap; row-gap: 8px; }
+  .map-bar .day-chips { order: 2; flex: 1 1 100%; }
+  .map-bar .map-toggles { margin-left: auto; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .lp-panel { width: min(296px, calc(100cqw - 24px)); }
+}
 .map-bar { display: flex; gap: 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 /* Scrolled with the mouse wheel or by dragging, so no scrollbar taking room under the days (it pushed them off centre). */
 .day-chips { display: flex; gap: 6px; overflow-x: auto; flex: 1; min-width: 0; align-items: center; scrollbar-width: none; }
@@ -340,7 +347,9 @@
 .lines-job:hover { background: #d84315; }
 
 /* Where to get on a ride: the line's badge on the map. */
-.ride-board { position: absolute; transform: translate(-50%, -50%); }
-.ride-board .line-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; line-height: 20px; font-size: 12px; border: 2px solid #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
-.ride-board .line-chip svg { width: 12px; height: 12px; }
+/* The marker has no size of its own: the badge sizes itself to the line's name on one line (a long one, like a Japanese
+   train's "のぞみ123号", is cut short with … rather than wrapped into a column; the tooltip has it whole). */
+.ride-board { position: absolute; transform: translate(-50%, -50%); width: max-content; white-space: nowrap; }
+.ride-board .line-chip { display: inline-block; text-align: center; vertical-align: middle; min-width: 22px; padding: 0 5px; max-width: 110px; height: 20px; line-height: 16px; font-size: 12px; border: 2px solid #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; box-sizing: border-box; }
+.ride-board .line-chip svg { width: 12px; height: 12px; vertical-align: -2px; }
 .leg-tip-pop .leaflet-popup-content { margin: 6px 10px; font-weight: 600; }

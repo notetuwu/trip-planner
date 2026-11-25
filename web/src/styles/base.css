@@ -99,16 +99,32 @@ main {
   body.app .settings, body.app #output { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
   body.app #map { height: min(420px, 42vh); }
 }
-@media (min-width: 1500px) {
-  main { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "settings output map"; grid-template-rows: minmax(0, 1fr); }
+/* From 1200px (a 13" laptop): the trip, the plan and the map side by side, so the plan keeps the window's full height
+   (stacked under the map it had little room left). The trip's column is a little narrower until 1500px. */
+@media (min-width: 1200px) {
+  main { grid-template-columns: minmax(300px, 350px) minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "settings output map"; grid-template-rows: minmax(0, 1fr); }
   body.app .map-panel { display: flex; flex-direction: column; }
   body.app .map-wrap { flex: 1; min-height: 0; }
   body.app #map { height: 100%; }
 }
+@media (min-width: 1500px) {
+  main { grid-template-columns: minmax(340px, 400px) minmax(0, 1fr) minmax(0, 1fr); }
+}
+/* Where the map is still over the plan (narrower windows, or the chat taking a column): it's as tall as it was dragged to
+   (the handle under it), else a third of the window. */
+@media (min-width: 901px) {
+  body.app.map-stacked .map-panel { display: block; }
+  body.app.map-stacked #map { height: var(--map-h, min(360px, 34vh)); }
+  .map-resize { display: none; }
+  body.app.map-stacked .map-resize { display: flex; justify-content: center; align-items: center; height: 12px; margin: 6px -18px -14px; cursor: ns-resize; color: var(--muted); touch-action: none; user-select: none; }
+  body.app.map-stacked .map-resize:hover, body.app.map-stacked .map-resize.drag { color: var(--accent); }
+  body.app.map-stacked .map-resize svg { font-size: 16px; }
+  body.app.resizing-map, body.app.resizing-map * { cursor: ns-resize !important; user-select: none !important; }
+}
 /* The chat: a column beside the map and the plan where there's room for it (1180px and up); a drawer over the right
    of the page on smaller screens, so the plan keeps its width; over everything on a phone. */
 @media (min-width: 1180px) {
-  body.chat-open main { grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(300px, 360px); grid-template-areas: "settings map chat" "settings output chat"; }
+  body.chat-open main { grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(300px, 360px); grid-template-areas: "settings map chat" "settings output chat"; grid-template-rows: auto minmax(0, 1fr); }
   body.app.chat-open .chat-panel { align-self: stretch; }
 }
 @media (min-width: 901px) and (max-width: 1179px) {
@@ -117,7 +133,7 @@ main {
   @keyframes drawer-in { from { transform: translateX(24px); opacity: 0; } }
 }
 @media (min-width: 1500px) {
-  body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "settings output map chat"; }
+  body.chat-open main { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr) minmax(0, 1fr) minmax(340px, 400px); grid-template-areas: "settings output map chat"; grid-template-rows: minmax(0, 1fr); }
 }
 @media (max-width: 900px) {
   .chat-panel { position: fixed; inset: 0; z-index: 2000; border-radius: 0; border: 0; }

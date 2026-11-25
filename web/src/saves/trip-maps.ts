@@ -26,7 +26,9 @@ function makeMap(el: HTMLElement, c: TripCard) {
   const pts = [...c.route, ...c.dots];
   const bounds = L.latLngBounds(pts.map(([a, b]) => L.latLng(a, b)));
   // A one-town trip isn't shown at street level.
-  map.fitBounds(bounds.pad(0.06), { maxZoom: 11, padding: [16, 16] });
+  // (Less room around it in the table's small picture.)
+  const room = Math.max(4, Math.min(16, Math.round(el.clientWidth / 14)));
+  map.fitBounds(bounds.pad(0.06), { maxZoom: 11, padding: [room, room] });
   for (const [a, b] of c.dots) L.circleMarker([a, b], { radius: 2, stroke: false, fillColor: colour, fillOpacity: 0.45, interactive: false }).addTo(map);
   if (c.route.length > 1) {
     const line = L.polyline(c.route, { color: colour, weight: 3, opacity: 0.95, lineJoin: "round", interactive: false }).addTo(map);
@@ -38,17 +40,18 @@ function makeMap(el: HTMLElement, c: TripCard) {
       requestAnimationFrame(() => { path.style.transition = "stroke-dashoffset 1.3s ease-in-out"; path.style.strokeDashoffset = "0"; });
     }
   }
+  const small = el.clientWidth < 200;
   c.route.forEach(([a, b], i) => L.circleMarker([a, b], {
-    radius: i === 0 ? 6 : 4.5, color: colour, weight: 2.5, fillColor: i === 0 ? colour : dark ? "#1b1b1c" : "#fff", fillOpacity: 1, interactive: false,
+    radius: (i === 0 ? 6 : 4.5) * (small ? 0.6 : 1), color: colour, weight: 2.5, fillColor: i === 0 ? colour : dark ? "#1b1b1c" : "#fff", fillOpacity: 1, interactive: false,
   }).addTo(map));
   el.classList.add("ready");
   maps.push(map);
 }
 
 /** Puts a map into each card's [data-map] box once it's on screen (the route sketch shows until then). */
-export function showTripMaps(root: HTMLElement, cards: TripCard[]) {
+export function showTripMaps(root: HTMLElement, cards: TripCard[], key: (c: TripCard) => string = (c) => c.name) {
   clearTripMaps();
-  const byName = new Map(cards.map((c) => [c.name, c]));
+  const byName = new Map(cards.map((c) => [key(c), c]));
   watch = new IntersectionObserver((seen) => {
     for (const e of seen) {
       if (!e.isIntersecting) continue;

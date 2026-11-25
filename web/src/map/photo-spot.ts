@@ -1,13 +1,19 @@
-// Where a photo without a GPS position probably was taken: the trip's own plan says where they were at that time. The
-// photo's date picks the day, its time of day the stop they were at (or between two stops, a point on the way). A guess,
-// so the map shows it as one.
+// Where a photo without a GPS position probably was taken. Best: where their other photos with a position were taken just
+// before or after it (a phone's photos usually have one; a camera's often don't). Otherwise the trip's own plan: the
+// photo's date picks the day, its time of day the stop they were at, or the nearer of the two stops it falls between
+// (never a point on a straight line between them, which lands in places they never went). A guess, so the map shows it
+// as one.
 
 /** One day of the plan for the guess: its stops with a place on the map and a time, and where they slept. */
 export interface DayStops { date: string; stops: { min: number; lat: number; lng: number; name: string }[]; home?: { lat: number; lng: number; name: string } }
 export interface Spot { lat: number; lng: number; near: string }
+/** A photo with a position and a time, to place others by. */
+export interface Anchor { t: string; lat: number; lng: number }
 
 /** Close enough in time to count as being at a stop (minutes). */
 const AT = 40;
+/** A photo with a position taken at most this long before or after (minutes) says where one without was taken. */
+const NEAR_PHOTO = 45;
 
 /** "2027-09-14T10:30:05" → the day's date and the minutes since midnight (null without a time of day). */
 function split(t: string): { date: string; min: number | null } {
@@ -15,9 +21,35 @@ function split(t: string): { date: string; min: number | null } {
   return m ? { date: m[1], min: m[2] ? +m[2] * 60 + +m[3] : null } : { date: "", min: null };
 }
 
-/** The most likely spot for a photo taken at `t` (the camera's own clock, "2027-09-14T10:30:05"), or null when the plan
- *  doesn't cover that day. */
-export function spotByTime(t: string, days: DayStops[]): Spot | null {
+/** Minutes since 2000 of "2027-09-14T10:30:05" (the camera's own clock, compared as written), NaN without a time. */
+const minutes = (t: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(t);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) / 60000 : NaN;
+};
+
+/** Photos with a position, sorted by time, to look up quickly. */
+export function anchorsOf(photos: { t: string; lat?: number; lng?: number }[]): { at: number; lat: number; lng: number }[] {
+  return photos.filter((p) => p.lat != null && p.lng != null && p.t).map((p) => ({ at: minutes(p.t), lat: p.lat!, lng: p.lng! }))
+    .filter((a) => Number.isFinite(a.at)).sort((a, b) => a.at - b.at);
+}
+
+/** Where the photo with a position taken closest in time to `t` was, if it's within NEAR_PHOTO minutes. */
+function nearestPhoto(t: string, anchors: { at: number; lat: number; lng: number }[]): Spot | null {
+  const at = minutes(t);
+  if (!Number.isFinite(at) || !anchors.length) return null;
+  let lo = 0, hi = anchors.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (anchors[mid].at < at) lo = mid + 1; else hi = mid; }
+  const best = [anchors[lo - 1], anchors[lo]].filter(Boolean).sort((a, b) => Math.abs(a.at - at) - Math.abs(b.at - at))[0];
+  if (!best || Math.abs(best.at - at) > NEAR_PHOTO) return null;
+  const mins = Math.round(Math.abs(best.at - at));
+  return { lat: best.lat, lng: best.lng, near: mins < 1 ? "where your other photos from then were taken" : `where you took a photo ${mins} min ${best.at < at ? "before" : "after"}` };
+}
+
+/** The most likely spot for a photo taken at `t` (the camera's own clock, "2027-09-14T10:30:05"): by their photos with a
+ *  position taken around then, else by the plan; null when neither covers it. */
+export function spotByTime(t: string, days: DayStops[], anchors: { at: number; lat: number; lng: number }[] = []): Spot | null {
+  const byPhoto = nearestPhoto(t, anchors);
+  if (byPhoto) return byPhoto;
   const { date, min } = split(t);
   const day = date ? days.find((d) => d.date === date) : undefined;
   if (!day) return null;
@@ -33,7 +65,7 @@ export function spotByTime(t: string, days: DayStops[]): Spot | null {
   const gap = next.min - prev.min;
   if (min - prev.min <= AT || gap <= AT) return at(prev);
   if (next.min - min <= AT) return at(next);
-  // Between two stops, far from both: on the way, as far along as the time is.
-  const f = (min - prev.min) / gap;
-  return { lat: prev.lat + (next.lat - prev.lat) * f, lng: prev.lng + (next.lng - prev.lng) * f, near: `${prev.name} → ${next.name}` };
+  // Between two stops, far from both: the one nearer in time (they were at one of them or on the way, not in the fields
+  // a straight line between them crosses).
+  return min - prev.min <= next.min - min ? at(prev) : at(next);
 }

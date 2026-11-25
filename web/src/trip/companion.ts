@@ -30,6 +30,7 @@ import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import * as mapModule from "../map/map";
 import { routeKey, routes } from "../map/routes";
+import { askConfirm } from "../core/ask";
 
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }
@@ -1130,8 +1131,8 @@ export function initCompanion() {
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
     if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   });
-  $("#cpClear").onclick = () => {
-    if (!chat().length || confirm("Clear the conversation?")) { state.chat = []; state.chatSummary = ""; state.chatSummarized = 0; chain = null; save(); render(); }
+  $("#cpClear").onclick = async () => {
+    if (!chat().length || await askConfirm({ title: "Clear the conversation?", text: "The messages go; changes it made to the trip stay.", ok: "Clear", danger: true })) { state.chat = []; state.chatSummary = ""; state.chatSummarized = 0; chain = null; save(); render(); }
   };
   $("#cpCompact").onclick = () => compact(chat().length);
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });

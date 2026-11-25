@@ -21,16 +21,17 @@ export async function loadSyncStatus(): Promise<SyncStatus | null> {
 
 /** Looks at the folders now (answers when done). */
 export async function syncNow(): Promise<SyncStatus | null> {
-  if (!syncStatus?.signedIn) return syncStatus;
+  if (!syncStatus?.folders.length) return syncStatus;
   setSyncStatus(await api<SyncStatus>("/api/sync/now", { method: "POST" }).catch(() => syncStatus));
   return syncStatus;
 }
 
-export const syncReady = () => !!syncStatus?.configured && !!syncStatus.signedIn;
-export const myEmail = () => (syncStatus?.signedIn ? syncStatus.email : "");
-/** Whether the signed-in person shared this trip (or it isn't shared). */
-export const isOwner = (share?: TripShare | null) => !share?.owner || (!!myEmail() && share.owner.toLowerCase() === myEmail().toLowerCase());
-export const folderLabel = (id: string) => syncStatus?.folders.find((f) => f.id === id)?.label || "a Drive folder";
+/** There are sync folders (Drive or on this computer) to show trips from. */
+export const syncReady = () => !!syncStatus?.folders.length;
+/** Whether this person shared the trip (as their Google account or as this computer's user), or it isn't shared. */
+export const isOwner = (share?: TripShare | null) => !share || (!!share.owner && (syncStatus?.identities || []).some((id) => id.toLowerCase() === share.owner.toLowerCase()));
+export const isLocalFolder = (id: string) => id.startsWith("local:");
+export const folderLabel = (id: string) => syncStatus?.folders.find((f) => f.id === id)?.label || "a sync folder";
 export const ownerName = (share?: TripShare | null) => share?.ownerName || share?.owner || "someone";
 
 /** Opens Settings at the Sync tab (Settings listens; this keeps the imports one way). */

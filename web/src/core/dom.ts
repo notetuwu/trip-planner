@@ -43,6 +43,25 @@ export function downloadFile(file: Blob, name: string) {
 }
 
 /** Clicking the dimmed area around a modal closes it (only a click that also started there, not a text selection dragged out). */
+/** Every dialog on the page closes on a click outside it (on its backdrop): the ones in the page and any added later.
+ *  A press that starts inside and ends outside (selecting text, dragging) doesn't count. */
+export function closeDialogsOnBackdrop() {
+  const outside = (d: HTMLDialogElement, e: MouseEvent) => {
+    const r = d.getBoundingClientRect();
+    return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+  };
+  let downOn: HTMLDialogElement | null = null;
+  document.addEventListener("mousedown", (e) => {
+    const d = e.target instanceof HTMLDialogElement && e.target.open ? e.target : null;
+    downOn = d && outside(d, e) ? d : null;
+  }, true);
+  document.addEventListener("click", (e) => {
+    const d = downOn;
+    downOn = null;
+    if (d && e.target === d && d.open && outside(d, e)) d.close();
+  }, true);
+}
+
 export function closeOnBackdrop(d: HTMLDialogElement) {
   const outside = (e: MouseEvent) => {
     const r = d.getBoundingClientRect();

@@ -1,6 +1,7 @@
 // The packaged app opens in its own window or as a browser tab (switch in Settings → General). In its own window, links to
 // other sites open in the default browser instead of another app window.
 import { api } from "./dom";
+import { askConfirm, tell } from "./ask";
 
 const KEY = "trip-planner-app-window";
 // The launcher opens the own window with ?window=app; remember it for reloads and tidy the address.
@@ -34,9 +35,9 @@ function sendLinksToBrowser() {
 /** Settings → General "Opens in": saves the choice and offers to switch now (reopening the app that way). */
 export async function switchWindowMode(mode: "app" | "browser") {
   const here = inAppWindow ? "app" : "browser";
-  const reopen = mode !== here && confirm(`Switch now? The planner opens ${mode === "app" ? "in its own window" : "in a browser tab"} and this ${here === "app" ? "window" : "tab"} closes.`);
+  const reopen = mode !== here && await askConfirm({ title: "Switch now?", text: `The planner opens ${mode === "app" ? "in its own window" : "in a browser tab"} and this ${here === "app" ? "window" : "tab"} closes.`, ok: "Switch now", cancel: "Later" });
   await api("/api/settings", { method: "POST", body: JSON.stringify({ window: mode, reopen }) });
-  if (reopen) { window.close(); setTimeout(() => alert("Switched. You can close this tab now."), 800); }
+  if (reopen) { window.close(); setTimeout(() => tell({ title: "Switched", text: "You can close this tab now." }), 800); }
   return reopen;
 }
 

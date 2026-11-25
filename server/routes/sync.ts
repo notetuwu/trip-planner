@@ -4,9 +4,11 @@
 import type { RemoteTripCard } from "../../shared/types";
 import { errMsg } from "../config";
 import { placesByName, tripCard } from "./trips";
-import { parseClient, setClient, startSignIn } from "../sync/google";
-import { addFolder, dismissNotices, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setTripSync, signOut, status, tripName } from "../sync/sync";
+import { browse, clientShown, createFolder, parseClient, setClient, startSignIn } from "../sync/google";
+import { addFolder, checkTrip, dismissNotices, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setTripSync, signOut, status, tripName } from "../sync/sync";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
+import { fsCheck } from "../util/fs-browse";
+import { KIND_LABEL, folderKind } from "../util/folder-kind";
 
 export async function handleSync(req: Req, res: Res, path: string) {
   const { method } = req;
@@ -16,6 +18,18 @@ export async function handleSync(req: Req, res: Res, path: string) {
     if (method === "POST" && path === "/api/sync/signout") { await signOut(); return sendJson(res, 200, status()); }
     // Look at the folders now (Your trips opened, or "Sync now"); answers when it's done.
     if (method === "POST" && path === "/api/sync/now") { await runSync(); return sendJson(res, 200, status()); }
+    if (method === "GET" && path === "/api/sync/check") return sendJson(res, 200, await checkTrip(new URL(req.url || "/", "http://x").searchParams.get("name") || ""));
+    // The Drive folders to pick from: "?in=root" (My Drive), "shared" (shared with me), "drives" (shared drives) or a folder's id.
+    if (method === "GET" && path === "/api/sync/browse") return sendJson(res, 200, await browse(new URL(req.url || "/", "http://x").searchParams.get("in") || "root"));
+    // A new folder in the folder browser ("parent": "root" or a folder's id).
+    if (method === "POST" && path === "/api/sync/mkdir") { const b = await readJson(req); return sendJson(res, 200, await createFolder(String(b?.name || ""), String(b?.parent || "root"))); }
+    // The person's own Google client, to show and change in Settings → Sync (this computer only; never a phone, see lan.ts).
+    if (method === "GET" && path === "/api/sync/client") return sendJson(res, 200, clientShown());
+    // What kind of folder a path on this computer is (a cloud app's, a network drive…), before it's added.
+    if (method === "GET" && path === "/api/sync/kind") {
+      const p = fsCheck(new URL(req.url || "/", "http://x").searchParams.get("path") || "").path, kind = await folderKind(p);
+      return sendJson(res, 200, { path: p, kind, label: KIND_LABEL[kind], shared: kind !== "local" });
+    }
     if (method === "POST" && path === "/api/sync/notices") { dismissNotices(); return sendJson(res, 200, status()); }
     if (method === "GET" && path === "/api/sync/remote") {
       const where = placesByName();

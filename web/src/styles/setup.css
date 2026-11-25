@@ -159,10 +159,10 @@
 .trips-acts { display: flex; align-items: center; gap: 8px; }
 .trips-acts label.btn { cursor: pointer; }
 .trips-tools { display: flex; align-items: center; gap: 10px; padding: 0 22px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-.trips-search { position: relative; flex: 1; min-width: 220px; }
+.trips-search { position: relative; flex: 1 1 180px; min-width: 160px; }
 .trips-search svg.i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }
 .trips-search input { width: 100%; height: 38px; padding-left: 36px; border-radius: 10px; }
-.trips-tools select { width: auto; height: 34px; }
+.trips-tools select { width: auto; max-width: 200px; height: 34px; }
 .view-segs .seg { display: grid; place-items: center; padding: 6px 10px; font-size: 15px; }
 .trips-body { flex: 1; overflow: auto; padding: 16px 22px 24px; background: var(--bg); }
 .trips-group { display: flex; align-items: center; gap: 8px; margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -237,10 +237,14 @@
 .trip-row { cursor: pointer; transition: background-color .15s; outline: none; }
 .trip-row:hover, .trip-row:focus-visible { background: var(--hover); }
 .trip-row.current td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
-.tt-thumb { width: 112px; }
-.tt-thumb .tc-svg { position: static; width: 96px; height: 56px; border-radius: 8px; background: linear-gradient(150deg, hsl(var(--h) 60% 94%), hsl(calc(var(--h) + 40) 55% 88%)); }
-:root[data-theme="dark"] .tt-thumb .tc-svg { background: linear-gradient(150deg, hsl(var(--h) 30% 18%), hsl(calc(var(--h) + 40) 30% 12%)); }
-.trip-row.past .tt-thumb .tc-svg { filter: saturate(.55) sepia(.18); }
+.tt-thumb { width: 128px; }
+.tt-map { position: relative; width: 112px; height: 64px; border-radius: 9px; overflow: hidden; background: linear-gradient(150deg, hsl(var(--h) 60% 94%), hsl(calc(var(--h) + 40) 55% 88%)); }
+:root[data-theme="dark"] .tt-map { background: linear-gradient(150deg, hsl(var(--h) 30% 18%), hsl(calc(var(--h) + 40) 30% 12%)); }
+.tt-map .tc-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.trip-row.past .tt-map { filter: saturate(.55) sepia(.18); }
+.tt-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tt-open { flex: none; font-size: 10.5px; font-weight: 700; line-height: 1; padding: 4px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); white-space: nowrap; }
+
 .tt-tools { white-space: nowrap; text-align: right; }
 .tt-tools .icon-btn { opacity: .5; }
 .trip-row:hover .tt-tools .icon-btn { opacity: 1; }
@@ -314,6 +318,92 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 .tc-clash span { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .tc-clash .btn { font-size: 12px; padding: 3px 9px; min-height: 0; }
 .trip-card.remote { border-style: dashed; }
+/* The cloud in a synced trip's corner (where the tools come up on hover). */
+.tc-cloud { position: absolute; right: 10px; top: 10px; display: inline-flex; align-items: center; gap: 5px; max-width: 55%; font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: color-mix(in srgb, var(--panel) 88%, transparent); color: var(--accent); backdrop-filter: blur(4px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: opacity .15s; }
+.tc-cloud.remote { color: var(--muted); }
+.trip-card:hover .tc-cloud:not(.remote), .trip-card:focus-visible .tc-cloud:not(.remote) { opacity: 0; }
+.tc-view { color: var(--warn); }
+.trip-card.remote .tc-foot .btn { font-size: 12px; padding: 3px 10px; min-height: 0; }
+.tt-where { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 600; }
+.trips-sync-filters { display: flex; gap: 8px; }
+.trips-sync-filters[hidden] { display: none; }
+/* The Drive folder browser: a small file browser of a fixed size. */
+.drive-picker { width: min(900px, 95vw); height: min(620px, 88vh); padding: 0; display: none; flex-direction: column; overflow: hidden; }
+.drive-picker[open] { display: flex; }
+.dp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 18px 10px; border-bottom: 1px solid var(--line); }
+.dp-head h2 { margin: 0; font-size: 16px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.dp-head p { margin: 4px 0 0; }
+.dp-main { flex: 1; min-height: 0; display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+.dp-places { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; border-right: 1px solid var(--line); background: var(--field); }
+.dp-places button { all: unset; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; }
+.dp-places button svg { color: var(--muted); font-size: 16px; }
+.dp-places button:hover { background: var(--hover); }
+.dp-places button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.dp-places button.on svg { color: var(--accent); }
+.dp-pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.dp-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+.dp-bar .icon-btn:disabled { opacity: .35; cursor: default; }
+.dp-bar .btn { font-size: 12.5px; padding: 0 10px; height: 32px; min-height: 0; white-space: nowrap; }
+.dp-path { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; height: 32px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); overflow-x: auto; scrollbar-width: none; }
+.dp-path button { all: unset; display: inline-flex; align-items: center; gap: 5px; padding: 3px 6px; border-radius: 6px; font-size: 13px; white-space: nowrap; color: var(--muted); cursor: pointer; }
+.dp-path button:hover { background: var(--hover); color: var(--ink); }
+.dp-path button.on { color: var(--ink); font-weight: 600; cursor: default; }
+.dp-sep { color: var(--muted); opacity: .6; }
+.dp-cols, .dp-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px 90px 70px; gap: 10px; align-items: center; padding: 0 14px; }
+.dp-cols { height: 30px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 1px solid var(--line); }
+.dp-list { flex: 1; min-height: 0; overflow: auto; outline: none; padding: 4px 0; scrollbar-width: thin; }
+.dp-row { height: 34px; font-size: 13px; color: var(--muted); cursor: pointer; user-select: none; }
+.dp-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp-row:hover { background: var(--hover); }
+.dp-row.sel { background: var(--accent-soft); }
+.dp-row.sel .dp-name { color: var(--accent); }
+.dp-list:focus-visible .dp-row.sel { box-shadow: inset 2px 0 0 var(--accent); }
+.dp-row.file { cursor: default; opacity: .55; }
+.dp-row.file:hover { background: none; }
+.dp-name { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--ink); font-weight: 500; }
+.dp-name > span:first-of-type { overflow: hidden; text-overflow: ellipsis; }
+.dp-name svg { flex: none; font-size: 16px; color: var(--muted); }
+.dp-row:not(.file) .dp-name svg { color: #e8a33d; }
+.dp-tag { flex: none; font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 999px; background: var(--hover); color: var(--muted); }
+.dp-msg { padding: 14px; margin: 0; }
+.dp-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-top: 1px solid var(--line); }
+.dp-sel { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; flex: 1; }
+.dp-sel > svg { flex: none; color: #e8a33d; font-size: 16px; }
+.dp-sel-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dp-go { all: unset; display: grid; place-items: center; width: 26px; height: 26px; margin-left: auto; border-radius: 6px; color: var(--muted); cursor: pointer; }
+.dp-go svg { transform: rotate(-90deg); }
+.dp-go:hover { background: var(--hover); color: var(--ink); }
+.dp-row > span:last-child { display: flex; justify-content: flex-end; }
+.dp-acts { display: flex; gap: 8px; flex: none; }
+.dp-acts .btn { max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) {
+  .dp-main { grid-template-columns: 1fr; }
+  .dp-places { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .dp-cols span:nth-child(n+2), .dp-row > span:nth-child(n+2) { display: none; }
+  .dp-cols, .dp-row { grid-template-columns: 1fr; }
+}
+/* Adding a Drive folder: browsing first, pasting a link as the other way. */
+.drive-add { display: grid; gap: 8px; margin: 4px 0 6px; }
+.drive-tile { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); cursor: pointer; transition: border-color .15s, background .15s; }
+.drive-tile:hover, .drive-tile:focus-visible { border-color: var(--accent); background: var(--accent-soft); }
+.drive-tile .dt-ic { display: grid; place-items: center; width: 38px; height: 38px; flex: none; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 19px; }
+.drive-tile .dt-text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.drive-tile .dt-text b { font-size: 14px; color: var(--ink); }
+.drive-tile .dt-text span { font-size: 12.5px; color: var(--muted); }
+.drive-tile > svg:last-child { color: var(--muted); }
+.drive-paste summary { cursor: pointer; font-size: 12.5px; color: var(--muted); display: inline-flex; align-items: center; gap: 6px; list-style: none; }
+.drive-paste summary::-webkit-details-marker { display: none; }
+.drive-paste summary:hover { color: var(--ink); }
+.drive-paste[open] summary { margin-bottom: 8px; }
+/* The Google client fields: the secret can be shown. */
+.secret-field { position: relative; flex: 1 1 200px; display: flex; }
+.secret-field input { flex: 1; padding-right: 38px; }
+.secret-field button { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); }
+/* A trip someone shared as view only: nothing in it can be changed (see saves/read-only.ts). */
+.read-only-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--warn) 14%, transparent); font-size: 13px; }
+.read-only-bar b { display: inline-flex; align-items: center; gap: 6px; }
+body.read-only .settings > [inert] { opacity: .55; }
+body.read-only :is([data-del], [data-redo], [data-replan-stay], [data-leg-edit], #refineBtn, .generate-bar, #saveBtn) { display: none !important; }
 .trips-remote-hint { margin: -4px 0 10px; }
 .trips-notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
 .trips-notice > div { flex: 1; }
@@ -334,3 +424,30 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 .sync-guide-box summary { cursor: pointer; font-weight: 600; color: var(--accent); }
 .sync-guide li { margin-bottom: 10px; }
 .sync-guide .link-row { margin: 4px 0; }
+
+/* The app's own small dialogs (core/ask.ts), in place of the browser's prompt and confirm. */
+.ask-dialog { width: min(440px, 92vw); padding: 0; }
+.ask-form { display: grid; gap: 10px; padding: 20px 22px 18px; margin: 0; }
+.ask-form h3 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; }
+.ask-form h3 svg { color: var(--warn); }
+.ask-text { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; white-space: pre-line; overflow-wrap: anywhere; }
+.ask-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: -4px; }
+.ask-input { width: 100%; box-sizing: border-box; }
+textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
+.ask-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.ask-acts .btn.solid.danger { background: #d64545; border-color: #d64545; color: #fff; }
+
+/* A trip's Sync button: a filled cloud once it syncs. */
+:is(.tc-tool, .icon-btn).synced { color: var(--accent); }
+:is(.tc-tool, .icon-btn).synced svg { fill: currentColor; }
+.tt-tools .icon-btn.synced { opacity: 1; }
+
+/* The folder browser's sections on the left, and the paste link under the Add tile. */
+.dp-group { display: flex; align-items: center; gap: 7px; margin: 10px 8px 4px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.dp-group:first-child { margin-top: 2px; }
+.dp-places { overflow-y: auto; }
+.dp-places button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.drive-paste-btn { justify-self: start; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); }
+.drive-paste-btn:hover { color: var(--ink); }
+.sync-folder-row b { display: inline-flex; align-items: center; gap: 6px; }
+.sync-folder-row .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 520px; }

@@ -133,10 +133,18 @@ describe("syncing a trip with a Drive folder", () => {
     expect(readSave("Kyoto").saveName).toBe("Kyoto");
     expect(versions("Kyoto")).toBeGreaterThan(0);
     expect(drive.uploads).toBe(1);
-    // A page that loaded the trip before is refused; one that has seen the update isn't.
-    expect(sync.staleWrite("Kyoto", String(before))).toBe(true);
-    expect(sync.staleWrite("Kyoto", String(Date.now() + 1))).toBe(false);
-    expect(sync.staleWrite("Kyoto", undefined)).toBe(false);
+    // A page that has seen the update writes as usual; one with no stamp (an older page, a rename) too.
+    const body = JSON.stringify(readSave("Kyoto"));
+    expect(sync.pageWrite("Kyoto", String(Date.now() + 1), body)).toEqual({ ok: true });
+    expect(sync.pageWrite("Kyoto", undefined, body)).toEqual({ ok: true });
+    // A page that had the version before the update: its changes are joined with Drive's.
+    const page = JSON.stringify({ ...readSave("Kyoto"), notes: "", ideas: "temples" });
+    const w = sync.pageWrite("Kyoto", "0", page) as { merged: string };
+    expect(JSON.parse(w.merged)).toMatchObject({ notes: "from my friend", ideas: "temples" });
+    // The same thing changed differently: refused (the page keeps its changes as a copy and reloads).
+    expect(sync.pageWrite("Kyoto", "0", JSON.stringify({ ...readSave("Kyoto"), notes: "mine" }))).toEqual({ stale: true });
+    // A page from before an earlier update: refused.
+    expect(sync.pageWrite("Kyoto", String(before - 100000), page)).toEqual({ stale: true });
   });
 
   it("never overwrites when both sides changed: it waits for a decision, and either choice keeps the other version", async () => {
@@ -210,6 +218,35 @@ describe("syncing a trip with a Drive folder", () => {
     await round();
     expect(JSON.parse(onlyFile().text).trip.notes).toBe("renamed");
     expect(onlyFile().name).toBe("Kyoto spring.trip.json");
+  });
+});
+
+describe("two people changing a trip at the same time", () => {
+  it("joins changes to different things, here and in Drive, and sends the result up", async () => {
+    await shareTrip();
+    writeSave("Kyoto", { ...readSave("Kyoto"), ideas: "tea ceremony" });
+    remoteEdit((t) => { t.notes = "bring cash"; });
+    await round();
+    expect(readSave("Kyoto")).toMatchObject({ ideas: "tea ceremony", notes: "bring cash" });
+    expect(JSON.parse(onlyFile().text).trip).toMatchObject({ ideas: "tea ceremony", notes: "bring cash" });
+    expect(sync.status().trips.Kyoto.conflicts).toEqual([]);
+    // Nothing more to do afterwards.
+    const n = drive.uploads;
+    await round();
+    expect(drive.uploads).toBe(n);
+  });
+
+  it("keeps both sides' chat messages and changes to different days", async () => {
+    const day = (city: string) => ({ date: "2027-04-01", city, items: [{ time: "09:00", place: "A" }] });
+    await shareTrip("Kyoto", trip({ chat: [{ role: "me", text: "hi" }], itinerary: { days: [day("Kyoto"), day("Nara")] } }));
+    const t = readSave("Kyoto");
+    t.chat.push({ role: "me", text: "from me" }); t.itinerary.days[0].items[0].place = "Kinkaku-ji";
+    writeSave("Kyoto", t);
+    remoteEdit((x) => { x.chat.push({ role: "me", text: "from friend" }); x.itinerary.days[1].items[0].place = "Tōdai-ji"; });
+    await round();
+    const got = readSave("Kyoto");
+    expect(got.chat.map((m: any) => m.text)).toEqual(["hi", "from me", "from friend"]);
+    expect(got.itinerary.days.map((d: any) => d.items[0].place)).toEqual(["Kinkaku-ji", "Tōdai-ji"]);
   });
 });
 
@@ -315,6 +352,53 @@ describe("trip files put in a folder by hand", () => {
     drive.files.get("handfileAAAAAAAA")!.md5 = "md5-hand-2";
     await round();
     expect(readSave("Trip").notes).toBe("exported again");
+  });
+});
+
+describe("a file with no owner known", () => {
+  it("is nobody's: a view-only one isn't uploaded by whoever opens it", async () => {
+    await sync.addFolder(FOLDER, "Friends");
+    drive.files.set("noownerAAAAAAAAA", { id: "noownerAAAAAAAAA", name: "Shared.trip.json", folder: FOLDER, md5: "md5-x", by: "", byEmail: "", canEdit: true,
+      text: JSON.stringify({ format: "trip-planner-trip", trip: trip({ sync: { id: "trip-noowner", owner: "", mode: "view" } }), lists: [] }) });
+    await round();
+    await sync.openRemote(FOLDER, "noownerAAAAAAAAA");
+    expect(sync.status().trips.Shared.canEdit).toBe(false);
+    writeSave("Shared", { ...readSave("Shared"), notes: "mine now?" });
+    await round();
+    expect(drive.uploads).toBe(0);
+  });
+});
+
+describe("a sync folder on this computer", () => {
+  it("syncs a trip through a folder on disk (a network drive, a OneDrive folder) and takes changes made there", async () => {
+    const dir = path.join(root, "OneDrive", "Trips");
+    fs.mkdirSync(dir, { recursive: true });
+    writeSave("Kyoto", trip());
+    const f = await sync.addFolder(dir, "OneDrive");
+    expect(f.id).toBe(`local:${dir}`);
+    await sync.setTripSync("Kyoto", [f.id]);
+    await round();
+    expect(fs.readdirSync(dir)).toEqual(["Kyoto.trip.json"]);
+    const file = path.join(dir, "Kyoto.trip.json"), data = JSON.parse(fs.readFileSync(file, "utf8"));
+    expect(data.trip.sync.id).toBe(readSave("Kyoto").sync.id);
+    // Another computer (through OneDrive) changed it.
+    data.trip.notes = "from the laptop";
+    fs.writeFileSync(file, JSON.stringify(data));
+    await round();
+    expect(readSave("Kyoto").notes).toBe("from the laptop");
+    // And a change here goes there.
+    writeSave("Kyoto", { ...readSave("Kyoto"), ideas: "onsen" });
+    await round();
+    expect(JSON.parse(fs.readFileSync(file, "utf8")).trip).toMatchObject({ notes: "from the laptop", ideas: "onsen" });
+    expect(drive.uploads).toBe(0);
+  });
+
+  it("takes a pasted path, and says when it isn't a folder", async () => {
+    const dir = path.join(root, "Shared");
+    fs.mkdirSync(dir, { recursive: true });
+    expect(sync.folderIdOf(dir)).toBe(`local:${dir}`);
+    expect(sync.folderIdOf(`local:${dir}`)).toBe(`local:${dir}`);
+    expect(sync.folderIdOf(path.join(root, "nope"))).toBe("");
   });
 });
 

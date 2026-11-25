@@ -95,6 +95,12 @@ beforeEach(async () => {
 });
 
 /** Loads a trip into the page and waits for the stays to be located. */
+/** The app's own question dialog (core/ask.ts) that just opened: confirmed as it is (an empty or prefilled answer). */
+async function answerAsk() {
+  await page.waitFor(`!!document.querySelector(".ask-dialog[open]")`, 5000, "the app's dialog");
+  await page.eval(`document.querySelector(".ask-dialog[open] [type=submit]").click()`);
+}
+
 async function trip(state) {
   await page.eval(`planner.applyState(${JSON.stringify(state)})`);
   await page.waitFor(`document.querySelectorAll(".stay-geo").length >= ${state.stays.length} && ![...document.querySelectorAll(".stay-geo")].some((e) => /Locating/.test(e.textContent))`, 10000, "stays located");
@@ -328,7 +334,8 @@ test("re-planning a day shows its progress in that day, keeps the rest, and says
   await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [
     day("2027-09-14", "Padua", [stop("15:00", "Cappella degli Scrovegni")]), day("2027-09-15", "Padua", [stop("10:00", "Basilica")]) ] } })`);
   await page.eval(`window.__e2e.delay = 1500; window.__e2e.answer = () => ({ summary: "New", totalEstimatedCost: 0, days: [day("2027-09-15", "Padua", [stop("09:00", "Orto Botanico")])] })`);
-  await page.eval(`window.prompt = () => ""; document.querySelector('[data-redo="1"]').click()`);
+  await page.eval(`document.querySelector('[data-redo="1"]').click()`);
+  await answerAsk();
   await page.waitFor(`!!document.querySelector("#day-1 .inline-progress")`);
   assert.equal(await page.eval(`document.querySelectorAll("#day-0 .item").length`), 1, "the other day stays visible");
   assert.equal(await page.eval(`!!document.querySelector("#output > .empty.loading")`), false, "no full-page progress");
@@ -353,7 +360,8 @@ test("re-planning a stay shows its progress in the stay (unfolded), not up in th
   await page.eval(`document.querySelector('[data-fold-stay="0"]').click()`);
   await page.eval(`window.__e2e.delay = 1500; window.__e2e.answer = () => ({ summary: "New", totalEstimatedCost: 0, days: [
     day("2027-09-14", "Padua", [stop("15:00", "Palazzo della Ragione")]), day("2027-09-15", "Padua", [stop("09:00", "Orto Botanico")])] })`);
-  await page.eval(`window.prompt = () => ""; document.querySelector('[data-replan-stay="0"]').click()`);
+  await page.eval(`document.querySelector('[data-replan-stay="0"]').click()`);
+  await answerAsk();
   await page.waitFor(`!!document.querySelector("#day-0 .inline-progress")`);
   assert.equal(await page.eval(`document.querySelector('[data-stay-group="0"]').classList.contains("folded")`), false, "the stay unfolds");
   assert.equal(await page.eval(`document.querySelector("#day-1 .items").hidden`), true, "its other day is greyed out");
@@ -653,13 +661,15 @@ test("export a trip to a file and import it again (replacing the trip on screen)
   assert.equal(data.format, "trip-planner-trip");
   assert.equal(data.trip.ideas, "Brenta boat");
   await page.eval(`planner.applyState({ stays: [{ city: "Kyoto", start: "2027-04-01", nights: 2, hotel: "" }], listChosen: true })`);
-  await page.eval(`window.confirm = () => true; planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await page.eval(`void planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await answerAsk();
   await page.waitFor(`planner.state().stays[0].city === "Padua"`, 10000, "the imported trip");
   assert.equal(await page.eval(`document.querySelector("#ideas").value`), "Brenta boat");
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
   await page.waitFor(`document.querySelector("#saveList").value === "shared"`, 5000, "the import in the saved trips");
   // Importing the same file again keeps the first copy and saves a second one.
-  await page.eval(`planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await page.eval(`void planner.importTrip(new File([${JSON.stringify(file.text)}], "shared.trip.json"))`);
+  await answerAsk();
   await page.waitFor(`document.querySelector("#saveList").value === "shared 2"`, 5000, "a second copy, not an overwrite");
   await page.eval(`planner.importTrip(new File(["not json"], "bad.json"))`);
   await page.waitFor(`/isn't a trip file/.test(document.querySelector("#saveStatus").textContent)`, 5000, "the error");
@@ -669,7 +679,8 @@ test("export a trip to a file and import it again (replacing the trip on screen)
 test("an imported trip brings its place lists along", async () => {
   const file = { format: "trip-planner-trip", trip: { ...PADUA_MILANO, lists: ["Shared ideas"], list: "Shared ideas" },
     lists: [{ name: "Shared ideas", title: "Shared ideas", places: [{ title: "Orto Botanico di Padova", lat: 45.3994, lng: 11.8807 }] }] };
-  await page.eval(`window.confirm = () => true; planner.importTrip(new File([${JSON.stringify(JSON.stringify(file))}], "with-list.trip.json"))`);
+  await page.eval(`void planner.importTrip(new File([${JSON.stringify(JSON.stringify(file))}], "with-list.trip.json"))`);
+  await answerAsk();
   await page.waitFor(`(planner.state().lists || []).includes("Shared ideas")`, 10000, "the list ticked");
   const list = await page.eval(`fetch("/api/lists/Shared%20ideas").then((r) => r.json())`);
   assert.equal(list.places[0].title, "Orto Botanico di Padova");
@@ -692,7 +703,8 @@ test("Settings → General: formats, new trips' defaults, saving new plans by th
     await page.eval(`(() => { const t = document.querySelector("#ntTravelers"); t.value = "4"; t.dispatchEvent(new Event("change")); })()`);
     await page.waitFor(`fetch("/api/settings").then((r) => r.json()).then((s) => s.app.newTrip.travelers === 4)`, 5000, "the new-trip default saved");
     await page.eval(`document.querySelector("#settingsDialog").close()`);
-    await page.eval(`window.confirm = () => true; document.querySelector("#newTrip").click()`);
+    await page.eval(`document.querySelector("#newTrip").click()`);
+    await answerAsk();
     await page.waitFor(`planner.state().travelers === 4 && !planner.state().itinerary`, 5000, "a new trip with 4 travelers");
 
     // A new plan is saved by itself, under its cities' names.
@@ -735,7 +747,8 @@ test("a booking added in the sidebar goes to the planner and onto its day; Re-pl
   assert.deepEqual(asked.bookings, [{ name: "Opera at La Scala", date: "2027-09-17", from: "20:00", cost: 180, countCost: true }], "the planner gets the booking");
   // Re-planning the Milano stay sends all its days (arrival to departure) as one change.
   await page.waitFor(`!!document.querySelector('[data-replan-stay="1"]')`, 5000, "the stay's re-plan button");
-  await page.eval(`window.prompt = () => ""; document.querySelector('[data-replan-stay="1"]').click()`);
+  await page.eval(`document.querySelector('[data-replan-stay="1"]').click()`);
+  await answerAsk();
   await page.waitFor(`window.__e2e.requests.at(-1)?.edit?.days?.length === 2`, 10000, "the re-plan request");
   const edit = await page.eval(`window.__e2e.requests.at(-1).edit`);
   assert.deepEqual(edit.days, [2, 3]);

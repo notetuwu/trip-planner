@@ -155,6 +155,9 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
           <span class="hint" data-t="grid"${t.grid ? "" : " hidden"}>${esc(t.grid)}</span>
         </div>`}
       </div>` : ""}`;
+    // As tall as the map has room for above the button (a narrow or short map column: it mustn't run under the bar).
+    const lp = box.querySelector<HTMLElement>(".lp-panel");
+    if (lp) { const room = (box.closest(".leaflet-container")?.clientHeight || 600) - 86 - 14; lp.style.maxHeight = `${Math.max(160, Math.min(460, room))}px`; }
     const p2 = box.querySelector<HTMLElement>(".lp-panel");
     if (p2) p2.scrollTop = scroll;
     box.querySelector<HTMLButtonElement>("[data-dl-view]")?.addEventListener("click", () => {

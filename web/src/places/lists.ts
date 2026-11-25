@@ -10,6 +10,7 @@ import { geocodePlaces } from "../geo/locate";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import { renderChips } from "./chips";
+import { askConfirm } from "../core/ask";
 
 const status = (msg: string) => toast(msg);
 /** Progress and problems while importing, in the import dialog. */
@@ -112,7 +113,7 @@ async function syncList(name: string, quiet: boolean) {
 
 async function removeList(name: string) {
   const m = metaOf(name);
-  if (!m || !confirm(`Remove the place list "${name}"?${m.source?.type === "csv" ? "\n(The CSV file stays; it is re-added on next server start.)" : ""}`)) return;
+  if (!m || !await askConfirm({ title: `Remove the place list “${name}”?`, ...(m.source?.type === "csv" ? { text: "The CSV file stays; it's added again the next time the planner starts." } : {}), ok: "Remove", danger: true })) return;
   await api("/api/lists/" + encodeURIComponent(name), { method: "DELETE" });
   setTickedLists(tickedLists().filter((n) => n !== name)); save();
   await refreshLists(); loadList();

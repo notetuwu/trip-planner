@@ -4,7 +4,7 @@ import path from "node:path";
 import type { SaveSummary } from "../../shared/types";
 import { SAVES_DIR, cleanName } from "../config";
 import { type Req, type Res, readBody, readJson, sendJson } from "../util/http";
-import { afterSave, beforeDelete, saveSyncInfo, staleWrite } from "../sync/sync";
+import { afterSave, beforeDelete, pageWrite, saveSyncInfo } from "../sync/sync";
 import { keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, versionedNames } from "../util/versions";
 
 function savePath(name: string) {
@@ -33,15 +33,17 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
   if (req.method === "PUT") {
     const body = await readBody(req);
     try { JSON.parse(body); } catch { return sendJson(res, 400, { error: "Invalid JSON" }); }
-    // Sync wrote a newer version from Drive into this save after the page loaded it: the page keeps its changes as a copy
-    // and reloads, rather than writing over the other person's changes.
-    if (staleWrite(path.basename(file, ".json"), req.headers["x-sync-seen"])) return sendJson(res, 409, { error: "This trip was just updated from Drive.", syncUpdated: true });
+    // Sync wrote a newer version from Drive into this save after the page loaded it: the page's changes and Drive's are
+    // joined (the page then shows the result), or when they clash the page keeps its changes as a copy and reloads,
+    // rather than writing over the other person's changes.
+    const w = pageWrite(path.basename(file, ".json"), req.headers["x-sync-seen"], body);
+    if ("stale" in w) return sendJson(res, 409, { error: "This trip was just updated from Drive.", syncUpdated: true });
     fs.mkdirSync(SAVES_DIR, { recursive: true });
     // What the save held until now is kept first (a save made by hand always keeps one; a trip updated by itself, one every 10 minutes).
     keepVersion(SAVES_DIR, path.basename(file, ".json"), file, req.headers["x-keep-version"] === "1");
-    fs.writeFileSync(file, body);
+    fs.writeFileSync(file, "merged" in w ? w.merged : body);
     afterSave(path.basename(file, ".json"));
-    return sendJson(res, 200, { name: path.basename(file, ".json") });
+    return sendJson(res, 200, { name: path.basename(file, ".json"), ...("merged" in w ? { merged: true, syncAt: w.at } : {}) });
   }
   if (req.method === "DELETE") {
     // A deleted trip stays in its history (the last version), so deleting by mistake can be undone.

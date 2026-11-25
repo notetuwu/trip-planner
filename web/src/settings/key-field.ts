@@ -4,6 +4,7 @@
 import type { KeyStatus } from "../../../shared/types";
 import { $$, esc } from "../core/dom";
 import { ext, icon } from "../core/icons";
+import { askConfirm } from "../core/ask";
 
 export interface KeyField {
   /** What save() gets back to know which key it is. */
@@ -62,7 +63,7 @@ export function wireKeyFields(root: ParentNode, save: (id: string, key: string) 
     el.querySelector<HTMLButtonElement>("[data-kf-edit]")?.addEventListener("click", () => open(true));
     el.querySelector<HTMLButtonElement>("[data-kf-cancel]")?.addEventListener("click", () => open(false));
     el.querySelector<HTMLButtonElement>("[data-kf-save]")?.addEventListener("click", () => { const k = input?.value.trim(); if (k) run(k); else input?.focus(); });
-    el.querySelector<HTMLButtonElement>("[data-kf-remove]")?.addEventListener("click", () => { if (confirm(`Remove the ${names[id] || id} key?`)) run(""); });
+    el.querySelector<HTMLButtonElement>("[data-kf-remove]")?.addEventListener("click", async () => { if (await askConfirm({ title: `Remove the ${names[id] || id} key?`, text: "It's deleted from this computer. You can add it again any time.", ok: "Remove", danger: true })) run(""); });
     input?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); el.querySelector<HTMLButtonElement>("[data-kf-save]")?.click(); }
       // Escape goes back to the saved key, not out of the dialog.

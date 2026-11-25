@@ -6,6 +6,8 @@ import { folderId, folderPhotos } from "../server/geo/photos";
 // Neither the real settings (a key saved there) nor the real cache folder take part.
 vi.mock("../server/settings", () => ({ readSettings: () => ({ googleKey: "" }) }));
 vi.mock("../server/util/disk-cache", () => ({ diskCache: () => ({ data: {}, save() {}, saveNow() {} }) }));
+// Nor a Google sign-in on this computer (Settings → Sync): these are about the API key.
+vi.mock("../server/sync/google", () => ({ bearer: async () => null }));
 
 describe("folderId", () => {
   it("takes the id from a share link, an old-style link or the id itself", () => {
@@ -46,7 +48,7 @@ describe("folderPhotos", () => {
   });
 
   it("says what to do when there's no key, or the folder isn't shared", async () => {
-    await expect(folderPhotos("1AbCdEfGhIjKlMnOpQrStUv", true)).rejects.toThrow(/API key/);
+    await expect(folderPhotos("1AbCdEfGhIjKlMnOpQrStUv", true)).rejects.toThrow(/Sign in with Google|API key/);
     process.env.GOOGLE_API_KEY = "test-key";
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 404, json: async () => ({ error: { message: "File not found" } }) })));
     await expect(folderPhotos("1ZzZzZzZzZzZzZzZzZzZzZ", true)).rejects.toThrow(/Anyone with the link/);

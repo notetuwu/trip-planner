@@ -3,7 +3,7 @@ import "./styles";
 import { goToStop } from "./map/days";
 import { initLayout } from "./core/layout";
 import { initBookings, renderBookings } from "./trip/bookings";
-import { $, api, closeOnBackdrop } from "./core/dom";
+import { $, api, closeDialogsOnBackdrop } from "./core/dom";
 import { initUpdates } from "./core/update";
 import { initWindowMode } from "./core/window-mode";
 import { hydrateIcons } from "./core/icons";
@@ -59,7 +59,8 @@ initRideStops(goToStop);
 
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
-document.querySelectorAll<HTMLDialogElement>("dialog").forEach(closeOnBackdrop);
+// Every dialog, in the page or added later, closes on a click outside it.
+closeDialogsOnBackdrop();
 initSettings(); initQuickstart(); initSync();
 // Settings → General changed (or came in from the computer): redraw in the new units and formats.
 onAppPrefs(() => { renderBookings(); renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });

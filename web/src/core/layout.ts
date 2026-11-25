@@ -23,17 +23,25 @@ const tabNow = (): Pane => chosen || (state.itinerary ? "output" : "settings");
 
 export const isPhone = () => window.innerWidth <= 900;
 const mapFull = () => hidden.has("settings") && hidden.has("output");
+/** Side by side from this width (narrower: the map over the plan). */
+const ROW = 1200;
+const chatColumn = () => document.body.classList.contains("chat-open") && window.innerWidth >= 1180;
+/** The map over the plan (rather than beside it): a narrow window, or the chat taking a column under 1500px. */
+const stackedNow = () => !isPhone() && !hidden.has("output") && !hidden.has("map") && (window.innerWidth < ROW || (chatColumn() && window.innerWidth < 1500));
+const MAP_H = "trip-planner-map-height";
 
 /** The columns side by side, or the map over the plan (as the page lays them out without any hidden). */
 function desktopGrid() {
   const main = $("main"), body = document.body;
   // (Each class changed once, if at all: a change sets off the watcher of the chat opening below.)
+  // (Only changed when it changes: a class change sets off the watcher of the chat opening below.)
+  if (body.classList.contains("map-stacked") !== stackedNow()) body.classList.toggle("map-stacked", stackedNow());
   if (isPhone() || !hidden.size) { body.classList.toggle("layout-row", false); main.style.removeProperty("grid-template-columns"); main.style.removeProperty("grid-template-areas"); main.style.removeProperty("grid-template-rows"); return; }
   const shown = (p: Pane) => !hidden.has(p);
-  const chat = body.classList.contains("chat-open") && window.innerWidth >= 1180;
-  const stack = window.innerWidth < 1500 && shown("output") && shown("map");
+  const chat = chatColumn();
+  const stack = stackedNow();
   const cols: [string, string][] = [];
-  if (shown("settings")) cols.push(["settings", chat ? "minmax(300px, 360px)" : "minmax(340px, 400px)"]);
+  if (shown("settings")) cols.push(["settings", chat || window.innerWidth < 1500 ? "minmax(300px, 350px)" : "minmax(340px, 400px)"]);
   if (stack) cols.push(["stack", "minmax(0, 1fr)"]);
   else { if (shown("output")) cols.push(["output", "minmax(0, 1fr)"]); if (shown("map")) cols.push(["map", "minmax(0, 1fr)"]); }
   if (chat) cols.push(["chat", "minmax(300px, 380px)"]);
@@ -134,6 +142,40 @@ function jumpToDay(i: number) {
   window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 56, behavior: "smooth" });
 }
 
+/** The handle under the map where it's over the plan: dragged, the map gets taller or shorter (kept for next time). */
+function mapResizer() {
+  const saved = Number(localStorage.getItem(MAP_H));
+  if (saved >= 160) document.documentElement.style.setProperty("--map-h", `${saved}px`);
+  const handle = document.createElement("div");
+  handle.className = "map-resize"; handle.title = "Drag to make the map taller or shorter (double-click: back to the usual size)";
+  handle.innerHTML = icon("grip");
+  $(".map-panel").append(handle);
+  const map = () => document.querySelector<HTMLElement>("#map")!;
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const startY = e.clientY, startH = map().getBoundingClientRect().height;
+    handle.classList.add("drag"); document.body.classList.add("resizing-map");
+    let frame = 0, h = startH;
+    const move = (ev: PointerEvent) => {
+      h = Math.round(Math.max(160, Math.min(window.innerHeight * 0.75, startH + ev.clientY - startY)));
+      document.documentElement.style.setProperty("--map-h", `${h}px`);
+      // The map redraws for its new size (Leaflet follows the window's resize).
+      cancelAnimationFrame(frame); frame = requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    };
+    const up = () => {
+      handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", up); handle.removeEventListener("pointercancel", up);
+      handle.classList.remove("drag"); document.body.classList.remove("resizing-map");
+      localStorage.setItem(MAP_H, String(h));
+    };
+    handle.addEventListener("pointermove", move); handle.addEventListener("pointerup", up); handle.addEventListener("pointercancel", up);
+  });
+  handle.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty("--map-h"); localStorage.removeItem(MAP_H);
+    window.dispatchEvent(new Event("resize"));
+  });
+}
+
 export function initLayout() {
   // The column switches in the header (a computer), the tabs along the bottom and the day bar (a phone).
   $("#headerTools").insertAdjacentHTML("afterbegin", `<div class="pane-btns" role="group" aria-label="Columns">${PANES.map((p) =>
@@ -157,9 +199,10 @@ export function initLayout() {
   let frame = 0;
   addEventListener("scroll", () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(dayBar); }, { passive: true });
   let wasPhone = isPhone();
-  addEventListener("resize", () => { if (isPhone() !== wasPhone) { wasPhone = isPhone(); apply(); } else if (hidden.size) desktopGrid(); else dayBar(); });
+  addEventListener("resize", () => { if (isPhone() !== wasPhone) { wasPhone = isPhone(); apply(); } else { desktopGrid(); dayBar(); } });
   // The chat opening or closing changes the columns; a new plan, the day bar.
-  new MutationObserver(() => { if (hidden.size && !isPhone()) { desktopGrid(); requestAnimationFrame(mapShown); } }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  new MutationObserver(() => { if (!isPhone()) { const was = document.body.classList.contains("map-stacked"); desktopGrid(); if (hidden.size || was !== document.body.classList.contains("map-stacked")) requestAnimationFrame(mapShown); } }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  mapResizer();
   new MutationObserver(() => { if (!chosen && isPhone()) apply(); else dayBar(); }).observe($("#output"), { childList: true });
   apply();
 }

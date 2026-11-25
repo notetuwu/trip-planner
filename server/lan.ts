@@ -13,7 +13,7 @@ import type { Req, Res } from "./util/http";
 export const LAN_PORT = PORT + 1;
 const COOKIE = "tp_lan";
 /** What a phone may not do: these stay on the computer itself. */
-const BLOCKED = /^\/api\/(keys|update|settings|open|lan|ollama|sync)(\/|$)/;
+const BLOCKED = /^\/api\/(keys|update|settings|open|lan|ollama|sync|fs|pick-folder)(\/|$)/;
 
 let server: http.Server | null = null, since = 0, lastError = "";
 let appHandler: ((req: Req, res: Res) => void) | null = null;

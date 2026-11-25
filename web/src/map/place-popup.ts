@@ -10,6 +10,7 @@ import { drawMap } from "./draw";
 import { map } from "./map";
 import { ext, icon } from "../core/icons";
 import { mapsName, placeUrl } from "../core/maps-links";
+import { askText } from "../core/ask";
 
 export function placePopupHtml(p: Place) {
   const mark = state.marks[p.title];
@@ -26,9 +27,9 @@ export function placePopupHtml(p: Place) {
 
 const refresh = () => { setListPlaces(session.listPlaces); save(); renderChips(); map?.closePopup(); drawMap(); };
 
-function renameCustom(t: string) {
+async function renameCustom(t: string) {
   const p = state.customPlaces.find((x) => x.title === t);
-  const name = p && prompt("New name for this place:", t)?.trim();
+  const name = p && await askText({ title: "Rename place", value: t, ok: "Rename", required: true });
   if (!p || !name || name === t || session.places.some((x) => x.title === name)) return;
   p.title = name;
   // Marks and group sizes are keyed by name, so move them along.

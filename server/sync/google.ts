@@ -49,6 +49,12 @@ export function clientInfo(): { clientFrom: "app" | "env" | ""; clientId: string
   return { clientFrom: saved ? "app" : c ? "env" : "", clientId: c?.id || "" };
 }
 
+/** The client entered in Settings → Sync, to show and change there (the person's own, on their own computer). */
+export function clientShown(): { id: string; secret: string } {
+  const c = savedClient();
+  return { id: c?.id || "", secret: c?.secret || "" };
+}
+
 /** What was pasted: the ID and the secret, or the whole JSON file Google offers to download (in the first field). */
 export function parseClient(idText: string, secretText: string): Client {
   let id = String(idText || "").trim(), secret = String(secretText || "").trim();
@@ -266,12 +272,59 @@ export async function folderInfo(id: string): Promise<{ id: string; name: string
   return { id: f.id, name: String(f.name || ""), canWrite: !!f.capabilities?.canAddChildren };
 }
 
-/** A new folder at the top of My Drive. */
-export async function createFolder(name: string) {
+/** One entry of a folder, for the folder browser (Settings → Sync, the Photos window). */
+export interface DriveEntry { id: string; name: string; folder: boolean; canWrite: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file" }
+
+/** What's in a place in Drive: My Drive ("root"), shared with me ("shared"), the shared drives ("drives"), or a folder
+ *  (its id). Folders first, then the files (at most a few hundred: enough to see what a folder holds). */
+export async function browse(where: string): Promise<{ entries: DriveEntry[]; more: boolean }> {
+  if (where === "drives") {
+    const j = await driveJson(`${DRIVE}/drives?pageSize=100&fields=drives(id,name,capabilities(canAddChildren))`);
+    return { entries: (j.drives || []).map((d: any) => ({ id: d.id, name: d.name, folder: true, canWrite: !!d.capabilities?.canAddChildren })), more: false };
+  }
+  const q = where === "shared" ? `sharedWithMe = true and mimeType = '${FOLDER_TYPE}' and trashed = false`
+    : where === "root" ? `'root' in parents and trashed = false`
+      : isDriveId(where) ? `'${where}' in parents and trashed = false` : "";
+  if (!q) throw new Error("No such folder.");
+  const out: DriveEntry[] = [];
+  let pageToken = "", more = false;
+  do {
+    const p = new URLSearchParams({
+      q, orderBy: "folder,name_natural", pageSize: "300",
+      fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,capabilities(canAddChildren),owners(displayName,me))",
+      supportsAllDrives: "true", includeItemsFromAllDrives: "true", ...(where === "shared" ? {} : { corpora: "allDrives" }), ...(pageToken ? { pageToken } : {}),
+    });
+    const j = await driveJson(`${DRIVE}/files?${p}`);
+    for (const f of j.files || []) {
+      const folder = f.mimeType === FOLDER_TYPE, type = String(f.mimeType || ""), name = String(f.name || "");
+      out.push({
+        id: f.id, name, folder, canWrite: !!f.capabilities?.canAddChildren,
+        ...(f.owners?.[0] && !f.owners[0].me ? { owner: String(f.owners[0].displayName || "") } : {}),
+        ...(f.modifiedTime ? { modified: String(f.modifiedTime) } : {}), ...(f.size ? { size: Number(f.size) } : {}),
+        ...(folder ? {} : { kind: type.startsWith("image/") ? "image" as const : type.startsWith("video/") ? "video" as const : /\.json$/i.test(name) ? "trip" as const : "file" as const }),
+      });
+    }
+    pageToken = j.nextPageToken || "";
+    more = !!pageToken && out.length >= 600;
+  } while (pageToken && out.length < 600);
+  return { entries: out, more };
+}
+
+/** The signed-in account's access, for other Drive reads (the map's photos): null when nobody is signed in. */
+export async function bearer(): Promise<string | null> {
+  if (!client() || !account().signedIn) return null;
+  try { return await accessToken(); } catch { return null; }
+}
+
+/** A new folder: at the top of My Drive, or in a folder (its id). */
+export async function createFolder(name: string, parent = "root") {
+  if (parent !== "root" && !isDriveId(parent)) throw new Error("No such folder.");
+  const clean = String(name || "").trim().slice(0, 100);
+  if (!clean) throw new Error("Give the folder a name.");
   const f = await driveJson(`${DRIVE}/files?fields=id,name&supportsAllDrives=true`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, mimeType: FOLDER_TYPE }),
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: clean, mimeType: FOLDER_TYPE, parents: [parent] }),
   });
-  return { id: String(f.id), name: String(f.name || name), canWrite: true };
+  return { id: String(f.id), name: String(f.name || clean), canWrite: true };
 }
 
 export const TRIP_SUFFIX = ".trip.json";

@@ -6,8 +6,9 @@
 //  - changed only here: uploaded (if it may be changed: the person who shared it, or shared as "can edit", with edit
 //    access to the folder in Drive);
 //  - changed only in Drive: downloaded into the save (what the save held is kept as a version first);
-//  - changed in both: nothing is overwritten. The trip shows the clash in Your trips and the person picks which to keep
-//    (the other one is kept as a version). A view-only trip someone else shared always takes Drive's copy.
+//  - changed in both: the two are joined (shared/merge.ts: what each side changed, against what both had last); only when
+//    both changed the same thing differently is nothing overwritten: the trip shows the clash in Your trips and the person
+//    picks which to keep (the other one is kept as a version). A view-only trip someone else shared always takes Drive's.
 //
 // What it never does: delete or trash anything in Drive (a trip deleted here, or a folder removed in Settings, only stops
 // syncing; the file stays in the folder), touch files outside the sync folders, or send this computer's details along
@@ -20,10 +21,33 @@ import { SAVES_DIR, VERSION, cleanName, errMsg } from "../config";
 import { isLocal } from "../geo/local-photos";
 import { cleanBundledList, readList, writeList } from "../lists/store";
 import { keepVersion, keepVersionText, stable } from "../util/versions";
+import { merge3 } from "../../shared/merge";
 import * as g from "./google";
+import * as store from "./store";
+import { fsCheck } from "../util/fs-browse";
+import { KIND_LABEL, folderKind } from "../util/folder-kind";
+
+/** Whether there's anything to sync with now: Drive (signed in), or a folder on this computer. */
+const canSync = () => store.driveReady() || state().folders.some((f) => store.isLocalId(f.id));
 
 const STATE_FILE = () => path.join(g.SYNC_DIR, "state.json");
 const CACHE_DIR = () => path.join(g.SYNC_DIR, "cache");
+/** What a file held when this computer and Drive last had the same trip: the starting point for joining two sides' changes. */
+const BASE_DIR = () => path.join(g.SYNC_DIR, "base");
+function setBase(fileId: string, text: string) {
+  if (!fileId) return;
+  fs.mkdirSync(BASE_DIR(), { recursive: true });
+  fs.writeFileSync(path.join(BASE_DIR(), `${store.fileKey(fileId)}.json`), text);
+}
+function readBase(fileId: string): string | null {
+  try { return fileId ? fs.readFileSync(path.join(BASE_DIR(), `${store.fileKey(fileId)}.json`), "utf8") : null; } catch { return null; }
+}
+/** The trip in a file's text, as it's compared (without its sync block, which each side keeps for itself). */
+function tripOfText(text: string): any {
+  const data = JSON.parse(text), trip = data?.format === FORMAT ? data.trip : data;
+  const { sync: _s, ...rest } = trip || {};
+  return rest;
+}
 export const FORMAT = "trip-planner-trip";
 const ROUND_MS = 3 * 60_000;
 
@@ -118,10 +142,17 @@ function writeLocal(name: string, trip: any, { keep = "always" as "always" | "sp
   fs.mkdirSync(SAVES_DIR, { recursive: true });
   if (keep) keepVersion(SAVES_DIR, clean, file, keep === "always");
   const text = JSON.stringify({ ...trip, saveName: clean });
+  if (fromDrive) {
+    // What the page may still have on screen: its changes are joined with this one when it writes (see pageWrite).
+    try { replaced.set(clean, { text: fs.readFileSync(file, "utf8"), at: state().updated[clean] || 0 }); } catch { replaced.delete(clean); }
+  }
   fs.writeFileSync(file, text);
   if (fromDrive) state().updated[clean] = Date.now();
   return text;
 }
+
+/** By save name: what the save held before sync last wrote Drive's version into it, and the stamp it had then. */
+const replaced = new Map<string, { text: string; at: number }>();
 
 function freeName(base: string) {
   const b = (cleanName(base) || "Shared trip").slice(0, 70);
@@ -179,9 +210,9 @@ export function fromSharedText(text: string, local: any | null, name: string): a
 
 // ---- Folders -------------------------------------------------------------------------------------------------------------
 async function content(id: string, md5: string): Promise<{ text: string; md5: string }> {
-  const file = path.join(CACHE_DIR(), `${id}.json`);
+  const file = path.join(CACHE_DIR(), `${store.fileKey(id)}.json`);
   try { const c = JSON.parse(fs.readFileSync(file, "utf8")); if (md5 && c.md5 === md5) return c; } catch { /* not kept yet */ }
-  const text = await g.download(id);
+  const text = await store.download(id);
   const c = { md5: md5 || crypto.createHash("md5").update(text).digest("hex"), text };
   fs.mkdirSync(CACHE_DIR(), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(c));
@@ -189,11 +220,12 @@ async function content(id: string, md5: string): Promise<{ text: string; md5: st
 }
 
 async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
+  if (store.isDriveFolder(f.id) && !store.driveReady()) { f.error = "Sign in with Google (Settings → Sync) to sync with this folder."; return null; }
   try {
-    const info = await g.folderInfo(f.id);
+    const info = await store.folderInfo(f.id);
     f.name = info.name; f.canWrite = info.canWrite;
     const out: RemoteFile[] = [];
-    for (const d of await g.listTripFiles(f.id)) {
+    for (const d of await store.listTripFiles(f.id)) {
       const md5 = d.md5Checksum || "";
       let tripId = d.properties?.tripPlannerId || "";
       try { const c = await content(d.id, md5); const data = JSON.parse(c.text); tripId = cleanShare((data?.format === FORMAT ? data.trip : data)?.sync)?.id || tripId; }
@@ -204,25 +236,26 @@ async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
     state().remote[f.id] = { at: Date.now(), files: out };
     return out;
   } catch (e) {
-    if (e instanceof g.SignedOut) throw e;
     f.error = errMsg(e);
     return null;
   }
 }
 
+/** Adds a sync folder: a Google Drive folder (its link or id) or a folder on this computer ("local:<path>", or the path). */
 export async function addFolder(link: string, label: string): Promise<SyncFolder> {
   const id = folderIdOf(link);
-  if (!id) throw new Error("That doesn't look like a Google Drive folder link. Open the folder in Drive, press Share and copy the link.");
-  const info = await g.folderInfo(id);
-  return putFolder(info, label);
+  if (!id) throw new Error("That isn't a Google Drive folder link or a folder on this computer.");
+  if (store.isDriveFolder(id) && !store.driveReady()) throw new Error("Sign in with Google first (Settings → Sync) to use a Google Drive folder.");
+  return putFolder(await store.folderInfo(id), label);
 }
 export async function newFolder(name: string, label: string): Promise<SyncFolder> {
   const clean = String(name || "").trim().slice(0, 100) || "Trip Planner trips";
   return putFolder(await g.createFolder(clean), label || clean);
 }
-function putFolder(info: { id: string; name: string; canWrite: boolean }, label: string) {
+async function putFolder(info: { id: string; name: string; canWrite: boolean }, label: string) {
   const s = state(), was = s.folders.find((f) => f.id === info.id);
-  const f: SyncFolder = { id: info.id, name: info.name, label: String(label || "").trim().slice(0, 60) || was?.label || info.name, canWrite: info.canWrite };
+  const kind = store.isLocalId(info.id) ? KIND_LABEL[await folderKind(info.id.slice(6))] : undefined;
+  const f: SyncFolder = { id: info.id, name: info.name, label: String(label || "").trim().slice(0, 60) || was?.label || info.name, canWrite: info.canWrite, ...(kind ? { kind } : {}) };
   s.folders = was ? s.folders.map((x) => (x.id === f.id ? f : x)) : [...s.folders, f];
   save();
   runSync();
@@ -244,14 +277,21 @@ export function removeFolder(id: string) {
 /** A folder's id from what they pasted: a share link ("…/folders/ID?usp=sharing", "…/open?id=ID"), or the id itself. */
 export function folderIdOf(link: string): string {
   const s = String(link || "").trim();
+  // A folder on this computer: "local:<path>", or a path as pasted (C:\…, \\server\share, /Users/…, ~/…).
+  const p = s.replace(/^local:/i, "");
+  if (/^local:/i.test(s) || /^([a-z]:[\\/]|\\\\|\/|~[\\/]?|file:\/\/)/i.test(p)) {
+    try { return store.isLocalId(`local:${fsCheck(p).path}`) ? `local:${fsCheck(p).path}` : ""; } catch { return ""; }
+  }
   const m = s.match(/\/folders\/([\w-]{10,})/) || s.match(/[?&]id=([\w-]{10,})/) || s.match(/^([\w-]{10,})$/);
   return m && g.isDriveId(m[1]) ? m[1] : "";
 }
 
 // ---- Who may change a trip -----------------------------------------------------------------------------------------------
 function rights(t: Tracked | undefined, local: Local | null) {
-  const me = g.account(), localShare = cleanShare(local?.trip?.sync), known = t?.share || localShare;
-  const mine = !known?.owner || sameEmail(known.owner, me.email);
+  const me = store.me(), localShare = cleanShare(local?.trip?.sync), known = t?.share || localShare;
+  // Not shared yet: theirs. Shared with no owner known (a file put in a folder by someone Google doesn't name): nobody's,
+  // so "view only" can't be got round that way.
+  const mine = !known || (!!known.owner && me.ids.some((id) => sameEmail(known.owner, id)));
   // The person who shared it decides edit or view (their own save says which); for everyone else, Drive's copy does.
   const share = mine ? localShare || known : known;
   return { mine, share, editable: mine || share?.mode !== "view" };
@@ -263,7 +303,7 @@ let current: Promise<void> | null = null, again = false, lastRun = 0, lastError 
 /** Brings every synced trip up to date with its folders. Only one round runs at a time: asked while one runs, it goes once
  *  more when that's done, and the answer comes after both. */
 export function runSync(): Promise<void> {
-  if (!g.client() || !g.account().signedIn) return Promise.resolve();
+  if (!canSync()) return Promise.resolve();
   if (current) { again = true; return current; }
   current = (async () => {
     try {
@@ -289,7 +329,7 @@ async function round() {
       const files = remote.get(folderId);
       if (!files) continue; // the folder couldn't be read this time (offline): next round
       try { local = await syncLink(id, t, folderId, link, local, files); }
-      catch (e) { if (e instanceof g.SignedOut) throw e; t.error = errMsg(e); }
+      catch (e) { t.error = errMsg(e); }
     }
   }
 }
@@ -323,8 +363,10 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
         notice(`"${local.name}" can't be added to "${folder.label}": ${!folder.canWrite ? "you can only view that folder in Drive" : "it's shared with you as view only"}.`);
         return local;
       }
-      const up = await g.upload({ folder: folderId, name: fileName(local.name), text: toSharedText(local.trip, share), properties: { tripPlannerId: id } });
+      const text = toSharedText(local.trip, share);
+      const up = await store.upload({ folder: folderId, name: fileName(local.name), text, properties: { tripPlannerId: id } });
       link.fileId = up.id; link.md5 = up.md5Checksum || ""; link.local = localHash;
+      setBase(up.id, text);
       return local;
     }
   }
@@ -344,16 +386,45 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
     return local;
   }
   if (!localChanged || !canUpload) return applyRemote(id, t, link, local, remote);
+  // Changed on both sides: joined when they changed different things.
+  const joined = await joinBoth(id, t, link, local, remote, share, mine);
+  if (joined) return joined;
   link.conflict = { md5: remote.md5, by: remote.by, at: remote.at };
   return local;
 }
 
+/** This computer's and Drive's changes together (against what both had last), written here and sent to Drive; null when
+ *  they changed the same thing differently, or what both had last isn't known (then the person picks). */
+async function joinBoth(id: string, t: Tracked, link: Link, local: Local, remote: RemoteFile, share: TripShare, mine: boolean): Promise<Local | null> {
+  const base = readBase(link.fileId);
+  if (!base) return null;
+  const c = await content(remote.id, remote.md5);
+  let m;
+  try { m = merge3(tripOfText(base), tripOfText(toSharedText(local.trip, share)), tripOfText(c.text)); } catch { return null; }
+  if (m.clashes.length) return null;
+  // The page wrote the save since this round read it: the next round joins that too.
+  if (fs.existsSync(local.file) && key(fs.readFileSync(local.file, "utf8")) !== key(local.text)) return local;
+  let lists: unknown = [];
+  try { lists = JSON.parse(c.text)?.lists || []; } catch { /* none */ }
+  const trip = fromSharedText(JSON.stringify({ format: FORMAT, trip: m.value, lists }), local.trip, local.name);
+  trip.sync = mine ? local.trip.sync : (t.share || share);
+  const text = writeLocal(local.name, trip, { keep: "always" });
+  // Drive's version is the starting point now: the joined trip goes up over it.
+  link.md5 = remote.md5; link.local = "";
+  setBase(remote.id, c.text);
+  const joined = { ...local, text, trip };
+  await uploadTo(id, link, joined, share, remote.name.toLowerCase().endsWith(g.TRIP_SUFFIX) && mine ? fileName(local.name) : remote.name);
+  return joined;
+}
+
 async function uploadTo(id: string, link: Link, local: Local, share: TripShare, name: string) {
   // Someone saved it in Drive since the folder was looked at: not overwritten (the next round sees their change).
-  const fresh = await g.fileMeta(link.fileId);
+  const fresh = await store.fileMeta(link.fileId);
   if ((fresh.md5Checksum || "") !== link.md5 || fresh.trashed) return;
-  const up = await g.upload({ id: link.fileId, name, text: toSharedText(local.trip, share), properties: { tripPlannerId: id } });
+  const text = toSharedText(local.trip, share);
+  const up = await store.upload({ id: link.fileId, name, text, properties: { tripPlannerId: id } });
   link.md5 = up.md5Checksum || ""; link.local = key(local.text);
+  setBase(link.fileId, text);
 }
 
 /** Drive's version becomes the save (what the save held is kept as a version first). */
@@ -376,6 +447,7 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
   // already in Drive or an earlier version, so one every 10 minutes is enough.
   const text = writeLocal(local.name, trip, { keep: key(local.text) !== link.local ? "always" : "spaced" });
   link.md5 = remote.md5; link.local = key(text);
+  setBase(remote.id, c.text);
   return { ...local, text, trip };
 }
 
@@ -384,15 +456,15 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
  *  may be changed from here; unticking one stops syncing there (the file stays in Drive). Returns the trip's share, which
  *  the page puts into the open trip. */
 export async function setTripSync(name: string, folderIds: string[], mode?: "edit" | "view"): Promise<{ sync: TripShare | null }> {
-  const me = g.account();
-  if (!me.signedIn) throw new Error("Sign in with Google first (Settings → Sync).");
+  const me = store.me();
+  if (folderIds.some((id) => store.isDriveFolder(id)) && !store.driveReady()) throw new Error("Sign in with Google first (Settings → Sync) to sync with a Google Drive folder.");
   const local = readLocal(name);
   if (!local) throw new Error("Save the trip first.");
   const s = state();
   let share = cleanShare(local.trip.sync);
   const t0 = share ? s.trips[share.id] : undefined, { mine, editable } = rights(t0, local);
-  if (!share) share = { id: crypto.randomUUID(), owner: me.email, ...(me.name ? { ownerName: me.name } : {}), mode: mode === "view" ? "view" : "edit" };
-  else if (mine && mode) share = { ...share, mode, ...(share.owner ? {} : { owner: me.email }) };
+  if (!share) share = { id: crypto.randomUUID(), owner: me.id, ...(me.name ? { ownerName: me.name } : {}), mode: mode === "view" ? "view" : "edit" };
+  else if (mine && mode) share = { ...share, mode, ...(share.owner ? {} : { owner: me.id }) };
   const wanted = folderIds.filter((id) => s.folders.some((f) => f.id === id));
   const t = s.trips[share.id] || (s.trips[share.id] = { folders: {} });
   for (const id of Object.keys(t.folders)) if (!wanted.includes(id)) delete t.folders[id];
@@ -410,7 +482,7 @@ export async function resolve(name: string, folderId: string, keep: "mine" | "th
   const local = readLocal(name), id = cleanShare(local?.trip?.sync)?.id;
   const t = id ? state().trips[id] : undefined, link = t?.folders[folderId];
   if (!local || !t || !link?.conflict) throw new Error("There's nothing to decide for this trip.");
-  const fresh = await g.fileMeta(link.fileId);
+  const fresh = await store.fileMeta(link.fileId);
   const c = await content(link.fileId, fresh.md5Checksum || "");
   const theirs = fromSharedText(c.text, local.trip, local.name);
   if (keep === "theirs") {
@@ -418,6 +490,7 @@ export async function resolve(name: string, folderId: string, keep: "mine" | "th
     if (mine) theirs.sync = local.trip.sync; else { const sh = cleanShare(theirs.sync); if (sh) t.share = sh; }
     const text = writeLocal(local.name, theirs);
     link.md5 = c.md5; link.local = key(text);
+    setBase(link.fileId, c.text);
   } else {
     keepVersionText(SAVES_DIR, local.name, JSON.stringify(theirs));
     // Drive's version is now the starting point, so this computer's counts as the change and goes up.
@@ -442,7 +515,7 @@ export async function openRemote(folderId: string, fileId: string): Promise<{ na
   const t = s.trips[share.id] || (s.trips[share.id] = { folders: {}, share });
   if (!t.share) t.share = share;
   if (have) {
-    if (!t.folders[folderId]) t.folders[folderId] = { fileId, md5: rf.md5, local: key(have.text) };
+    if (!t.folders[folderId]) { t.folders[folderId] = { fileId, md5: rf.md5, local: key(have.text) }; setBase(fileId, c.text); }
     save();
     return { name: have.name };
   }
@@ -450,6 +523,7 @@ export async function openRemote(folderId: string, fileId: string): Promise<{ na
   const trip = { ...fromSharedText(c.text, null, name), sync: share };
   const text = writeLocal(name, trip, { keep: false });
   t.folders[folderId] = { fileId, md5: rf.md5, local: key(text) };
+  setBase(fileId, c.text);
   save();
   return { name };
 }
@@ -462,7 +536,7 @@ export function remoteTrips(): { folder: string; file: RemoteFile; trip: any }[]
   for (const f of s.folders) for (const file of s.remote[f.id]?.files || []) {
     if (here.has(file.id) || (file.tripId && (locals.has(file.tripId) || seen.has(file.tripId)))) continue;
     try {
-      const c = JSON.parse(fs.readFileSync(path.join(CACHE_DIR(), `${file.id}.json`), "utf8"));
+      const c = JSON.parse(fs.readFileSync(path.join(CACHE_DIR(), `${store.fileKey(file.id)}.json`), "utf8"));
       const data = JSON.parse(c.text), trip = data?.format === FORMAT ? data.trip : data;
       if (!trip || !Array.isArray(trip.stays)) continue;
       if (file.tripId) seen.add(file.tripId);
@@ -485,7 +559,7 @@ export function status(): SyncStatus {
     };
   }
   return {
-    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(),
+    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids,
     folders: s.folders, trips, running: !!current, lastRun, error: lastError, notices: s.notices,
   };
 }
@@ -500,17 +574,41 @@ export function saveSyncInfo(): { synced: Set<string>; updated: Record<string, n
   return { synced, updated: s.updated };
 }
 
-/** A page writing a trip it loaded before sync wrote a newer version from Drive into the save: refused (the page keeps its
- *  changes as a copy and reloads). `seen` is the page's last-known stamp (no stamp: an older page or a rename, let through). */
-export function staleWrite(name: string, seen: string | string[] | undefined): boolean {
-  if (typeof seen !== "string") return false;
-  return (state().updated[cleanName(name)] || 0) > (Number(seen) || 0);
+/** A page writing a trip it loaded before sync wrote a newer version from Drive into the save. When the page had the
+ *  version sync replaced, its changes and Drive's are joined ("merged": the text to write instead, and the stamp the page
+ *  has seen now); when they changed the same thing differently, or it's older still, it's refused ("stale": the page keeps
+ *  its changes as a copy and reloads). `seen` is the page's last-known stamp (none: an older page or a rename, let through). */
+export function pageWrite(name: string, seen: string | string[] | undefined, body: string): { ok: true } | { merged: string; at: number } | { stale: true } {
+  const clean = cleanName(name), at = state().updated[clean] || 0;
+  if (typeof seen !== "string" || at <= (Number(seen) || 0)) return { ok: true };
+  const before = replaced.get(clean), file = path.join(SAVES_DIR, `${clean}.json`);
+  if (!before || before.at !== (Number(seen) || 0)) return { stale: true };
+  try {
+    const strip = (text: string) => { const { saveName: _n, ...t } = JSON.parse(text); return t; };
+    const m = merge3(strip(before.text), strip(body), strip(fs.readFileSync(file, "utf8")));
+    if (m.clashes.length) return { stale: true };
+    return { merged: JSON.stringify({ ...(m.value as object), saveName: clean }), at };
+  } catch { return { stale: true }; }
+}
+
+/** The open trip, looked at often while it's on screen: when one of its files changed in Drive, a round runs (so two
+ *  people working on it at the same time see each other's changes within half a minute). */
+export async function checkTrip(name: string): Promise<{ changed: boolean }> {
+  if (!canSync()) return { changed: false };
+  const id = cleanShare(readLocal(name)?.trip?.sync)?.id, t = id ? state().trips[id] : undefined;
+  if (!t) return { changed: false };
+  for (const link of Object.values(t.folders)) {
+    if (!link.fileId) return runSync().then(() => ({ changed: true }));
+    const meta = await store.fileMeta(link.fileId).catch(() => null);
+    if (meta && (meta.md5Checksum || "") !== link.md5) { await runSync(); return { changed: true }; }
+  }
+  return { changed: false };
 }
 
 let soon: NodeJS.Timeout | undefined;
 /** A save was written: if it's a synced trip, sync in a few seconds (more saves meanwhile wait for the last). */
 export function afterSave(name: string) {
-  if (!g.client() || !g.account().signedIn || !saveSyncInfo().synced.has(cleanName(name))) return;
+  if (!canSync() || !saveSyncInfo().synced.has(cleanName(name))) return;
   clearTimeout(soon);
   soon = setTimeout(() => { runSync(); }, 4000);
   soon.unref?.();

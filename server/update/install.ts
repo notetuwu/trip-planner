@@ -5,7 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { errMsg } from "../config";
+import { ROOT, errMsg } from "../config";
 import { extractFromZip } from "../util/zip";
 import { type UpdateInfo, checkForUpdate } from "./check";
 
@@ -42,8 +42,18 @@ async function renameRetrying(from: string, to: string, ms = 20000) {
   }
 }
 
-/** Starts a program on its own, so it keeps running when this one exits. */
-const launch = (file: string, args: string[]) => spawn(file, args, { detached: true, stdio: "ignore" }).unref();
+/** Starts a program on its own, so it keeps running when this one exits; fails when it can't be started at all. */
+function launch(file: string, args: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(file, args, { detached: true, stdio: "ignore" });
+    child.once("error", reject);
+    child.once("spawn", () => { child.unref(); resolve(); });
+  });
+}
+
+/** Stops the server so the new version can take the port, but never waits long: a connection that won't close must not
+ *  keep the update from going ahead (that left the window at "restarting" for good). */
+const stopServer = () => Promise.race([shutdown().catch(() => {}), sleep(3000)]);
 
 async function install(info: UpdateInfo) {
   const data = await download(info.asset!);
@@ -51,9 +61,12 @@ async function install(info: UpdateInfo) {
   if (info.mode === "installer") {
     const setup = path.join(os.tmpdir(), info.asset!.name);
     fs.writeFileSync(setup, data);
-    await shutdown();
-    // The installer closes this app if it's still running, and starts the new version (without a new window) when done.
-    launch(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS"]);
+    // The installer is started first (it waits for this app to close, then starts the new version without a new window),
+    // so nothing after can keep it from running. Its log goes next to the app's own.
+    const log = path.join(ROOT, "update-install.log");
+    console.log(`Update: starting the installer for ${info.latest} (its log: ${log}).`);
+    await launch(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", `/LOG=${log}`]);
+    await stopServer();
   } else {
     const exe = extractFromZip(data, (name) => name.endsWith("/Trip Planner.exe") || name === "Trip Planner.exe");
     if (!exe) throw new Error("The update doesn't contain Trip Planner.exe.");
@@ -68,9 +81,10 @@ async function install(info: UpdateInfo) {
       try { fs.renameSync(old, current); fs.rmSync(fresh, { force: true }); } catch { /* left for the next start to sort out */ }
       throw new Error(`Couldn't replace Trip Planner.exe (${errMsg(e)}); a virus scanner may be holding the new file. Try again in a minute.`);
     }
-    await shutdown();
-    launch(current, ["--no-window"]);
+    await stopServer();
+    await launch(current, ["--no-window"]);
   }
+  console.log("Update: closing for the new version.");
   setTimeout(() => process.exit(0), 300);
 }
 

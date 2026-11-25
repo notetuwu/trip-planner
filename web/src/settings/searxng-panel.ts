@@ -4,6 +4,7 @@
 // running in the background until it's done.
 import { api, esc, toast } from "../core/dom";
 import { ext, icon } from "../core/icons";
+import { askConfirm } from "../core/ask";
 
 export interface SearxngInfo {
   installed: boolean;
@@ -76,9 +77,9 @@ export function mountSearxng(el: HTMLElement, opts: { autoStart?: boolean; compa
   const draw = (s: SearxngInfo | null) => {
     el.innerHTML = searxngHtml(s, opts.compact);
     el.querySelectorAll<HTMLButtonElement>("[data-sx]").forEach((b) => {
-      b.onclick = () => {
+      b.onclick = async () => {
         const action = b.dataset.sx!;
-        if (action === "uninstall" && !confirm("Remove SearXNG from this computer? (Docker stays.)")) return;
+        if (action === "uninstall" && !await askConfirm({ title: "Remove SearXNG from this computer?", text: "Docker stays.", ok: "Remove", danger: true })) return;
         act(action);
       };
     });

@@ -1,7 +1,7 @@
 // "Sync" on a trip in Your trips: which Drive folders it syncs to, and (for the person who shared it) whether others may
 // change it or only view it.
 import type { SyncStatus, TripShare } from "../../../shared/types";
-import { $$, api, esc, toast } from "../core/dom";
+import { $$, api, closeOnBackdrop, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
 import { save, state } from "../core/state";
 import { isOwner, openSyncSettings, ownerName, setSyncStatus, syncStatus } from "./sync-client";
@@ -12,6 +12,7 @@ function el() {
   if (dialog) return dialog;
   dialog = document.createElement("dialog");
   dialog.className = "keys-dialog sync-dialog";
+  closeOnBackdrop(dialog);
   document.body.append(dialog);
   return dialog;
 }
@@ -29,14 +30,12 @@ export function openSyncPanel(name: string, done: () => void) {
 
   const body = (): string => {
     if (!s) return `<p class="hint">Syncing is set up on the computer the planner runs on.</p>`;
-    if (!s.configured) return `<p>Set up Google sign-in once to sync trips (Settings → Sync has a step-by-step guide).</p><button type="button" class="btn solid" data-settings>${icon("settings")} Open Settings → Sync</button>`;
-    if (!s.signedIn) return `<p>Sign in with Google first. Then add the Drive folders to sync with.</p><button type="button" class="btn solid" data-settings>${icon("settings")} Open Settings → Sync</button>`;
-    if (!s.folders.length) return `<p>Add a Drive folder to sync with first: one of your own, or one a friend shared with you.</p><button type="button" class="btn solid" data-settings>${icon("settings")} Open Settings → Sync</button>`;
+    if (!s.folders.length) return `<p>Add a folder to sync with first: in Google Drive, one a friend shared with you, or one on this computer (a network drive, or your OneDrive or Dropbox folder).</p><button type="button" class="btn solid" data-settings>${icon("settings")} Open Settings → Sync</button>`;
     const rows = s.folders.map((f) => {
       const on = ticked.has(f.id), can = on || (canEdit && f.canWrite);
-      const why = on ? "" : !f.canWrite ? "you can only view this folder in Drive" : !canEdit ? "this trip is view only for you" : "";
+      const why = on ? "" : !f.canWrite ? "you can only view this folder" : !canEdit ? "this trip is view only for you" : f.error || "";
       return `<label class="sync-folder${can ? "" : " off"}"><input type="checkbox" data-folder="${esc(f.id)}"${on ? " checked" : ""}${can ? "" : " disabled"}>
-        <span><b>${esc(f.label)}</b>${f.name && f.name !== f.label ? ` <span class="hint">(${esc(f.name)} in Drive)</span>` : ""}${why ? `<span class="hint">${esc(why)}</span>` : ""}</span></label>`;
+        <span><b>${icon(f.id.startsWith("local:") ? "monitor" : "drive")} ${esc(f.label)}</b>${f.id.startsWith("local:") ? ` <span class="hint">(on this computer)</span>` : f.name && f.name !== f.label ? ` <span class="hint">(${esc(f.name)} in Drive)</span>` : ""}${why ? `<span class="hint">${esc(why)}</span>` : ""}</span></label>`;
     }).join("");
     const who = share && !mine
       ? `<p class="hint">${icon("users")} Shared by <b>${esc(ownerName(share))}</b>: ${share.mode === "view" ? "view only. Changes you make here stay on this computer and are replaced when they update it; make your own copy to change it." : "everyone with it can change it."}</p>`
@@ -46,7 +45,7 @@ export function openSyncPanel(name: string, done: () => void) {
       <div class="sync-folders">${rows}</div>
       ${who}
       ${info?.error ? `<p class="error-text">${icon("warn")} ${esc(info.error)}</p>` : ""}
-      <p class="hint">Unticking a folder stops syncing there; the trip stays in that folder in Drive. ${!mine ? "" : "“Only view” is kept by the app, not by Drive: for a real lock, give people view access to the folder in Drive."}</p>
+      <p class="hint">Unticking a folder stops syncing there; the trip stays in that folder in Drive. ${!mine ? "" : "“Only view” is kept by the app, not by the folder: for a real lock, give people view access to the folder itself."}</p>
       <div class="sync-acts"><button type="button" class="btn solid" data-apply>${icon("check")} Done</button></div>`;
   };
 

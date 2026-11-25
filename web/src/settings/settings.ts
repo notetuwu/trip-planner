@@ -23,6 +23,7 @@ import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-do
 import { SEARXNG_LOCAL } from "./searxng-local";
 import { renderSync } from "./sync-tab";
 import { loadSyncStatus } from "../saves/sync-client";
+import { askConfirm } from "../core/ask";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
 export type ServiceKey = "brave" | "geoapify" | "google";
@@ -441,7 +442,7 @@ function renderMap() {
   wireLinesDir();
   const clear = document.querySelector<HTMLButtonElement>("#linesClear");
   if (clear) clear.onclick = async () => {
-    if (!confirm("Delete all downloaded transport lines?")) return;
+    if (!await askConfirm({ title: "Delete all downloaded transport lines?", text: "They're downloaded again when the map needs them.", ok: "Delete", danger: true })) return;
     clear.disabled = true;
     try { await clearDownloaded(); toast("Downloaded lines deleted"); } finally { clear.disabled = false; status(); }
   };
@@ -688,12 +689,7 @@ function installRow(i: OllamaInstall) {
 }
 
 async function installOllama() {
-  if (!setup || !confirm(`Install Ollama now?
-
-This runs the command from ollama.com:
-${setup.command}
-
-It downloads Ollama (a large download) and installs it for your user.`)) return;
+  if (!setup || !await askConfirm({ title: "Install Ollama now?", text: `This runs the command from ollama.com:\n${setup.command}\n\nIt downloads Ollama (a large download) and installs it for your user.`, ok: "Install" })) return;
   try { setup = await api<OllamaInstall>("/api/ollama/install", { method: "POST" }); }
   catch (e) { toast((e as Error).message); return; }
   renderModels();
@@ -851,7 +847,7 @@ function renderModels() {
   $$<HTMLButtonElement>("#setMain [data-delete]").forEach((b) => {
     b.onclick = async () => {
       const name = b.dataset.delete!;
-      if (!confirm(`Delete ${name} from this computer? You can install it again later.`)) return;
+      if (!await askConfirm({ title: `Delete ${name}?`, text: "It's removed from this computer. You can install it again later.", ok: "Delete", danger: true })) return;
       try { await api("/api/ollama/model", { method: "DELETE", body: JSON.stringify({ name }) }); toast(`Deleted ${name}`); await loadOllama(); refreshModels(); }
       catch (e) { toast((e as Error).message); }
     };
@@ -911,7 +907,7 @@ function renderPhone() {
     renderPhone();
   };
   document.querySelector<HTMLButtonElement>("#setNewLink")?.addEventListener("click", async () => {
-    if (!confirm("Make a new link? Phones that used the old one have to open the new one.")) return;
+    if (!await askConfirm({ title: "Make a new link?", text: "Phones that used the old one have to open the new one.", ok: "New link" })) return;
     lan = await api<LanStatus>("/api/lan/new-link", { method: "POST" });
     renderPhone();
   });

@@ -8,9 +8,10 @@ import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, cancelLines, localLine, routeStops, routesStops, setLinesDir } from "./geo/transit-lines";
 import { localThumb } from "./geo/local-photos";
-import { folderPhotos, photoFile } from "./geo/photos";
+import { driveThumb, folderPhotos, photoFile } from "./geo/photos";
 import { placePictures } from "./geo/wiki-photos";
 import { pickFolder } from "./util/pick-folder";
+import { fsCheck, fsList, fsMkdir, fsPlaces } from "./util/fs-browse";
 import { reverseGeocode, searchPlaces } from "./geo/search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
@@ -107,7 +108,10 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     }
     // A small picture of a photo or video from a folder on this computer: "?folder=local:<path>&id=<file>&px=s220".
     else if (method === "GET" && path === "/api/photos/thumb") {
-      try { await localThumb(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); }
+      const folder = url.searchParams.get("folder") || "";
+      // A Drive photo read as the signed-in account (its thumbnail only shows for that account).
+      if (!/^local:/i.test(folder)) { try { await driveThumb(folder, url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); } catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); } }
+      else try { await localThumb(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); }
       catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); }
     }
     // Pictures of places from Wikimedia, for the trip preview; only when switched on.
@@ -122,6 +126,18 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       }
     }
     // The system's folder dialog on this computer, to pick the folder with the photos ("" when it's closed without one).
+    // The app's folder browser, on this computer: the usual places and drives, what's in a folder, a new folder, a pasted path.
+    else if (method === "GET" && path === "/api/fs/places") sendJson(res, 200, { entries: fsPlaces() });
+    else if (method === "GET" && path === "/api/fs/list") {
+      try { sendJson(res, 200, fsList(url.searchParams.get("path") || "")); } catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
+    else if (method === "POST" && path === "/api/fs/mkdir") {
+      const body = await readJson(req);
+      try { sendJson(res, 200, fsMkdir(String(body?.parent || ""), String(body?.name || ""))); } catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
+    else if (method === "GET" && path === "/api/fs/check") {
+      try { sendJson(res, 200, fsCheck(url.searchParams.get("path") || "")); } catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
     else if (method === "POST" && path === "/api/pick-folder") {
       try { sendJson(res, 200, { path: await busyWhile(() => pickFolder("Choose the folder with your photos")) }); }
       catch (e) { sendJson(res, 400, { error: errMsg(e) }); }

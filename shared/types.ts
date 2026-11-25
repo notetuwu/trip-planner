@@ -302,6 +302,8 @@ export interface TripShare {
 
 /** A sync folder in Drive (Settings → Sync). */
 export interface SyncFolder {
+  /** A Google Drive folder's id, or "local:<path>" for a folder on this computer (or a network drive, or a folder a cloud
+   *  app like OneDrive keeps in step here). */
   id: string;
   /** The name it has in this app ("Friends"). */
   label: string;
@@ -309,6 +311,8 @@ export interface SyncFolder {
   name: string;
   /** The account may add and change files in it (otherwise trips there can only be opened). */
   canWrite: boolean;
+  /** For a folder on this computer: what carries it elsewhere ("OneDrive", "Network drive"…, or "Only on this computer"). */
+  kind?: string;
   error?: string;
 }
 
@@ -344,6 +348,8 @@ export interface SyncStatus {
   running: boolean;
   lastRun: number;
   error: string;
+  /** Who this is (the Google account, this computer's user): trips shared by any of these are this person's. */
+  identities: string[];
   /** Things the person should know about (a trip removed from a folder in Drive, so it stopped syncing there). */
   notices: string[];
 }

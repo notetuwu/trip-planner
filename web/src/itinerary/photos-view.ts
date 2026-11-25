@@ -2,7 +2,7 @@
 // folders on this computer, as many as the trip has) and how they show on the map. On the right, every photo laid out by
 // the day of the trip it was taken on (the others by date), with or without a spot on the map. Click one to go through
 // them big (arrows, a strip along the bottom); the pin on a photo moves the map to where it was taken.
-import { api, closeOnBackdrop, esc } from "../core/dom";
+import { closeOnBackdrop, esc } from "../core/dom";
 import { fmtDate } from "../core/format";
 import { icon } from "../core/icons";
 import { session, state } from "../core/state";
@@ -12,6 +12,9 @@ import {
   photosState, removePhotosFolder, setPhotosFolderShown, setPhotosGuess, setPhotosOn, thumbTag, viewItem,
 } from "../map/photos";
 import { showGallery } from "../core/lightbox";
+import { classifyLink, pickFolder } from "../core/folder-picker";
+import { askText, tell } from "../core/ask";
+import { loadSyncStatus } from "../saves/sync-client";
 import { highlights } from "./preview-data";
 
 /** A collage of their photos on top: one from as many days as there are, with the trip's name and when. */
@@ -123,29 +126,19 @@ const SIDE = () => `<aside class="ph-side">
     <ul class="ph-sources" data-ph-sources></ul>
   </section>
   <section>
-    <h4>Add a Google Drive folder</h4>
-    <form data-ph-drive>
-      <input type="url" placeholder="Link to the folder" autocomplete="off" spellcheck="false">
-      <button class="btn">Add</button>
-    </form>
-    <p class="hint">Share the folder as “Anyone with the link”, then paste its link. Needs a Google API key (Settings → Planning).</p>
-    <p class="hint ph-err" data-ph-drive-err hidden></p>
-  </section>
-  <section>
-    <h4>Add a folder from this computer</h4>
-    <form data-ph-local>
-      <input type="text" placeholder="D:\\Photos\\Italy" autocomplete="off" spellcheck="false">
-      <button class="btn">Add</button>
-    </form>
-    <button type="button" class="btn" data-ph-pick>${icon("folder")} Choose folder…</button>
-    <p class="hint">Photos and videos in it and its subfolders. The planner reads them from the disk; nothing is uploaded.</p>
-    <p class="hint ph-err" data-ph-local-err hidden></p>
+    <h4>Add a folder</h4>
+    <div class="drive-add">
+      <button type="button" class="drive-tile" data-ph-add><span class="dt-ic">${icon("plus")}</span><span class="dt-text"><b>Add a folder</b><span>From this computer or your Google Drive</span></span></button>
+      <button type="button" class="link-btn drive-paste-btn" data-ph-paste>${icon("link")} Or paste a link or path</button>
+    </div>
+    <p class="hint" data-ph-how>Photos and videos in it and its folders. From this computer they're read from the disk; nothing is uploaded.</p>
+    <p class="hint ph-err" data-ph-err hidden></p>
     <p class="hint" data-ph-heic hidden>iPhone HEIC pictures can't be shown by browsers, so they're skipped. Export them as JPEG to include them.</p>
   </section>
   <section>
     <h4>On the map</h4>
     <label class="ph-check"><input type="checkbox" data-ph-on> Show the photos on the map</label>
-    <label class="ph-check" title="A photo with no GPS goes where your plan has you at the time it was taken (its day, and the stop you were at); it's drawn with a dashed border"><input type="checkbox" data-ph-guess> Place photos without a location by their time</label>
+    <label class="ph-check" title="A photo with no GPS goes where your photos with GPS from a few minutes before or after were taken; without those, to the stop your plan has you at then. It's drawn with a dashed border"><input type="checkbox" data-ph-guess> Place photos without a location by their time</label>
   </section>
   <section><button type="button" class="btn" data-ph-refresh title="Ask Google again and read the folders again (a Drive list is kept for an hour)">Refresh all</button></section>
 </aside>`;
@@ -154,31 +147,25 @@ const SIDE = () => `<aside class="ph-side">
 function wireSide(d: HTMLDialogElement) {
   const q = <T extends HTMLElement>(sel: string) => d.querySelector<T>(sel)!;
   const say = (sel: string, text: string) => { const el = q(sel); el.textContent = text; el.hidden = !text; };
-  const driveForm = q<HTMLFormElement>("[data-ph-drive]"), localForm = q<HTMLFormElement>("[data-ph-local]");
-  driveForm.onsubmit = (e) => {
-    e.preventDefault();
-    const input = driveForm.querySelector<HTMLInputElement>("input")!, why = addPhotosFolder(input.value);
-    say("[data-ph-drive-err]", why);
-    if (!why) input.value = "";
+  /** Adds what was chosen or pasted: a folder on this computer, or a Google Drive folder (its link). */
+  const add = (link: string) => {
+    const local = link.replace(/^local:/i, "");
+    say("[data-ph-err]", /^local:/i.test(link) || /^([a-z]:[\\/]|\\\\|\/|~)/i.test(local) ? addLocalFolder(local) : addPhotosFolder(link));
   };
-  localForm.onsubmit = (e) => {
-    e.preventDefault();
-    const input = localForm.querySelector<HTMLInputElement>("input")!, why = addLocalFolder(input.value);
-    say("[data-ph-local-err]", why);
-    if (!why) input.value = "";
+  q<HTMLButtonElement>("[data-ph-add]").onclick = async () => {
+    const f = await pickFolder({ title: "Choose a folder with photos", note: "Its photos and videos show on the map, with those in its folders (two levels down)." });
+    if (f) add(f.link);
   };
-  // The system's own folder dialog, on this computer (a web page can't give a folder's path).
-  const pick = q<HTMLButtonElement>("[data-ph-pick]");
-  pick.onclick = async () => {
-    pick.disabled = true; say("[data-ph-local-err]", "");
-    const label = pick.innerHTML;
-    pick.textContent = "Waiting for the folder dialog…";
-    try {
-      const r = await api<{ path: string }>("/api/pick-folder", { method: "POST", body: "{}" });
-      if (r.path) say("[data-ph-local-err]", addLocalFolder(r.path));
-    } catch (e) { say("[data-ph-local-err]", (e as Error).message); }
-    finally { pick.disabled = false; pick.innerHTML = label; }
+  q<HTMLButtonElement>("[data-ph-paste]").onclick = async () => {
+    const text = await askText({ title: "Paste a link or path", text: "A Google Drive folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  D:\\Photos\\Japan", ok: "Add", required: true });
+    if (!text) return;
+    const c = classifyLink(text);
+    if (c.kind === "cloud") return void tell({ title: `${c.name} links can't be opened here yet`, text: `If the ${c.name} app keeps the folder on this computer, add it from there: Add a folder → This computer.` });
+    if (c.kind === "unknown") return say("[data-ph-err]", "That isn't a Google Drive link or a folder's path.");
+    add(c.kind === "local" ? `local:${c.path}` : text);
   };
+  // Signed in with Google (Settings → Sync): Drive folders work without sharing them publicly.
+  loadSyncStatus().then((s) => { if (s?.signedIn) q("[data-ph-how]").textContent = "Photos and videos in it and its folders. You're signed in with Google, so your own Drive folders work without sharing them. From this computer they're read from the disk; nothing is uploaded."; });
   q<HTMLInputElement>("[data-ph-on]").onchange = (e) => setPhotosOn((e.target as HTMLInputElement).checked);
   q<HTMLInputElement>("[data-ph-guess]").onchange = (e) => setPhotosGuess((e.target as HTMLInputElement).checked);
   q<HTMLButtonElement>("[data-ph-refresh]").onclick = () => loadMissing(true);

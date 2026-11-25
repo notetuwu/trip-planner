@@ -9,7 +9,7 @@ import { save, state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { stayLoc, stayOn } from "../geo/locate";
 import { cleanStop } from "../trip/modes";
-import { type DayStops, type Spot, spotByTime } from "./photo-spot";
+import { type DayStops, type Spot, anchorsOf, spotByTime } from "./photo-spot";
 import { onMap } from "./travel-day";
 
 interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number }
@@ -47,11 +47,14 @@ export function setPhotosGuess(yes: boolean) {
   draw(); changed();
 }
 
-/** Looks up where the plan has them at a photo's time: the day's stops (those with a place on the map and a time) and where they
- *  slept, built once for a whole list of photos. Without a plan, or with the guess switched off, nothing is placed. */
+/** Looks up where a photo without a position was taken: by the trip's photos with a position taken around then (from all
+ *  its shown folders), else where the plan has them at that time (the day's stops with a place on the map and a time, and
+ *  where they slept). Built once for a whole list of photos. With the guess switched off, nothing is placed. */
 function placer(): (t: string) => Spot | null {
+  if (!guess) return () => null;
+  const anchors = anchorsOf(folders().filter((f) => !f.off).flatMap((f) => loaded.get(f.link)?.list?.photos || []));
   const it = state.itinerary;
-  if (!guess || !it) return () => null;
+  if (!it) return (t) => spotByTime(t, [], anchors);
   const byTitle = byTitleMap();
   const days: DayStops[] = it.days.map((d) => {
     const stops: DayStops["stops"] = [];
@@ -64,7 +67,7 @@ function placer(): (t: string) => Spot | null {
     const s = stayOn(d), l = s ? stayLoc(s) : undefined;
     return { date: d.date, stops, ...(l && s ? { home: { lat: l.lat, lng: l.lng, name: s.hotel || s.city.split(",")[0] } } : {}) };
   });
-  return (t) => spotByTime(t, days);
+  return (t) => spotByTime(t, days, anchors);
 }
 export const onPhotosChange = (f: () => void) => { listeners.add(f); };
 
