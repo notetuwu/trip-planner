@@ -72,8 +72,12 @@ export function editOps(v: unknown, days = 0): EditOp[] | null {
 }
 /** A small edit the page makes itself, without re-planning: add a stop at a free time, remove one, or move one's time. */
 export interface StopOp {
-  /** "where": the stop is somewhere else (its address given): it's looked up and the stop moved there. */
-  op: "add" | "remove" | "time" | "where";
+  /** "where": the stop is somewhere else (its address given): it's looked up and the stop moved there. "group": who
+   *  does the stop is set ("group" empty: everyone). */
+  op: "add" | "remove" | "time" | "where" | "group";
+  /** While the group is split: the subgroup doing this stop ("Group B") and how many they are. */
+  group?: string;
+  people?: number;
   /** 1-based day number. */
   day: number;
   place: string;
@@ -120,10 +124,11 @@ The chat is in Ask mode: answer and look things up, but never offer a change (no
 The travelers can change their ${days}-day itinerary through you. When their message asks for a change to it (or says yes to a change you suggested), write one or two sentences on what will change, then end your reply with one last line exactly like this:
 CHANGE: {"title": "a short headline of the change, under 60 characters", "days": [3], "request": "the precise instruction for the planner, in English, with every detail agreed in the conversation"}
 "days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
-When the change rebuilds a day (or part of one) from stops you and the travelers settled in the conversation (a list with times you offered and they said yes to, or that they gave you), also give every one of those stops, in order, as "agreed": [{"day": 7, "time": "09:00", "place": "Check out & metro to Shin-Osaka", "where": "its address, or place, town", "kind": "sight|activity|meal|transfer|other", "cost": 6, "note": "what to know about it, in a sentence or two"}]. The planner keeps exactly those stops, at those times and under those names, and only fills in the details; any it leaves out are put back. Leave "agreed" out when the planner should choose the stops itself.
+When the change rebuilds a day (or part of one) from stops you and the travelers settled in the conversation (a list with times you offered and they said yes to, or that they gave you), also give every one of those stops, in order, as "agreed": [{"day": 7, "time": "09:00", "place": "Check out & metro to Shin-Osaka", "where": "its address, or place, town", "kind": "sight|activity|meal|transfer|other", "cost": 6, "note": "what to know about it, in a sentence or two"}] (with "group" and "people" on the stops done apart when the group splits up, see below). The planner keeps exactly those stops, at those times and under those names, and only fills in the details; any it leaves out are put back. Leave "agreed" out when the planner should choose the stops itself.
 Small edits don't need the planner: adding a stop at a time that's free and close to that day's other stops (a few minutes away, so nothing else has to move), removing a stop, or moving a stop to another time. A stop that is further away, or that pushes later stops, dinner or the drive back, is a "request" for the planner for that day ("add X at about 14:00 and re-plan the rest of the day around it"), never an "add". Write those as "stops" instead of "request" (and "days": []); the page makes them straight away, without re-planning the day:
 CHANGE: {"days": [], "request": "", "stops": [{"op": "add", "day": 5, "time": "14:30", "place": "Aussichtsturm Gaflei", "where": "Gafleistrasse, Triesenberg, Liechtenstein", "description": "what it is and why go, how to get there, how long to allow", "cost": 0, "kind": "sight"}]}
 Other ops: {"op": "remove", "day": 5, "place": "the stop's name exactly as in the plan"} and {"op": "time", "day": 5, "place": "the stop's name exactly as in the plan", "time": "08:00"} (e.g. breakfast moved to when the café opens), and {"op": "where", "day": 5, "place": "the stop's name exactly as in the plan", "where": "its real address, or place, town, country"} when a stop is in the wrong place on the map or they tell you where it really is (they give an address, or say which branch or which side of town): it's moved there, nothing else changes. Give each day's stop its own "where" when the same place is on several days. For an added stop, "where" is its address or "place, town, country" (it's looked up on the map, so it must be the real location). Use "request" instead when other stops would have to move or the day needs rearranging.
+Split groups: while part of the group does something else, every stop done apart gets "group" (a short label: "Group A", "Group B") and "people" (how many of them), whether it's an "agreed" stop, an added stop ({"op": "add", …, "group": "Group B", "people": 3}) or a stop already in the plan: {"op": "group", "day": 5, "place": "the stop's name exactly as in the plan", "group": "Group B", "people": 3} ("group": "" when everyone does it). Stops done together have no group. These fields are what put each group in its own column and map line; saying it in a note, a description or the day's notes changes nothing. Everyone is in a group while they're apart: whoever stays behind (at the hotel, say) is a group too, with a stop for what they do ("Rest at the hotel"). When a group splits again later, each new group gets its own label and head count ("Group B1", "Group B2"). When they ask for groups, every stop done apart in your CHANGE has its group.
 Add "trip" only when the trip's setup changes too (the day-by-day plan is made from it), with just the parts that change, for example: "trip": {"onTheWay": ["Burg Hohenwerfen"]}. Its parts:
 - "onTheWay": places to visit on a travel day between two stays instead of as a day trip (this also takes them off the stays' day trips). Use it whenever they want a place "on the way".
 - "fromStay": places to visit from where they sleep.
@@ -261,8 +266,16 @@ export function agreedOps(v: unknown, days = 0): AgreedStop[] {
     const cost = Number(x?.cost);
     return { day, time: /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, "0") : "", place,
       ...(str(x?.where, 200) ? { where: str(x.where, 200) } : {}), ...(planKind(x?.kind) ? { kind: planKind(x.kind) } : {}),
-      ...(Number.isFinite(cost) && cost >= 0 ? { cost } : {}), ...(str(x?.note, 600) ? { note: str(x.note, 600) } : {}) };
+      ...(Number.isFinite(cost) && cost >= 0 ? { cost } : {}), ...(str(x?.note, 600) ? { note: str(x.note, 600) } : {}), ...groupOf(x) };
   }).filter((x): x is AgreedStop => !!x);
+}
+
+/** A stop's subgroup as the chat wrote it ("group": "Group B", "people": 3), or nothing when everyone goes. */
+function groupOf(x: any): { group?: string; people?: number } {
+  const group = typeof x?.group === "string" ? x.group.trim().slice(0, 40) : "";
+  if (!group || /^(all|everyone|everybody|together|whole group|both|group)$/i.test(group)) return {};
+  const people = Number(x?.people);
+  return { group, ...(Number.isInteger(people) && people >= 1 ? { people } : {}) };
 }
 
 /** Only well-formed stop edits (a known op, a day in the plan, a name; a time as HH:MM); null when there are none. */
@@ -270,13 +283,15 @@ export function stopOps(v: unknown, days = 0): StopOp[] | null {
   if (!Array.isArray(v)) return null;
   const str = (x: unknown, n: number) => (typeof x === "string" ? x.trim().slice(0, n) : "");
   const ops = v.slice(0, 10).map((x: any): StopOp | null => {
-    const op = ["add", "remove", "time", "where"].includes(x?.op) ? x.op : null, day = Number(x?.day), place = str(x?.place, 140);
+    const op = ["add", "remove", "time", "where", "group"].includes(x?.op) ? x.op : null, day = Number(x?.day), place = str(x?.place, 140);
     const time = /^\d{1,2}:\d{2}$/.test(str(x?.time, 5)) ? str(x.time, 5).padStart(5, "0") : "";
     if (!op || !place || !Number.isInteger(day) || day < 1 || (days && day > days) || ((op === "add" || op === "time") && !time)) return null;
     // A new location needs its address.
     if (op === "where") return str(x.where, 200) ? { op, day, place, where: str(x.where, 200) } : null;
+    // Who does a stop: a group, or none ("group": "") when everyone goes again.
+    if (op === "group") return { op, day, place, group: "", ...groupOf(x) };
     return { op, day, place, ...(time ? { time } : {}),
-      ...(op === "add" ? { description: str(x.description, 1200), where: str(x.where, 200), cost: Math.max(0, Number(x.cost) || 0), kind: ["sight", "activity", "meal", "other"].includes(x.kind) ? x.kind : "sight" } : {}) };
+      ...(op === "add" ? { description: str(x.description, 1200), where: str(x.where, 200), cost: Math.max(0, Number(x.cost) || 0), kind: ["sight", "activity", "meal", "other"].includes(x.kind) ? x.kind : "sight", ...groupOf(x) } : {}) };
   }).filter((x): x is StopOp => !!x);
   return ops.length ? ops : null;
 }

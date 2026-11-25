@@ -224,6 +224,9 @@ export interface AgreedStop {
   kind?: ItineraryItem["kind"];
   cost?: number;
   note?: string;
+  /** While the group is split: which subgroup does this stop ("Group A") and how many of them; none when all go. */
+  group?: string;
+  people?: number;
 }
 
 export type CloudProvider = "anthropic" | "openai" | "openrouter";

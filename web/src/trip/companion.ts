@@ -32,12 +32,13 @@ import { drawMap } from "../map/draw";
 import * as mapModule from "../map/map";
 import { routeKey, routes } from "../map/routes";
 import { askConfirm } from "../core/ask";
+import { splitGroup } from "./modes";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }
 /** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
-interface StopOp { op: "add" | "remove" | "time" | "where"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
+interface StopOp { op: "add" | "remove" | "time" | "where" | "group"; day: number; place: string; group?: string; people?: number; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
 /** Anything else they can change by hand (see EDITS_DOC in server/trip/companion.ts). */
 interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string; agreed?: AgreedStop[] }
@@ -349,7 +350,9 @@ export function tripContext(full = true): string {
       out.push(`\nDay ${k + 1} · ${fmtDate(d.date)} (${d.date}) · ${d.city} · ${d.title}${d.estimatedCost ? ` · about ${d.estimatedCost} ${s.currency}` : ""}`);
       for (const i of d.items) {
         const extra = [i.cost ? `${i.cost} ${s.currency}` : "", i.booking ? `booking ${i.booking}` : "", i.transport || ""].filter(Boolean).join(", ");
-        out.push(`- ${i.time} ${i.place}${extra ? ` [${extra}]` : ""}${full && i.description ? `: ${i.description}` : ""}`);
+        // Who does it while the group is split ("Group B, 3 people"): nothing when everyone goes.
+        const who = splitGroup(i) ? ` (${whoText(i)})` : "";
+        out.push(`- ${i.time} ${i.place}${who}${extra ? ` [${extra}]` : ""}${full && i.description ? `: ${i.description}` : ""}`);
       }
       if (d.notes) out.push(`  Notes: ${d.notes}`);
     });
@@ -369,7 +372,7 @@ const dayList = (days: number[]) => days.length === 1 ? `day ${days[0]}` : days.
 function changeNote(change: PlanChange) {
   // Sent back: what they kept ticked is the proposal they want edited.
   const c = change.status === "revised" ? chosen(change) : change;
-  const agreed = c.agreed?.length ? `agreed stops: ${c.agreed.map((a) => `Day ${a.day} ${a.time} ${a.place}`).join(", ")}` : "";
+  const agreed = c.agreed?.length ? `agreed stops: ${c.agreed.map((a) => `Day ${a.day} ${a.time} ${a.place}${a.group ? ` (${whoText(a)})` : ""}`).join(", ")}` : "";
   const what = [c.request, agreed, ...opsLines(c.trip), ...stopLines(c.stops), ...(c.edits || []).map(editLine)].filter(Boolean).join("; ");
   const st = c.status === "applied" ? "applied" : c.status === "undone" ? "applied, then undone: the trip is as before it"
     : c.status === "revised" ? "offered, then sent back by the traveler with an edit (their next message): nothing was applied"
@@ -379,11 +382,15 @@ function changeNote(change: PlanChange) {
 
 /** The stop edits in words. */
 function stopLines(ops?: StopOp[]) {
-  return (ops || []).map((o) => o.op === "add" ? `Day ${o.day}, ${o.time}: add ${o.place}${o.where ? ` (${o.where})` : ""}`
+  return (ops || []).map((o) => o.op === "add" ? `Day ${o.day}, ${o.time}: add ${o.place}${o.where ? ` (${o.where})` : ""}${o.group ? `, ${whoText(o)}` : ""}`
+    : o.op === "group" ? `Day ${o.day}: ${o.place}, ${o.group ? whoText(o) : "everyone together"}`
     : o.op === "remove" ? `Day ${o.day}: remove ${o.place}`
       : o.op === "where" ? `Day ${o.day}: ${o.place} is at ${o.where}${o.notFound ? " (not found on the map: not moved)" : ""}`
         : `Day ${o.day}: ${o.place} at ${o.time}`);
 }
+
+/** A group and its head count in words: "Group B, 3 people". */
+const whoText = (o: { group?: string; people?: number }) => `${o.group}${o.people ? `, ${o.people} ${o.people > 1 ? "people" : "person"}` : ""}`;
 
 /** Makes the stop edits in the plan itself: no model, nothing else on the day changes. */
 function applyStops(ops: StopOp[]) {
@@ -402,9 +409,16 @@ function applyStops(ops: StopOp[]) {
       x.lat = o.lat; x.lng = o.lng; x.pinned = true; delete x.fixed;
       continue; // (the day's order and costs stay as they are)
     }
+    else if (o.op === "group" && at >= 0) {
+      const x = d.items[at];
+      delete x.group; delete x.people;
+      if (o.group) { x.group = o.group; if (o.people) x.people = o.people; }
+      continue; // (nothing else about the stop changes)
+    }
     else if (o.op === "add") {
       d.items.push({ time: o.time || "", place: o.place, description: o.description || "", cost: o.cost || 0, kind: o.kind || "sight",
-        ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}) });
+        ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}),
+        ...(o.group ? { group: o.group, ...(o.people ? { people: o.people } : {}) } : {}) });
     } else continue;
     touched.add(o.day - 1);
   }
@@ -544,7 +558,7 @@ function changeCard(c: PlanChange, k: number, latest: boolean) {
 function agreedHtml(c: PlanChange) {
   if (!c.agreed?.length) return "";
   const days = [...new Set(c.agreed.map((a) => a.day))];
-  return `<div class="cp-agreed">${days.map((d) => `<div class="cp-agreed-day"><span class="hint">${days.length > 1 || c.days.length > 1 ? `Day ${d}: ` : ""}the stops, as agreed</span><ol>${c.agreed!.filter((a) => a.day === d).map((a) => `<li><span class="cp-agreed-time">${esc(a.time || "–")}</span> ${esc(a.place)}</li>`).join("")}</ol></div>`).join("")}</div>`;
+  return `<div class="cp-agreed">${days.map((d) => `<div class="cp-agreed-day"><span class="hint">${days.length > 1 || c.days.length > 1 ? `Day ${d}: ` : ""}the stops, as agreed</span><ol>${c.agreed!.filter((a) => a.day === d).map((a) => `<li><span class="cp-agreed-time">${esc(a.time || "–")}</span> ${esc(a.place)}${a.group ? ` <span class="hint">· ${esc(whoText(a))}</span>` : ""}</li>`).join("")}</ol></div>`).join("")}</div>`;
 }
 
 /** The offered change whose "Change something" box is open, and what they've written in it so far. */

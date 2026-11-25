@@ -29,19 +29,28 @@ function same(x: ItineraryItem, a: AgreedStop): boolean {
   return shared > 0 && ta != null && tx != null && Math.abs(ta - tx) <= 15;
 }
 
-/** Puts back the agreed stops the planner's version of a day is missing; returns how many it put back. */
+/** Who does an agreed stop: its group and head count, or nothing when everyone goes. */
+const groupOf = (a: AgreedStop) => (a.group ? { group: a.group, ...(a.people ? { people: a.people } : {}) } : {});
+
+/** Puts back the agreed stops the planner's version of a day is missing, and the groups it dropped from the ones it
+ *  kept (who does what is part of what they agreed); returns how many stops it put back. */
 export function restoreAgreed(day: { items: ItineraryItem[] }, agreed: AgreedStop[]): number {
   const used = new Set<ItineraryItem>();
+  // Groups said for some stops: the others are done together, so a group the planner made up for them goes.
+  const split = agreed.some((a) => a.group);
   const missing = agreed.filter((a) => {
     const hit = day.items.find((x) => !used.has(x) && same(x, a));
-    if (hit) { used.add(hit); return false; }
-    return true;
+    if (!hit) return true;
+    used.add(hit);
+    if (split) { delete hit.group; delete hit.people; Object.assign(hit, groupOf(a)); }
+    return false;
   });
   for (const a of missing) {
     const item: ItineraryItem = {
       time: a.time, place: a.place, description: a.note || "", fromList: false,
       ...(a.cost != null ? { cost: a.cost, costPer: "group" as const } : {}),
       ...(planKind(a.kind) ? { kind: planKind(a.kind) } : {}),
+      ...groupOf(a),
     };
     // In time order: before the first stop that starts later (stops without a time stay where they are).
     const t = minutes(a.time);

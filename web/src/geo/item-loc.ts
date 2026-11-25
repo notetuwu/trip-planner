@@ -5,7 +5,7 @@ import { session, state } from "../core/state";
 import { geo, geoKey, geocode } from "./geocode";
 import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
-import { splitGroup, transferEnds } from "../trip/modes";
+import { onWayOf, splitGroup, transferEnds } from "../trip/modes";
 import { activityTown } from "./stop-text";
 import { namesRide } from "../itinerary/journey-model";
 import { pointUrl, searchUrl } from "../core/maps-links";
@@ -80,7 +80,7 @@ function townSoFar(x: ItineraryItem, d: Day, towns: Town[]): Town | null {
   let at: Town | null = null;
   for (const y of d.items) {
     if (y === x) return at;
-    if (splitGroup(y) && splitGroup(y) !== g) continue;
+    if (!onWayOf(d.items, y, g)) continue;
     const ends = transferEnds(y);
     if (!ends) continue;
     const to = bare(ends[1]);

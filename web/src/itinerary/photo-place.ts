@@ -14,7 +14,7 @@ import { icon } from "../core/icons";
 import { showGallery } from "../core/lightbox";
 import { prefs } from "../core/prefs";
 import { state } from "../core/state";
-import { type Placed, allPhotos, folderOf, folders, isPhotosGuess, planDays, setPhotosGuess, setSpots, sourceOf, thumbTag, viewItem, when } from "../map/photos";
+import { type Placed, allPhotos, folderOf, folders, loadMissing, planDays, setSpots, sourceOf, thumbTag, viewItem, when } from "../map/photos";
 import { type PhotoSpot, burstsOf } from "../map/photo-spot";
 import { placeSearch } from "../map/place-search";
 import { isReadOnly } from "../saves/read-only";
@@ -132,14 +132,13 @@ export function placeTool(box: HTMLElement): PlaceTool {
     return true;
   }
   const at = (ll: L.LatLng): PhotoSpot => { const w = ll.wrap(); return { lat: +Math.max(-90, Math.min(90, w.lat)).toFixed(6), lng: +w.lng.toFixed(6) }; };
-  /** Photos just placed or moved stay selected and listed on top, so they can be reset or looked at. */
+  /** Photos just placed or moved are listed on top under "At this spot", to look at or reset, but not selected: photos
+   *  picked next don't take them along by accident. */
   function keep(keys: string[]) {
     atSpot = keys;
     selected.clear();
-    for (const k of keys) selected.add(k);
-    anchor = keys[0] || "";
-    draw();
-    list.scrollTop = 0;
+    anchor = "";
+    draw(); // (the list stays where it was scrolled to: "At this spot" is at the top for when they look)
   }
   function put(keys: string[], ll: L.LatLng) {
     const free = keys.filter((k) => !locked(byKey.get(k)));
@@ -201,12 +200,11 @@ export function placeTool(box: HTMLElement): PlaceTool {
     marks(); drawMap();
     if (fly) flyToSelection();
   }
+  /** One photo in or out of the selection: the map stays where it is (they're picking photos to drag there). */
   function toggle(key: string) {
-    const was = selected.size;
     if (!selected.delete(key)) selected.add(key);
     anchor = key;
     marks(); drawMap();
-    if (!was && selected.size) flyToSelection();
   }
   function clearSel() { selected.clear(); atSpot = []; draw(); }
   function flyToSelection() {
@@ -252,7 +250,6 @@ export function placeTool(box: HTMLElement): PlaceTool {
       : sel.every(locked) ? "These have a location of their own and are locked (Layers → Lock photos with location)."
         : open.length ? "Drag them onto the map, or click the spot." : "Drag their pin on the map to move them.";
     const why = ro || !open.length || guesses.length ? ""
-      : !isPhotosGuess() ? `Suggestions from the photos' time are off. <button type="button" class="link-btn" data-pp-guess>Turn them on</button>`
         : open.every((p) => !p.t) ? "No suggestion: these photos have no time."
           : "No suggestion: nothing with a location was taken within 45 minutes of these, and the plan has no stop with a time that day.";
     const canSkip = !ro && sel.some((p) => !p.skipped && !locked(p)), canReset = !ro && sel.some((p) => p.placed || p.skipped);
@@ -268,7 +265,6 @@ export function placeTool(box: HTMLElement): PlaceTool {
     else if (t.closest("[data-pp-accept]")) accept(chosen());
     else if (t.closest("[data-pp-skip]")) skip();
     else if (t.closest("[data-pp-reset]")) reset();
-    else if (t.closest("[data-pp-guess]")) setPhotosGuess(true);
   };
 
   // ---- The list ----
@@ -289,7 +285,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
       <header draggable="${g.some(canDrag)}" title="Click to select them all; drag to place them together">
         <span class="pp-check" aria-hidden="true">${icon("check")}</span>
         <div class="pp-gh"><b>${esc(title)}</b><small>${from(g)}</small></div><em>${g.length}</em>${extra}</header>
-      ${guess ? `<button type="button" class="pp-sugg" data-pp-use title="Put them where their time suggests">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><u>Use</u></button>` : ""}
+      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg title="Show them where their time suggests on the map">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
       <div class="pp-grid">${g.map(tile).join("")}</div></section>`;
   };
   function drawList() {
@@ -302,8 +298,10 @@ export function placeTool(box: HTMLElement): PlaceTool {
       : !photos.length ? "Loading the photos…"
         : which === "open" && !photos.some((p) => passes(p) && isWhich(p, "open")) ? "Nothing left to place here. 🎉"
           : "No photos match.";
+    // "At this spot" coming, going or growing at the top doesn't move what they're looking at further down.
+    const spotH = () => list.querySelector<HTMLElement>(".pp-spot")?.offsetHeight || 0, before = spotH();
     list.innerHTML = here + (groups.length ? groups.map((g, i) => section(g, i, heading(g))).join("") : here ? "" : `<p class="ph-empty">${empty}</p>`);
-    list.scrollTop = top;
+    list.scrollTop = top > 0 ? Math.max(0, top + spotH() - before) : 0;
   }
   const groupAt = (el: Element) => { const i = +(el.closest<HTMLElement>(".pp-group")?.dataset.g ?? NaN); return i === -1 ? atSpot.map((k) => byKey.get(k)!).filter(Boolean) : groups[i] || []; };
 
@@ -369,9 +367,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
       const cls = [guess ? "guess" : "", group.every((p) => p.placed) ? "placed" : "", sel ? "sel" : "", lockedHere ? "locked" : ""].join(" ");
       const what = n > 1 ? `${n} photos<br><span class="pop-meta">${[...new Set(group.map(folderOf))].map(esc).join(", ")}</span>`
         : `${esc(first.name)}<br><span class="pop-meta">${esc(when(first.t))}<br>${esc(sourceOf(first))}</span>`;
-      const how = guess ? "Suggested from the time · click to use it, or drag it to the right spot" : lockedHere ? "Click to open · locked" : "Click to open · drag to move";
+      const how = guess ? "Suggested from the time · Use puts them here; or drag it to the right spot" : lockedHere ? "Click to open · locked" : "Click to open · drag to move";
       const mk = L.marker([lat, lng], {
-        pane: "photos", zIndexOffset: sel ? 1000 : 0, draggable: !isReadOnly() && !lockedHere, autoPan: true,
+        pane: "photos", zIndexOffset: sel ? 1000 : 0, draggable: !isReadOnly() && !lockedHere, autoPan: false, // (dragged to the edge, the map stays put)
         icon: L.divIcon({ className: "", html: pinHtml(first, n, cls), iconSize: [PIN_W, PIN_H], iconAnchor: [PIN_W / 2, PIN_H] }),
       }).bindTooltip(`<div class="pp-tip">${thumbTag(first, 320)}${what}<br><span class="pop-meta">${how}</span></div>`, { direction: "top", offset: [0, -PIN_H - 4] })
         .addTo(pins);
@@ -379,9 +377,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
       if (el) for (const p of group) pinOf.set(p.key, el);
       mk.on("click", () => {
         mk.closeTooltip();
-        // A suggestion is taken with a click.
-        if (guess) return accept(group);
-        // Others open full screen (going through the others here); they're selected and listed when it's closed.
+        // A suggestion opens full screen too, as it is: only "Use" (or Enter) puts them there.
+        if (guess) { const items = [...group].sort((a, b) => a.t.localeCompare(b.t)); return showGallery(items.map(viewItem), items.indexOf(first)); }
+        // Others open full screen (going through the others here); they're listed (not selected) when it's closed.
         const items = [...group].sort((a, b) => a.t.localeCompare(b.t));
         keep(items.map((p) => p.key));
         showGallery(items.map(viewItem), items.indexOf(first));
@@ -471,7 +469,8 @@ export function placeTool(box: HTMLElement): PlaceTool {
     // Another trip: its own history and selection.
     const now = state.saveName || "";
     if (now !== trip) { trip = now; history = []; selected.clear(); atSpot = []; searchBar.clear(); }
-    photos = allPhotos();
+    // Every folder, also those hidden on the map and in the gallery: hiding one there doesn't take it out of placing.
+    photos = allPhotos(true);
     byKey = new Map(photos.map((p) => [p.key, p]));
     for (const k of selected) if (!byKey.has(k)) selected.delete(k);
     atSpot = atSpot.filter((k) => byKey.has(k));
@@ -486,6 +485,8 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const target = e.target as HTMLElement;
     if (target.closest("[data-pp-close]")) { atSpot = []; selected.clear(); return draw(); }
     if (target.closest("[data-pp-use]")) return accept(groupAt(target));
+    // The suggestion itself: the group selected and the map at the spot suggested (only "Use" puts them there).
+    if (target.closest("[data-pp-sugg]")) return select(groupAt(target).map((p) => p.key), true);
     const el = target.closest<HTMLElement>(".pp-tile");
     if (el) {
       const key = el.dataset.key!;
@@ -502,6 +503,13 @@ export function placeTool(box: HTMLElement): PlaceTool {
       if (keys.every((k) => selected.has(k))) { for (const k of keys) selected.delete(k); marks(); drawMap(); }
       else select(keys, true);
     }
+  });
+  // The suggestion by keyboard: shows them, like a click (Enter elsewhere would put the selection there).
+  list.addEventListener("keydown", (e) => {
+    const el = (e.target as HTMLElement).closest("[data-pp-sugg]");
+    if (!el || (e.target as HTMLElement).closest("[data-pp-use]") || (e.key !== "Enter" && e.key !== " ")) return;
+    e.preventDefault(); e.stopPropagation();
+    select(groupAt(el).map((p) => p.key), true);
   });
   // The photo pointed at in the list lights up its pin on the map.
   list.addEventListener("mouseover", (e) => {
@@ -566,6 +574,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     show() {
       const first = !m;
       if (first) makeMap();
+      loadMissing(false, true); // (folders hidden on the map aren't loaded yet)
       update();
       // The map's box has its size only now that it's on screen.
       requestAnimationFrame(() => {

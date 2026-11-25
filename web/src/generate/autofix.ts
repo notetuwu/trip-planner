@@ -6,7 +6,7 @@ import { fmtDate } from "../core/format";
 import { geocodeBusy } from "../geo/geocode";
 import { byTitleMap, dayWhere, itemLoc } from "../geo/item-loc";
 import { checkOpeningHours, hoursBusy, hoursProblem, hoursResult } from "../itinerary/hours";
-import { splitGroup } from "../trip/modes";
+import { onWayOf, splitGroup } from "../trip/modes";
 import { setMapStatus } from "../map/status";
 import { type Stop, cleanStop, findDuplicates, isMeal } from "../itinerary/duplicates";
 export type { Stop };
@@ -28,7 +28,7 @@ export function quickFixes(it: Itinerary): number {
     const r = hoursResult(di, xi), opens = toMin(r?.opens), start = toMin(x.time);
     if (r?.status !== "opens-later" || opens == null || start == null || opens <= start) return;
     const g = splitGroup(x);
-    const next = d.items.slice(xi + 1).find((y) => !splitGroup(y) || !g || splitGroup(y) === g);
+    const next = d.items.slice(xi + 1).find((y) => !g || onWayOf(d.items, y, g) || onWayOf(d.items, x, splitGroup(y)));
     const nextAt = toMin(next?.time);
     if (nextAt != null && nextAt - opens < 30) return;
     x.time = fromMin(opens);

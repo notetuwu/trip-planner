@@ -17,7 +17,7 @@ interface PhotoList { folder: string; name: string; at: number; photos: Photo[];
 /** What's known of one folder: its photos once loaded, or why not. */
 interface Loaded { list: PhotoList | null; loading: boolean; error: string }
 
-const STORE = "trip-planner-photos", GUESS = "trip-planner-photos-guess";
+const STORE = "trip-planner-photos", GUESS = "trip-planner-photos-guess", HIDDEN = "trip-planner-photos-hidden";
 /** How far apart (in screen pixels) two photos must be to be shown as separate pictures. */
 const GRID = 62;
 
@@ -29,15 +29,33 @@ let guess = localStorage.getItem(GUESS) !== "0";
 const listeners = new Set<() => void>();
 const changed = () => { for (const f of listeners) f(); };
 
-/** The trip's folders. A trip from the first version has its one folder in `photosFolder`: moved over here. */
-export function folders() {
+/** The folders whose photos are hidden, by link: a choice of this computer's, never part of the trip (others who share
+ *  it see their own), and only for the map, the gallery and the preview, not for placing photos. */
+const hidden = new Set<string>((() => {
+  try { const v = JSON.parse(localStorage.getItem(HIDDEN) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; }
+})());
+const keepHidden = () => localStorage.setItem(HIDDEN, JSON.stringify([...hidden]));
+
+/** The trip's folders. A trip from the first version has its one folder in `photosFolder`: moved over here. A folder
+ *  switched off in the trip itself (from before that was this computer's own choice) is hidden here instead. */
+export function folders(): { link: string }[] {
+  let moved = false;
   if (state.photosFolder) {
     if (!state.photoFolders?.some((f) => f.link === state.photosFolder)) state.photoFolders = [...(state.photoFolders || []), { link: state.photosFolder }];
     delete state.photosFolder;
-    save();
+    moved = true;
   }
+  if (state.photoFolders?.some((f) => "off" in f)) {
+    for (const f of state.photoFolders) if (f.off) hidden.add(f.link);
+    keepHidden();
+    state.photoFolders = state.photoFolders.map((f) => ({ link: f.link }));
+    moved = true;
+  }
+  if (moved) save();
   return state.photoFolders || [];
 }
+/** The folders whose photos are shown here (the map, the gallery, the preview). */
+const shownFolders = () => folders().filter((f) => !hidden.has(f.link));
 
 export const isPhotosOn = () => on;
 export const isPhotosGuess = () => guess;
@@ -64,11 +82,13 @@ export function setSpots(changes: Record<string, PhotoSpot | null>): Record<stri
 
 /** Looks up where a photo without a position was taken: by the trip's photos with a position taken around then (from all
  *  its shown folders), else where the plan has them at that time (the day's stops with a place on the map and a time, and
- *  where they slept). Built once for a whole list of photos. With the guess switched off, nothing is placed. */
-function placer(): (t: string) => Spot | null {
-  if (!guess) return () => null;
+ *  where they slept). Built once for a whole list of photos. With the guess switched off, nothing is placed (unless
+ *  `every`: placing photos by hand always gets suggestions). */
+function placer(every = false): (t: string) => Spot | null {
+  // (Placing photos, with `every`, always suggests: the switch is about the map putting them there by itself.)
+  if (!guess && !every) return () => null;
   // Photos placed by hand count like those with a position of their own.
-  const anchors = anchorsOf(folders().filter((f) => !f.off).flatMap((f) => placedByHand(f.link)));
+  const anchors = anchorsOf((every ? folders() : shownFolders()).flatMap((f) => placedByHand(f.link)));
   const days = planDays();
   return (t) => spotByTime(t, days, anchors);
 }
@@ -99,7 +119,7 @@ export function photosState() {
     const l = loaded.get(f.link), photos = l?.list?.photos || [];
     let shown = 0, guessed = 0, noSpot = 0;
     for (const p of placedByHand(f.link)) { if (p.lat != null) shown++; else if (!p.skipped && p.t && spot(p.t)) guessed++; else noSpot++; }
-    return { link: f.link, local: isLocalFolder(f.link), skipped: l?.list?.skipped || 0, off: !!f.off, pending: l?.list?.pending || 0, videos: photos.filter((p) => p.video).length, name: l?.list?.name || "", loading: !!l?.loading, error: l?.error || "", total: l?.list?.total || 0, shown, guessed, noSpot, truncated: !!l?.list?.truncated };
+    return { link: f.link, local: isLocalFolder(f.link), skipped: l?.list?.skipped || 0, off: hidden.has(f.link), pending: l?.list?.pending || 0, videos: photos.filter((p) => p.video).length, name: l?.list?.name || "", loading: !!l?.loading, error: l?.error || "", total: l?.list?.total || 0, shown, guessed, noSpot, truncated: !!l?.list?.truncated };
   });
   const live = rows.filter((r) => !r.off), sum = (k: "shown" | "guessed" | "noSpot") => live.reduce((n, r) => n + r[k], 0);
   return { on, guess, rows, shown: sum("shown"), guessed: sum("guessed"), noSpot: sum("noSpot"), loading: rows.some((r) => r.loading) };
@@ -152,19 +172,20 @@ export function removePhotosFolder(link: string) {
   save(); draw(); changed();
 }
 
-/** Shows or hides one folder's photos (it stays in the list). */
+/** Shows or hides one folder's photos (it stays in the list), on this computer only: the trip doesn't change. */
 export function setPhotosFolderShown(link: string, shown: boolean) {
-  state.photoFolders = folders().map((f) => (f.link === link ? { link, ...(shown ? {} : { off: true }) } : f));
-  save();
+  if (shown) hidden.delete(link); else hidden.add(link);
+  keepHidden();
   if (shown) loadMissing();
   draw(); changed();
 }
 
-/** Loads the folders not loaded yet (and not switched off); `refresh` asks Google again for all of them. */
-export function loadMissing(refresh = false) {
+/** Loads the folders not loaded yet (and not hidden, unless `every`: placing photos uses them all); `refresh` asks
+ *  Google again for all of them. */
+export function loadMissing(refresh = false, every = false) {
   for (const f of folders()) {
     const have = loaded.get(f.link);
-    if (f.off && !refresh) continue;
+    if (hidden.has(f.link) && !refresh && !every) continue;
     if (have?.loading || (have?.list && !refresh)) continue;
     loadFolder(f.link, refresh);
   }
@@ -236,10 +257,11 @@ export const viewItem = (p: Placed): ViewItem => ({
   caption: [p.video ? `Video${p.dur ? ` ${duration(p.dur)}` : ""} · ${p.name}` : p.name, when(p.t), sourceOf(p), p.guessed ? `placed by its time, near ${p.near}` : "", p.placed ? "placed by hand" : "", !p.t && p.up ? `no camera time (uploaded ${when(p.up)})` : ""].filter(Boolean).join(" · "),
 });
 
-/** Every photo of the trip's shown folders, with or without a spot, in the order they were taken. */
-export function allPhotos(): Placed[] {
-  const out: Placed[] = [], spot = placer();
-  for (const f of folders()) if (!f.off) {
+/** Every photo of the trip's shown folders (`every`: of all its folders, hidden here or not), with or without a spot, in
+ *  the order they were taken. */
+export function allPhotos(every = false): Placed[] {
+  const out: Placed[] = [], spot = placer(every);
+  for (const f of every ? folders() : shownFolders()) {
     const l = loaded.get(f.link)?.list;
     for (const p of placedByHand(f.link)) {
       const s = p.lat == null && !p.skipped && p.t ? spot(p.t) : null;
@@ -257,7 +279,7 @@ function draw() {
   // The shown folders' photos with a spot, from all of them together (so a group can hold photos of several folders).
   const all = allPhotos().filter((p) => p.lat != null);
   // A trip opened that has folders not loaded yet: they load now.
-  if (folders().some((f) => !f.off && !loaded.has(f.link))) loadMissing();
+  if (shownFolders().some((f) => !loaded.has(f.link))) loadMissing();
   const b = m.getBounds().pad(0.25), z = m.getZoom();
   const cells = new Map<string, { photos: Placed[]; lat: number; lng: number }>();
   for (const p of all) {

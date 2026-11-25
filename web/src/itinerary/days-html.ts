@@ -4,7 +4,7 @@ import { esc } from "../core/dom";
 import { dayColor, fmtDate, fmtTemp, fmtTime, money, addDays } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
-import { dayGroupColors, splitGroup } from "../trip/modes";
+import { dayGroupColors, parentGroup, splitGroup, trackOrder } from "../trip/modes";
 import { bookLink } from "./book-ahead";
 import { directionsUrl, mealSearchUrl } from "./directions";
 import { genericMeal, mapsName, placeUrl } from "../core/maps-links";
@@ -83,16 +83,26 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
   const flush = () => {
     if (!run.length) return;
     const tracks = new Map<string, typeof run>();
-    for (const r of run) { const g = r.x.group!; if (!tracks.has(g)) tracks.set(g, []); tracks.get(g)!.push(r); }
-    const cols = [...tracks].map(([label, rs]) => {
+    for (const r of run) { const g = splitGroup(r.x); if (!tracks.has(g)) tracks.set(g, []); tracks.get(g)!.push(r); }
+    // A group that splits again later ("Group B" into "Group B1", "B2"…): its new groups side by side inside its own
+    // column, under its stops, so the plan reads as it happened.
+    const labels = new Set(tracks.keys());
+    const order = trackOrder(run.map((r) => r.x));
+    const kids = (p: string) => order.filter((g) => parentGroup(g, labels) === p);
+    const leaves = (g: string): number => kids(g).reduce((n, k) => n + leaves(k), 0) || 1;
+    const nested = order.some((g) => parentGroup(g, labels));
+    // Nested: each column as wide as the groups it ends up as (a group of three that splits in three gets three widths).
+    const col = (label: string): string => {
+      const rs = tracks.get(label) || [];
       trackColor[label] ??= Object.keys(trackColor).length % 4;
-      const people = rs.find((r) => r.x.people)?.x.people;
-      return `<div class="track t${trackColor[label]}">
+      const people = rs.find((r) => r.x.people)?.x.people, sub = kids(label);
+      return `<div class="track t${trackColor[label]}"${nested ? ` style="flex: ${leaves(label)} 1 ${leaves(label) * 190}px"` : ""}>
         <div class="track-head">${esc(label)}${people ? `<span>${icon("users")} ${people}</span>` : ""}</div>
-        <ul class="items">${rs.map((r) => item(r.x, r.i)).join("")}</ul>
+        ${rs.length ? `<ul class="items">${rs.map((r) => item(r.x, r.i)).join("")}</ul>` : ""}
+        ${sub.length ? `<div class="fork-label sub">Then splits up</div><div class="tracks nest">${sub.map(col).join("")}</div>` : ""}
       </div>`;
-    });
-    out += `<li class="fork"><div class="fork-label">Group splits up</div><div class="tracks">${cols.join("")}</div></li>`;
+    };
+    out += `<li class="fork"><div class="fork-label">Group splits up</div><div class="tracks${nested ? " nest" : ""}">${kids("").map(col).join("")}</div></li>`;
     run = [];
   };
   // A travel day: its rides as one journey card (or, with none, the stays' way between the towns, offered to add).

@@ -347,7 +347,9 @@
 .pp-sugg { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 7px; width: 100%; margin: 0 0 6px; padding: 5px 9px; border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
 .pp-sugg > svg { color: var(--accent); }
 .pp-sugg span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pp-sugg u { text-decoration: none; font-weight: 700; color: var(--accent); }
+.pp-sugg-use { all: unset; cursor: pointer; font-weight: 700; color: var(--accent); padding: 1px 6px; margin: -1px -4px -1px 0; border-radius: 6px; }
+.pp-sugg-use:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.pp-sugg-use:focus-visible { outline: 2px solid var(--accent); }
 .pp-sugg:hover { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
 .pp-sugg:focus-visible { outline: 2px solid var(--accent); }
 .pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }

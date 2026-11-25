@@ -4,7 +4,7 @@ import { api } from "../core/dom";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc, stayOn } from "../geo/locate";
 import { state } from "../core/state";
-import { chosenMode, cleanStop, modeOf, splitGroup } from "../trip/modes";
+import { chosenMode, cleanStop, legGroup, modeOf, onWayOf, splitGroup } from "../trip/modes";
 import { setMapStatus } from "./status";
 import { DRIVE_KM, arrivalStay, isTransfer, journeyOf, onMap, ownsJourney, viaStops } from "./travel-day";
 
@@ -167,7 +167,7 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   const via = new Set(drive ? viaStops(arrive, byTitle).map((v) => v.xi) : []);
   const dayMode = arrive > 0 ? state.stays[arrive].travel || "" : "";
   const groups = [...new Set(d.items.map(splitGroup).filter(Boolean))];
-  const paths = groups.length ? groups.map((g) => pts.filter((p) => !splitGroup(p.x) || p.x.group === g)) : [pts];
+  const paths = groups.length ? groups.map((g) => pts.filter((p) => onWayOf(d.items, p.x, g))) : [pts];
   // Keyed by both ends: two groups heading to the same stop (the dinner where they meet again) are two legs.
   const legs = new Map<string, Leg>();
   type Pt = { x: ItineraryItem | null; xi: number; loc: { lat: number; lng: number } };
@@ -175,8 +175,8 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   const connect = (a: Pt, b: Pt) => {
     const from: LatLng = [a.loc.lat, a.loc.lng], to: LatLng = [b.loc.lat, b.loc.lng], x = b.x!;
     // A transfer between the two stops ("Hiroshima → Shin-Osaka (train)") says how this leg goes.
-    const group = (a.x && splitGroup(a.x)) || splitGroup(x);
-    const between = d.items.slice(a.xi + 1, b.xi).filter((y) => isTransfer(y) && (!splitGroup(y) || splitGroup(y) === group));
+    const group = legGroup(d.items, a.x ? splitGroup(a.x) : "", splitGroup(x));
+    const between = d.items.slice(a.xi + 1, b.xi).filter((y) => isTransfer(y) && onWayOf(d.items, y, group));
     const key = `${a.xi}>${b.xi}`, text = String(x.transport || "");
     // When it leaves: the stop before's time (else this one's), on the day, so boats and trains are looked up for then.
     const hhmm = [a.x?.time, x.time].map((t) => /^(\d{1,2}):(\d{2})/.exec(t || "")).find(Boolean);

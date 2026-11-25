@@ -178,7 +178,8 @@ export function toSharedText(trip: any, share: TripShare): string {
   // Must-sees from those lists go along as kept places too (the other side may not keep the list).
   const kept: BundledPlace[] = Array.isArray(trip?.kept) ? [...trip.kept] : [];
   for (const l of lists) for (const p of l.places) if (trip?.marks?.[p.title] === "must" && !kept.some((k) => k.title === p.title)) kept.push(p);
-  const drivePhotos = (Array.isArray(photoFolders) ? photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link));
+  // (Only the link: which folders are shown is each computer's own choice.)
+  const drivePhotos = (Array.isArray(photoFolders) ? photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link)).map((f: any) => ({ link: f.link }));
   return JSON.stringify({
     format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(),
     trip: { ...rest, kept, meta: lean, photoFolders: drivePhotos, ...(typeof photosFolder === "string" && photosFolder && !isLocal(photosFolder) ? { photosFolder } : {}), sync: share },
@@ -202,7 +203,8 @@ export function fromSharedText(text: string, local: any | null, name: string): a
   const out: any = { ...trip, lists, list: lists[0] || "", listChosen: true, saveName: cleanName(name) };
   // Photo folders on another computer mean nothing here (and must never point at folders on this one).
   const own = (Array.isArray(local?.photoFolders) ? local.photoFolders : []).filter((f: any) => f && isLocal(f.link));
-  out.photoFolders = [...(Array.isArray(trip.photoFolders) ? trip.photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link)), ...own];
+  // Which folders are shown is this computer's own choice (kept outside the trip), never the other side's.
+  out.photoFolders = [...(Array.isArray(trip.photoFolders) ? trip.photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link)).map((f: any) => ({ link: f.link })), ...own];
   if (typeof out.photosFolder !== "string" || isLocal(out.photosFolder)) delete out.photosFolder;
   // The models picked here stay (the other computer may plan with models that aren't on this one).
   if (local) for (const k of ["model", "chatModel", "routeModel"]) if (local[k] !== undefined) out[k] = local[k];

@@ -6,7 +6,7 @@ import { fmtDate, fmtDist, fmtDur } from "../core/format";
 import { state } from "../core/state";
 import { byTitleMap, dayWhere, itemLoc } from "../geo/item-loc";
 import { distKm } from "../geo/locate";
-import { cleanStop, splitGroup } from "../trip/modes";
+import { cleanStop, onWayOf, splitGroup } from "../trip/modes";
 import { type Leg, dayLegs, legRoute, legStart } from "./routes";
 import { type IconName, icon } from "../core/icons";
 import type { Ride } from "../../../shared/types";
@@ -140,7 +140,7 @@ export function updateLegInfo() {
     for (const [xi, legs] of byStop) {
       // Transfers on the way to this stop (not on the map themselves: this leg is their trip).
       const fromXi = Math.min(...legs.map((l) => l.fromXi)), g = splitGroup(d.items[xi]);
-      const transferXis = d.items.map((y, k) => k).filter((k) => k > fromXi && k < xi && isTransfer(d.items[k]) && (!splitGroup(d.items[k]) || !g || splitGroup(d.items[k]) === g));
+      const transferXis = d.items.map((y, k) => k).filter((k) => k > fromXi && k < xi && isTransfer(d.items[k]) && (!g || onWayOf(d.items, d.items[k], g)));
       if (takeTimetable(d.items[xi], legs, transferXis.map((k) => d.items[k]))) updated++;
       const el = $(`[data-leg="${di}-${xi}"]`);
       if (!el) continue;

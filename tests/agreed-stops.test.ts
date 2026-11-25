@@ -55,3 +55,58 @@ describe("stops agreed in the chat", () => {
     expect(editSection({ itinerary, days: [0], request: "x" })).not.toContain("agreed on");
   });
 });
+
+// Day 9: all four travel to the hotel together, then 1 stays in while 3 go for sushi, and the 3 split again.
+const day9 = [
+  { day: 9, date: "2026-11-10", time: "12:15", place: "Walk to hotel & check in" },
+  { day: 9, date: "2026-11-10", time: "13:00", place: "Rest at the hotel", group: "Group A", people: 1 },
+  { day: 9, date: "2026-11-10", time: "14:12", place: "Kura Sushi, 西友 浅草ROX店", group: "Group B", people: 3 },
+  { day: 9, date: "2026-11-10", time: "17:12", place: "Akihabara: hobbyshop & figure stores", group: "Group B2", people: 1 },
+];
+
+describe("a split day agreed in the chat", () => {
+  it("comes from the change line with each stop's group", () => {
+    const c = parseChange(`Day 9 split.\nCHANGE: {"days": [9], "request": "Rebuild Day 9.", "agreed": [
+      {"day": 9, "time": "12:15", "place": "Walk to hotel & check in", "group": "All"},
+      {"day": 9, "time": "14:12", "place": "Kura Sushi", "group": "Group B", "people": 3}]}`, 20);
+    expect(c?.agreed).toEqual([
+      { day: 9, time: "12:15", place: "Walk to hotel & check in" },
+      { day: 9, time: "14:12", place: "Kura Sushi", group: "Group B", people: 3 },
+    ]);
+  });
+  it("tells the planner who does what", () => {
+    const itinerary: any = { summary: "", totalEstimatedCost: 0, days: [{ date: "2026-11-10", city: "Tokyo", title: "", estimatedCost: 0, items: [] }] };
+    const text = editSection({ itinerary, days: [0], request: "Rebuild.", agreed: day9 });
+    expect(text).toContain('"Kura Sushi, 西友 浅草ROX店" · group: "Group B", 3 people');
+    expect(text).toContain('exactly that "group" and "people"');
+  });
+  it("keeps its groups even when the planner drops them, and the shared stops stay shared", () => {
+    const d = { items: [
+      { time: "12:15", place: "Walk to hotel & check in", description: "", group: "Group A" },
+      { time: "14:12", place: "Kura Sushi, 西友 浅草ROX店", description: "Conveyor-belt sushi." },
+    ] as any[] };
+    expect(restoreAgreed(d, day9)).toBe(2);
+    expect(d.items.map((x) => [x.place, x.group, x.people])).toEqual([
+      ["Walk to hotel & check in", undefined, undefined],
+      ["Rest at the hotel", "Group A", 1],
+      ["Kura Sushi, 西友 浅草ROX店", "Group B", 3],
+      ["Akihabara: hobbyshop & figure stores", "Group B2", 1],
+    ]);
+  });
+});
+
+import { stopOps } from "../server/trip/companion";
+
+describe("the chat's group edits", () => {
+  it("set who does a stop already in the plan, or put everyone back together", () => {
+    expect(stopOps([
+      { op: "group", day: 9, place: "Kura Sushi", group: "Group B", people: 3 },
+      { op: "group", day: 9, place: "Ueno Station", group: "" },
+      { op: "add", day: 9, time: "17:12", place: "Back to hotel", group: "Group B1", people: 1 },
+    ], 20)).toEqual([
+      { op: "group", day: 9, place: "Kura Sushi", group: "Group B", people: 3 },
+      { op: "group", day: 9, place: "Ueno Station", group: "" },
+      { op: "add", day: 9, time: "17:12", place: "Back to hotel", description: "", where: "", cost: 0, kind: "sight", group: "Group B1", people: 1 },
+    ]);
+  });
+});

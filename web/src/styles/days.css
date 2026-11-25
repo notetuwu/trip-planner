@@ -51,6 +51,11 @@
 .fork-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
 .tracks { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .track { --t: var(--track-0); border: 1px solid color-mix(in srgb, var(--t) 35%, var(--line)); border-top: 3px solid var(--t); border-radius: 10px; padding: 8px 10px 0; background: color-mix(in srgb, var(--t) 6%, var(--panel)); }
+/* A group that splits again: columns as wide as the groups they end up as, its new groups inside its own column. */
+.tracks.nest { display: flex; flex-wrap: wrap; }
+.tracks.nest > .track { min-width: 0; }
+.track .tracks.nest { margin: 0 -4px 10px; gap: 8px; }
+.fork-label.sub { margin: 2px 0 6px; }
 .track.t1 { --t: var(--track-1); } .track.t2 { --t: var(--track-2); } .track.t3 { --t: var(--track-3); }
 .track-head { font-size: 12px; font-weight: 700; color: var(--t); margin-bottom: 8px; display: flex; justify-content: space-between; gap: 8px; }
 .track-head span { font-weight: 500; color: var(--muted); }

@@ -7,7 +7,7 @@ import { type ByTitle, activityTown, byTitleMap, daySegments, itemLoc } from "..
 import { type TravelMode, directionsLink, genericMeal, searchUrl } from "../core/maps-links";
 import { type Loc, distKm, stayLoc, stayOn } from "../geo/locate";
 import { FOOT } from "../map/routes";
-import { chosenMode, cleanStop, splitGroup, transferEnds } from "../trip/modes";
+import { chosenMode, cleanStop, onWayOf, splitGroup, transferEnds } from "../trip/modes";
 
 const TRANSIT = /\b(bus|buses|coach|train|trains|rail|railjet|rjx?|ice|ic|ec|intercity|regional|regio|s-?bahn|u-?bahn|metro|subway|tram|vaporetto|ferry|boat|funicular|cable car|line \d+)\b/i;
 const DRIVE = /\b(taxi|uber|car|drive|driving|rental)\b/i;
@@ -54,7 +54,7 @@ export function mealSearchUrl(di: number, xi: number): string | null {
 /** The stop before this one on the same path (a split group continues from its own previous stop). */
 function prevStop(d: Day, xi: number) {
   const g = splitGroup(d.items[xi]);
-  for (let i = xi - 1; i >= 0; i--) { const pg = splitGroup(d.items[i]); if (!pg || pg === g || !g) return d.items[i]; }
+  for (let i = xi - 1; i >= 0; i--) if (!g || onWayOf(d.items, d.items[i], g)) return d.items[i];
   return null;
 }
 

@@ -3,6 +3,7 @@ import type { ItineraryItem, TravelMode } from "../../../shared/types";
 import { state } from "../core/state";
 import { type IconName, icon } from "../core/icons";
 import { modeOf } from "./mode-of";
+import { groupOrder, lineGroup, onWay, parentGroup } from "./split-tree";
 export { modeOf };
 
 /** "" lets the planner choose. */
@@ -70,6 +71,12 @@ export function dayGroupColors(items: ItineraryItem[], dayIndex: number): Record
   return out;
 }
 
+/** Split inside a split (see split-tree.ts), for the plan's stops. */
+export { parentGroup };
+export const onWayOf = (items: ItineraryItem[], y: ItineraryItem, g: string) => onWay(items, y, g, splitGroup);
+export const legGroup = (items: ItineraryItem[], from: string, to: string) => lineGroup(items, from, to, splitGroup);
+export const trackOrder = (items: ItineraryItem[]) => groupOrder(items, splitGroup);
+
 /** While the group is split, each group's stops one after another (A's, then B's) instead of mixed by time, so
  *  each group's numbers run in order (2, 3, 4 and 5, 6, 7). True if anything moved. */
 export function orderSplitRuns(days: { items: ItineraryItem[] }[]): boolean {
@@ -78,7 +85,7 @@ export function orderSplitRuns(days: { items: ItineraryItem[] }[]): boolean {
     const out: ItineraryItem[] = [];
     let run: ItineraryItem[] = [];
     const flush = () => {
-      const order = [...new Set(run.map(splitGroup))];
+      const order = trackOrder(run);
       const sorted = [...run].sort((a, b) => order.indexOf(splitGroup(a)) - order.indexOf(splitGroup(b)));
       if (sorted.some((x, i) => x !== run[i])) moved = true;
       out.push(...sorted); run = [];
