@@ -61,11 +61,11 @@ async function install(info: UpdateInfo) {
   if (info.mode === "installer") {
     const setup = path.join(os.tmpdir(), info.asset!.name);
     fs.writeFileSync(setup, data);
-    // The installer is started first (it waits for this app to close, then starts the new version without a new window),
+    // The installer is started first (it ends this app if it's still running, then starts the new version without a new window),
     // so nothing after can keep it from running. Its log goes next to the app's own.
     const log = path.join(ROOT, "update-install.log");
     console.log(`Update: starting the installer for ${info.latest} (its log: ${log}).`);
-    await launch(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", `/LOG=${log}`]);
+    await launch(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS", `/LOG=${log}`]);
     await stopServer();
   } else {
     const exe = extractFromZip(data, (name) => name.endsWith("/Trip Planner.exe") || name === "Trip Planner.exe");

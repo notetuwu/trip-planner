@@ -158,6 +158,7 @@
 .trips-title h2 svg.i { color: var(--accent); }
 .trips-acts { display: flex; align-items: center; gap: 8px; }
 .trips-acts label.btn { cursor: pointer; }
+.trips-acts .btn[hidden] { display: none; }
 .trips-tools { display: flex; align-items: center; gap: 10px; padding: 0 22px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .trips-search { position: relative; flex: 1 1 180px; min-width: 160px; }
 .trips-search svg.i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); }

@@ -126,6 +126,25 @@ function drawFilters() {
   $<HTMLSelectElement>("#tripsBy").onchange = (e) => { by = (e.target as HTMLSelectElement).value; animate = true; render(); };
 }
 
+/** Sync now: looks at the sync folders straight away (it also happens by itself every few minutes), and says how it went. */
+async function syncAll(button: HTMLButtonElement) {
+  button.disabled = true;
+  button.innerHTML = `${icon("refresh")} Syncing…`;
+  try {
+    const s = await api<SyncStatus>("/api/sync/now", { method: "POST" });
+    setSyncStatus(s);
+    await actions.afterChange();
+    await load();
+    const bad = s.folders.find((f) => f.error), trips = Object.values(s.trips);
+    toast(s.error ? `Sync failed: ${s.error}`
+      : bad ? `${bad.label}: ${bad.error}`
+        : trips.some((x) => x.error) ? "Some trips couldn't be synced (see the warning on them)"
+          : trips.some((x) => x.conflicts.length) ? "Synced. A trip changed in two places: choose which version to keep"
+            : "Synced");
+  } catch (e) { toast(`Sync failed: ${(e as Error).message}`); }
+  finally { button.disabled = false; button.innerHTML = `${icon("refresh")} Sync now`; }
+}
+
 /** A trip in a sync folder that isn't on this computer: open it to get it here. */
 function remoteHtml(c: RemoteTripCard, i: number) {
   return `<article class="trip-card remote" data-remote="${esc(c.fileId)}" data-folder="${esc(c.folder)}" tabindex="0" style="--h:${hueOf(c.name)};--i:${Math.min(i, 14)}">
@@ -192,6 +211,7 @@ function stats(list: TripCard[]) {
 function render() {
   const body = $("#tripsBody");
   clearTripMaps();
+  $("#tripsSyncNow").hidden = !syncReady();
   $("#tripsMeta").textContent = cards ? stats(cards) : "";
   $$<HTMLButtonElement>("#tripsDialog [data-filter]").forEach((b) => b.classList.toggle("on", b.dataset.filter === filter));
   $$<HTMLButtonElement>("#tripsDialog [data-view]").forEach((b) => b.classList.toggle("on", b.dataset.view === view));
@@ -337,6 +357,13 @@ export function initTrips(a: Actions) {
   // Cards or table: up by the buttons, so the search and filters keep to one line.
   const segs = document.querySelector("#tripsDialog .view-segs");
   if (segs) $("#tripsDialog .trips-acts").prepend(segs);
+  // Sync now, first of the buttons (there once there are sync folders).
+  const now = document.createElement("button");
+  now.type = "button"; now.id = "tripsSyncNow"; now.className = "btn"; now.hidden = true;
+  now.title = "Look at the sync folders now: send your changes and get others'";
+  now.innerHTML = `${icon("refresh")} Sync now`;
+  now.onclick = () => syncAll(now);
+  $("#tripsNew").before(now);
   onSyncStatus(() => { if (dialog().open && cards) render(); });
   dialog().addEventListener("close", closed);
   const search = $<HTMLInputElement>("#tripsSearch");

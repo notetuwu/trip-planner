@@ -29,7 +29,10 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-CloseApplications=yes
+; The app has no window of its own for Setup to ask to close, so it's ended if it's still running. Without "force", an
+; in-app update that finds it running gives up (the silent answer to "couldn't close" is Abort). Set here, not only in
+; the app's command line, so copies already installed can update too.
+CloseApplications=force
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"
