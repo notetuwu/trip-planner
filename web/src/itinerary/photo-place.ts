@@ -4,11 +4,14 @@
 // stops, they take its exact spot. Photos with a location of their own are locked unless unlocked. The positions are
 // kept with the trip (state.photoSpots); the files are never changed.
 import * as L from "leaflet";
-import { esc } from "../core/dom";
+import type { GeoHit } from "../../../shared/types";
+import { api, esc } from "../core/dom";
 import { fmtDate } from "../core/format";
 import { icon } from "../core/icons";
 import { showGallery } from "../core/lightbox";
+import { prefs } from "../core/prefs";
 import { state } from "../core/state";
+import { countryCodes } from "../geo/locate";
 import { type Placed, allPhotos, folderOf, folders, isPhotosGuess, planDays, setSpots, sourceOf, thumbTag, viewItem, when } from "../map/photos";
 import { type PhotoSpot, burstsOf } from "../map/photo-spot";
 import { isReadOnly } from "../saves/read-only";
@@ -24,6 +27,8 @@ export interface PlaceTool {
 const GRID = 56, SNAP = 18;
 /** Photos with a location of their own can't be moved (on unless switched off). */
 const LOCK_KEY = "trip-planner-photos-lock";
+/** English place names on this map (unset: as Settings → General says for the main map). */
+const ENGLISH_KEY = "trip-planner-photos-english";
 
 export function placeTool(box: HTMLElement): PlaceTool {
   box.innerHTML = `<div class="pp-left">
@@ -42,19 +47,24 @@ export function placeTool(box: HTMLElement): PlaceTool {
       <div class="pp-list"></div>
     </div>
     <div class="pp-right"><div class="pp-map"></div>
+      <form class="map-search pp-search" autocomplete="off">
+        <div class="inline"><input type="search" data-pp-q placeholder="Search places, streets, stations…"><button class="btn solid">Search</button></div>
+        <ul data-pp-results hidden></ul>
+      </form>
       <div class="pp-layers">
         <label class="ph-check" title="Photos whose file has its own position"><input type="checkbox" data-pp-layer="camera" checked> With location</label>
         <label class="ph-check"><input type="checkbox" data-pp-layer="placed" checked> Placed by hand</label>
         <label class="ph-check" title="Where the time suggests the selected photos were taken, drawn with a dashed border"><input type="checkbox" data-pp-layer="guess" checked> Suggestions</label>
         <label class="ph-check" title="The plan's stops of the day (of the selected photos)"><input type="checkbox" data-pp-layer="stops" checked> Day's stops</label>
         <label class="ph-check pp-lock" title="Photos whose file has its own location can't be moved. (Reset still puts a moved one back.)"><input type="checkbox" data-pp-lock> Lock photos with location</label>
+        <label class="ph-check" title="Place names in English (Osaka Castle) instead of the local language and script"><input type="checkbox" data-pp-english> English map</label>
       </div>
     </div>`;
   const q = <T extends HTMLElement = HTMLElement>(sel: string) => box.querySelector<T>(sel)!;
   const list = q(".pp-list"), which = q<HTMLSelectElement>("[data-pp-which]"), daySel = q<HTMLSelectElement>("[data-pp-day]"), srcSel = q<HTMLSelectElement>("[data-pp-src]");
   const layerOn = (name: string) => q<HTMLInputElement>(`[data-pp-layer="${name}"]`).checked;
 
-  let m: L.Map | null = null, pins: L.LayerGroup, stops: L.LayerGroup;
+  let m: L.Map | null = null, pins: L.LayerGroup, stops: L.LayerGroup, found: L.LayerGroup;
   let photos: Placed[] = [], byKey = new Map<string, Placed>();
   const selected = new Set<string>();
   /** The photos of the picture clicked on the map, listed on top (they may not pass the filters). */
@@ -203,7 +213,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     if (!m) return ll;
     const here = m.latLngToContainerPoint(ll);
     let best = ll, dist = SNAP;
-    for (const group of [stops, pins]) group.eachLayer((l) => {
+    for (const group of [stops, found, pins]) group.eachLayer((l) => {
       if (l === skip || !(l instanceof L.Marker)) return;
       const d = m!.latLngToContainerPoint(l.getLatLng()).distanceTo(here);
       if (d < dist) { dist = d; best = l.getLatLng(); }
@@ -258,12 +268,56 @@ export function placeTool(box: HTMLElement): PlaceTool {
     }
   }
 
+  // ---- The map's names, and the search ----
+  const english = q<HTMLInputElement>("[data-pp-english]");
+  english.checked = (localStorage.getItem(ENGLISH_KEY) ?? (prefs.app.mapNames === "english" ? "1" : "0")) === "1";
+  let base: L.Layer | null = null;
+  async function setBase() {
+    if (!m) return;
+    const wanted = english.checked;
+    const next = wanted
+      ? (await import("../map/english-map")).englishLayer()
+      : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+    if (wanted !== english.checked) return; // switched again while loading
+    base?.remove();
+    base = next.addTo(m);
+  }
+
+  const query = q<HTMLInputElement>("[data-pp-q]"), results = q("[data-pp-results]");
+  let hits: GeoHit[] = [], asked = 0;
+  async function search() {
+    const text = query.value.trim(), mine = ++asked;
+    if (!text || !m) return;
+    const c = m.getCenter().wrap();
+    results.hidden = false;
+    results.innerHTML = `<li class="muted">Searching…</li>`;
+    try {
+      const got = await api<GeoHit[]>(`/api/search?${new URLSearchParams({ q: text, lat: c.lat.toFixed(4), lng: c.lng.toFixed(4), cc: countryCodes() })}`);
+      if (mine !== asked) return;
+      hits = got;
+      results.innerHTML = hits.length
+        ? hits.map((r, i) => `<li data-r="${i}" tabindex="0"><b>${esc(r.name)}</b><span>${esc(r.label)}</span></li>`).join("")
+        : `<li class="muted">Nothing found. Try a shorter name.</li>`;
+    } catch (e) { if (mine === asked) results.innerHTML = `<li class="muted">${esc((e as Error).message)}</li>`; }
+  }
+  /** The map goes to a search result and marks it: photos can be dropped on the mark. */
+  function goTo(r: GeoHit) {
+    if (!m) return;
+    results.hidden = true;
+    found.clearLayers();
+    L.marker([r.lat, r.lng], { zIndexOffset: -400, icon: L.divIcon({ className: "", html: `<div class="pp-found">${icon("pin")}</div>`, iconSize: [30, 30], iconAnchor: [15, 28] }) })
+      .bindTooltip(esc(r.name), { direction: "top", offset: [0, -28], permanent: true })
+      .on("click", () => clicked(L.latLng(r.lat, r.lng)))
+      .addTo(found);
+    m.flyTo([r.lat, r.lng], Math.max(m.getZoom(), 17), { duration: .6 });
+  }
+
   function makeMap() {
     m = L.map(q(".pp-map"), { worldCopyJump: true }).setView([30, 10], 2);
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(m);
+    setBase();
     // Their own pane, as on the main map: in Leaflet's marker pane its styles size pictures to their own shape.
     m.createPane("photos").style.zIndex = "620";
-    stops = L.layerGroup().addTo(m); pins = L.layerGroup().addTo(m);
+    stops = L.layerGroup().addTo(m); found = L.layerGroup().addTo(m); pins = L.layerGroup().addTo(m);
     m.on("moveend", drawMap);
     m.on("click", (e) => clicked(snap(e.latlng)));
     // Photos dragged from the list.
@@ -285,7 +339,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     if (dragging) return;
     // Another trip: its own history and selection.
     const now = state.saveName || "";
-    if (now !== trip) { trip = now; history = []; selected.clear(); atSpot = []; }
+    if (now !== trip) { trip = now; history = []; selected.clear(); atSpot = []; asked++; query.value = ""; results.hidden = true; found?.clearLayers(); }
     // (With the time guess switched off in the gallery there are no suggestions.)
     q<HTMLInputElement>('[data-pp-layer="guess"]').disabled = !isPhotosGuess();
     photos = allPhotos();
@@ -336,6 +390,14 @@ export function placeTool(box: HTMLElement): PlaceTool {
   for (const sel of [which, daySel, srcSel]) sel.onchange = () => { selected.clear(); atSpot = []; list.scrollTop = 0; draw(); if (sel === daySel) fit(); };
   for (const c of box.querySelectorAll<HTMLInputElement>("[data-pp-layer]")) c.onchange = () => drawMap();
   lock.onchange = () => { localStorage.setItem(LOCK_KEY, lock.checked ? "1" : "0"); draw(); };
+  english.onchange = () => { localStorage.setItem(ENGLISH_KEY, english.checked ? "1" : "0"); setBase(); };
+  q<HTMLFormElement>(".pp-search").onsubmit = (e) => { e.preventDefault(); search(); };
+  results.onclick = (e) => { const i = (e.target as HTMLElement).closest<HTMLElement>("[data-r]")?.dataset.r; if (i != null && hits[+i]) goTo(hits[+i]); };
+  results.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLElement).click(); } };
+  // Emptied (the field's ✕): the results and the mark go.
+  query.oninput = () => { if (!query.value) { asked++; results.hidden = true; found?.clearLayers(); } };
+  // Esc closes the results, not the window.
+  q(".pp-search").addEventListener("keydown", (e) => { if (e.key === "Escape" && !results.hidden) { e.preventDefault(); e.stopPropagation(); results.hidden = true; } });
   q<HTMLButtonElement>("[data-pp-accept]").onclick = accept;
   q<HTMLButtonElement>("[data-pp-skip]").onclick = () => { const keys = chosen().map((p) => p.key); selected.clear(); atSpot = []; change(Object.fromEntries(keys.map((k) => [k, { skip: true as const }]))); draw(); };
   q<HTMLButtonElement>("[data-pp-reset]").onclick = () => { change(Object.fromEntries(chosen().filter((p) => p.placed || p.skipped).map((p) => [p.key, null]))); draw(); };
