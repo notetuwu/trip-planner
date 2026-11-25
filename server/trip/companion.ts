@@ -143,6 +143,7 @@ Changing stays (nights, adding or removing one) doesn't re-plan the days: say th
 Bringing an older trip up to date: when they ask to update, refresh or modernise the plan (it was made a while ago, with vague transport or routes drawn by road for a trip without a car), first check how they get around (when the trip doesn't make it clear, ask with a QUESTION: by public transport and the odd taxi, by car, a mix), then offer one change for every day: "days": all of them, "title": "Bring the trip up to date", "edits" setting "getAround" (and "stayTravel" for stays reached another way than the plan says), and "request": "Bring this plan up to date without changing what they do: keep every stop, its name exactly as it is, its time and its order, and the stays and day trips; add or remove nothing. For each stop, write its transport again as how they really get there (on foot, the actual bus, tram, metro or train line and where to get on, or the drive and where to park, as they get around), and fill in what's missing: the kind of each stop, costs and whether they're per person or for the group, whether to book ahead and how far, and the official website." Add anything they asked for on top to the request.
 Day trips listed under the stays above stay in the trip until removed here, even if a day's plan changes, so when a place moves from a day trip to somewhere else, remove that day trip too. When only the setup changes and the days are already right, use "days": [] and "request": "".
 Only add the CHANGE line when they asked for a change, not for questions or for ideas they haven't asked for; if what they want is unclear, ask instead. Never offer a change for a place you couldn't identify: if you don't know what or where a place is (and a lookup didn't settle it), say so and ask them (for its address, or a link), and offer the change once you know. Always answer in words first: the CHANGE line is never the whole reply.
+Nothing changes without the CHANGE line: never write that you will change something, or that it's done, without it in that same reply (no "I'll set…" now and the change in a later message).
 ` : `
 ## Changing the trip before there's a plan
 There's no day-by-day itinerary yet, but you can change the trip's setup, which the plan will be made from: add places to their must-sees (a place they want to see, or one you recognised in a picture), say whether a must-see is visited on the way between stays or from a stay, and add or remove the stays' day trips. When they ask for that (or say yes to it), write one or two sentences on what will change, then end your reply with one last line exactly like this:
@@ -365,6 +366,14 @@ export function unverifiedFigures(text: string, known: string): string[] {
   return [...new Set(figuresIn(text).filter((f) => !f.values.some((v) => close(f.unit, v))).map((f) => f.raw))];
 }
 
+/** Whether a reply says it changes the plan ("I'll set…", "I've moved…", "Done –", "…now have the same…"). */
+export function promisesChange(text: string): boolean {
+  const t = text.replace(/[’]/g, "'");
+  return /\b(I'll|I will|I'm going to|I've|I have|let me)\s+(now\s+)?(set|chang|mov|updat|add|remov|swap|replac|put|mad|mak|fix|shift|renam|drop)\w*\b/i.test(t)
+    || /^\s*(done|changed|updated|fixed)\b/i.test(t)
+    || /\b(now (have|has|is|are|start|starts|go|goes)|have been (changed|moved|updated|set))\b/i.test(t) && /\b(day|stop|stops|plan)\b/i.test(t);
+}
+
 export async function askCompanion(req: CompanionRequest, report: Report, signal?: AbortSignal) {
   report({ type: "status", text: "Thinking…" });
   // How long it thought: from the first thought to the first word of the answer.
@@ -374,7 +383,7 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
   const looked: string[] = [], sources: Source[] = [];
   const data: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.data || {}).slice(0, 12)) if (typeof v === "string") data[k.slice(0, 30)] = v.slice(0, 12_000);
-  let checked = false;
+  let checked = false, pushed = false;
   // What figures may come from: the trip, what the traveler said, and every lookup result.
   let known = `${req.context || ""}\n${req.question || ""}\n${(req.history || []).filter((t) => t.role === "me").map((t) => t.text).join("\n")}`;
   const draft = (a: string) => `${cleanAnswer(a)}\n${parseChange(a, req.days || 0)?.request || ""}`;
@@ -408,6 +417,18 @@ ${clip(answer, 4_000)}
 These figures in it aren't in the trip or in any lookup result: ${unsure.join(", ")}. Don't guess them: reply now with LOOKUP: route lines for each drive involved (several places in one line drive through them in order), or leave the figures out of your answer. Then write the answer again.`;
         report({ type: "status", text: "Checking the distances…" });
         checked = true;
+        continue;
+      }
+      // "Sure, I'll set…" or "Done, all seven now…" with no CHANGE line: nothing would happen. Ask for it once.
+      if (!last && !pushed && req.mode !== "ask" && !parseChange(answer, req.days || 0) && !parseQuestion(answer) && promisesChange(cleanAnswer(answer))) {
+        prompt += `
+
+## Your draft
+${clip(answer, 4_000)}
+
+This says the change is made (or will be), but it has no CHANGE line, so nothing would change. Write the reply again, ending with the CHANGE line that makes exactly that change. If you didn't mean to change anything, write it again without saying you did.`;
+        report({ type: "status", text: "Writing the change…" });
+        pushed = true;
         continue;
       }
       break;

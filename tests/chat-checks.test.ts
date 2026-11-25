@@ -187,3 +187,18 @@ describe("the chat's questions", () => {
   });
   it("is told it can ask", () => expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain("QUESTION: {"));
 });
+
+import { promisesChange } from "../server/trip/companion";
+
+describe("a reply that promises a change without one", () => {
+  it("is spotted, so the chat asks for the change line", () => {
+    expect(promisesChange("Sure – I'll set the map locations of all seven Group B stops on Day 4 to the same addresses.")).toBe(true);
+    expect(promisesChange("Done – all seven Group B stops on Day 4 now have the same map locations as their Day 6 twins.")).toBe(true);
+    expect(promisesChange("I’ve moved the castle to Day 3.")).toBe(true);
+  });
+  it("isn't confused with answers and suggestions", () => {
+    expect(promisesChange("Kura Sushi opens at 11:00 and the walk from Namba is about 5 minutes.")).toBe(false);
+    expect(promisesChange("You could move the castle to Day 3 if you like: want me to?")).toBe(false);
+    expect(promisesChange("The shops now have winter hours.")).toBe(false);
+  });
+});

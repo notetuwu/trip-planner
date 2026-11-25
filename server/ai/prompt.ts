@@ -59,7 +59,13 @@ function partialDays(trip: Trip): Day[] {
   return it ? [...new Set(idx)].map((i) => it.days[i]).filter(Boolean) : [];
 }
 
-const kmApart = (a: [number, number], b: [number, number]) => {
+/** Whether a change's own words split the group: "split day", "the group splits", "2 of the 4 people", "Group B". */
+function asksForSplit(trip: Trip): boolean {
+  const text = [trip.edit?.request, trip.redoDay?.request, ...(trip.fix?.problems.map((p) => p.text) || [])].join(" ");
+  return /\bsplit|\bseparate(ly)?\b|\bgroup [a-d1-4]\b|\b\d+\s+of\s+(the\s+)?\d+\s+(people|travell?ers|of us)\b/i.test(text);
+}
+
+const kmApart =(a: [number, number], b: [number, number]) => {
   const r = Math.PI / 180;
   return Math.hypot((b[1] - a[1]) * r * Math.cos(((a[0] + b[0]) / 2) * r), (b[0] - a[0]) * r) * 6371;
 };
@@ -82,8 +88,10 @@ export function trimForDays(trip: Trip, places: Place[]) {
 export function buildPrompt(full: Trip, allPlaces: Place[], opts: PromptOptions = {}) {
   const partial = !!(full.edit || full.redoDay || full.fix);
   const { trip, places } = partial ? trimForDays(full, allPlaces) : { trip: full, places: allPlaces };
-  /** Whether anyone in the group goes separate ways (then the rules for splitting the group are needed). */
-  const splits = Object.values(trip.mustSeeWho || {}).some((n) => n < trip.travelers) || trip.stays.some((s) => (s.dayTrips || []).some((d) => d.people && d.people < trip.travelers));
+  /** Whether anyone in the group goes separate ways (then the rules for splitting the group are needed): set up that
+   *  way, asked for in a change ("a split day", "2 of the 4 people"), or already so on a day being changed. */
+  const splits = Object.values(trip.mustSeeWho || {}).some((n) => n < trip.travelers) || trip.stays.some((s) => (s.dayTrips || []).some((d) => d.people && d.people < trip.travelers))
+    || (partial && (asksForSplit(trip) || partialDays(trip).some((d) => d.items.some((x) => x.group))));
   const t = tune();
   const json = opts.notes === "json";
   const research = !!opts.webTools && !!trip.research;

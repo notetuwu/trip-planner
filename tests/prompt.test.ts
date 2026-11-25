@@ -143,4 +143,10 @@ describe("a change to one day only gets what that day needs", () => {
     const split = buildPrompt({ ...base, mustSeeWho: { Gaflei: 1 }, edit: { itinerary: it2, days: [0], request: "x" } }, places);
     expect(split).toContain("only interest part of the group");
   });
+  it("keeps them when the change itself asks for a split day", () => {
+    const ask = (request: string) => buildPrompt({ ...base, edit: { itinerary: it2, days: [0], request } }, places);
+    expect(ask("Replace Day 1 with a split day (2 people + 1 person + 1 person)")).toContain('use "group"/"people"');
+    expect(ask("Lunch at the cafe. Note: 2 of the 4 people.")).toContain('use "group"/"people"');
+    expect(ask("swap the museum for a park")).not.toContain('use "group"/"people"');
+  });
 });
