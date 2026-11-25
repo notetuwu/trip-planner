@@ -3,7 +3,7 @@ import * as L from "leaflet";
 import { linesSettingChanged } from "./transit-lines";
 import { gridSettingChanged } from "./lines-grid";
 import { onAppPrefs, prefs } from "../core/prefs";
-import { $ } from "../core/dom";
+import { $, toast } from "../core/dom";
 import { session } from "../core/state";
 import { openAddPopup } from "./add";
 import { drawMap } from "./draw";
@@ -14,6 +14,7 @@ import { initLinesDownload, resyncLines } from "./lines-download";
 import { initLinesGrid } from "./lines-grid";
 import { initPhotos } from "./photos";
 import { openPhotosView } from "../itinerary/photos-view";
+import { closeMapSearch } from "./search";
 
 export let map: L.Map | null = null;
 export const layers = {
@@ -38,11 +39,19 @@ async function setLabels(labels: Labels) {
   if (!map) return;
   wanted = labels;
   localStorage.setItem(LABELS_KEY, labels);
-  const next = labels === "english"
-    ? (await import("./english-map")).englishLayer()
+  let next: L.Layer;
+  try {
+    next = labels === "english"
+    ? (await import("./english-map")).englishLayer((why) => { toast(why); if (wanted === "english") setLabels("local"); })
     : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     });
+  } catch (e) {
+    // (Back to the local names, and the reason why.)
+    toast((e as Error).message);
+    if (labels === "english") return setLabels("local");
+    return;
+  }
   if (wanted !== labels) return; // picked something else while loading
   base?.remove();
   base = next.addTo(map);
@@ -67,7 +76,7 @@ export function initMap() {
     for (const fn of afterPopup.splice(0)) setTimeout(fn);
   });
   map.on("click", (e) => {
-    if (!$("#mapResults").hidden) { $("#mapResults").hidden = true; return; }
+    if (closeMapSearch()) return;
     if (picking) { const done = picking; endPick(); done(e.latlng); return; }
     if (Date.now() - popupClosedAt > 300) openAddPopup(e.latlng);
   });

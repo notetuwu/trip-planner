@@ -1,4 +1,5 @@
 // The day chips above the map, selecting a day, and linking itinerary stops with their pins.
+import { moveTo } from "./move";
 import * as L from "leaflet";
 import { lightLeg } from "./draw-days";
 import { showPane } from "../core/layout";
@@ -16,10 +17,10 @@ export function renderDayChips() {
 }
 
 /** Shows one day on the map (or all again when it's already selected). */
-export function selectDay(i: number | null, { scroll = false } = {}) {
+export function selectDay(i: number | null, { scroll = false, fit = true } = {}) {
   session.selectedDay = session.selectedDay === i ? null : i;
   for (const el of $$(".day")) el.classList.toggle("selected", +el.dataset.i! === session.selectedDay);
-  drawMap({ fit: true });
+  drawMap({ fit });
   const group = session.selectedDay != null ? $(`.day[data-i="${session.selectedDay}"]`)?.closest<HTMLElement>(".stay-group") : null;
   if (group?.classList.contains("folded")) { session.foldedStays.delete(+group.dataset.stayGroup!); group.classList.remove("folded"); }
   if (scroll && session.selectedDay != null) $(`.day[data-i="${session.selectedDay}"]`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -41,8 +42,9 @@ export function goToStop(lat: number, lng: number, name: string) {
   if (!map) return;
   showPane("map");
   session.userMoved = true;
-  map.flyTo([lat, lng], Math.max(map.getZoom(), 17), { duration: .6 });
+  // (Listened for first: already there, the map says it's done at once.)
   map.once("moveend", () => { if (map) L.popup({ closeButton: false, className: "leg-tip-pop", offset: [0, -4] }).setLatLng([lat, lng]).setContent(esc(name || "Stop")).openOn(map); });
+  moveTo(map, [lat, lng], 17);
 }
 
 export function showOnMap(di: number, xi: number) {
@@ -51,7 +53,7 @@ export function showOnMap(di: number, xi: number) {
   // An open popup holds back redraws (so the day switch below wouldn't draw this stop's pin).
   map.closePopup();
   // Only the selected day's pins are drawn: switch to this stop's day if another is shown.
-  if (session.selectedDay != null && session.selectedDay !== di) selectDay(di);
+  if (session.selectedDay != null && session.selectedDay !== di) selectDay(di, { fit: false });
   const m = itemMarkers.get(`${di}-${xi}`);
   if (!m) { toast("This stop has no spot on the map yet: set where it is with the crosshair button"); return; }
   // Stays where it's put: redraws (lookups and routes arriving) don't fit the map back to the whole trip.
@@ -59,8 +61,8 @@ export function showOnMap(di: number, xi: number) {
   // The map is above or below the plan on narrower screens: bring it into view.
   const box = $("#map").getBoundingClientRect();
   if (box.bottom < 60 || box.top > innerHeight - 60) $("#map").scrollIntoView({ behavior: "smooth", block: "center" });
-  map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 15), { duration: .6 });
   map.once("moveend", () => itemMarkers.get(`${di}-${xi}`)?.openPopup());
+  moveTo(map, m.getLatLng(), 15);
 }
 
 /** The pin whose name is shown because its stop is hovered in the list (only one at a time). */

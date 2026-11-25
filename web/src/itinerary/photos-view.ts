@@ -2,6 +2,7 @@
 // folders on this computer, as many as the trip has) and how they show on the map. On the right, every photo laid out by
 // the day of the trip it was taken on (the others by date), with or without a spot on the map. Click one to go through
 // them big (arrows, a strip along the bottom); the pin on a photo moves the map to where it was taken.
+import { moveTo } from "../map/move";
 import { closeOnBackdrop, esc } from "../core/dom";
 import { fmtDate } from "../core/format";
 import { icon } from "../core/icons";
@@ -145,7 +146,7 @@ function renderMain() {
         const p = all[+pin.dataset.pin!];
         dlg!.close();
         session.userMoved = true;
-        map?.flyTo([p.lat!, p.lng!], Math.max(map.getZoom(), 17), { duration: .6 });
+        if (map) moveTo(map, [p.lat!, p.lng!], 17);
         return;
       }
       showGallery(all.map(viewItem), +t.dataset.i!);

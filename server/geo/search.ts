@@ -5,12 +5,13 @@ import { geoCache } from "./geocode";
 import { nominatim, nominatimHit, photon, photonHit } from "./providers";
 
 /** Name search: Photon biased to the map view, Nominatim as a fallback; places in the trip's countries first. */
-export async function searchPlaces(q: string, lat: number, lng: number, cc: string): Promise<GeoHit[]> {
+/** `quick`: asked as they type, so Photon only (Nominatim's rules don't allow a search per key press). */
+export async function searchPlaces(q: string, lat: number, lng: number, cc: string, quick = false): Promise<GeoHit[]> {
   const params = new URLSearchParams({ q, limit: "8", lang: "en" });
   if (isFinite(lat) && isFinite(lng)) { params.set("lat", String(lat)); params.set("lon", String(lng)); }
   let hits: GeoHit[] = [];
   try { hits = (await photon(params)).map(photonHit); } catch (e) { console.error("Photon:", errMsg(e)); }
-  if (!hits.length) {
+  if (!hits.length && !quick) {
     const np = new URLSearchParams({ q, format: "jsonv2", limit: "6", addressdetails: "1", "accept-language": "en" });
     if (cc) np.set("countrycodes", cc);
     hits = (await nominatim("search", np)).map(nominatimHit);

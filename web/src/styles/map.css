@@ -73,7 +73,7 @@
 .lp-badge svg { width: 11px; height: 11px; }
 .lp-panel .hint { margin: 12px 2px 0; font-size: 11.5px; line-height: 1.4; }
 #map { height: 420px; background: var(--bg); }
-:root[data-theme="dark"] #map .leaflet-tile-pane, :root[data-theme="dark"] .route-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
+:root[data-theme="dark"] #map .leaflet-tile-pane, :root[data-theme="dark"] .route-map .leaflet-tile-pane, :root[data-theme="dark"] .pp-map .leaflet-tile-pane, :root[data-theme="dark"] .rv-map .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
 /* The status pill in the map's corner; clicked, it opens up and to the right into a panel of what the lookups do. */
 .map-status { position: absolute; left: 98px; bottom: 12px; z-index: 1100; } /* above the map's own controls, beside the Layers button */
 .ms-pill { display: inline-flex; align-items: center; gap: 7px; background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 8px 4px 10px; font: inherit; font-size: 12px; cursor: pointer; box-shadow: var(--shadow); transition: color .15s, border-color .15s; }
@@ -112,15 +112,8 @@
 .ms-r.err { color: var(--warn); background: color-mix(in srgb, var(--warn) 15%, transparent); }
 @media (prefers-reduced-motion: reduce) { .ms-panel { transition: opacity .15s; } .ms-dot { animation: none; } }
 .map-wrap { position: relative; }
-.map-search { position: absolute; top: 10px; left: 54px; right: 10px; max-width: 380px; z-index: 800; cursor: default; }
-.map-search input { background: var(--panel); box-shadow: var(--shadow); padding: 7px 10px; }
-.map-search ul { list-style: none; margin: 6px 0 0; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 24px rgba(0,0,0,.2); max-height: 300px; overflow: auto; }
-.map-search li { padding: 7px 9px; border-radius: 7px; cursor: pointer; }
-.map-search li:hover, .map-search li.active { background: var(--bg); }
-.map-search li b { display: block; font-weight: 600; }
-.map-search li span { display: block; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.map-search li.muted { color: var(--muted); cursor: default; }
-.map-search li.muted:hover { background: none; }
+/* The main map's search bar (place-search.ts), right of the zoom buttons. */
+.map-search { position: absolute; top: 10px; left: 54px; width: min(400px, calc(100% - 64px)); z-index: 800; cursor: default; }
 .leaflet-container { font: 13px/1.4 Inter, system-ui, sans-serif; }
 .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
 .leaflet-popup-content { margin: 10px 12px; }
@@ -301,54 +294,150 @@
 .ph-play { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px 2px 4px; border-radius: 999px; background: rgba(0, 0, 0, .62); color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .ph-play i { width: 0; height: 0; margin-left: 2px; border-left: 7px solid #fff; border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
 
+/* Leaflet's zoom buttons in the app's colours (light and dark). */
+.leaflet-bar { border: 0 !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 2px 6px rgba(0, 0, 0, .25) !important; }
+.leaflet-bar a, .leaflet-bar a:hover { width: 34px !important; height: 34px !important; line-height: 32px !important; background: var(--panel); color: var(--ink); border-bottom: 1px solid var(--line) !important; font: 600 18px/32px Inter, system-ui, sans-serif; }
+.leaflet-bar a:last-child { border-bottom: 0 !important; }
+.leaflet-bar a:hover { background: var(--field); color: var(--accent); }
+.leaflet-bar a.leaflet-disabled { background: var(--panel); color: var(--muted); opacity: .45; }
+
 /* Placing photos on the map: the photos on the left, the map on the right. */
 .ph-modes { flex: none; }
 .pp-wrap { display: none; }
 .photos-dialog.placing .ph-wrap, .photos-dialog.placing [data-ph-toggle-side], .photos-dialog.placing .ph-full-btn, .photos-dialog.placing [data-ph-count] { display: none; }
 .photos-dialog.placing .pl-head .ph-modes { margin-left: auto; }
-.photos-dialog.placing .pp-wrap { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); }
-.pp-left { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
-.pp-filters, .pp-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
-.pp-filters select { flex: 1 1 100px; min-width: 0; }
-.pp-filters [data-pp-which] { flex-basis: 100%; }
-.pp-acts .btn { height: 32px; padding: 0 10px; font-size: 12.5px; display: inline-flex; align-items: center; gap: 5px; }
-.pp-info { margin: 0; padding: 6px 12px; font-size: 12px; line-height: 1.45; border-bottom: 1px solid var(--line); }
-.pp-list { flex: 1; min-height: 0; overflow: auto; padding: 0 12px 16px; }
-.pp-group > header { padding: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 2px 8px; margin: 12px 0 6px; font-size: 12px; cursor: grab; }
-.pp-group > header b { white-space: nowrap; }
-.pp-group > header span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
-.pp-group > header em { font-style: normal; color: var(--muted); }
-.pp-group > header small { flex-basis: 100%; font-size: 11.5px; color: var(--muted); }
-.pp-spot { margin-top: 10px; padding: 0 8px 8px; border: 1px solid var(--accent); border-radius: 10px; }
-.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 4px; }
-.pp-tile { position: relative; aspect-ratio: 1; border-radius: 7px; overflow: hidden; background: var(--field); cursor: grab; outline-offset: -3px; }
-.pp-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
-.pp-tile.sel { outline: 3px solid var(--accent); }
-.pp-tile.sel img { opacity: .8; }
-.pp-tile i { position: absolute; left: 3px; bottom: 3px; padding: 1px 5px; border-radius: 6px; background: rgba(0, 0, 0, .65); color: #fff; font: 600 10px/1.5 Inter, system-ui, sans-serif; pointer-events: none; }
-.pp-zoom { all: unset; position: absolute; right: 3px; top: 3px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; cursor: pointer; opacity: 0; transition: opacity .12s; }
-.pp-zoom svg { width: 13px; height: 13px; }
-.pp-tile:hover .pp-zoom, .pp-zoom:focus-visible { opacity: 1; }
-.pp-zoom:hover { background: var(--accent); }
-@media (hover: none) { .pp-zoom { opacity: 1; } }
+.photos-dialog.placing .pp-wrap { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 420px) minmax(0, 1fr); }
+.pp-left { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); }
+
+/* Progress, what's listed, the filters. */
+.pp-top { display: grid; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.pp-progress { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.pp-progress > div { flex: 1; min-width: 0; }
+.pp-progress span { color: var(--muted); }
+.pp-progress .icon-btn { width: 30px; height: 30px; }
+.pp-progress .icon-btn:disabled { opacity: .35; }
+.pp-bar { height: 5px; margin-top: -4px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.pp-bar i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--accent); transition: width .3s; }
+.pp-which { display: grid; grid-template-columns: repeat(4, 1fr); padding: 3px; gap: 2px; border-radius: 10px; background: var(--field); border: 1px solid var(--line); }
+.pp-which button { all: unset; box-sizing: border-box; display: grid; justify-items: center; padding: 4px 2px; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: var(--muted); line-height: 1.3; }
+.pp-which button small { font-size: 11px; opacity: .8; font-variant-numeric: tabular-nums; }
+.pp-which button:hover { color: var(--ink); }
+.pp-which button.on { background: var(--panel); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .18); }
+.pp-which button:focus-visible { outline: 2px solid var(--accent); }
+.pp-filters { display: flex; gap: 6px; }
+.pp-filters select { flex: 1 1 0; min-width: 0; height: 32px; font-size: 12.5px; }
+
+/* The groups and their photos. */
+.pp-list { flex: 1; min-height: 0; overflow: auto; padding: 0 14px 16px; }
+.pp-group { padding-top: 12px; }
+.pp-group > header { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 4px 6px; border-radius: 8px; cursor: pointer; font-size: 12.5px; }
+.pp-group > header:hover { background: var(--field); }
+.pp-gh { flex: 1; min-width: 0; display: grid; }
+.pp-gh b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-gh small { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-group > header em { font-style: normal; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pp-group > header .icon-btn { width: 26px; height: 26px; }
+.pp-spot { margin-top: 12px; padding: 4px 8px 10px; border-radius: 12px; background: color-mix(in srgb, var(--accent) 9%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+/* A group's suggestion, used with one click. */
+.pp-sugg { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 7px; width: 100%; margin: 0 0 6px; padding: 5px 9px; border-radius: 8px; cursor: pointer; font-size: 12px; color: var(--ink); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); border: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); }
+.pp-sugg > svg { color: var(--accent); }
+.pp-sugg span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-sugg u { text-decoration: none; font-weight: 700; color: var(--accent); }
+.pp-sugg:hover { background: color-mix(in srgb, var(--accent) 18%, var(--panel)); }
+.pp-sugg:focus-visible { outline: 2px solid var(--accent); }
+.pp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px; }
+.pp-tile { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: var(--field); cursor: zoom-in; }
+.pp-tile[draggable="true"] { cursor: zoom-in; }
+.pp-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; transition: transform .15s; }
+.pp-tile:hover img { transform: scale(1.04); }
+.pp-tile::after { content: ""; position: absolute; inset: 0; border-radius: 8px; pointer-events: none; transition: box-shadow .1s; }
+.pp-tile.sel::after { box-shadow: inset 0 0 0 3px var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.pp-tile.sel img { transform: scale(.9); border-radius: 6px; }
+.pp-tile i { position: absolute; left: 4px; bottom: 4px; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, .62); color: #fff; font: 600 10px/1.5 Inter, system-ui, sans-serif; pointer-events: none; }
+.pp-vid { position: absolute; right: 5px; bottom: 5px; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, .6); color: #fff; pointer-events: none; }
+.pp-vid svg { width: 10px; height: 10px; }
+/* The ticks: on a photo when pointed at (or while selecting), on a group's heading always. */
+.pp-check { all: unset; box-sizing: border-box; flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 50%; border: 2px solid currentColor; color: var(--muted); cursor: pointer; }
+.pp-check svg { width: 12px; height: 12px; opacity: 0; stroke-width: 3; }
+.pp-tile .pp-check { position: absolute; left: 5px; top: 5px; color: #fff; background: rgba(0, 0, 0, .3); box-shadow: 0 0 3px rgba(0, 0, 0, .5); opacity: 0; transition: opacity .12s; }
+.pp-tile:hover .pp-check, .pp-list.picking .pp-check, .pp-check:focus-visible { opacity: 1; }
+.pp-tile.sel .pp-check, .pp-group.all > header .pp-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); opacity: 1; }
+.pp-tile.sel .pp-check svg, .pp-group.all > header .pp-check svg, .pp-tile .pp-check:hover svg { opacity: 1; }
+@media (hover: none) { .pp-tile .pp-check { opacity: 1; } }
+
+/* What's selected, at the bottom of the list. */
+.pp-sel { display: grid; gap: 8px; padding: 12px 14px 14px; border-top: 1px solid var(--line); background: var(--panel); box-shadow: 0 -6px 18px rgba(0, 0, 0, .12); }
+.pp-sel[hidden] { display: none; }
+.pp-sel-head { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; }
+.pp-sel .hint { margin: -4px 0 0; font-size: 12px; line-height: 1.45; }
+.pp-sel .pp-why { margin: 0; }
+.pp-use { height: auto !important; min-height: 44px; display: flex !important; align-items: center; gap: 10px; padding: 6px 12px !important; text-align: left; }
+.pp-use span { flex: 1; min-width: 0; display: grid; font-weight: 600; }
+.pp-use small { font-weight: 400; font-size: 11.5px; opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pp-use kbd { font: 600 10px/1 Inter, system-ui, sans-serif; padding: 3px 5px; border-radius: 4px; border: 1px solid currentColor; opacity: .7; }
+.pp-sel-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 6px; }
+.pp-sel-acts .btn { height: 34px; }
+
+/* The map, its search (like a maps app's), Layers and the note at the bottom. */
 .pp-right { position: relative; min-width: 0; min-height: 0; }
 .pp-map { position: absolute; inset: 0; }
-.pp-map.over { outline: 3px dashed var(--accent); outline-offset: -5px; }
-.pp-layers { position: absolute; right: 10px; bottom: 26px; z-index: 1000; display: grid; gap: 4px; padding: 8px 12px; border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow); font-size: 12.5px; }
+.pp-map.over { box-shadow: inset 0 0 0 3px var(--accent); }
+.pp-map.aim, .pp-map.aim .leaflet-interactive { cursor: crosshair; }
+.pp-search { position: absolute; left: 12px; top: 12px; z-index: 1000; width: min(400px, calc(100% - 140px)); }
+/* A map's search bar (place-search.ts), like a maps app's. */
+.place-search { border-radius: 24px; background: var(--panel); box-shadow: 0 2px 6px rgba(0, 0, 0, .25), 0 1px 2px rgba(0, 0, 0, .12); overflow: hidden; }
+.place-search:focus-within { box-shadow: 0 4px 16px rgba(0, 0, 0, .3); }
+.ps-box { display: flex; align-items: center; gap: 8px; height: 46px; padding: 0 8px 0 16px; color: var(--muted); }
+.ps-box > svg { width: 18px; height: 18px; flex: none; }
+.ps-box input { flex: 1; min-width: 0; height: 100%; border: 0 !important; outline: 0; background: transparent !important; box-shadow: none !important; color: var(--ink); font-size: 14.5px; padding: 0; }
+.ps-box input::-webkit-search-cancel-button { display: none; }
+.ps-clear { all: unset; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; cursor: pointer; color: var(--muted); }
+.ps-clear[hidden] { display: none; }
+.ps-clear:hover { background: var(--field); color: var(--ink); }
+.place-search ul { list-style: none; margin: 0; padding: 6px 0; border-top: 1px solid var(--line); max-height: min(380px, 55vh); overflow: auto; }
+.place-search ul[hidden] { display: none; }
+.place-search li { display: flex; align-items: center; gap: 14px; padding: 8px 16px; cursor: pointer; }
+.place-search li > svg { width: 32px; height: 32px; box-sizing: border-box; flex: none; padding: 7px; border-radius: 50%; background: var(--field); color: var(--muted); }
+.place-search li > div { min-width: 0; display: grid; }
+.place-search li b { font-weight: 500; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-search li span { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.place-search li:hover, .place-search li.active { background: var(--field); }
+.place-search li.muted { cursor: default; color: var(--muted); font-size: 13px; }
+.place-search li.muted:hover { background: none; }
+.pp-layers-btn { position: absolute; right: 12px; top: 12px; z-index: 1000; display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 14px; border: 0; border-radius: 20px; background: var(--panel); color: var(--ink); font: 600 13px Inter, system-ui, sans-serif; cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+.pp-layers-btn:hover, .pp-layers-btn.on { color: var(--accent); }
+.pp-layers { position: absolute; right: 12px; top: 60px; z-index: 1001; width: 240px; display: grid; gap: 7px; padding: 12px 14px 14px; border-radius: 14px; background: var(--panel); color: var(--ink); box-shadow: 0 6px 24px rgba(0, 0, 0, .3); font-size: 12.5px; }
+.pp-layers[hidden] { display: none; }
+.pp-layers h5 { margin: 4px 0 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.pp-layers h5:first-child { margin-top: 0; }
 .pp-layers .ph-check { margin: 0; }
-.pp-search .inline { display: flex; gap: 6px; }
-.pp-search input { flex: 1; min-width: 0; }
-.pp-found { display: grid; place-items: center; width: 30px; height: 30px; color: var(--accent); filter: drop-shadow(0 1px 2px rgba(0, 0, 0, .6)); }
-.pp-found svg { width: 30px; height: 30px; fill: #fff; }
-.pp-layers .pp-lock { padding-top: 6px; border-top: 1px solid var(--line); }
-.pp-tile[draggable="false"] { cursor: pointer; }
-.photo-pin.placed { border-color: var(--accent); }
-.photo-pin.sel { outline: 3px solid var(--accent); outline-offset: 3px; }
+.pp-layers select { height: 32px; font-size: 12.5px; }
+.pp-toast { position: absolute; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1000; display: flex; align-items: center; gap: 14px; padding: 9px 12px 9px 16px; border-radius: 10px; background: #2b2b2b; color: #fff; font-size: 13px; box-shadow: 0 6px 20px rgba(0, 0, 0, .35); white-space: nowrap; }
+.pp-toast[hidden] { display: none; }
+.pp-toast button { all: unset; cursor: pointer; font-weight: 700; color: var(--accent); padding: 2px 4px; }
+.pp-right .leaflet-bottom.leaflet-right { margin-bottom: 4px; }
+
+/* A photo's pin: the picture with a point under it, which is where it is. Dragged from the list it looks the same. */
+.pp-pin { position: relative; width: 52px; height: 64px; cursor: pointer; }
+.pp-pin .photo-pin { position: absolute; left: 0; top: 0; transition: transform .12s; transform-origin: 50% 120%; }
+.pp-pin::after { content: ""; position: absolute; left: 50%; bottom: 0; margin-left: -7px; border: 7px solid transparent; border-bottom: 0; border-top: 13px solid #fff; filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .3)); }
+.pp-pin:hover .photo-pin, .pp-pin.hot .photo-pin { transform: scale(1.15); }
+.pp-pin.hot { z-index: 5; }
+.pp-pin.placed .photo-pin, .pp-pin.drag .photo-pin { border-color: var(--accent); }
+.pp-pin.placed::after, .pp-pin.drag::after { border-top-color: var(--accent); }
+.pp-pin.sel .photo-pin { box-shadow: 0 0 0 3px var(--accent), 0 4px 12px rgba(0, 0, 0, .45); }
+.pp-pin.guess .photo-pin { border-style: dashed; }
+.pp-pin.guess::before { content: "Suggested"; position: absolute; left: 50%; top: -22px; transform: translateX(-50%); padding: 1px 7px; border-radius: 6px; background: var(--accent); color: var(--accent-ink); font: 700 10px/1.6 Inter, system-ui, sans-serif; white-space: nowrap; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); }
+.pp-ghost { position: fixed; left: -400px; top: -400px; padding: 12px; pointer-events: none; }
 .pp-stop { width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--accent); background: #fff; box-sizing: border-box; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
-.pp-tip img { display: block; max-width: 180px; max-height: 180px; border-radius: 6px; margin-bottom: 4px; }
+.pp-found { display: grid; place-items: center; width: 32px; height: 32px; color: #ea4335; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .45)); }
+.pp-found svg { width: 32px; height: 32px; fill: currentColor; stroke: #fff; stroke-width: 1.5; }
+.pp-found-tip { font-weight: 700; }
+.pp-tip img { display: block; max-width: 200px; max-height: 200px; border-radius: 6px; margin-bottom: 4px; }
 @media (max-width: 760px) {
   .photos-dialog.placing .pp-wrap { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .pp-left { border-right: 0; border-bottom: 1px solid var(--line); }
+  .pp-search { width: calc(100% - 130px); }
 }
 
 /* The trip preview. */

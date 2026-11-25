@@ -6,6 +6,7 @@
 // the trip (and saved with it).
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
+import { moveTo } from "../map/move";
 import type { GeoHit, ItineraryItem, LegChoice, MustSeeHow } from "../../../shared/types";
 import { stayLoc, stayOn } from "../geo/locate";
 import { $, api, esc, toast } from "../core/dom";
@@ -818,7 +819,7 @@ function linkPlaces(log: HTMLElement) {
       if (!at || !m) { toast(`Couldn't find ${b.textContent} on the map`); return; }
       // The map stays there: redraws (lookups and routes arriving) don't fit it back to the whole trip.
       session.userMoved = true;
-      m.flyTo([at.lat, at.lng], Math.max(m.getZoom(), spot.zoom));
+      moveTo(m, [at.lat, at.lng], spot.zoom);
     };
   });
 }

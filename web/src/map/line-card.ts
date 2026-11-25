@@ -1,6 +1,7 @@
 // The card for a transport stop and its lines (top right of the map), like Google Maps': clicking a stop's icon lists
 // the lines calling there; clicking a line lists all its stops in order (from OpenStreetMap, fetched once and kept),
 // marks them on the map, and moves the map to any stop clicked. A line running both ways can be shown either way.
+import { moveTo } from "./move";
 import * as L from "leaflet";
 import { api, esc } from "../core/dom";
 import { icon } from "../core/icons";
@@ -116,7 +117,7 @@ function showLine(x: LineAt, dir: number, head: string, route: RouteStops, local
       const s = route.stops[+b.dataset.stop!];
       box.querySelectorAll(".lc-stops li.on").forEach((li) => li.classList.remove("on"));
       b.parentElement!.classList.add("on");
-      m?.flyTo([s.lat, s.lng], Math.max(m.getZoom(), 16), { duration: .6 });
+      if (m) moveTo(m, [s.lat, s.lng], 16);
     };
   });
   // The line's stops on the map, in its colour, so its whole way can be seen.

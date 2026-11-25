@@ -1,45 +1,28 @@
-// Search by name (biased to the current map view); picking a result opens the add form there.
+// The main map's search bar (see place-search.ts): picking a result goes there and opens the add form for it.
 import * as L from "leaflet";
 import type { GeoHit } from "../../../shared/types";
-import { $, api, esc } from "../core/dom";
+import { $ } from "../core/dom";
 import { session } from "../core/state";
-import { countryCodes } from "../geo/locate";
 import { openAddPopup } from "./add";
 import { map } from "./map";
+import { moveTo } from "./move";
+import { type PlaceSearch, placeSearch } from "./place-search";
 
-let results: GeoHit[] = [];
+let bar: PlaceSearch | null = null;
 
-async function search(e: Event) {
-  e.preventDefault();
-  const q = $<HTMLInputElement>("#mapSearchQ").value.trim(), ul = $("#mapResults");
-  if (!q || !map) return;
-  const c = map.getCenter();
-  ul.hidden = false;
-  ul.innerHTML = `<li class="muted">Searching…</li>`;
-  try {
-    results = await api<GeoHit[]>(`/api/search?${new URLSearchParams({ q, lat: c.lat.toFixed(4), lng: c.lng.toFixed(4), cc: countryCodes() })}`);
-    ul.innerHTML = results.length
-      ? results.map((r, i) => `<li data-r="${i}"><b>${esc(r.name)}</b><span>${esc(r.label)}</span></li>`).join("")
-      : `<li class="muted">Nothing found. Try a shorter name, or click the spot on the map.</li>`;
-  } catch (err) { ul.innerHTML = `<li class="muted">${esc((err as Error).message)}</li>`; }
-}
+/** Closes the results; true when they were open (a click on the map then only closes them). */
+export const closeMapSearch = () => !!bar?.close();
 
-function pick(e: Event) {
-  const i = (e.target as HTMLElement).closest<HTMLElement>("[data-r]")?.dataset.r;
-  const r = i != null ? results[+i] : undefined;
-  if (!r || !map) return;
-  $("#mapResults").hidden = true;
+function pick(r: GeoHit) {
+  if (!map) return;
   const at = L.latLng(r.lat, r.lng);
   session.userMoved = true;
   map.closePopup();
   const open = () => openAddPopup(at, { name: r.name, label: r.label, fromList: session.places.some((p) => p.title === r.name) });
-  if (map.getCenter().distanceTo(at) < 5 && map.getZoom() >= 16) return open();
-  map.flyTo(at, Math.max(map.getZoom(), 16), { duration: .8 });
   map.once("moveend", open);
+  moveTo(map, at, 16);
 }
 
 export function initMapSearch() {
-  $("#mapSearch").onsubmit = search;
-  $("#mapResults").onclick = pick;
-  $("#mapSearchQ").addEventListener("keydown", (e) => { if (e.key === "Escape") $("#mapResults").hidden = true; });
+  bar = placeSearch($<HTMLFormElement>("#mapSearch"), { map: () => map, placeholder: "Search places, streets, stations", onPick: pick });
 }

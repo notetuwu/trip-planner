@@ -255,7 +255,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const q = (url.searchParams.get("q") || "").trim();
       const num = (k: string) => (url.searchParams.has(k) ? +url.searchParams.get(k)! : NaN);
       if (!q) sendJson(res, 400, { error: "Type a place name" });
-      else sendJson(res, 200, await searchPlaces(q, num("lat"), num("lng"), url.searchParams.get("cc") || ""));
+      else sendJson(res, 200, await searchPlaces(q, num("lat"), num("lng"), url.searchParams.get("cc") || "", url.searchParams.get("quick") === "1"));
     }
     // The fuel estimate: fuel prices per country (?cc=DE,AT) and euro exchange rates.
     else if (method === "GET" && path === "/api/fuel") sendJson(res, 200, await fuelPrices((url.searchParams.get("cc") || "").split(",")));
