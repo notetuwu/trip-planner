@@ -43,7 +43,15 @@ export function ensureOllama(): Promise<boolean> {
     if (!launcher || Date.now() - lastTry < 120_000) return false;
     lastTry = Date.now();
     console.log("Ollama is installed but not running; starting it.");
-    try { spawn(launcher[0], launcher[1], { stdio: "ignore", detached: true, windowsHide: true }).unref(); } catch { return false; }
+    try {
+      if (process.platform === "win32" && launcher[1][0] === "serve") {
+        // Started detached, `ollama serve` has no console at all, and then every helper it starts (to look at the
+        // graphics card, to load a model) opens a console window that flashes up. Started by PowerShell with a hidden
+        // console instead, its helpers share that one; it keeps running after the app closes, as Ollama's own does.
+        spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", "Start-Process -FilePath $env:TP_OLLAMA -ArgumentList 'serve' -WindowStyle Hidden"],
+          { stdio: "ignore", windowsHide: true, env: { ...process.env, TP_OLLAMA: launcher[0] } });
+      } else spawn(launcher[0], launcher[1], { stdio: "ignore", detached: true, windowsHide: true }).unref();
+    } catch { return false; }
     for (let i = 0; i < 30; i++) {
       await new Promise((r) => setTimeout(r, 500));
       if (await running()) { console.log("Ollama is running."); return true; }

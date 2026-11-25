@@ -37,19 +37,24 @@ export function openPin(di: number, xi: number, anchor: HTMLElement) {
     <div class="pin-foot"><button type="button" class="link-btn" data-pin-map>${icon("crosshair")} Click it on the map instead</button></div>`;
   anchor.closest("li.item")?.appendChild(panel);
   const input = panel.querySelector("input")!, list = panel.querySelector<HTMLElement>(".pin-results")!;
-  const search = async () => {
-    const q = input.value.trim();
-    if (!q) return;
-    list.innerHTML = `<li class="hint">Searching…</li>`;
+  // As they type (Photon only: Nominatim's rules don't allow a search per key press); Enter or Search looks harder.
+  let asked = 0, typing = 0;
+  const search = async (quick = false) => {
+    const q = input.value.trim(), mine = ++asked;
+    clearTimeout(typing);
+    if (!q) { list.innerHTML = ""; return; }
+    if (!list.querySelector("[data-hit]")) list.innerHTML = `<li class="hint">Searching…</li>`;
     try {
-      const params = new URLSearchParams({ q, ...(here ? { lat: here.lat.toFixed(4), lng: here.lng.toFixed(4) } : {}) });
+      const params = new URLSearchParams({ q, ...(here ? { lat: here.lat.toFixed(4), lng: here.lng.toFixed(4) } : {}), ...(quick ? { quick: "1" } : {}) });
       const hits = await api<GeoHit[]>(`/api/search?${params}`);
+      if (mine !== asked || !panel.isConnected) return;
       list.innerHTML = hits.length ? hits.slice(0, 6).map((h, i) => `<li><button type="button" data-hit="${i}"><b>${esc(h.name || h.label.split(",")[0])}</b><small>${esc(h.label)}</small></button></li>`).join("")
-        : `<li class="hint">Nothing found. Try the town or address, or click it on the map.</li>`;
+        : `<li class="hint">Nothing found${quick ? " yet: press Enter to look harder" : ". Try the town or address, or click it on the map"}.</li>`;
       list.querySelectorAll<HTMLButtonElement>("[data-hit]").forEach((b) => { b.onclick = () => { const h = hits[+b.dataset.hit!]; panel.remove(); setAt(di, xi, h.lat, h.lng, h.label.split(",").slice(0, 2).join(",")); }; });
-    } catch (e) { list.innerHTML = `<li class="hint">${esc((e as Error).message)}</li>`; }
+    } catch (e) { if (mine === asked) list.innerHTML = `<li class="hint">${esc((e as Error).message)}</li>`; }
   };
   panel.querySelector("form")!.onsubmit = (e) => { e.preventDefault(); search(); };
+  input.oninput = () => { clearTimeout(typing); typing = window.setTimeout(() => search(input.value.trim().length >= 2), 280); };
   panel.querySelector<HTMLButtonElement>("[data-pin-close]")!.onclick = () => panel.remove();
   // The map's own picking: the click sets the spot instead of offering to add a place there (Cancel or Esc gives up).
   panel.querySelector<HTMLButtonElement>("[data-pin-map]")!.onclick = () => {
