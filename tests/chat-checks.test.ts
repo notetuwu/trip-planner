@@ -154,3 +154,36 @@ describe("book ahead and packing from the chat", () => {
     expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain('{"op": "packed"');
   });
 });
+
+describe("how they get around, through the chat", () => {
+  it("can set how they get to one stop, and how they get around", () => {
+    expect(editOps([{ op: "transport", day: 2, place: "Morinomiya", value: "Osaka Metro Chuo Line from Hommachi, 10 min", mode: "metro" }, { op: "set", field: "getAround", value: "transit" }, { op: "transport", day: 9, place: "x" }], 5))
+      .toEqual([{ op: "transport", day: 2, place: "Morinomiya", value: "Osaka Metro Chuo Line from Hommachi, 10 min", mode: "metro" }, { op: "set", field: "getAround", value: "transit" }]);
+    // A whole trip's stops in one change.
+    expect(editOps(Array.from({ length: 70 }, (_, k) => ({ op: "transport", day: 1, place: `Stop ${k}`, mode: "train" })), 5)).toHaveLength(60);
+  });
+  it("is told how to bring an older trip up to date", () => {
+    const p = companionPrompt({ model: "m", question: "x", days: 3 });
+    expect(p).toContain('{"op": "transport"');
+    expect(p).toContain("Bring the trip up to date");
+    expect(p).toContain('"getAround"');
+  });
+});
+
+import { cleanAnswer, parseQuestion } from "../server/trip/companion";
+describe("the chat's questions", () => {
+  const reply = 'To update the transport I need to know how you got around.\nQUESTION: {"question": "How do you get around?", "options": ["Public transport and the odd taxi", "By car", "A mix"], "multi": false}';
+  it("reads a question with answers to pick from, and keeps it out of the text", () => {
+    expect(parseQuestion(reply)).toEqual({ q: "How do you get around?", options: ["Public transport and the odd taxi", "By car", "A mix"] });
+    expect(cleanAnswer(reply)).toBe("To update the transport I need to know how you got around.");
+  });
+  it("hides a question still being written", () => {
+    expect(cleanAnswer('To update it I need one thing.\nQUESTION: {"question": "How do')).toBe("To update it I need one thing.");
+    expect(cleanAnswer("To update it I need one thing.\nQUES")).toBe("To update it I need one thing.");
+  });
+  it("needs a question and at least two answers", () => {
+    expect(parseQuestion('QUESTION: {"question": "Which?", "options": ["Only one"]}')).toBeNull();
+    expect(parseQuestion('QUESTION: {"question": "Which days?", "options": ["Day 1", "Day 2", "Day 2"], "multi": true}')).toEqual({ q: "Which days?", options: ["Day 1", "Day 2"], multi: true });
+  });
+  it("is told it can ask", () => expect(companionPrompt({ model: "m", question: "x", days: 3 })).toContain("QUESTION: {"));
+});

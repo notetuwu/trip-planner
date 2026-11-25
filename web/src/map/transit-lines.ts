@@ -3,6 +3,7 @@
 // its name on hover. Shown from street level up (zoomed out, a country's lines would be too many to draw or fetch). The
 // server fetches them by area and keeps them; this asks for the areas in view.
 import * as L from "leaflet";
+import { prefs } from "../core/prefs";
 import { api, esc } from "../core/dom";
 import { type IconName, icon } from "../core/icons";
 import { initLineCard, openStop } from "./line-card";
@@ -33,11 +34,18 @@ let retry: number | undefined, pending = 0;
 const listeners = new Set<() => void>();
 const changed = () => { for (const f of listeners) f(); };
 
-export const isLineOn = (k: LineKind) => on.has(k);
+/** Switched on in Settings → Map (off by default). */
+export const linesEnabled = () => !!prefs.app.transitLines;
+/** The kinds shown: those switched on in the Layers panel, while the lines are enabled at all. */
+const shownKinds = () => (linesEnabled() ? on : new Set<LineKind>());
+export const isLineOn = (k: LineKind) => shownKinds().has(k);
 /** Calls `f` when kinds are switched or the loading state changes. */
 export const onLinesChange = (f: () => void) => { listeners.add(f); };
 /** For the panel's note: areas still loading, and whether it's zoomed out too far for any lines to show. */
-export const linesState = () => ({ on: on.size, pending, far: on.size > 0 && !!m && m.getZoom() < MIN_ZOOM });
+export const linesState = () => ({ on: shownKinds().size, pending, far: shownKinds().size > 0 && !!m && m.getZoom() < MIN_ZOOM });
+
+/** Settings changed (the lines switched on or off): drawn and asked for again. */
+export function linesSettingChanged() { draw(); load(); changed(); }
 
 export function setLineOn(k: LineKind, yes: boolean) {
   if (yes) on.add(k); else on.delete(k);
@@ -62,14 +70,14 @@ function viewCells(): string[] {
 }
 
 let asked = "";
-/** Asks for the cells in view not here yet (middle first); the server fetches them one at a time before anything else,
+/** Asks for the cells in view not here yet (middle first); the server fetches them before anything else,
  *  so this asks again meanwhile. Nothing to ask any more (lines off, zoomed out, panned away): it says so, so the server
  *  stops fetching the old view. */
 async function load() {
   clearTimeout(retry);
   // Also, at street level, cells from before stops were added: the server fetches them again with their stops.
   const needStops = !!m && m.getZoom() >= STOPS_ZOOM;
-  const want = on.size ? viewCells().filter((id) => !cells.has(id) || (needStops && !cells.get(id)!.s)) : [];
+  const want = shownKinds().size ? viewCells().filter((id) => !cells.has(id) || (needStops && !cells.get(id)!.s)) : [];
   if (!want.length) {
     if (asked) { asked = ""; api("/api/lines?cells=").catch(() => {}); }
     if (pending) { pending = 0; changed(); }
@@ -101,7 +109,7 @@ export function lineColour(line: Line, kind: LineKind) {
 /** Draws the switched-on kinds in the cells in view: trains first, buses on top. */
 function draw() {
   layer.clearLayers();
-  if (!on.size) return;
+  if (!shownKinds().size) return;
   const ids = viewCells();
   for (const kind of LINE_KINDS) {
     if (!on.has(kind.k)) continue;

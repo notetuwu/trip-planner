@@ -58,8 +58,19 @@ export function drawMap({ fit = false } = {}) {
 
   if ((fit || !session.userMoved) && bounds.length) {
     if (fit) session.userMoved = false;
+    // A hidden map (a phone's other tab, a hidden column) has no size to fit into: it's fitted when it shows.
+    if (!map.getContainer().clientWidth) { fitLater = true; renderDayChips(); return; }
+    fitLater = false;
     // Extra top padding keeps pins out from under the search box.
     map.flyToBounds(L.latLngBounds(bounds), { maxZoom: 14, duration: .6, paddingTopLeft: [30, 70], paddingBottomRight: [30, 30] });
   }
   renderDayChips();
+}
+
+let fitLater = false;
+/** The map has come into view: fitted to the trip if that was missed while it was hidden. */
+export function mapShown() {
+  if (!map?.getContainer().clientWidth) return;
+  map.invalidateSize();
+  if (fitLater) drawMap({ fit: !session.userMoved });
 }

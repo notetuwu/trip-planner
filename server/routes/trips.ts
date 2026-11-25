@@ -14,7 +14,7 @@ const addDays = (iso: string, n: number) => {
 const round = (n: number) => Math.round(n * 1000) / 1000;
 
 /** Where each looked-up name is: the first cached answer for it (any countries, any "near"), by the name alone. */
-function placesByName() {
+export function placesByName() {
   const out = new Map<string, { lat: number; lng: number; cc?: string; country?: string }>();
   for (const [k, v] of Object.entries(geoCache.data)) {
     if (!v || typeof v !== "object" || typeof (v as { lat?: unknown }).lat !== "number") continue;

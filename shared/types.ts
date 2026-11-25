@@ -112,6 +112,9 @@ export interface ItineraryItem {
   /** How they get here from the stop before, set by the travelers themselves (the map otherwise reads it from
    *  "transport"): a mode for each part, through the places on the way (modes has one more entry than via). */
   leg?: { modes: LegChoice[]; via: { name: string; lat: number; lng: number }[] };
+  /** The plan's own words for how they get here, from before the timetable's line replaced them (see shared/rides.ts):
+   *  set once, so a stop is only ever updated by itself once. */
+  transportWas?: string;
 }
 
 /** A part of a leg as the travelers set it: on foot, by bike, by road, by tram/metro/bus line, by train, by boat, by
@@ -179,6 +182,8 @@ export interface TripRequest {
   dayStart?: string;
   /** Breakfast at the hotel, out at a café, brunch instead, skipped ("" or unset: the planner decides). */
   breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
+  /** How they get around: public transport and the odd taxi, their car, or "" (the planner decides). */
+  getAround?: "" | "transit" | "car";
   model: string;
   interests: string;
   /** What they want to see, in their words. */
@@ -279,6 +284,76 @@ export type StreamEvent =
 export interface SaveSummary {
   name: string;
   savedAt: string;
+  /** Kept in step with Drive folders (Settings → Sync). */
+  synced?: boolean;
+  /** When sync last wrote a newer version from Drive into this save (ms; the page reloads it, see saves.ts). */
+  syncAt?: number;
+}
+
+/** A trip shared through Drive: which trip it is wherever it's copied, who shared it, and whether others may change it.
+ *  Kept in the trip itself, so it goes along to every folder and computer. */
+export interface TripShare {
+  id: string;
+  /** The Google account that shared it (only they can change `mode`). */
+  owner: string;
+  ownerName?: string;
+  mode: "edit" | "view";
+}
+
+/** A sync folder in Drive (Settings → Sync). */
+export interface SyncFolder {
+  id: string;
+  /** The name it has in this app ("Friends"). */
+  label: string;
+  /** Its name in Drive. */
+  name: string;
+  /** The account may add and change files in it (otherwise trips there can only be opened). */
+  canWrite: boolean;
+  error?: string;
+}
+
+/** How a saved trip syncs, for Your trips. */
+export interface TripSyncInfo {
+  folders: string[];
+  share: TripShare | null;
+  /** The signed-in account shared it (or it isn't shared yet). */
+  mine: boolean;
+  /** Changes made here are synced (it's yours, or shared as "can edit"). */
+  canEdit: boolean;
+  /** Changed here and in Drive since the last sync: the person picks which to keep. */
+  conflicts: { folder: string; by: string; at: string }[];
+  error?: string;
+}
+
+export interface SyncStatus {
+  /** A Google client ID and secret are set up (Settings → Sync; see docs/google-sync.md). */
+  configured: boolean;
+  /** Where they come from (entered in the app, or environment variables), and the ID. The secret isn't sent. */
+  clientFrom: "app" | "env" | "";
+  clientId: string;
+  signedIn: boolean;
+  email: string;
+  name: string;
+  /** Google signed this computer out (the access was removed in the Google account): sign in again. */
+  expired?: boolean;
+  signingIn: boolean;
+  signInError: string;
+  folders: SyncFolder[];
+  /** By save name. */
+  trips: Record<string, TripSyncInfo>;
+  running: boolean;
+  lastRun: number;
+  error: string;
+  /** Things the person should know about (a trip removed from a folder in Drive, so it stopped syncing there). */
+  notices: string[];
+}
+
+/** A trip in a sync folder that isn't on this computer yet. */
+export interface RemoteTripCard extends TripCard {
+  folder: string;
+  fileId: string;
+  by: string;
+  share: TripShare | null;
 }
 
 /** A saved trip as a card in Your trips (GET /api/trips). */

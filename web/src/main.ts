@@ -1,5 +1,7 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
+import { goToStop } from "./map/days";
+import { initLayout } from "./core/layout";
 import { initBookings, renderBookings } from "./trip/bookings";
 import { $, api, closeOnBackdrop } from "./core/dom";
 import { initUpdates } from "./core/update";
@@ -20,7 +22,7 @@ import { initSearchKey } from "./itinerary/search";
 import { loadWeather } from "./itinerary/weather";
 import { initDays, selectDay } from "./map/days";
 import { drawMap } from "./map/draw";
-import { updateLegInfo } from "./map/legs";
+import { initRideStops, setOnPlanChanged, updateLegInfo } from "./map/legs";
 import { initMap } from "./map/map";
 import { dayLegs, routeKey, routes, setOnRouted } from "./map/routes";
 import { initMapSearch } from "./map/search";
@@ -51,6 +53,9 @@ onGeocoded(() => {
   warmNearby();
 });
 setOnRouted(() => { drawMap(); updateLegInfo(); });
+// Stops whose words were changed to the timetable's line: drawn again (their leg may now go another way).
+setOnPlanChanged(() => { renderItinerary(); drawMap(); });
+initRideStops(goToStop);
 
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
@@ -74,6 +79,7 @@ addEventListener("pagehide", () => navigator.sendBeacon(`/api/bye?id=${pageId}`)
 addEventListener("pageshow", (e) => { if (e.persisted) heartbeat(); }); // back from the browser's page cache
 
 initMap();
+initLayout();
 refreshModels();
 renderStays(); renderTripTitle(); renderItinerary();
 refreshSaves();

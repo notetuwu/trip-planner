@@ -11,6 +11,21 @@ interface RouteStops { id: number; name: string; ref: string; colour?: string; s
 type LineAt = { line: Line; colour: string };
 
 let m: L.Map | null = null, box: HTMLElement, marks: L.LayerGroup;
+/** The lines' stops asked for (or being asked for), by route: the stop's card asks for all its lines at once. */
+const routes = new Map<number, Promise<RouteStops | null>>();
+
+/** Asks for the stops of the routes not asked for yet, in one go (a failed ask is asked again next time). */
+function fetchRoutes(ids: number[]) {
+  const want = [...new Set(ids)].filter((id) => !routes.has(id));
+  if (!want.length) return;
+  const all = api<Record<number, RouteStops | null>>(`/api/lines/routes?ids=${want.join(",")}`);
+  for (const id of want) {
+    const one = all.then((r) => r[id] ?? null);
+    one.catch(() => routes.delete(id));
+    routes.set(id, one);
+  }
+}
+const routeStops = (id: number) => { fetchRoutes([id]); return routes.get(id)!; };
 /** What the card shows, so "Back" can return to the stop. */
 let atStop: { name: string; at: [number, number]; lines: LineAt[] } | null = null;
 
@@ -46,28 +61,56 @@ export function openStop(name: string, at: [number, number], lines: LineAt[]) {
   box.querySelectorAll<HTMLButtonElement>("[data-line]").forEach((b) => { b.onclick = () => openLine(list[+b.dataset.line!], 0); });
 }
 
-/** A line's card: all its stops in order (the stop it was opened from marked), each moving the map there. */
+/** The line on show (a list arriving for another one is ignored). */
+let showing = 0;
+interface Local { name: string; stops: RouteStops["stops"]; areas: number; edge: boolean }
+
+/**
+ * A line's card: all its stops in order (the stop it was opened from marked), each moving the map there. At once from
+ * the downloaded areas; OpenStreetMap's own list of the route (exact, both directions, beyond the downloaded areas) is
+ * asked for meanwhile and replaces it when it comes (it's kept, so the next time it's there at once).
+ */
 async function openLine(x: LineAt, dir: number) {
-  const ids = x.line.r || [], [ref, rest] = split(x.line.n), k = kindOf(x.line);
+  const ids = x.line.r || [], [ref, rest] = split(x.line.n), k = kindOf(x.line), turn = ++showing;
   const head = `<div class="lc-title"><i class="lc-kind" style="--c:${k.colour}">${icon(k.ic)}</i>${chip(ref, x.colour)}<b>${esc(rest || x.line.n || k.name)}</b></div>`;
-  frame(head, `<p class="hint">Loading the line's stops…</p>`);
-  let route: RouteStops;
-  try { route = await api<RouteStops>(`/api/lines/route?id=${ids[dir]}`); } catch (e) {
-    frame(head, `<p class="hint">${esc((e as Error).message)}</p>${atStop ? `<button type="button" class="link-btn" data-back>Back to ${esc(atStop.name || "the stop")}</button>` : ""}`);
-    box.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => atStop && openStop(atStop.name, atStop.at, atStop.lines));
+  const exact = routeStops(ids[dir]);
+  let shownExact = false;
+  exact.then((r) => { if (r && turn === showing) { shownExact = true; showLine(x, dir, head, r, null); } }, () => {});
+  const at = atStop?.at;
+  const local = at ? await api<Local>(`/api/lines/local?ids=${ids.join(",")}&at=${at[0]},${at[1]}`).catch(() => null) : null;
+  if (turn !== showing || shownExact) return;
+  if (local && local.stops.length > 1) {
+    // The other direction is the same stops the other way round.
+    const stops = dir % 2 ? [...local.stops].reverse() : local.stops;
+    showLine(x, dir, head, { id: ids[dir], name: local.name, ref, stops }, local);
     return;
   }
+  frame(head, `<p class="hint">Loading the line's stops…</p>`);
+  try {
+    const got = await exact;
+    if (turn !== showing) return;
+    if (!got) throw new Error("OpenStreetMap has no stop list for this line.");
+  } catch (e) {
+    if (turn !== showing) return;
+    frame(head, `<p class="hint">${esc((e as Error).message)}</p>${atStop ? `<button type="button" class="link-btn" data-back>Back to ${esc(atStop.name || "the stop")}</button>` : ""}`);
+    box.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => atStop && openStop(atStop.name, atStop.at, atStop.lines));
+  }
+}
+
+function showLine(x: LineAt, dir: number, head: string, route: RouteStops, local: Local | null) {
+  const ids = x.line.r || [];
   const colour = x.colour, here = atStop?.name || "";
   const first = route.stops[0]?.name, last = route.stops[route.stops.length - 1]?.name;
   frame(head, `
     <div class="lc-tools">
       ${atStop ? `<button type="button" class="link-btn" data-back>${icon("arrowLeftRight")} Back to ${esc(atStop.name || "the stop")}</button>` : ""}
-      ${ids.length > 1 ? `<button type="button" class="link-btn" data-dir title="Show the stops the other way round">Other direction</button>` : ""}
+      ${ids.length > 1 || local ? `<button type="button" class="link-btn" data-dir title="Show the stops the other way round">Other direction</button>` : ""}
     </div>
-    ${first && last ? `<p class="hint">${esc(first)} → ${esc(last)} · ${route.stops.length} stops</p>` : ""}
+
+    ${first && last ? `<p class="hint">${esc(first)} → ${esc(last)} · ${route.stops.length} stops${local?.edge ? " (as far as your map downloads go)" : ""}</p>` : ""}
     <ol class="lc-stops" style="--c:${colour}">${route.stops.map((s, i) => `<li class="${s.name && s.name === here ? "here" : ""}"><button type="button" data-stop="${i}">${esc(s.name || "Stop")}</button></li>`).join("")}</ol>`);
   box.querySelector<HTMLButtonElement>("[data-back]")?.addEventListener("click", () => atStop && openStop(atStop.name, atStop.at, atStop.lines));
-  box.querySelector<HTMLButtonElement>("[data-dir]")?.addEventListener("click", () => openLine(x, (dir + 1) % ids.length));
+  box.querySelector<HTMLButtonElement>("[data-dir]")?.addEventListener("click", () => openLine(x, (dir + 1) % Math.max(2, ids.length)));
   box.querySelectorAll<HTMLButtonElement>("[data-stop]").forEach((b) => {
     b.onclick = () => {
       const s = route.stops[+b.dataset.stop!];

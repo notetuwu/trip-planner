@@ -1,6 +1,6 @@
 // Downloading the map's transport lines ahead, in the background (Settings → General → Map): the areas around the trip's
 // stays and its day's stops, plus any area downloaded from the Layers panel ("Download this area"). The server fetches
-// them slowly, one at a time and never while a plan is being made, and keeps them; this tells it which areas and shows
+// them in the background (blocks of four, never while a plan is being made), and keeps them; this tells it which areas and shows
 // how far it got.
 import type * as L from "leaflet";
 import { api } from "../core/dom";
@@ -44,14 +44,16 @@ const savedAreas = (): string[] => { try { return JSON.parse(localStorage.getIte
 /** Tells the server what to download (nothing when it's switched off) and notes how far it got. */
 async function sync(force = false) {
   clearTimeout(timer);
-  const cells = prefs.app.linesDownload ? wanted() : savedAreas();
+  // Switched off in Settings → Map: nothing to download (the server stops what's waiting).
+  const cells = !prefs.app.transitLines ? [] : prefs.app.linesDownload ? wanted() : savedAreas();
   const key = cells.slice().sort().join(",");
   // Unchanged and done: nothing to ask. Otherwise ask (it answers the progress too), and again in a while. The cells in
   // view go along, so the server fetches the trip's areas you're looking at first.
   if (force || key !== lastKey || (last?.left ?? 1) > 0) {
     try {
       const first = theMap ? cellsInView(theMap).slice(0, 400) : [];
-      last = await api<DownloadState>("/api/lines/prefetch", { method: "POST", body: JSON.stringify({ cells, first }) });
+      last = await api<DownloadState>("/api/lines/prefetch", { method: "POST", body: JSON.stringify({ cells, first, again }) });
+      again = [];
       lastKey = key;
       changed();
     } catch { /* the server is busy or away: next round */ }
@@ -67,6 +69,14 @@ export function initLinesDownload(map: L.Map) {
   window.setTimeout(() => sync(true), 8000);
   map.on("moveend", () => { clearTimeout(moved); moved = window.setTimeout(() => { if ((last?.left ?? 0) > 0) sync(true); }, 1500); });
 }
+/** Cells to download even if their download was cancelled (sent once with the next ask). */
+let again: string[] = [];
+
+/** Stops the download of these cells (the whole request each is in); they're left alone until downloaded by hand. */
+export async function cancelDownload(cells: string[]) {
+  await api("/api/lines/cancel", { method: "POST", body: JSON.stringify({ cells }) }).catch(() => {});
+}
+
 /** Settings changed (on or off, the radius): ask again now. */
 export const resyncLines = () => sync(true);
 
@@ -77,6 +87,8 @@ export function downloadView(map: L.Map) {
   for (let r = Math.floor(b.getSouth() / CELL); r <= Math.floor(b.getNorth() / CELL); r++)
     for (let c = Math.floor(b.getWest() / CELL); c <= Math.floor(b.getEast() / CELL); c++) add.add(`${r}_${c}`);
   localStorage.setItem(AREAS, JSON.stringify([...add].slice(-3000)));
+  // Downloaded by hand: also the cells whose download was cancelled before.
+  again = [...add];
   sync(true);
   return add.size - before;
 }

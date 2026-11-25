@@ -193,7 +193,7 @@
 .stop-pin:hover { transform: scale(1.18); }
 .stop-pin svg { width: 11px; height: 11px; }
 /* The stop / line card, top right of the map. */
-.line-card { width: 300px; max-height: min(520px, 70vh); display: flex; flex-direction: column; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-pop); overflow: hidden; margin: 10px 10px 0 0 !important; }
+.line-card { width: fit-content; min-width: 260px; max-width: min(460px, calc(100vw - 40px)); max-height: min(520px, 70vh); display: flex; flex-direction: column; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-pop); overflow: hidden; margin: 10px 10px 0 0 !important; }
 .line-card[hidden] { display: none; }
 .lc-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 10px 10px 14px; border-bottom: 1px solid var(--line); }
 .lc-head > div { flex: 1; min-width: 0; display: grid; gap: 2px; font-size: 14px; }
@@ -305,7 +305,10 @@
 .pv-body button span { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 7px; background: linear-gradient(transparent, rgba(0, 0, 0, .75)); color: #fff; font-size: 13px; font-weight: 600; line-height: 1.25; }
 .pv-body button span:empty { display: none; }
 .pv-hero { position: relative; display: grid; grid-template-columns: 2fr 1fr 1fr; grid-template-rows: 170px 170px; gap: 6px; border-radius: 14px; overflow: hidden; background: #26313a; }
-.pv-hero .pv-hi { border-radius: 0; }
+.pv-hero .pv-hi { all: unset; box-sizing: border-box; position: relative; display: block; overflow: hidden; cursor: pointer; border-radius: 0; background: rgba(128, 128, 128, .16); }
+.pv-hero .pv-hi img { width: 100%; height: 100%; object-fit: cover; display: block; transform: none !important; }
+.pv-hero .pv-hi:hover img { filter: brightness(1.08); }
+.ph-hero { margin: 8px 0 6px; }
 .pv-hero .pv-hi:first-child { grid-row: span 2; }
 .pv-hero.n0 { grid-template-rows: 90px 90px; }
 .pv-hero.n1 .pv-hi:first-child { grid-column: 1 / -1; }
@@ -329,3 +332,15 @@
 .pv-credits summary { cursor: pointer; }
 .pv-credits ul { padding-left: 18px; }
 @media (max-width: 700px) { .pv-hero { grid-template-rows: 120px 120px; } .pv-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); } }
+
+/* A download's block on the area grid: the server it's on and for how long. */
+.lines-job { position: absolute; transform: translate(-50%, -50%); white-space: nowrap; padding: 2px 8px; border-radius: 999px; background: #ef6c00; color: #fff; font: 600 11px/1.6 Inter, system-ui, sans-serif; box-shadow: 0 1px 4px rgba(0, 0, 0, .35); pointer-events: none; }
+.lines-job { pointer-events: auto; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.lines-job b { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: rgba(0, 0, 0, .25); font-size: 12px; line-height: 1; }
+.lines-job:hover { background: #d84315; }
+
+/* Where to get on a ride: the line's badge on the map. */
+.ride-board { position: absolute; transform: translate(-50%, -50%); }
+.ride-board .line-chip { display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 20px; line-height: 20px; font-size: 12px; border: 2px solid #fff; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, .4); }
+.ride-board .line-chip svg { width: 12px; height: 12px; }
+.leg-tip-pop .leaflet-popup-content { margin: 6px 10px; font-weight: 600; }

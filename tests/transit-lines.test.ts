@@ -1,8 +1,8 @@
 // The map's transport line overlays: Overpass's answer for a cell (each route's tags, then the ids of its ways and stops
 // in the cell, then every way once with its shape, then the stops) becomes one line per line and direction pair,
 // sharing the shapes, with the stops and the lines calling there.
-import { describe, expect, it } from "vitest";
-import { toCell } from "../server/geo/transit-lines";
+import { describe, expect, it, vi } from "vitest";
+import { cancelLines, inSwissReach, linesFor, splitArea, toCell } from "../server/geo/transit-lines";
 
 let next = 1000;
 const rel = (tags: Record<string, string>, id = next++) => ({ type: "relation", id, tags });
@@ -74,5 +74,42 @@ describe("toCell", () => {
       [47.055, 8.305, "Kantonalbank", [0]],
       [47.059, 8.309, "Schwanenplatz", [1]],
     ]);
+  });
+});
+
+describe("areas fetched four at a time", () => {
+  // Cells are 0.05° wide: 0_0 is 0–0.05 N, 0–0.05 E; 0_1 east of it; 1_0 north of it.
+  it("splits a block's answer into its cells, each line's shape running on to the cell's edge", () => {
+    const els = [rel({ type: "route", route: "bus", ref: "5" }, 1), ...ids(10), ...stopIds(20, 21),
+      way(10, [[0.01, 0.01], [0.02, 0.04], [0.03, 0.06], [0.04, 0.09]]),
+      { type: "node", id: 20, lat: 0.01, lon: 0.01, tags: { name: "West" } }, { type: "node", id: 21, lat: 0.04, lon: 0.09, tags: { name: "East" } }];
+    const parts = splitArea(els, ["0_0", "0_1", "1_0"]);
+    const west = toCell(parts.get("0_0")!), east = toCell(parts.get("0_1")!), north = toCell(parts.get("1_0")!);
+    expect(west.s!.map((x) => x[2])).toEqual(["West"]);
+    expect(east.s!.map((x) => x[2])).toEqual(["East"]);
+    // West has its two points and the next one over the edge; east the same from its side.
+    expect(Object.values(west.w)[0]).toEqual([[[0.01, 0.01], [0.02, 0.04], [0.03, 0.06]]]);
+    expect(Object.values(east.w)[0]).toEqual([[[0.02, 0.04], [0.03, 0.06], [0.04, 0.09]]]);
+    expect(north.l).toEqual([]);
+  });
+
+  it("sends the cells in and around Switzerland to the Swiss server", () => {
+    const cell = (lat: number, lng: number) => `${Math.floor(lat / 0.05)}_${Math.floor(lng / 0.05)}`;
+    expect(inSwissReach(cell(47.05, 8.31))).toBe(true); // Lucerne
+    expect(inSwissReach(cell(46.0, 8.95))).toBe(true); // Lugano
+    expect(inSwissReach(cell(45.44, 10.99))).toBe(false); // Verona
+    expect(inSwissReach(cell(45.9, 6.12))).toBe(false); // Annecy
+    expect(inSwissReach(cell(48.14, 11.58))).toBe(false); // Munich
+  });
+
+  it("leaves a cancelled area alone, even while it's in view", () => {
+    const asked = vi.fn();
+    vi.stubGlobal("fetch", asked);
+    cancelLines(["-900_-900"]);
+    const r = linesFor(["-900_-900"]);
+    expect(r.pending).toBe(0);
+    expect(r.cells["-900_-900"]).toEqual({ l: [], w: {} });
+    expect(asked).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

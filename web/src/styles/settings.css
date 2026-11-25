@@ -785,6 +785,7 @@ button.refine:hover { border-color: var(--accent); }
   .city-band .band-town { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .city-band .replan-stay { order: 2; }
   .day { margin-left: -8px; margin-right: -8px; padding: 10px 8px; }
+  .it-search { margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; }
   .day-head { gap: 6px 10px; }
   .day-head .right { margin-left: auto; }
   .item { padding-left: 16px; }
@@ -916,3 +917,16 @@ button.refine:hover { border-color: var(--accent); }
 @keyframes lightbox-drift { from { transform: scale(1); } to { transform: scale(1.07); } }
 @media (prefers-reduced-motion: reduce) { .lightbox .lightbox-stage img.drift { animation: none; } }
 .lightbox-bar > button[data-play] { height: 30px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+
+/* A question from the chat, with answers to pick from. */
+.cp-ask { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; gap: 8px; }
+.cp-ask b { margin: 0; }
+.cp-ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.cp-ask-opts .btn { height: auto; min-height: 30px; padding: 5px 12px; white-space: normal; text-align: left; }
+.cp-ask-multi { display: grid; gap: 4px; justify-items: start; }
+.cp-ask-multi .btn { margin-top: 4px; }
+.cp-ask-own { display: flex; gap: 6px; }
+.cp-ask-own input { flex: 1; height: 32px; }
+.cp-ask-own .btn { height: 32px; }
+.cp-ask.done { gap: 2px; opacity: .85; }
+.cp-ask.done .hint { display: flex; align-items: center; gap: 5px; }

@@ -305,3 +305,32 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 .rc-list li .hint { margin: 0; }
 .rc-list li.empty { display: block; border-style: dashed; background: none; color: var(--muted); font-size: 12.5px; }
 .rc-list .btn { height: 30px; flex: none; }
+
+/* Syncing trips through Drive folders: on the cards in Your trips, the trips in the folders, and the per-trip panel. */
+.tc-sync { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; color: var(--muted); min-width: 0; }
+.tc-sync .bad { color: var(--warn); }
+.tc-clash { margin-top: 8px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, transparent); font-size: 12px; line-height: 1.4; cursor: default; }
+.tc-clash > .i { color: var(--warn); vertical-align: -2px; }
+.tc-clash span { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.tc-clash .btn { font-size: 12px; padding: 3px 9px; min-height: 0; }
+.trip-card.remote { border-style: dashed; }
+.trips-remote-hint { margin: -4px 0 10px; }
+.trips-notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
+.trips-notice > div { flex: 1; }
+.trips-notice p { margin: 0 0 4px; }
+.view-only { display: block; font-size: 12px; color: var(--muted); }
+.sync-dialog { width: min(520px, 94vw); }
+.sync-body { display: grid; gap: 12px; }
+.sync-folders { display: grid; gap: 6px; }
+.sync-folder { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.sync-folder.off { opacity: .55; cursor: default; }
+.sync-folder > span { display: grid; gap: 2px; }
+.sync-acts { display: flex; justify-content: flex-end; }
+.sync-add { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; }
+.sync-add input[type="url"] { flex: 2 1 260px; }
+.sync-add input[type="text"], .sync-add input[type="password"] { flex: 1 1 140px; }
+#syncClientId { flex: 1 1 100%; }
+.sync-guide-box { margin: 4px 0 10px; }
+.sync-guide-box summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.sync-guide li { margin-bottom: 10px; }
+.sync-guide .link-row { margin: 4px 0; }

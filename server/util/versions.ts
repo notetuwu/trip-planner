@@ -64,6 +64,17 @@ export function keepVersion(root: string, name: string, file: string, force = fa
   return true;
 }
 
+/** Keeps a trip that isn't the save's content as one of its versions (the other side's copy, before sync replaces it with
+ *  this computer's). Nothing is kept when it's the same as the newest version. */
+export function keepVersionText(root: string, name: string, text: string): boolean {
+  const dir = histDir(root, name), [newest] = stamps(dir);
+  if (newest != null && sameText(fs.readFileSync(path.join(dir, `${newest}.json`), "utf8"), text)) return false;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, `${nextStamp(dir)}.json`), text);
+  prune(dir, MAX_VERSIONS);
+  return true;
+}
+
 export function listVersions(root: string, name: string) {
   const dir = histDir(root, name);
   return stamps(dir).map((t) => {

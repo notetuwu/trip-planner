@@ -2,7 +2,9 @@
 // the trip as a file to share (someone else imports it into their planner) or keep a copy of.
 import type { ListSummary, PlaceList, SaveSummary } from "../../../shared/types";
 import { renderBookings } from "../trip/bookings";
-import { $, api, esc, toast } from "../core/dom";
+import { $, api, apiFetch, esc, toast } from "../core/dom";
+import { icon } from "../core/icons";
+import { isOwner, loadSyncStatus, ownerName, syncStatus } from "./sync-client";
 import { prefs } from "../core/prefs";
 import { initTrips, load as reloadTrips, openTrips } from "./trips";
 import { initRecover } from "./recover";
@@ -28,18 +30,42 @@ const picker = () => $<HTMLSelectElement>("#saveList");
 let saved: string[] = [];
 /** Whether the trip on screen has changes its save doesn't have yet, and what's being done about it. */
 let unsaved = false, saving = false, failed = false;
+/** Saves kept in step with Drive folders, and when sync last wrote Drive's version into each (from the server's list). */
+let synced = new Set<string>(), syncAt: Record<string, number> = {};
+/** The newest Drive update of the open trip's save that the page has: a write from before a newer one is refused (409).
+ *  Kept in the browser with the trip, so a page opened again doesn't write its older copy over one that came in while it
+ *  was closed. */
+const SEEN_KEY = "trip-planner-sync-seen";
+let seenAt = (() => {
+  try { const s = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return s && s.name === state.saveName ? Number(s.at) || 0 : 0; } catch { return 0; }
+})();
+function setSeen(name: string, at: number) {
+  seenAt = at;
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify({ name, at })); } catch { /* storage blocked */ }
+}
 /** Under Your trips: the save the trip on screen belongs to, and whether it's up to date. */
 function showCurrent() {
   const current = state.saveName && saved.includes(state.saveName) ? state.saveName : "";
   const el = $("#currentSave");
   if (!current) { el.textContent = "This trip isn't saved yet (a copy is kept if you open another)"; el.className = "hint"; return; }
   const [text, cls] = failed ? ["couldn't be saved just now, trying again", "bad"] : saving ? ["saving…", ""] : unsaved ? [prefs.app.liveSave ? "saving in a moment" : "unsaved changes: press Save", "warn"] : ["all changes saved", "ok"];
-  el.innerHTML = `Saved as <b>${esc(current)}</b> · <span class="save-state ${cls}">${text}</span>`;
+  // A trip someone else shared as view only: what's changed here isn't shared, and their updates replace it.
+  const viewOnly = state.sync?.mode === "view" && syncStatus?.signedIn && !isOwner(state.sync);
+  el.innerHTML = `Saved as <b>${esc(current)}</b>${synced.has(current) ? ` ${icon("cloud")}` : ""} · <span class="save-state ${cls}">${text}</span>`
+    + (viewOnly ? `<span class="view-only">View only, shared by ${esc(ownerName(state.sync))} · <button type="button" class="link-btn" id="ownCopy">Make my own copy</button></span>` : "");
+  el.querySelector<HTMLButtonElement>("#ownCopy")?.addEventListener("click", (e) => { e.stopPropagation(); ownCopy(); });
+}
+
+async function listSaves() {
+  const list = await api<SaveSummary[]>("/api/saves");
+  synced = new Set(list.filter((s) => s.synced).map((s) => s.name));
+  syncAt = Object.fromEntries(list.filter((s) => s.syncAt).map((s) => [s.name, s.syncAt!]));
+  return list;
 }
 
 export async function refreshSaves(select?: string) {
   try {
-    const list = await api<SaveSummary[]>("/api/saves");
+    const list = await listSaves();
     picker().innerHTML = `<option value="">— Saved trips —</option>` +
       list.map((s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${new Date(s.savedAt).toLocaleDateString()}</option>`).join("");
     if (select) picker().value = select;
@@ -82,7 +108,8 @@ declare const __APP_VERSION__: string;
 /** The trip as a file: everything on screen, minus what only matters on this computer (the prompt sent, raw thinking),
  *  plus the ticked place lists, so the planner on the other end has the same saved places to plan from. */
 export async function exportTrip() {
-  const { meta, ...trip } = state;
+  // Not its Drive sync: a file sent to someone is their own copy (importing it mustn't make it the synced trip).
+  const { meta, sync: _sync, ...trip } = state;
   const lean = meta ? (({ prompt: _p, thinking: _t, ...m }) => m)(meta) : null;
   // Must-see places from a place list the other person doesn't have go along as kept copies.
   const kept = [...(trip.kept || [])];
@@ -109,7 +136,9 @@ export function parseTripFile(text: string): Partial<AppState> & { bundledLists?
   const trip = data?.format === FORMAT ? data.trip : data; // saved trips (saves/*.json) are the bare trip
   if (!trip || typeof trip !== "object" || !Array.isArray(trip.stays)) throw new Error("That isn't a trip file (no stays in it).");
   const bundledLists = Array.isArray(data?.lists) ? data.lists.filter((l: any) => l && typeof l.name === "string" && Array.isArray(l.places)) : [];
-  return { ...trip, bundledLists };
+  // An imported file is a copy of its own, not the Drive-synced trip it may have come from.
+  const { sync: _sync, ...rest } = trip;
+  return { ...rest, bundledLists };
 }
 
 /** Adds the lists a trip file brought that aren't here yet (a list of the same name here is kept as it is); returns
@@ -138,13 +167,57 @@ const citiesName = () => cleanSaveName(state.stays.map((s) => s.city.split(",")[
 
 /** Saves the trip under `name`, remembering it as this trip's save; returns the name the server used. */
 export async function saveTripAs(name: string) {
+  const same = state.saveName === name;
   state.saveName = name;
-  const data = await api<{ name: string }>("/api/saves/" + encodeURIComponent(name), { method: "PUT", headers: { "X-Keep-Version": "1" }, body: JSON.stringify(state) });
+  // Into the save it came from: refused if Drive brought a newer version meanwhile (see putSave).
+  const r = await putSave(name, JSON.stringify(state), { "X-Keep-Version": "1", ...(same ? { "X-Sync-Seen": String(seenAt) } : {}) });
+  if (r.syncUpdated) { unsaved = true; await takeDriveUpdate(name); throw new Error("This trip was just updated from Drive, so it was reloaded. What you had on screen is kept: Your trips → Recover."); }
+  const data = r.data as { name: string };
+  if (!same) setSeen(data.name, syncAt[data.name] || 0);
   state.saveName = data.name;
   replacing = true; save(); replacing = false;
   unsaved = false; failed = false; keepNext = false;
   await refreshSaves(data.name);
   return data.name;
+}
+
+/** Writes a save; `syncUpdated` when the server refused because Drive brought a newer version of it meanwhile. */
+async function putSave(name: string, body: string, headers: Record<string, string>): Promise<{ syncUpdated?: boolean; data?: unknown }> {
+  const res = await apiFetch("/api/saves/" + encodeURIComponent(name), { method: "PUT", headers: { "Content-Type": "application/json", ...headers }, body });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 409 && data?.syncUpdated) return { syncUpdated: true };
+  if (!res.ok) throw new Error(data?.error || res.statusText);
+  return { data };
+}
+
+/** Drive brought a newer version of the open trip: it's shown in place of the one on screen. Changes on screen that
+ *  weren't saved yet are kept as a copy first (Your trips → Recover), so nothing is lost. */
+async function takeDriveUpdate(name: string) {
+  await listSaves().catch(() => {});
+  const at = syncAt[name] || 0;
+  const t = await api<AppState>("/api/saves/" + encodeURIComponent(name));
+  const had = unsaved;
+  await applyState({ ...t, saveName: name }, { rescue: had });
+  setSeen(name, at);
+  status(had ? `"${name}" was just updated from Drive. What you changed in the last moments is kept: Your trips → Recover.` : `"${name}" was updated from Drive.`);
+}
+
+/** The open trip, if it syncs, is looked at every so often: a newer version from Drive is shown (when nothing on screen is
+ *  waiting to be saved; otherwise the next save finds it, see putSave). */
+async function watchDrive() {
+  const name = state.saveName;
+  if (document.visibilityState !== "visible" || !name || !synced.has(name) || replacing || saving) return;
+  try { await listSaves(); } catch { return; }
+  if ((syncAt[name] || 0) > seenAt && !unsaved && state.saveName === name) await takeDriveUpdate(name);
+}
+
+/** A trip someone shared as view only, as a trip of their own: a new save, not synced, to change as they like. */
+async function ownCopy() {
+  const base = state.saveName || citiesName();
+  const name = await freeName(cleanSaveName(`${base} my copy`));
+  delete state.sync;
+  try { status(`Saved your own copy as "${await saveTripAs(name)}". Change it as you like; the shared one stays as it was.`); }
+  catch (e) { status((e as Error).message); }
 }
 
 // ---- Keeping the open trip's save up to date by itself ----
@@ -164,7 +237,8 @@ async function writeBack() {
   saving = true; showCurrent();
   try {
     const body = JSON.stringify(state);
-    await api("/api/saves/" + encodeURIComponent(name), { method: "PUT", ...(keepNext ? { headers: { "X-Keep-Version": "1" } } : {}), body });
+    const r = await putSave(name, body, { ...(keepNext ? { "X-Keep-Version": "1" } : {}), "X-Sync-Seen": String(seenAt) });
+    if (r.syncUpdated) { saving = false; await takeDriveUpdate(name); return; }
     keepNext = false; failed = false;
     // Changed again while it was being written: another write follows.
     unsaved = JSON.stringify(state) !== body;
@@ -219,7 +293,12 @@ export async function importTrip(file: File) {
 
 /** Opens a saved trip in place of the one on screen. */
 export async function openSave(name: string) {
+  // What the page has seen of Drive's updates to this save: looked up before the trip is read, so one that comes in between
+  // isn't taken as seen.
+  await listSaves().catch(() => {});
+  const at = syncAt[name] || 0;
   await applyState({ ...(await api<AppState>("/api/saves/" + encodeURIComponent(name))), saveName: name });
+  setSeen(name, at);
   save();
   await refreshSaves(name);
   status(`Opened "${name}".`);
@@ -252,6 +331,8 @@ async function saveCurrent() {
   const suggested = state.saveName || picker().value || state.stays.map((s) => s.city).filter(Boolean).join("-") || "My trip";
   const name = prompt("Save this trip as:", suggested);
   if (!name) return;
+  // Saved under another name, a synced trip becomes a copy of its own (the one synced with Drive stays as it is).
+  if (state.sync && state.saveName && name !== state.saveName) delete state.sync;
   try { status(`Saved "${await saveTripAs(name)}" (with its itinerary, if there is one).`); }
   catch (e) { status((e as Error).message); }
 }
@@ -271,7 +352,12 @@ export function initSaves() {
   // it counts as unsaved until it's written back (an out-of-date copy is never written: see writeBack).
   if (state.saveName) { unsaved = true; timer = window.setTimeout(writeBack, 6000); }
   // The page going to the background (a tab left, a window minimised) writes what's waiting at once.
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && unsaved) writeBack(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && unsaved) writeBack(); else if (document.visibilityState === "visible") watchDrive(); });
+  // A synced trip that's open: Drive's newer versions come in (the server looks at Drive every few minutes).
+  window.setInterval(watchDrive, 15000);
+  // The page was reloaded with a save open: what it has is what the save holds now.
+  if (state.saveName) listSaves().then(showCurrent, () => {});
+  loadSyncStatus().then(showCurrent);
   $("#exportTrip").onclick = exportTrip;
   const input = $<HTMLInputElement>("#importTrip");
   input.onchange = () => { const f = input.files?.[0]; input.value = ""; if (f) importTrip(f); };

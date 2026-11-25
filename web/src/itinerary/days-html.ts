@@ -56,7 +56,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
       <div class="item-top">
         <time>${esc(fmtTime(x.time))}</time>
         <span class="n">${xi + 1}</span>
-        <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener">${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
+        <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener"${transfer && x.transportWas !== undefined ? ` title="The line is from the timetable. The plan said: ${esc(x.transportWas)}"` : ""}>${transfer && x.transportWas !== undefined ? `<span class="from-timetable">${icon("clock")}</span>` : ""}${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
         <span class="item-acts">
         ${where ? `<button class="pin${x.leg ? " set" : ""}" data-leg-edit="${di}-${xi}" title="${x.leg ? "How you get here is set by hand: change it" : "How you get here: walk, road, train, boat, places on the way"}">${icon("route")}</button>` : ""}
@@ -66,7 +66,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         </span>
       </div>
       ${x.description ? `<div class="desc">${esc(x.description)}</div>` : ""}
-      ${x.transport || links ? `<div class="transport">${esc(x.transport || "")}${links ? `<span class="t-links">${x.transport ? " · " : ""}${links}</span>` : ""}</div>` : ""}
+      ${x.transport || links ? `<div class="transport"${!transfer && x.transportWas !== undefined ? ` title="From the timetable. The plan said: ${esc(x.transportWas || "(nothing)")}"` : ""}>${!transfer && x.transportWas !== undefined ? `<span class="from-timetable">${icon("clock")}</span>` : ""}${esc(x.transport || "")}${links ? `<span class="t-links">${x.transport ? " · " : ""}${links}</span>` : ""}</div>` : ""}
       <div class="leg" data-leg="${di}-${xi}"></div>
       <div class="far-warn" data-far="${di}-${xi}" hidden></div>
       <div class="far-warn" data-hours="${di}-${xi}" hidden></div>

@@ -12,6 +12,18 @@ import {
   photosState, removePhotosFolder, setPhotosFolderShown, setPhotosGuess, setPhotosOn, thumbTag, viewItem,
 } from "../map/photos";
 import { showGallery } from "../core/lightbox";
+import { highlights } from "./preview-data";
+
+/** A collage of their photos on top: one from as many days as there are, with the trip's name and when. */
+function hero(all: Placed[], index: Map<Placed, number>) {
+  const pics = highlights(all.filter((p) => !p.video).map((p) => ({ p, town: p.t.slice(0, 10), src: `${p.folder}|${p.id}` })), 5);
+  if (!pics.length) return "";
+  const dated = all.filter((p) => p.t).map((p) => p.t.slice(0, 10)).sort();
+  const when = dated.length ? (dated[0] === dated.at(-1) ? fmtDate(dated[0]) : `${fmtDate(dated[0])} – ${fmtDate(dated.at(-1)!)}`) : "";
+  const towns = [...new Set((state.itinerary?.days || []).filter((d) => dated.includes(d.date)).map((d) => String(d.city).split(/\/|→|->|,/)[0].trim()).filter(Boolean))];
+  return `<div class="pv-hero ph-hero n${pics.length}">${pics.map(({ p }, i) => `<button type="button" class="pv-hi" data-i="${index.get(p)}">${thumbTag(p, i ? 500 : 1024, 'decoding="async"')}</button>`).join("")}
+    <div class="pv-title"><h3>${esc(state.saveName || state.itinerary?.destination || "Your trip")}</h3>${towns.length ? `<p>${esc(towns.join(" → "))}</p>` : ""}<p>${esc([when, `${all.length} photo${all.length === 1 ? "" : "s"}${all.some((p) => p.video) ? " and videos" : ""}`].filter(Boolean).join(" · "))}</p></div></div>`;
+}
 
 let dlg: HTMLDialogElement | null = null;
 
@@ -76,7 +88,7 @@ function renderMain() {
   else {
     // The index in the whole list, so the viewer goes on from a photo into the next ones.
     const index = new Map(all.map((p, i) => [p, i]));
-    body = errors + groups(all).map((g) => `<section class="ph-day"><h3>${esc(g.head)}${g.sub ? ` <span class="hint">${esc(g.sub)}</span>` : ""} <span class="ph-n">${g.photos.length}</span></h3>
+    body = errors + hero(all, index) + groups(all).map((g) => `<section class="ph-day"><h3>${esc(g.head)}${g.sub ? ` <span class="hint">${esc(g.sub)}</span>` : ""} <span class="ph-n">${g.photos.length}</span></h3>
       <div class="ph-grid">${g.photos.map((p) => `<div class="ph-tile" data-i="${index.get(p)}" title="${esc(p.name)}">
         ${thumbTag(p, 320, 'loading="lazy" decoding="async"')}
         ${p.video ? `<span class="ph-play"><i></i>${p.dur ? esc(duration(p.dur)) : ""}</span>` : ""}
@@ -85,6 +97,7 @@ function renderMain() {
   const scroll = dlg.querySelector<HTMLElement>(".ph-body")!, top = scroll.scrollTop;
   scroll.innerHTML = body;
   scroll.scrollTop = top;
+  scroll.querySelectorAll<HTMLElement>(".ph-hero [data-i]").forEach((b) => { b.onclick = () => showGallery(all.map(viewItem), +b.dataset.i!); });
   scroll.querySelectorAll<HTMLElement>(".ph-tile").forEach((t) => {
     t.onclick = (e) => {
       const pin = (e.target as HTMLElement).closest<HTMLElement>("[data-pin]");

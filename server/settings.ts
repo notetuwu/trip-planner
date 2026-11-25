@@ -53,6 +53,9 @@ export interface AppPrefs {
   placePictures: boolean;
   /** Download the transport lines (for the map's Layers) around the trip's stays in the background, and how far around
    *  each stay (km). */
+  /** The map's transport lines from OpenStreetMap (the Layers panel's lines, and the areas downloaded for them): off
+   *  unless switched on (downloading them from the public servers is slow). */
+  transitLines: boolean;
   linesDownload: boolean;
   linesRadius: number;
   /** What a new trip starts with. */
@@ -61,7 +64,7 @@ export interface AppPrefs {
 
 export const APP_DEFAULTS: AppPrefs = {
   units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
-  linesDownload: true, linesRadius: 10,
+  transitLines: false, linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 const PACES = ["relaxed (2-3 main stops per day, late starts)", "balanced (3-5 stops per day)", "packed (as much as possible, early starts)"];
@@ -81,6 +84,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     autoSave: pick("autoSave", (v) => typeof v === "boolean"),
     liveSave: pick("liveSave", (v) => typeof v === "boolean"),
     placePictures: pick("placePictures", (v) => typeof v === "boolean"),
+    transitLines: pick("transitLines", (v) => typeof v === "boolean"),
     linesDownload: pick("linesDownload", (v) => typeof v === "boolean"),
     linesRadius: Number(pick("linesRadius", (v) => [5, 10, 20].includes(Number(v)))),
     newTrip: {

@@ -42,6 +42,34 @@ export interface Route {
   c: LatLng[];
   /** Train routes: indexes in c of the first and last station, so a stay-to-stay line can end at the stations. */
   rail?: [number, number];
+  /** Public transport (from Transitous): each ride of the connection, in order. Absent for roads and paths. */
+  rides?: Ride[];
+}
+
+/** A stop of a ride: its name and where it is. */
+export interface RideStop { n: string; lat: number; lng: number }
+
+/** One ride of a public transport connection, as the timetable has it. */
+export interface Ride {
+  /** Transitous's kind: BUS, COACH, TRAM, SUBWAY, METRO, FERRY, AERIAL_LIFT, FUNICULAR, or a kind of rail. */
+  mode: string;
+  /** The line's number or short name ("5", "JC"), when the operator gives a real one. */
+  line?: string;
+  /** Its full name ("JR Chūō Rapid Line"), when given. */
+  name?: string;
+  /** "#019a66", when the operator gives one. */
+  colour?: string;
+  agency?: string;
+  /** Where it's headed (the last stop of the whole trip). */
+  to: string;
+  /** Where they get on and off, and the stops in between. */
+  on: RideStop;
+  off: RideStop;
+  stops: RideStop[];
+  /** When it leaves, local time ("08:14"). */
+  dep?: string;
+  /** Its own stretch of the line, [lat, lng] (the rest of the leg is walking). */
+  c?: LatLng[];
 }
 
 /** Along footpaths, roads, or the railway (a real train connection, from a public transport router). */

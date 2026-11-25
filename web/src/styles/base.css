@@ -194,3 +194,44 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
   .chat-panel { overscroll-behavior: contain; }
   .chat-panel .cp-log { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 }
+
+/* Columns hidden from the header (a computer), and the map over the whole window. */
+.pane-btns { display: flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: var(--panel); }
+.pane-btns button { all: unset; display: inline-flex; align-items: center; gap: 5px; padding: 0 9px; height: 30px; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.pane-btns button + button { border-left: 1px solid var(--line); }
+.pane-btns button.on { color: var(--ink); background: var(--accent-soft); }
+.pane-btns button:hover { color: var(--ink); }
+.pane-btns button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+@media (max-width: 1300px) { .pane-btns span { display: none; } }
+@media (min-width: 901px) {
+  body.app.hide-settings .settings, body.app.hide-output #output, body.app.hide-map .map-panel { display: none; }
+  body.app.layout-row .map-panel { display: flex; flex-direction: column; }
+  body.app.layout-row .map-wrap { flex: 1; min-height: 0; }
+  body.app.layout-row #map { height: 100%; }
+}
+.map-full-btn { padding: 0 8px; }
+.m-tabs, .m-daybar { display: none; }
+
+/* A phone: one of the trip, the plan and the map at a time, picked along the bottom; the days of the plan along the top. */
+@media (max-width: 900px) {
+  .pane-btns, .map-full-btn { display: none; }
+  body.app { padding-bottom: calc(62px + env(safe-area-inset-bottom)); }
+  body.app:not(.m-settings) .settings, body.app:not(.m-output) #output, body.app:not(.m-map) .map-panel { display: none; }
+  body.app main { grid-template-areas: "map" "settings" "output"; }
+  body.app.m-map .map-panel { position: fixed; top: var(--mhead, 60px); left: 0; right: 0; bottom: calc(62px + env(safe-area-inset-bottom)); z-index: 5; border-radius: 0; border-width: 1px 0 0; padding: 8px; display: flex; flex-direction: column; }
+  body.app.m-map .map-wrap { flex: 1; min-height: 0; }
+  body.app.m-map #map { height: 100%; }
+  .m-tabs { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; padding: 4px 6px env(safe-area-inset-bottom); background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(0, 0, 0, .08); }
+  .m-tabs button { all: unset; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0 6px; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 10px; -webkit-tap-highlight-color: transparent; }
+  .m-tabs button svg { font-size: 21px; }
+  .m-tabs button.on { color: var(--accent); background: var(--accent-soft); }
+  .m-daybar { display: flex; position: fixed; top: 0; left: 0; right: 0; z-index: 1100; gap: 6px; align-items: center; padding: 8px 10px; overflow-x: auto; scrollbar-width: none; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 4px 18px rgba(0, 0, 0, .08); animation: daybar-in .15s ease-out; }
+  .m-daybar[hidden] { display: none; }
+  @keyframes daybar-in { from { transform: translateY(-100%); } }
+  .m-daybar::-webkit-scrollbar { display: none; }
+  .m-daybar button { all: unset; flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12.5px; white-space: nowrap; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .m-daybar button b { font-variant-numeric: tabular-nums; }
+  .m-daybar button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  .m-town { flex: none; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-left: 4px; }
+  .m-town:first-child { padding-left: 0; }
+}

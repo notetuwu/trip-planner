@@ -40,6 +40,8 @@ function dayShapeLines(trip: Trip) {
   const lines = [`- Fitness: ${FITNESS[trip.fitness || "average"] || FITNESS.average}`];
   if (/^\d{2}:\d{2}$/.test(trip.dayStart || "")) lines.push(`- Days start around ${trip.dayStart}: the first stop (or breakfast) is at about that time. Start earlier only when the day needs it (a day trip, a travel day with a long drive, a booked early time, a place that's only quiet or open early, a packed day with several big sights) and then say why in the day's notes; on a normal day in town, don't.`);
   if (trip.breakfast && BREAKFAST[trip.breakfast]) lines.push(`- Breakfast: ${BREAKFAST[trip.breakfast]}.`);
+  if (trip.getAround === "transit") lines.push(`- They have no car: within a stay they get around by public transport, on foot and the odd taxi (between stays as each stay's travel says). Every stop's "transport" names the actual line or train and the stop or station to get on at ("Osaka Metro Chūō Line from Hommachi to Morinomiya, 10 min", "Bus 5 towards Kriens from Luzern Bahnhof, 15 min"); a taxi only where public transport is poor or late at night, and say so. Never driving or parking.`);
+  else if (trip.getAround === "car") lines.push(`- They have a car: they drive between places that aren't walkable; each stop's "transport" says the drive and where to park ("15 min drive, park at the Burgplatz garage"). A town centre that's easier on foot or by tram: park once and say so.`);
   return lines.join("\n");
 }
 

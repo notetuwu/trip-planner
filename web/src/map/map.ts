@@ -1,5 +1,7 @@
 // The Leaflet map: tiles, layers, and the click-to-add behaviour.
 import * as L from "leaflet";
+import { linesSettingChanged } from "./transit-lines";
+import { gridSettingChanged } from "./lines-grid";
 import { onAppPrefs, prefs } from "../core/prefs";
 import { $ } from "../core/dom";
 import { session } from "../core/state";
@@ -48,6 +50,8 @@ async function setLabels(labels: Labels) {
 
 export function initMap() {
   map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
+  // The stops of the plan's rides (where to get on, with the line): over the lines and photos, under the day's pins.
+  map.createPane("rideStops").style.zIndex = "430";
   // Place names start as set in Settings → General; the map's layer panel changes them until the next start.
   const saved: Labels = prefs.app.mapNames === "english" ? "english" : "local";
   setLabels(saved);
@@ -83,7 +87,7 @@ export function initMap() {
   initLayerPicker(map, { get: () => wanted, set: (l) => { setLabels(l); } });
   // The trip's areas' lines, downloaded ahead in the background (Settings → General → Map); asked again when that changes.
   initLinesDownload(map);
-  onAppPrefs(resyncLines);
+  onAppPrefs(() => { resyncLines(); linesSettingChanged(); gridSettingChanged(); });
 }
 
 /** Waiting for a click on the map that picks a spot (for a booking, say) instead of adding one. */

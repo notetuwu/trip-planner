@@ -1,5 +1,7 @@
 // The day chips above the map, selecting a day, and linking itinerary stops with their pins.
-import type * as L from "leaflet";
+import * as L from "leaflet";
+import { lightLeg } from "./draw-days";
+import { showPane } from "../core/layout";
 import { $, $$, esc, toast } from "../core/dom";
 import { dayColor, fmtShort } from "../core/format";
 import { session, state } from "../core/state";
@@ -26,6 +28,7 @@ export function selectDay(i: number | null, { scroll = false } = {}) {
 
 /** Scrolls the itinerary to a stop and flashes it. */
 export function highlightItem(di: number, xi: number) {
+  showPane("output");
   const el = $(`.item[data-k="${di}-${xi}"]`);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -33,8 +36,18 @@ export function highlightItem(di: number, xi: number) {
 }
 
 /** Moves the map to a stop and opens its pin (showing its day if another one is selected). */
+/** A stop of a ride (clicked in the itinerary): the map goes there, with its name. */
+export function goToStop(lat: number, lng: number, name: string) {
+  if (!map) return;
+  showPane("map");
+  session.userMoved = true;
+  map.flyTo([lat, lng], Math.max(map.getZoom(), 17), { duration: .6 });
+  map.once("moveend", () => { if (map) L.popup({ closeButton: false, className: "leg-tip-pop", offset: [0, -4] }).setLatLng([lat, lng]).setContent(esc(name || "Stop")).openOn(map); });
+}
+
 export function showOnMap(di: number, xi: number) {
   if (!map) return;
+  showPane("map");
   // An open popup holds back redraws (so the day switch below wouldn't draw this stop's pin).
   map.closePopup();
   // Only the selected day's pins are drawn: switch to this stop's day if another is shown.
@@ -73,9 +86,12 @@ export function initDays() {
     selectDay(b.dataset.day === "" ? null : +b.dataset.day!, { scroll: true });
   });
   // Hovering a stop in the itinerary pops its pin on the map.
+  // Hovering a stop in the itinerary pops its pin on the map, and lights up the whole way there.
+  let hot: string | undefined;
   $("#output").addEventListener("mouseover", (e) => {
     const k = (e.target as HTMLElement).closest<HTMLElement>(".item")?.dataset.k;
     showPin(k ? itemMarkers.get(k) : undefined);
+    if (k !== hot) { hot = k; lightLeg(k || null); }
   });
-  $("#output").addEventListener("mouseleave", () => showPin(undefined));
+  $("#output").addEventListener("mouseleave", () => { showPin(undefined); hot = undefined; lightLeg(null); });
 }

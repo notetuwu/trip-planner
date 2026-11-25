@@ -21,6 +21,8 @@ import { creditsHtml } from "./credits";
 import { keyFieldHtml, wireKeyFields } from "./key-field";
 import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-download";
 import { SEARXNG_LOCAL } from "./searxng-local";
+import { renderSync } from "./sync-tab";
+import { loadSyncStatus } from "../saves/sync-client";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
 export type ServiceKey = "brave" | "geoapify" | "google";
@@ -36,10 +38,10 @@ interface Rec { model: string; tag: string; sizeGb: number; context: string; cap
 
 interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean }
 
-type Tab = "general" | "map" | "planning" | "keys" | "models" | "phone" | "updates" | "credits";
+type Tab = "general" | "map" | "planning" | "keys" | "models" | "sync" | "phone" | "updates" | "credits";
 const TABS: [Tab, Parameters<typeof icon>[0], string][] = [
   ["general", "settings", "General"], ["map", "map", "Map"], ["planning", "sliders", "Planning"], ["keys", "key", "API keys"],
-  ["models", "cpu", "Local models"], ["phone", "phone", "Phone"], ["updates", "refresh", "Updates"], ["credits", "heart", "Credits"],
+  ["models", "cpu", "Local models"], ["sync", "cloud", "Sync"], ["phone", "phone", "Phone"], ["updates", "refresh", "Updates"], ["credits", "heart", "Credits"],
 ];
 const tabName = (t: Tab) => TABS.find((x) => x[0] === t)![2];
 let tab: Tab = "general", settings: Settings | null = null, ollama: OllamaInfo | null = null, lan: LanStatus | null = null;
@@ -80,6 +82,7 @@ async function load() {
   render();
   if (tab === "models") loadModelsTab();
   if (tab === "updates") loadUpdates();
+  if (tab === "sync") loadSyncStatus().then(renderSyncTab);
 }
 
 async function loadUpdates() {
@@ -177,7 +180,13 @@ function render() {
   else if (tab === "keys") renderKeys();
   else if (tab === "models") renderModels();
   else if (tab === "updates") renderUpdates();
+  else if (tab === "sync") renderSyncTab();
   else renderPhone();
+}
+
+function renderSyncTab() {
+  const main = document.querySelector<HTMLElement>("#setMain");
+  if (main && tab === "sync" && !find) renderSync(main, renderSyncTab);
 }
 
 function showTab(t: Tab) {
@@ -186,6 +195,7 @@ function showTab(t: Tab) {
   $("#setMain").scrollTop = 0;
   if (tab === "models") loadModelsTab();
   if (tab === "updates") loadUpdates();
+  if (tab === "sync") loadSyncStatus().then(renderSyncTab);
 }
 
 // ---- Search ----
@@ -201,6 +211,10 @@ const LIVE_HITS: Hit[] = [
   { tab: "models", title: "Recommended", hint: "Models from ollama.com that fit your graphics card." },
   { tab: "models", title: "Find models", hint: "Search the ollama.com library, or install a model by its exact name." },
   { tab: "models", title: "Context size", hint: "How much a local model can read and write at once." },
+  { tab: "sync", title: "Sync", hint: "Keep trips in step between your computers and with friends, through Google Drive folders." },
+  { tab: "sync", title: "Your Google client", hint: "Your own client ID and secret for Google sign-in, with a step-by-step guide." },
+  { tab: "sync", title: "Sign in with Google", hint: "Sign in so trips can sync through your Drive." },
+  { tab: "sync", title: "Sync folders", hint: "The Drive folders trips sync with: your own, or ones friends shared with you." },
   { tab: "phone", title: "Phone access", hint: "Use the planner on your phone over Wi-Fi: a link and a QR code." },
   { tab: "phone", title: "Away from home", hint: "Use the planner anywhere with Tailscale, a free private network." },
   { tab: "updates", title: "Version", hint: "Which version you have, and what's new." },
@@ -349,7 +363,9 @@ function mapHtml() {
     </div>
     <div class="set-card">
       <b class="card-title">Transport lines</b>
-      <div class="set-row"><div><b>Download transport lines</b><div class="hint">Fetches the bus, tram, metro, train, boat and cable car lines for the map's Layers around your stays and each day's stops, in the background: slowly, one area at a time, and never while a plan is being made. Then they show straight away. Kept for 90 days.</div></div>
+      <div class="set-row"><div><b>Transport lines from OpenStreetMap</b><div class="hint">Every bus, tram, metro, train, boat and cable car line and stop on the map (Layers), from OpenStreetMap's public servers. Slow to download: an area can take minutes when they're busy. The rides in your plan show their line and stops without this.</div></div>
+        <div class="segs">${seg("transitLines", true, "On")}${seg("transitLines", false, "Off")}</div></div>
+      ${a.transitLines ? `<div class="set-row"><div><b>Download transport lines</b><div class="hint">Fetches the bus, tram, metro, train, boat and cable car lines for the map's Layers around your stays and each day's stops, in the background, four areas per request (areas in and around Switzerland from the much quicker Swiss server), never while a plan is being made. Then they show straight away. Kept for 90 days.</div></div>
         <div class="segs">${seg("linesDownload", true, "On")}${seg("linesDownload", false, "Off")}</div></div>
       <div class="set-row"><div><b>Around each stay</b><div class="hint">How far around where you sleep. Further takes longer and more space (a city's area is up to about half a megabyte).</div></div>
         <div class="segs">${seg("linesRadius", "5", "5 km")}${seg("linesRadius", "10", "10 km")}${seg("linesRadius", "20", "20 km")}</div></div>
@@ -360,7 +376,7 @@ function mapHtml() {
           <input type="text" id="linesDir" spellcheck="false" autocomplete="off" placeholder="Loading…">
           <div class="lines-dir-btns"><button type="button" class="btn" id="linesDirSet">Move here</button><button type="button" class="link-btn" id="linesDirDefault" hidden>Back to default</button></div>
           <span class="hint" id="linesDirNote"></span>
-        </div></div>
+        </div></div>` : ""}
     </div>`;
 }
 
@@ -939,6 +955,8 @@ function awayCard(l: LanStatus) {
 
 export function initSettings() {
   $("#settingsBtn").onclick = () => openSettings();
+  // "Open Settings → Sync" from Your trips (sync-client.ts).
+  document.addEventListener("open-settings", (e) => { const t = (e as CustomEvent).detail as Tab; openSettings(TABS.some((x) => x[0] === t) ? t : "general"); });
   dialog().addEventListener("close", () => {
     if (keysChanged) onKeysClosed?.();
     keysChanged = false; onKeysClosed = null;

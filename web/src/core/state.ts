@@ -1,5 +1,5 @@
 // The trip being edited (saved in localStorage) plus session-only data such as the loaded place list.
-import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode, Booking } from "../../../shared/types";
+import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode, Booking, TripShare } from "../../../shared/types";
 import { prefs } from "./prefs";
 
 export interface Stay {
@@ -62,6 +62,8 @@ export interface AppState {
   /** When a normal day starts ("10:00"; "" as the pace suits), and what they do for breakfast. */
   dayStart?: string;
   breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
+  /** How they get around: public transport (and the odd taxi), their car, or "" (worked out from what the plan says). */
+  getAround?: "" | "transit" | "car";
   model: string;
   interests: string;
   /** What they want to see ("the must-sees plus hidden gems"); the route planner fills it from its description. */
@@ -120,6 +122,8 @@ export interface AppState {
   photosFolder?: string;
   /** The saved trip this one is (set by Save, Load and saving by itself), so saving by itself updates that one. */
   saveName?: string;
+  /** Shared through Drive folders (Settings → Sync): which trip it is everywhere, who shared it, edit or view only. */
+  sync?: TripShare;
   /** What the trip chat may do: answer only, offer changes that need Apply, or make small ones by itself. */
   chatMode?: "ask" | "manual" | "auto";
   /** The trip chat so far. */

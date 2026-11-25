@@ -6,7 +6,7 @@ import { findClaude } from "./ai/claude-bin";
 import { VERSION, errMsg } from "./config";
 import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
-import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, routeStops, setLinesDir } from "./geo/transit-lines";
+import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, cancelLines, localLine, routeStops, routesStops, setLinesDir } from "./geo/transit-lines";
 import { localThumb } from "./geo/local-photos";
 import { folderPhotos, photoFile } from "./geo/photos";
 import { placePictures } from "./geo/wiki-photos";
@@ -24,6 +24,8 @@ import { handleOllama } from "./routes/ollama";
 import { handleSearxng, searxngInfo, startSearxngIfChosen } from "./routes/searxng";
 import { readSettings } from "./settings";
 import { handleCurrent } from "./routes/current";
+import { handleSync } from "./routes/sync";
+import { startSyncTimer } from "./sync/sync";
 import { handleUpdate } from "./routes/update";
 import { checkHours } from "./trip/hours";
 import { lookupHours } from "./trip/hours-online";
@@ -46,6 +48,8 @@ export function startup() {
   setTimeout(() => console.log(`Claude CLI: ${findClaude() || "NOT FOUND (set CLAUDE_BIN)"}`), 1500);
   // Research goes to SearXNG on this computer: have Docker and it running by the time it's needed.
   setTimeout(startSearxngIfChosen, 4000);
+  // Trips synced with Drive folders (only when signed in): a look a little after start, then every few minutes.
+  startSyncTimer();
 }
 
 /** Handles an /api request; returns false for anything else. */
@@ -71,6 +75,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
     if (path === "/api/searxng" || path.startsWith("/api/searxng/")) { await handleSearxng(req, res, path); return true; }
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
+    if (path === "/api/sync" || path.startsWith("/api/sync/")) { await handleSync(req, res, path); return true; }
     if (path === "/api/trips" && method === "GET") { sendJson(res, 200, tripCards()); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     // Earlier versions of a saved trip, and copies of the open trip from before it was replaced.
@@ -122,12 +127,19 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
     }
     // The map's transport line overlays, by grid cell ("?cells=940_166,940_167").
-    else if (method === "GET" && path === "/api/lines") sendJson(res, 200, linesFor((url.searchParams.get("cells") || "").split(",")));
+    // (Transport lines switched off in Settings → Map: nothing is fetched.)
+    else if (method === "GET" && path === "/api/lines") sendJson(res, 200, readSettings().app.transitLines ? linesFor((url.searchParams.get("cells") || "").split(",")) : { cells: {}, pending: 0 });
     // Downloading the trip's areas ahead, in the background (the list replaces the last one); and what's on disk.
     else if (method === "POST" && path === "/api/lines/prefetch") {
       const body = await readJson(req);
       const list = (v: unknown) => (Array.isArray(v) ? v.map(String) : []);
-      sendJson(res, 200, { ...prefetchLines(list(body?.cells), list(body?.first)), disk: linesOnDisk() });
+      const on = readSettings().app.transitLines;
+      sendJson(res, 200, { ...prefetchLines(on ? list(body?.cells) : [], on ? list(body?.first) : [], list(body?.again)), disk: linesOnDisk() });
+    }
+    // Stopping the download of some areas (the × on the map's grid, Cancel in the Layers panel).
+    else if (method === "POST" && path === "/api/lines/cancel") {
+      const body = await readJson(req);
+      sendJson(res, 200, cancelLines(Array.isArray(body?.cells) ? body.cells.map(String) : []));
     }
     // For the map's area grid: which cells are downloaded, being fetched, waiting or failed.
     else if (method === "POST" && path === "/api/lines/status") {
@@ -143,6 +155,17 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     }
     else if (method === "GET" && path === "/api/lines/progress") sendJson(res, 200, linesProgress());
     // A line's stops in order (the map's stop card), fetched once and kept.
+    // A line's stops in order from the downloaded areas, at once ("?ids=<its routes>&at=<lat>,<lng>").
+    else if (method === "GET" && path === "/api/lines/local") {
+      const [lat, lng] = (url.searchParams.get("at") || "").split(",").map(Number);
+      const r = localLine((url.searchParams.get("ids") || "").split(",").map(Number), lat, lng);
+      sendJson(res, r ? 200 : 404, r || { error: "No downloaded area has this line" });
+    }
+    // The stops of all the lines at a stop, fetched in one go when its card opens ("?ids=1,2,3").
+    else if (method === "GET" && path === "/api/lines/routes") {
+      try { sendJson(res, 200, await routesStops((url.searchParams.get("ids") || "").split(",").map(Number))); }
+      catch (e) { sendJson(res, 502, { error: `Couldn't get the lines' stops: ${errMsg(e)}` }); }
+    }
     else if (method === "GET" && path === "/api/lines/route") {
       try {
         const r = await routeStops(Number(url.searchParams.get("id")));

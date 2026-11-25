@@ -804,6 +804,47 @@ test("Your trips: cards with a route sketch, grouped coming up / past by year, f
   await page.eval(`document.querySelector('[data-view="grid"]').click(); document.querySelector("#tripsDialog").close(); window.__e2e.trips = null`);
 });
 
+test("columns can be hidden and the map can fill the window; a phone shows one section at a time, with a bar of days", async () => {
+  // Long enough to scroll on a phone (the bar of days shows once the days come up).
+  const days = Array.from({ length: 4 }, (_, i) => ({ date: `2027-09-1${4 + i}`, city: i < 2 ? "Padua" : "Milano", title: "", estimatedCost: 0,
+    items: ["Cappella degli Scrovegni", "Basilica", "Caffe Pedrocchi", "Palazzo della Ragione"].map((place, k) => ({ time: `1${k}:00`, place, description: "A while there, with a longer note about it to fill the line.", kind: "sight" })) }));
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, itinerary: { summary: "", totalEstimatedCost: 0, days: ${JSON.stringify(days)} } })`);
+  const shown = (sel) => `getComputedStyle(document.querySelector(${JSON.stringify(sel)})).display !== "none"`;
+  await page.eval(`document.querySelector('[data-pane="settings"]').click()`);
+  assert.equal(await page.eval(shown(".settings")), false, "the trip column is hidden");
+  await page.eval(`document.querySelector("#mapFullBtn").click()`);
+  assert.deepEqual(await page.eval(`[${shown(".settings")}, ${shown("#output")}, ${shown(".map-panel")}]`), [false, false, true], "only the map");
+  await page.eval(`document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))`);
+  assert.deepEqual(await page.eval(`[${shown(".settings")}, ${shown("#output")}]`), [false, true], "back to how it was");
+  await page.eval(`document.querySelector('[data-pane="settings"]').click()`);
+  assert.equal(await page.eval(`document.querySelector("main").style.gridTemplateColumns`), "", "all columns: the page's own layout");
+  await page.setViewport(390, 844);
+  try {
+    await page.waitFor(`${shown(".m-tabs")} && ${shown("#output")} && !(${shown(".settings")})`, 5000, "the phone's plan tab");
+    await page.eval(`window.scrollTo(0, document.body.scrollHeight)`);
+    await page.waitFor(`!document.querySelector("#mDayBar").hidden && document.querySelectorAll("#mDayBar [data-day]").length === 4`, 5000, "the bar of days");
+    await page.eval(`document.querySelector('[data-tab="map"]').click()`);
+    assert.deepEqual(await page.eval(`[${shown(".map-panel")}, ${shown("#output")}, document.querySelector("#mDayBar").hidden]`), [true, false, true]);
+    await page.eval(`document.querySelector('[data-tab="output"]').click()`);
+  } finally { await page.setViewport(1500, 950); }
+});
+
+test("the chat can ask with answers to pick from; the one picked is sent as the next message", async () => {
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, chat: [] })`);
+  await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
+  await page.eval(`window.__e2e.companion = { answer: "To bring the transport up to date I need to know one thing.", question: { q: "How do you get around?", options: ["Public transport and the odd taxi", "By car"] } };
+    (() => { const q = document.querySelector("#cpQ"); q.value = "bring my trip up to date"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`document.querySelectorAll(".cp-ask [data-ask]").length === 2`, 10000, "the question's answers");
+  assert.match(await page.eval(`document.querySelector(".cp-ask").textContent`), /How do you get around\?/);
+  await page.eval(`window.__e2e.companion = { answer: "Got it, by car." }; document.querySelectorAll(".cp-ask [data-ask]")[1].click()`);
+  await page.waitFor(`window.__e2e.companionAsked.question === "By car"`, 10000, "the answer sent");
+  await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 2`, 10000, "the reply");
+  assert.match(await page.eval(`document.querySelector(".cp-ask.done").textContent`), /By car/, "the card says what they answered");
+  assert.equal(await page.eval(`document.querySelectorAll(".cp-ask [data-ask]").length`), 0, "no buttons any more");
+  assert.match(await page.eval(`JSON.stringify(window.__e2e.companionAsked.history)`), /Asked: How do you get around\?/);
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
 test("no errors in the page", () => {
   assert.deepEqual(page.errors, []);
 });

@@ -23,7 +23,7 @@ export function sunUtc(lat: number, lng: number, iso: string): { rise: number; s
 }
 
 /** The IANA time zone at a point ("Asia/Tokyo"); a fixed offset from the longitude if Open-Meteo can't be reached. */
-async function zoneAt(lat: number, lng: number): Promise<string> {
+export async function zoneAt(lat: number, lng: number): Promise<string> {
   const key = `${lat.toFixed(1)},${lng.toFixed(1)}`;
   if (zones.data[key]) return zones.data[key];
   try {
@@ -34,6 +34,17 @@ async function zoneAt(lat: number, lng: number): Promise<string> {
   } catch { /* offline: guess below */ }
   const off = Math.round(lng / 15);
   return off === 0 ? "UTC" : `Etc/GMT${off > 0 ? "-" : "+"}${Math.abs(off)}`; // Etc/ zones have the sign flipped
+}
+
+/** A local time there ("2027-09-10T08:15") as the moment it is, in UTC ("2027-09-10T06:15:00Z"). */
+export function utcOf(local: string, zone: string) {
+  const [d, t] = local.split("T"), [y, mo, da] = d.split("-").map(Number), [h, mi] = t.split(":").map(Number);
+  const guess = Date.UTC(y, mo - 1, da, h, mi);
+  // How far the zone is from UTC at about that moment: what a clock there shows then, minus the moment.
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+    .formatToParts(new Date(guess)).map((p) => [p.type, p.value]));
+  const shown = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute);
+  return new Date(guess - (shown - guess)).toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 /** "06:24" in that zone, for minutes after midnight UTC on the date. */

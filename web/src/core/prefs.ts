@@ -19,6 +19,9 @@ export interface AppPrefs {
   /** Look the plan's places up on Wikimedia for the trip preview's pictures (off unless switched on). */
   placePictures: boolean;
   /** Download the map's transport lines around the trip's stays in the background, and how far around each (km). */
+  /** The map's transport lines from OpenStreetMap (the Layers panel's lines, and the areas downloaded for them): off
+   *  unless switched on (downloading them from the public servers is slow). */
+  transitLines: boolean;
   linesDownload: boolean;
   linesRadius: number;
   newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
@@ -26,7 +29,7 @@ export interface AppPrefs {
 
 export const APP_DEFAULTS: AppPrefs = {
   units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
-  linesDownload: true, linesRadius: 10,
+  transitLines: false, linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 

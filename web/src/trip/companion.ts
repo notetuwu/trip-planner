@@ -6,7 +6,7 @@
 // the trip (and saved with it).
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
-import type { GeoHit, ItineraryItem, MustSeeHow } from "../../../shared/types";
+import type { GeoHit, ItineraryItem, LegChoice, MustSeeHow } from "../../../shared/types";
 import { stayLoc, stayOn } from "../geo/locate";
 import { $, api, esc, toast } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
@@ -39,7 +39,9 @@ interface StopOp { op: "add" | "remove" | "time"; day: number; place: string; ti
 interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string }
 type Source = ChatSource;
-type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[] };
+type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask };
+/** A question the chat asked, with answers to pick from, and what they answered (once they have). */
+type Ask = { q: string; options: string[]; multi?: boolean; answered?: string };
 
 /** The chat's modes, in the order Shift+Tab goes through them. */
 type Mode = "ask" | "manual" | "auto";
@@ -96,6 +98,7 @@ function editLine(e: EditOp) {
     case "stayNights": return `${v(e.stay)}: ${v(e.nights)} night${Number(e.nights) === 1 ? "" : "s"}`;
     case "stayHotel": return `${v(e.stay)}: staying at ${v(e.value)}`;
     case "stayTravel": return `${v(e.stay)}: getting there by ${v(e.value)}`;
+    case "transport": return `Day ${v(e.day)}, ${v(e.place)}: ${v(e.value) || `by ${v(e.mode)}`}`;
     case "addStay": return `New stay: ${v(e.city)}, ${v(e.nights) || 1} night(s)${e.after ? `, after ${v(e.after)}` : ""}`;
     case "removeStay": return `Remove the stay in ${v(e.stay)}`;
     case "moveStop": return `${v(e.place)}: day ${v(e.day)} → day ${v(e.toDay)}${e.time ? ` at ${v(e.time)}` : ""}`;
@@ -134,6 +137,7 @@ function applyEdits(edits: EditOp[]) {
       else if (f === "fitness" && ["easy", "average", "fit"].includes(s)) state.fitness = s as never;
       else if (f === "dayStart" && (s === "" || /^\d{2}:\d{2}$/.test(s))) state.dayStart = s;
       else if (f === "breakfast" && ["", "hotel", "out", "brunch", "skip"].includes(s)) state.breakfast = s as never;
+      else if (f === "getAround" && ["", "transit", "car"].includes(s)) state.getAround = s as never;
       else if (f === "interests") state.interests = s;
       else if (f === "wishes") state.wishes = s;
     } else if (e.op === "stayNights") { const st = stayOf(e.stay); if (st && Number(e.nights) >= 0) { st.nights = Math.round(Number(e.nights)); chainDates(); } }
@@ -144,6 +148,16 @@ function applyEdits(edits: EditOp[]) {
       state.stays.splice(at, 0, { city: String(e.city), start: "", nights: Math.max(0, Math.round(Number(e.nights) || 1)), hotel: "" });
       chainDates();
     } else if (e.op === "removeStay") { const st = stayOf(e.stay); if (st && state.stays.length > 1) { state.stays.splice(state.stays.indexOf(st), 1); chainDates(); } }
+    else if (e.op === "transport") {
+      // How they get to one stop: its words, and the way the map draws the leg (set like "How you get here" by hand).
+      const d = dayAt(e.day), x = d?.items.find((y) => samePlace(y.place, String(e.place)));
+      const LEG: Record<string, LegChoice> = { walk: "foot", bike: "bike", car: "car", taxi: "car", bus: "bus", tram: "transit", metro: "transit", train: "train", ferry: "ferry", cablecar: "lift", flight: "flight" };
+      if (x) {
+        if (s) { x.transport = s; delete x.transportWas; }
+        const m = LEG[String(e.mode || "")];
+        if (m) x.leg = { modes: [m], via: [] };
+      }
+    }
     else if (e.op === "moveStop") {
       const from = dayAt(e.day), to = dayAt(e.toDay), i = from ? from.items.findIndex((x) => samePlace(x.place, String(e.place))) : -1;
       if (from && to && i >= 0) { const [x] = from.items.splice(i, 1); if (e.time && /^\d{1,2}:\d{2}$/.test(String(e.time))) x.time = String(e.time).padStart(5, "0"); to.items.push(x); sumDay(from); sumDay(to); }
@@ -300,6 +314,7 @@ export function tripContext(full = true): string {
     `Days start: ${/^\d{2}:\d{2}$/.test(s.dayStart || "") ? `around ${s.dayStart}` : "any time (not set)"}`,
     s.breakfast ? `breakfast: ${BREAKFAST[s.breakfast] || s.breakfast}` : "",
     s.fitness ? `fitness: ${s.fitness}` : "",
+    `getting around: ${s.getAround === "transit" ? "public transport and the odd taxi (no car)" : s.getAround === "car" ? "by car" : "not set (the plan decides)"}`,
   ].filter(Boolean).join(" · "));
   if (s.interests) out.push(`Interests: ${s.interests}`);
   if (s.wishes) out.push(`What they want to see: ${s.wishes}`);
@@ -397,6 +412,26 @@ function opsLines(t?: TripOps) {
     ...(t.rescaleCosts ? [`Costs for ${t.rescaleCosts.to} traveler${t.rescaleCosts.to > 1 ? "s" : ""} instead of ${t.rescaleCosts.from}${t.rescaleCosts.days?.length ? ` on ${dayList(t.rescaleCosts.days)}${t.rescaleCosts.after ? ` (from ${t.rescaleCosts.after} on day ${Math.min(...t.rescaleCosts.days)})` : ""}` : ""}: meals, tickets and fares per person; the car, parking and fuel stay the same. Nothing is re-planned.`] : []),
     ...(t.addPlaces || []).map((x) => `Add ${x.name}${x.where ? ` (${x.where})` : ""} to your places${x.must ? " as a must-see" : ""}`),
   ];
+}
+
+/** A question with answers to pick from: buttons (checkboxes and Send when several can apply), and their own answer.
+ *  Answered (or no longer the latest message): what they said. */
+function askCard(a: Ask, k: number, live: boolean) {
+  if (a.answered || !live) return `<div class="cp-ask done"><b>${esc(a.q)}</b>${a.answered ? `<span class="hint">${icon("check")} ${esc(a.answered)}</span>` : ""}</div>`;
+  const opts = a.multi
+    ? `<div class="cp-ask-multi">${a.options.map((o) => `<label class="ph-check"><input type="checkbox" value="${esc(o)}"> ${esc(o)}</label>`).join("")}<button type="button" class="btn solid" data-ask-send="${k}">Send</button></div>`
+    : `<div class="cp-ask-opts">${a.options.map((o) => `<button type="button" class="btn" data-ask="${k}" data-answer="${esc(o)}">${esc(o)}</button>`).join("")}</div>`;
+  return `<div class="cp-ask" data-ask-card="${k}"><b>${esc(a.q)}</b>${opts}
+    <form class="cp-ask-own" data-ask-own="${k}"><input type="text" maxlength="400" placeholder="Or write your own answer…"><button type="submit" class="btn">Send</button></form></div>`;
+}
+
+/** Answers the chat's question: noted on its card, and sent as their next message. */
+function answer(k: number, text: string) {
+  const t = chat()[k];
+  if (!t?.ask || !text.trim() || running) return;
+  t.ask.answered = text.trim();
+  save();
+  ask({ text: text.trim(), pictures: [] });
 }
 
 /** The change card: what it changes, and (on the latest message only) Apply / Undo. Older cards just say how it went. */
@@ -512,7 +547,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     return j >= 0 && turns[j].modelName !== t.modelName ? `<div class="cp-switch"><span>${icon("sparkles")} Switched to ${esc(t.modelName)}</span></div>` : "";
   };
   const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${esc(t.text)}</div>` : ""}${marker(k)}`
-    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
+    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.ask ? askCard(t.ask, k, k === last && pending == null) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["Check my plan", "What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
@@ -527,6 +562,17 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
         <div class="cp-starters">${starters.map((q) => `<button type="button" class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`;
   log.querySelectorAll<HTMLButtonElement>("[data-q]").forEach((b) => { b.onclick = () => { box().value = b.dataset.q!; ask(); }; });
   log.querySelectorAll<HTMLButtonElement>("[data-apply]").forEach((b) => { b.onclick = () => apply(+b.dataset.apply!); });
+  // The chat's question: an answer picked, several ticked and sent, or their own written.
+  log.querySelectorAll<HTMLButtonElement>("[data-ask]").forEach((b) => { b.onclick = () => answer(+b.dataset.ask!, b.dataset.answer!); });
+  log.querySelectorAll<HTMLButtonElement>("[data-ask-send]").forEach((b) => {
+    b.onclick = () => {
+      const picked = [...b.closest(".cp-ask")!.querySelectorAll<HTMLInputElement>("input[type=checkbox]:checked")].map((c) => c.value);
+      if (picked.length) answer(+b.dataset.askSend!, picked.join(", "));
+    };
+  });
+  log.querySelectorAll<HTMLFormElement>("[data-ask-own]").forEach((f) => {
+    f.onsubmit = (e) => { e.preventDefault(); answer(+f.dataset.askOwn!, f.querySelector("input")!.value); };
+  });
   log.querySelectorAll<HTMLButtonElement>("[data-skip]").forEach((b) => { b.onclick = () => setStatus(+b.dataset.skip!, "skipped"); });
   log.querySelectorAll<HTMLButtonElement>("[data-undo]").forEach((b) => { b.onclick = () => undo(); });
   log.querySelectorAll<HTMLButtonElement>("[data-review]").forEach((b) => { b.onclick = () => review(+b.dataset.review!); });
@@ -849,7 +895,7 @@ function renderPictures() {
 }
 
 /** A message as the model gets it: changes with how they went. */
-const turnText = (t: Turn) => ({ role: t.role, text: `${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}` });
+const turnText = (t: Turn) => ({ role: t.role, text: `${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
 
 /** About how many tokens some text is (a token is roughly 4 characters). */
 const tokensIn = (text: string) => Math.round(text.length / 4);
@@ -970,7 +1016,7 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
   livePending = pending; liveTouched = false;
   render(pending);
   try {
-    const { answer, change, thinking, thoughtSecs, sources } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number; sources?: Source[] }>("/api/companion", {
+    const { answer, change, thinking, thoughtSecs, sources, question: asked } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number; sources?: Source[]; question?: Ask }>("/api/companion", {
       model: chatModel(), mode: mode(), data: appData(),
       dayAt: Object.fromEntries((state.itinerary?.days || []).map((d, i) => [i + 1, stayOn(d) && stayLoc(stayOn(d)!)]).filter(([, l]) => l).map(([k, l]) => [k, [(l as { lat: number }).lat, (l as { lng: number }).lng]])), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
       towns: state.stays.filter((s) => s.city).map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => ({ name: s.city, lat: l!.lat, lng: l!.lng })),
@@ -981,7 +1027,7 @@ async function ask(again?: { text: string; pictures: Picture[] }) {
       if (l.reasoning && l.reasoning !== pending.text) { if (!pending.answering) pending.until = Date.now(); pending.answering = true; pending.text = l.reasoning; renderLive(pending); }
     }, running.signal);
     const modelName = ($<HTMLSelectElement>("#cpModel").selectedOptions[0]?.textContent || chatModel()).trim();
-    state.chat = [...chat(), { role: "ai" as const, text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}) }];
+    state.chat = [...chat(), { role: "ai" as const, text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}) }];
     // A stop added far from the day's other stops can't just be slotted in: the planner re-plans that day around it.
     const got = chat()[chat().length - 1].change;
     if (got?.stops?.length) farStops(got);

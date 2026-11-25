@@ -4,6 +4,7 @@ import path from "node:path";
 import type { SaveSummary } from "../../shared/types";
 import { SAVES_DIR, cleanName } from "../config";
 import { type Req, type Res, readBody, readJson, sendJson } from "../util/http";
+import { afterSave, beforeDelete, saveSyncInfo, staleWrite } from "../sync/sync";
 import { keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, versionedNames } from "../util/versions";
 
 function savePath(name: string) {
@@ -13,11 +14,12 @@ function savePath(name: string) {
 
 function listSaves(): SaveSummary[] {
   if (!fs.existsSync(SAVES_DIR)) return [];
+  const sync = saveSyncInfo();
   return fs.readdirSync(SAVES_DIR)
     .filter((f) => f.endsWith(".json"))
     .map((f) => ({ name: f.slice(0, -5), mtime: fs.statSync(path.join(SAVES_DIR, f)).mtime }))
     .sort((a, b) => b.mtime.getTime() - a.mtime.getTime())
-    .map(({ name, mtime }) => ({ name, savedAt: mtime.toISOString() }));
+    .map(({ name, mtime }) => ({ name, savedAt: mtime.toISOString(), ...(sync.synced.has(name) ? { synced: true } : {}), ...(sync.updated[name] ? { syncAt: sync.updated[name] } : {}) }));
 }
 
 export async function handleSaves(req: Req, res: Res, name: string | undefined) {
@@ -31,15 +33,19 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
   if (req.method === "PUT") {
     const body = await readBody(req);
     try { JSON.parse(body); } catch { return sendJson(res, 400, { error: "Invalid JSON" }); }
+    // Sync wrote a newer version from Drive into this save after the page loaded it: the page keeps its changes as a copy
+    // and reloads, rather than writing over the other person's changes.
+    if (staleWrite(path.basename(file, ".json"), req.headers["x-sync-seen"])) return sendJson(res, 409, { error: "This trip was just updated from Drive.", syncUpdated: true });
     fs.mkdirSync(SAVES_DIR, { recursive: true });
     // What the save held until now is kept first (a save made by hand always keeps one; a trip updated by itself, one every 10 minutes).
     keepVersion(SAVES_DIR, path.basename(file, ".json"), file, req.headers["x-keep-version"] === "1");
     fs.writeFileSync(file, body);
+    afterSave(path.basename(file, ".json"));
     return sendJson(res, 200, { name: path.basename(file, ".json") });
   }
   if (req.method === "DELETE") {
     // A deleted trip stays in its history (the last version), so deleting by mistake can be undone.
-    if (fs.existsSync(file)) { keepVersion(SAVES_DIR, path.basename(file, ".json"), file, true); fs.unlinkSync(file); }
+    if (fs.existsSync(file)) { beforeDelete(path.basename(file, ".json")); keepVersion(SAVES_DIR, path.basename(file, ".json"), file, true); fs.unlinkSync(file); }
     return sendJson(res, 200, { ok: true });
   }
   res.writeHead(405).end();

@@ -1,6 +1,7 @@
 // The trip preview: the trip in pictures. A collage of highlights with the route on top, then each stay and its days with
-// a picture for each stop, and a slideshow of it all. A stop shows their own photos taken there (from the trip's photo
-// folders) when there are any; otherwise, when switched on, a picture from Wikimedia (see server/geo/wiki-photos.ts).
+// a picture for each stop, and a slideshow of it all, from Wikimedia when that's switched on (server/geo/wiki-photos.ts).
+// A preview of what's to come: their own photos (from the trip's photo folders) take the places of those they were taken
+// at only when "Use my photos" is ticked.
 import type { Day, PlacePicture } from "../../../shared/types";
 import { api, closeOnBackdrop, esc, toast } from "../core/dom";
 import { fmtDate } from "../core/format";
@@ -29,6 +30,9 @@ const NO_PLACE = /^(breakfast\b|check[- ]?(in|out)|hotel\b|free time|rest\b|arri
 const PER_STOP = 4;
 
 let dlg: HTMLDialogElement | null = null;
+const OWN = "trip-planner-preview-own";
+/** Their own photos replace the pictures of the places they were taken at (off: a preview of the trip). */
+const useOwn = () => localStorage.getItem(OWN) === "1";
 /** Wikimedia's answers this session, by what was asked. */
 const found = new Map<string, PlacePicture | null>();
 const askKey = (a: Ask) => `${a.name}|${a.lat.toFixed(3)},${a.lng.toFixed(3)}`;
@@ -114,7 +118,7 @@ interface Built { part: Part; cover: Shot | null; days: { d: DayPart; stops: { s
 /** Puts a picture to everything that has one. */
 function build(): Built[] {
   const all = parts();
-  const own = ownPhotos(allPhotos(), all.flatMap((p) => p.days.map((d) => ({ date: d.day.date, stops: d.stops }))));
+  const own = !useOwn() ? { byStop: new Map<string, Placed[]>(), extra: new Map<string, Placed[]>() } : ownPhotos(allPhotos(), all.flatMap((p) => p.days.map((d) => ({ date: d.day.date, stops: d.stops }))));
   return all.map((part) => {
     const days = part.days.map((d) => {
       const label = (name: string) => `Day ${d.n} · ${name}`;
@@ -174,12 +178,14 @@ function render() {
   if (!dlg?.open) return;
   const body = dlg.querySelector<HTMLElement>(".pv-body")!, built = build(), top = collage(built);
   const on = prefs.app.placePictures;
-  const reading = folders().length && !allPhotos().length;
+  const reading = useOwn() && folders().length && !allPhotos().length;
   dlg.querySelector<HTMLInputElement>("[data-pv-wiki]")!.checked = on;
+  const ownBox = dlg.querySelector<HTMLInputElement>("[data-pv-own]")!;
+  ownBox.checked = useOwn(); ownBox.parentElement!.hidden = !folders().length;
   dlg.querySelector<HTMLElement>("[data-pv-status]")!.textContent = loading ? progress : trouble || (reading ? "Reading your photo folders…" : "");
   shown = [];
   const route = routeOf();
-  const offer = on ? "" : `<div class="pv-offer"><p><b>Pictures of the places are switched off.</b> With them on, the planner looks each stop up on Wikipedia (it sends the place's name and town) and shows a freely licensed picture where it finds one. Your own photos always come first.</p>
+  const offer = on ? "" : `<div class="pv-offer"><p><b>Pictures of the places are switched off.</b> With them on, the planner looks each stop up on Wikipedia (it sends the place's name and town) and shows a freely licensed picture where it finds one.${folders().length ? " Or tick “Use my photos” to see the trip in your own." : ""}</p>
       <button type="button" class="btn solid" data-pv-enable>Show pictures from Wikimedia</button></div>`;
   const credits = new Map(shown.map((s) => [s.src, s]));
   body.innerHTML = `
@@ -188,7 +194,7 @@ function render() {
       <div class="pv-title"><h3>${esc(title())}</h3><p>${esc(route)}</p><p>${esc(dates())}</p></div>
     </div>
     ${offer}
-    ${!built.length && on && !loading && !reading ? `<p class="hint">No pictures were found for this trip's stops. Add your own in the Photos window.</p>` : ""}
+    ${!built.length && on && !loading && !reading ? `<p class="hint">No pictures were found for this trip's stops.</p>` : ""}
     ${built.map((b) => `<section class="pv-stay"><h4>${esc(b.part.town)}</h4>
       ${b.days.map((d) => {
         const cards = d.stops.map((x) => tile(x.shots[0], x.own ? thumbTag(x.own, 800, `loading="lazy"`) : wikiImg(x.shots[0]), x.s.name, `pv-card${x.own ? " own" : ""}`, x.shots.length - 1)
@@ -222,12 +228,19 @@ export function openPreview() {
     dlg = document.createElement("dialog");
     dlg.className = "keys-dialog preview-dialog";
     dlg.innerHTML = `<div class="pl-head"><h2>${icon("play")} Preview</h2><span class="hint" data-pv-status></span>
+        <label class="ph-check" title="Your own photos (from the Photos window) instead of the pictures of the places they were taken at, and those of each day"><input type="checkbox" data-pv-own> Use my photos</label>
         <label class="ph-check" title="Look each stop up on Wikipedia and show a freely licensed picture of it where you have no photo of your own"><input type="checkbox" data-pv-wiki> Pictures from Wikimedia</label>
         <button type="button" class="btn solid" data-pv-play>${icon("play")} Play slideshow</button>
         <form method="dialog"><button class="icon-btn" title="Close">${icon("x")}</button></form></div>
       <div class="pv-body"></div>`;
     document.body.append(dlg);
     closeOnBackdrop(dlg);
+    dlg.querySelector<HTMLInputElement>("[data-pv-own]")!.onchange = (e) => {
+      const yes = (e.target as HTMLInputElement).checked;
+      localStorage.setItem(OWN, yes ? "1" : "");
+      if (yes) loadMissing();
+      render();
+    };
     dlg.querySelector<HTMLInputElement>("[data-pv-wiki]")!.onchange = (e) => setWiki((e.target as HTMLInputElement).checked);
     dlg.querySelector<HTMLButtonElement>("[data-pv-play]")!.onclick = () => slideshow(build());
     // Their own photos take their places as the folders finish loading.
@@ -235,7 +248,7 @@ export function openPreview() {
   }
   if (!dlg.open) dlg.showModal();
   trouble = "";
-  loadMissing();
+  if (useOwn()) loadMissing();
   render();
   dlg.querySelector<HTMLElement>(".pv-body")!.scrollTop = 0;
   fetchPictures();

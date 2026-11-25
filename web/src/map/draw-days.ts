@@ -15,7 +15,8 @@ const colorFor = (x: ItineraryItem, di: number) => {
   return g && g in groups ? cssVar(`--track-${groups[g]}`) || dayColor(di) : dayColor(di);
 };
 import { highlightItem } from "./days";
-import { hoverBand, legTip } from "./legs";
+import { hoverBand, legTip, rideColour, rideIcon, ridesHtml } from "./legs";
+import { walksOf } from "./walks";
 import { itemMarkers, layers } from "./map";
 import { dayLegs, flightArc, legRoute } from "./routes";
 import { onMap } from "./travel-day";
@@ -38,6 +39,27 @@ function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
   });
 }
 
+/** The lines lit up now, with how they were drawn. */
+let lit: { line: L.Polyline; weight: number; opacity: number }[] = [];
+/** Lights up the whole way to a stop (its leg, walks and rides), thicker and in front; null puts it back. */
+export function lightLeg(key: string | null) {
+  for (const x of lit) x.line.setStyle({ weight: x.weight, opacity: x.opacity });
+  lit = [];
+  for (const line of (key && legLines.get(key)) || []) {
+    const o = line.options;
+    lit.push({ line, weight: o.weight ?? 3, opacity: o.opacity ?? 1 });
+    line.setStyle({ weight: (o.weight ?? 3) + 4, opacity: 1 });
+    line.bringToFront();
+  }
+}
+
+/** The lines drawn for each leg, by "<day>-<stop>": the stop it leads to, and any transfer on the way to it (whose trip
+ *  it is). Hovering a stop in the itinerary lights them up. */
+export const legLines = new Map<string, L.Polyline[]>();
+const keep = (di: number, fromXi: number, xi: number, ...lines: L.Polyline[]) => {
+  for (let k = Math.max(0, fromXi + 1); k <= xi; k++) legLines.set(`${di}-${k}`, [...(legLines.get(`${di}-${k}`) || []), ...lines]);
+};
+
 function drawLegs(d: Day, di: number, byTitle: ByTitle) {
   for (const leg of dayLegs(d, byTitle)) {
     const color = leg.group && leg.group in groups ? cssVar(`--track-${groups[leg.group]}`) || dayColor(di) : dayColor(di);
@@ -58,14 +80,40 @@ function drawLegs(d: Day, di: number, byTitle: ByTitle) {
     // Groups often share a stretch (the same train out of town): earlier groups are drawn wider underneath, so each
     // one's colour still shows along the shared part.
     const extra = leg.group && leg.group in groups ? (Math.max(...Object.values(groups)) - groups[leg.group]) * 3 : 0;
-    const vis = L.polyline(line, { color, opacity: extra ? 1 : .8, lineCap: "round", interactive: false, ...style, weight: (style.weight || 3) + extra }).addTo(layers.routes);
+    const rides = (r?.rides || []).filter((x) => x.c && x.c.length > 1);
+    // A public transport leg: the walks to and from the stops (and between them) dotted, the rides solid on top.
+    const base = rides.length ? { ...style, weight: 3, dashArray: "1 6" } : style;
+    // (Only where they walk: under a ride it would show through when hovered.)
+    const drawn = rides.length ? walksOf(line, rides.map((x) => x.c!)) : [line];
+    const vis = L.polyline(drawn, { color, opacity: extra ? 1 : .8, lineCap: "round", interactive: false, ...base, weight: (base.weight || 3) + extra }).addTo(layers.routes);
     hoverBand(line, legTip(d, leg, r), vis).on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
+    keep(di, leg.fromXi, leg.xi, vis);
+    for (const ride of rides) {
+      const c = rideColour(ride);
+      // The ride solid in the day's colour (the walks around it dotted); its stops and badge in the line's colour.
+      const rv = L.polyline(ride.c!, { color, weight: 4 + extra, opacity: extra ? 1 : .85, lineCap: "round", interactive: false }).addTo(layers.routes);
+      keep(di, leg.fromXi, leg.xi, rv);
+      hoverBand(ride.c!, `${legTip(d, leg, null).split("<span")[0]}<div class="ride-tips">${ridesHtml([ride], leg.mode)}</div>`, rv).on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
+      // Where they get on: the line's badge, so where to change is plain on the map.
+      L.marker([ride.on.lat, ride.on.lng], { pane: "rideStops", keyboard: false, bubblingMouseEvents: false,
+        icon: L.divIcon({ className: "", html: `<div class="ride-board"><span class="line-chip" style="--c:${esc(c)}">${ride.line ? esc(ride.line) : icon(rideIcon(ride))}</span></div>`, iconSize: [0, 0] }) })
+        .bindTooltip(`Get on: <b>${esc(ride.on.n || "Stop")}</b>${ride.dep ? ` · ${esc(ride.dep)}` : ""}<br>${ridesHtml([ride], leg.mode)}`, { direction: "top", offset: [0, -12], className: "leg-tip" })
+        .on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
+      // The stops: where they get off always, those in between with a day on its own.
+      const stops = session.selectedDay === di ? [...ride.stops, ride.off] : [ride.off];
+      for (const s of stops) {
+        L.circleMarker([s.lat, s.lng], { pane: "rideStops", radius: s === ride.off ? 5 : 3.5, color: c, weight: 2.5, fillColor: "#fff", fillOpacity: 1, bubblingMouseEvents: false })
+          .bindTooltip(`${esc(s.n || "Stop")}${s === ride.off ? " · get off" : ""}`, { direction: "top", offset: [0, -5], className: "leg-tip" })
+          .addTo(layers.routes);
+      }
+    }
   }
 }
 
 /** Draws the selected day (or all days); returns the stops' positions for fitting the map. */
 export function drawDays(days: Day[], byTitle: ByTitle): LatLng[] {
   const bounds: LatLng[] = [];
+  legLines.clear(); lit = [];
   days.forEach((d, di) => {
     groups = dayGroupColors(d.items, di);
     if (session.selectedDay != null && session.selectedDay !== di) return;

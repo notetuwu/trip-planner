@@ -67,7 +67,11 @@ export function directionsUrl(di: number, xi: number): string | null {
   const byTitle = byTitleMap();
   let from: string, to: string, km: number | null = null;
   const ends = transferEnds(x);
-  if (ends) [from, to] = ends;
+  if (ends) {
+    // From where they are (the stop before: "Kriens" is the gondola station there, not the town's middle).
+    const prev = prevStop(d, xi);
+    [from, to] = [prev && !transferEnds(prev) ? stopRef(prev, d, byTitle).text : ends[0], ends[1]];
+  }
   else {
     const b = stopRef(x, d, byTitle), prev = prevStop(d, xi);
     let a: StopRef | undefined;

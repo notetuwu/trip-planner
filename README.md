@@ -35,6 +35,7 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 **Take it with you**
 - **For phone:** one offline HTML file with the map and the days. **Calendar:** every stop in your calendar (.ics). **Print / PDF:** a clean printout with a cover page.
 - **Share a trip:** export it as a file that someone else imports.
+- **Sync through Google Drive:** sign in with Google (Settings → Sync), add Drive folders (your own, or ones friends shared with you), and pick per trip which folders it syncs to. Your other computers and your friends get the trip in Your trips, and changes go both ways. Per trip, whoever shared it decides whether others can edit or only view it. Changed in two places at once? Nothing is overwritten: you pick which version to keep. Nothing is ever deleted in Drive. Uses your own free Google client ID, set up once with the guide in Settings → Sync ([docs/google-sync.md](docs/google-sync.md)).
 - **Phone access:** Settings → Phone serves the planner on your home network behind a secret link with a QR code, and the open trip stays in step.
 
 ## Download
@@ -96,6 +97,7 @@ Everything has a setting in the app; these environment variables are optional:
 | `RESEARCH_MAX_LOOKUPS` | Most searches and page reads in one research round (default 30) |
 | `PLACES_CSV` | A CSV of places to import on startup |
 | `TRIP_PLANNER_NO_UPDATES` | `1` turns off the update check |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your Google client for syncing trips through Drive (or enter it in Settings → Sync; see [docs/google-sync.md](docs/google-sync.md)); also read from a `.env` file |
 
 ## Services it uses
 

@@ -5,6 +5,10 @@
 /cache/
 /keys.json
 /settings.json
+# Drive sync: the Google sign-in token, what's synced, and copies of the folders' trips.
+/sync/
+# The settings (with a secret key) of the SearXNG the app sets up.
+/searxng/
 *.csv
 
 # Old versions and local clutter

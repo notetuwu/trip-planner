@@ -104,7 +104,12 @@ function open(items: ViewItem[], start: number, search: boolean, play = false) {
     if (scale === 1) { x = 0; y = 0; }
     apply();
   };
-  box.addEventListener("wheel", (e) => { e.preventDefault(); zoomAt(e.clientX, e.clientY, scale * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); }, { passive: false });
+  box.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    // Over the strip along the bottom, the wheel goes through it sideways.
+    const row = (e.target as Element).closest?.(".lightbox-strip");
+    if (row) { row.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY; return; }
+    zoomAt(e.clientX, e.clientY, scale * (e.deltaY < 0 ? 1.2 : 1 / 1.2)); }, { passive: false });
   img.addEventListener("dblclick", (e) => { e.stopPropagation(); zoomAt(e.clientX, e.clientY, scale > 1 ? 1 : 2.5); });
   img.addEventListener("pointerdown", (e) => {
     if (scale === 1) return;

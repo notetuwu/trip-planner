@@ -4,8 +4,8 @@
 import * as L from "leaflet";
 import { api, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
-import { LINE_KINDS, type LineKind, isLineOn, linesState, onLinesChange, setLineOn } from "./transit-lines";
-import { downloadState, downloadText, downloadView, onDownloadChange, viewCellCount } from "./lines-download";
+import { LINE_KINDS, type LineKind, isLineOn, linesEnabled, linesState, onLinesChange, setLineOn } from "./transit-lines";
+import { cancelDownload, downloadState, downloadText, downloadView, onDownloadChange, viewCellCount } from "./lines-download";
 import { gridState, onGridChange, setGridOn } from "./lines-grid";
 import { setStayLines, stayLinesOn } from "./draw-stays";
 import { isPhotosOn, onPhotosChange, photosState, setPhotosOn } from "./photos";
@@ -143,7 +143,7 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
         <div class="lp-grid">${tile("photos", PHOTOS_THUMB(), "Photos", isPhotosOn())}</div>
         <p class="hint lp-photos-line"><span data-t="photos"${t.photos ? "" : " hidden"}>${esc(t.photos)}</span> <button type="button" class="link-btn" data-photos-open title="Choose the folders, how photos are placed, and see them all by day">Photos window…</button></p>
         <h4>Transport lines</h4>
-        <div class="lp-grid">${LINE_KINDS.map((k) => tile(k.k, THUMBS[k.k](), k.name, isLineOn(k.k), `<i class="lp-badge" style="--c:${k.colour}">${icon(k.ic)}</i>`)).join("")}</div>
+        ${!linesEnabled() ? `<p class="hint">Off. Every bus, tram and train line from OpenStreetMap can be shown here (switch it on in Settings → Map); downloading them from the public servers is slow. The lines and stops of the rides in your plan show without it.</p>` : `<div class="lp-grid">${LINE_KINDS.map((k) => tile(k.k, THUMBS[k.k](), k.name, isLineOn(k.k), `<i class="lp-badge" style="--c:${k.colour}">${icon(k.ic)}</i>`)).join("")}</div>
         <p class="hint" data-t="note">${esc(t.note)}</p>
         <div class="lp-download">
           <button type="button" class="btn" data-dl-view title="Fetch the lines in view now and keep them (they're kept for 90 days)"${t.canDownload ? "" : " hidden"}>${icon("download")} Download this area</button>
@@ -153,7 +153,7 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
           <label class="lp-check"><input type="checkbox" data-grid${g.on ? " checked" : ""}> Show download areas on the map</label>
           ${g.on ? `<div class="lp-legend"><span><i class="done"></i>Downloaded</span><span><i class="now"></i>Downloading</span><span><i class="wait"></i>Waiting</span><span><i class="none"></i>Not asked for</span></div>` : ""}
           <span class="hint" data-t="grid"${t.grid ? "" : " hidden"}>${esc(t.grid)}</span>
-        </div>
+        </div>`}
       </div>` : ""}`;
     const p2 = box.querySelector<HTMLElement>(".lp-panel");
     if (p2) p2.scrollTop = scroll;
@@ -202,25 +202,31 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
   };
 
   // ---- The download's live progress: size so far, speed, time, and the pause before the next area. -----------------
-  type Progress = {
-    now: { id: string; secs: number; bytes: number; server: string; speed: number; retryIn: number; why?: string } | null;
-    nextIn: number; paused: boolean; left: { view: number; background: number };
-    last: { id: string; bytes: number; stored: number; ms: number; ok: boolean } | null;
-  };
+  type Worker = { kind: "main" | "main2" | "swiss"; server: string; ids: string[]; cells: number; secs: number; askedSecs: number; bytes: number; speed: number; retryIn: number; why: string; nextIn: number; running: boolean;
+    last: { cells: number; bytes: number; stored: number; ms: number; ok: boolean; server: string; cancelled?: boolean } | null };
+  type Progress = { workers: Worker[]; paused: boolean; down?: { server: string; secs: number }[]; left: { view: number; background: number } };
   const size = (b: number) => (b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : b >= 1e3 ? `${Math.round(b / 1e3)} KB` : `${b} B`);
+  const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}` : `${s} s`);
+  /** Which download it is: the Swiss server's, or one of the two on the main server. */
+  const who = (w: Worker) => (w.kind === "swiss" ? "Swiss server" : w.kind === "main" ? "Main server 1" : "Main server 2");
   const progressHtml = (p: Progress) => {
     const left = p.left.view + p.left.background;
     const lines: string[] = [];
-    if (p.now) {
-      const how = p.now.retryIn ? `${esc(p.now.why || "servers busy, trying again")}: ${p.now.retryIn} s`
-        : p.now.bytes ? `${size(p.now.bytes)} so far${p.now.speed ? ` · ${size(p.now.speed)}/s` : ""}`
-        : "Overpass is working out the answer…";
-      lines.push(`<b>${icon("download")} Downloading an area</b> · ${p.now.secs} s · ${how}`);
-    } else if (p.paused) lines.push(`<b>Paused</b> while a plan is being made; it carries on after.`);
-    else if (p.nextIn && left) lines.push(`<b>Next area in ${p.nextIn} s</b> (a pause between areas, to go easy on the free servers)`);
-    else if (!left) lines.push(`Nothing waiting to download.`);
+    if (p.paused) lines.push(`<b>Paused</b> while a plan is being made; it carries on after.`);
+    for (const d of p.down || []) lines.push(`${icon("warn")} <b>${esc(d.server)}</b> can't be reached or is turning requests away: the other servers are used, and it's tried again in ${mins(d.secs)}`);
+    for (const w of p.workers) {
+      if (w.cells) {
+        // On another server than its own: the one it's on now says so.
+        const at = w.server && !(w.kind === "swiss" ? /osm\.ch/ : /overpass-api\.de/).test(w.server) ? ` → trying ${esc(w.server)}` : "";
+        const how = w.retryIn ? `${esc(w.why || "servers busy, trying again")}: ${w.retryIn} s`
+          : w.bytes ? `${size(w.bytes)} so far${w.speed ? ` · ${size(w.speed)}/s` : ""}`
+          : w.askedSecs ? `waiting for the answer (${mins(w.askedSecs)})` : "starting…";
+        lines.push(`<b>${icon("download")} ${who(w)}</b>${at} · ${w.cells} area${w.cells > 1 ? "s" : ""} · ${mins(w.secs)} · ${how} <button type="button" class="link-btn" data-dl-cancel="${esc(w.ids.join(","))}" title="Stop this download; these areas aren't asked for again until you download them by hand">Cancel</button>`);
+      } else if (w.running && w.nextIn && left) lines.push(`<b>${who(w)}</b> · next in ${w.nextIn} s`);
+      else if (w.last && left) lines.push(`<b>${who(w)}</b> · ${w.last.cancelled ? "last one cancelled" : w.last.ok ? `last: ${w.last.cells} area${w.last.cells > 1 ? "s" : ""} in ${mins(Math.max(1, Math.round(w.last.ms / 1000)))}` : "last one failed (tried again in 10 min)"}`);
+    }
+    if (!left && !p.workers.some((w) => w.cells)) lines.push(`Nothing waiting to download.`);
     if (left) lines.push(`${left} area${left > 1 ? "s" : ""} waiting${p.left.view ? ` (${p.left.view} in view first)` : ""}`);
-    if (p.last) lines.push(p.last.ok ? `Last area: ${size(p.last.bytes)} downloaded in ${Math.max(1, Math.round(p.last.ms / 1000))} s, ${size(p.last.stored)} kept` : `Last area failed (tried again in 10 min)`);
     return lines.map((l) => `<span>${l}</span>`).join("");
   };
   let progressTimer: number | undefined;
@@ -230,7 +236,14 @@ export function initLayerPicker(map: L.Map, labels: { get: () => Labels; set: (l
     try {
       const p = await api<Progress>("/api/lines/progress");
       const el = box.querySelector<HTMLElement>('[data-t="progress"]');
-      if (el) { const html = progressHtml(p); el.hidden = !html; if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; } }
+      if (el) {
+        // (The time in it changes every second: drawn again, with its Cancel buttons.)
+        const html = progressHtml(p); el.hidden = !html;
+        if (el.dataset.html !== html) {
+          el.innerHTML = html; el.dataset.html = html;
+          el.querySelectorAll<HTMLButtonElement>("[data-dl-cancel]").forEach((b) => { b.onclick = async () => { b.disabled = true; await cancelDownload(b.dataset.dlCancel!.split(",")); pollProgress(); }; });
+        }
+      }
     } catch { /* the server is away: next time */ }
     progressTimer = window.setTimeout(pollProgress, 1000);
   };

@@ -24,6 +24,22 @@ export function deleteList(name: string) {
   if (f && fs.existsSync(f)) fs.unlinkSync(f);
 }
 
+/** A list that came along in a trip file (an import, or a trip synced from Drive), made safe: only its places' text and
+ *  positions, and a Google Maps link as its source. Anything else (a CSV source names a file on someone's computer, which
+ *  would be read here) becomes "uploaded". Null when it has no places. */
+export function cleanBundledList(name: string, body: any): PlaceList | null {
+  if (!Array.isArray(body?.places) || !cleanName(name)) return null;
+  const text = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.slice(0, n) : undefined);
+  const num = (v: unknown) => (typeof v === "number" && isFinite(v) ? v : undefined);
+  const places = body.places.filter((p: any) => text(p?.title, 300)).slice(0, 5000).map((p: any) => JSON.parse(JSON.stringify({
+    title: text(p.title, 300), note: text(p.note, 2000), url: text(p.url, 1000), tags: text(p.tags, 500), comment: text(p.comment, 2000),
+    address: text(p.address, 500), lat: num(p.lat), lng: num(p.lng),
+  })));
+  if (!places.length) return null;
+  const url = body.source?.type === "google" && typeof body.source.url === "string" && /^https:\/\//i.test(body.source.url) ? body.source.url.slice(0, 1000) : "";
+  return { name: cleanName(name), title: text(body.title, 200), source: url ? { type: "google", url } : { type: "upload" }, places, syncedAt: new Date().toISOString() };
+}
+
 /** Keep coordinates we already had when a re-import comes back without them. */
 export function mergeCoords(fresh: Place[], old: Place[] = []): Place[] {
   const byTitle = new Map(old.map((p) => [p.title, p]));

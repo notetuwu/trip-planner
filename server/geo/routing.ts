@@ -2,7 +2,8 @@
 // OSRM demo (FOSSGIS as backup), trains, boats, lifts, trams, metros and bus lines via Transitous (a community-run public
 // transport router, see transitous.org). All are free public servers that ask for at most about one request per second,
 // so each server has its own queue.
-import type { LatLng, Route, RouteMode } from "../../shared/types";
+import type { LatLng, Ride, Route, RouteMode } from "../../shared/types";
+import { utcOf, zoneAt } from "../trip/daylight";
 import { USER_AGENT, errMsg, sleep } from "../config";
 import { diskCache } from "../util/disk-cache";
 
@@ -33,6 +34,8 @@ const QUEUES: Queue[] = ["foot", "car", "transit"];
 // "No train connection" answers from before the router was allowed longer walks to the stations: ask once more.
 // Also train routes from before they marked their stations.
 for (const k of Object.keys(routeCache.data)) if (k.startsWith("train:") && (routeCache.data[k] === null || !routeCache.data[k]!.rail)) delete routeCache.data[k];
+// Public transport routes from before they kept their rides (line, stops, colour): asked again.
+for (const [k, r] of Object.entries(routeCache.data)) if (r && /^(train|ferry|lift|transit):/.test(k) && (!r.rides || r.rides.some((x) => !x.c))) delete routeCache.data[k];
 const routeKey = (mode: RouteMode, a: LatLng, b: LatLng) => `${mode}:${a[0].toFixed(5)},${a[1].toFixed(5)}>${b[0].toFixed(5)},${b[1].toFixed(5)}`;
 
 interface RouteJob { mode: RouteMode; a: LatLng; b: LatLng; key: string; when?: string }
@@ -154,13 +157,43 @@ async function fetchRail(base: string, a: LatLng, b: LatLng, modes: string, when
   const rides = parts.filter((p: { walk: boolean; pts: LatLng[] }) => !p.walk && p.pts.length);
   const nearest = (q: LatLng) => out.reduce((best, p, k) => (kmBetween(p, q) < kmBetween(out[best], q) ? k : best), 0);
   const rail: [number, number] | undefined = rides.length ? [nearest(rides[0].pts[0]), nearest(rides.at(-1).pts.at(-1))] : undefined;
-  return { d: Math.round(d), t: Math.round(it.duration), c: out, ...(rail && rail[1] > rail[0] ? { rail } : {}) };
+  return { d: Math.round(d), t: Math.round(it.duration), c: out, ...(rail && rail[1] > rail[0] ? { rail } : {}), rides: ridesOf(it.legs) };
+}
+
+const stopOf = (p: any) => ({ n: String(p?.name || "").trim(), lat: +(+p?.lat).toFixed(5), lng: +(+p?.lon).toFixed(5) });
+/** "08:14" in the stop's own time zone. */
+const clock = (iso: unknown, tz: unknown) => {
+  try { return typeof iso === "string" ? new Date(iso).toLocaleTimeString("en-GB", { timeZone: typeof tz === "string" ? tz : "UTC", hour: "2-digit", minute: "2-digit" }) : undefined; } catch { return undefined; }
+};
+
+/** The rides of a connection, as the timetable has them. A "line" that's an operator's internal number (Osaka Metro's
+ *  9832171, a different one for each train) is no name for a line, so it's left out. */
+export function ridesOf(legs: any[]): Ride[] {
+  return (legs || []).filter((l) => l.mode && l.mode !== "WALK" && l.mode !== "BIKE" && l.mode !== "CAR").map((l) => {
+    const short = String(l.routeShortName || l.displayName || "").trim(), long = String(l.routeLongName || "").trim();
+    const line = short && !/^\d{5,}$/.test(short) && short.length <= 24 ? short : undefined;
+    const colour = /^[0-9a-f]{6}$/i.test(String(l.routeColor || "")) ? `#${String(l.routeColor).toLowerCase()}` : undefined;
+    const dep = clock(l.from?.departure || l.startTime, l.from?.tz);
+    const pts: LatLng[] = l.legGeometry?.points ? decodePolyline(l.legGeometry.points, l.legGeometry.precision ?? 6) : [];
+    return {
+      mode: String(l.mode), ...(line ? { line } : {}), ...(long && long !== line ? { name: long } : {}), ...(colour ? { colour } : {}),
+      ...(l.agencyName ? { agency: String(l.agencyName) } : {}), to: String(l.headsign || l.tripTo?.name || l.to?.name || "").trim(),
+      on: stopOf(l.from), off: stopOf(l.to), stops: (l.intermediateStops || []).map(stopOf).filter((s: { n: string }) => s.n),
+      ...(dep ? { dep } : {}),
+      ...(pts.length > 1 ? { c: thin(pts, 400).map(([lat, lng]) => [+lat.toFixed(5), +lng.toFixed(5)] as LatLng) } : {}),
+    };
+  });
 }
 
 async function fetchRoute(mode: RouteMode, a: LatLng, b: LatLng, when?: string): Promise<Route | null> {
   if (TRANSIT[mode]) {
+    // The plan's times are local: "09:00" in Osaka is 00:00 UTC (it used to be asked for as 09:00 UTC, the evening there).
+    if (when) when = utcOf(when, await zoneAt(a[0], a[1]).catch(() => "UTC"));
     // A long train trip (stay to stay, a day trip) still follows the tracks when its end is out of a train's reach.
-    const r = await fetchRail(ROUTERS[mode][0], a, b, TRANSIT[mode]!, when, mode === "train" && kmBetween(a, b) > 20);
+    // Japan's timetables have the metros (Osaka Metro, Tokyo's) as regional rail: town transport there includes rail.
+    const japan = (p: LatLng) => p[0] > 24 && p[0] < 46 && p[1] > 122 && p[1] < 146;
+    const modes = mode === "transit" && (japan(a) || japan(b)) ? `${TRANSIT.transit},REGIONAL_RAIL,SUBURBAN,RAIL` : TRANSIT[mode]!;
+    const r = await fetchRail(ROUTERS[mode][0], a, b, modes, when, mode === "train" && kmBetween(a, b) > 20);
     return r && RIDE_ONLY.includes(mode) && mostlyWalking(r) ? null : r;
   }
   let lastErr: unknown;
@@ -218,7 +251,8 @@ export function routeBatch(legs: LegRequest[]) {
     if (key in routeCache.data) { routes[key] = routeCache.data[key]; continue; }
     pending++;
     const q = queues[queueOf(mode)];
-    const at = typeof when === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? `${when}:00Z` : undefined;
+    // Local time where the leg starts (turned into the moment it is when it's asked for).
+    const at = typeof when === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(when) ? when : undefined;
     if (!q.some((x) => x.key === key)) q.push({ mode, a, b, key, when: at });
   }
   for (const q of QUEUES) runQueue(q);

@@ -83,7 +83,29 @@ function legMode(x: ItineraryItem, a: LatLng, b: LatLng, dayMode = ""): LegMode 
   if (RAIL.test(t) && km > 2) return "straight";
   if (FOOT.test(t) && walkable(t, km)) return "foot";
   if (ROAD.test(t)) return "car";
-  return km < 1.5 ? "foot" : km < 80 ? "car" : "straight";
+  if (km < 1.5) return "foot";
+  // Nothing said: as they get around (by public transport: town transport, a train further out), else by road.
+  if (gettingAround() === "transit") return km > 20 ? (km < 300 ? "train" : "straight") : "transit";
+  return km < 80 ? "car" : "straight";
+}
+
+const TRANSIT_WORDS = /\b(train|trains|metro|subway|bus|buses|tram|trams|jr|shinkansen|station|u-?bahn|s-?bahn|line|rail|railway|ferry|boat|taxi)\b/gi;
+const CAR_WORDS = /\b(drive|drives|driving|car|parking|park at|motorway|autobahn|highway|toll)\b/gi;
+let aroundOf: { key: string; around: "transit" | "car" } | null = null;
+/**
+ * How they get around: as set (Travelers & style), else what the plan says most, public transport or the car (an older
+ * plan with vague transport, "15 min", was drawn by road even for a trip without a car). Worked out once per plan.
+ */
+export function gettingAround(): "transit" | "car" {
+  if (state.getAround === "transit" || state.getAround === "car") return state.getAround;
+  const items = state.itinerary?.days.flatMap((d) => d.items) || [];
+  const text = items.map((x) => `${x.transport || ""} ${x.kind === "transfer" ? x.place : ""}`).join(" ");
+  const key = `${items.length}|${text.length}|${state.stays.map((s) => s.travel || "").join(",")}`;
+  if (aroundOf?.key === key) return aroundOf.around;
+  const transit = text.match(TRANSIT_WORDS)?.length || 0;
+  const car = (text.match(CAR_WORDS)?.length || 0) + state.stays.filter((s) => s.travel === "car").length * 3;
+  aroundOf = { key, around: transit > car ? "transit" : "car" };
+  return aroundOf.around;
 }
 
 /** First words of stop names that aren't places ("Dinner at …", "Walk along …"). */

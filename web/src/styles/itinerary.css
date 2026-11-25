@@ -78,7 +78,8 @@ label.check.off { opacity: .5; }
 .fold > summary .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fold > ul { margin-top: 8px; }
 /* Itinerary search: stays at the top while scrolling through the days. */
-.it-search { position: sticky; top: -18px; z-index: 5; display: flex; gap: 10px; align-items: center; background: var(--panel); padding: 10px 0; margin: 10px 0 4px; }
+/* As wide as a selected day's box (which reaches 12px past the text), so a day scrolling under it is covered. */
+.it-search { position: sticky; top: -18px; z-index: 5; display: flex; gap: 10px; align-items: center; background: var(--panel); padding: 10px 12px; margin: 10px -12px 4px; }
 .it-search input { flex: 1; }
 .it-search .hint { white-space: nowrap; }
 #output [hidden] { display: none !important; }
