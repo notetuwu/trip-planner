@@ -134,6 +134,10 @@ npm run package     # the app as one executable for this system, in release/
 
 `npm run package` bakes the server and the page into a copy of Node ([single executable application](https://nodejs.org/api/single-executable-applications.html)). GitHub Actions runs the checks and tests on every push, and builds the releases for Windows (zip and [Inno Setup](https://jrsoftware.org/isinfo.php) installer), macOS and Linux when a version tag is pushed.
 
+## Privacy
+
+Everything runs on your computer: see [PRIVACY.md](PRIVACY.md).
+
 ## License
 
 [MIT](LICENSE)
