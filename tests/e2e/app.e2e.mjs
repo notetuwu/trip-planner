@@ -579,6 +579,25 @@ test("a place's popup on the map stays open while the map redraws (lookups and r
   assert.equal(await page.eval(`planner.state().marks["Caffe Pedrocchi"]`), "must");
 });
 
+test("the chat can move a stop to where it really is (its address looked up), and Undo puts it back", async () => {
+  const plan = { summary: "Plan", totalEstimatedCost: 0, days: [
+    { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "", lat: 45.40, lng: 11.88 }] }] };
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 1, hotel: "" }], list: "", listChosen: true, autoFix: false, itinerary: plan });
+  // (The server looked the address up: the page gets the spot with the change.)
+  await page.eval(`window.__e2e.companion = { answer: "Moved it to the address you gave.", change: { days: [], request: "", stops: [{ op: "where", day: 1, place: "Basilica", where: "Piazza del Santo, Padova", lat: 45.4013, lng: 11.8809 }] } }`);
+  await page.eval(`document.querySelector("#chatBtn").click(); (() => { const q = document.querySelector("#cpQ"); q.value = "the basilica is at Piazza del Santo"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the offered change");
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Basilica is at Piazza del Santo/);
+  await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-undo]")`, 10000, "applied");
+  const x = await page.eval(`planner.state().itinerary.days[0].items[0]`);
+  assert.deepEqual([x.lat, x.lng, x.pinned, x.time], [45.4013, 11.8809, true, "10:00"], "moved, trusted, nothing else changed");
+  assert.equal(await page.eval(`window.__e2e.requests.length`), 0, "no new plan asked for");
+  await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
+  assert.deepEqual(await page.eval(`(({ lat, lng }) => [lat, lng])(planner.state().itinerary.days[0].items[0])`), [45.40, 11.88], "Undo puts it back");
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
 test("the chat can set a place on the way (taking it off the stay's day trips); Undo puts it back; old cards lose their buttons", async () => {
   const plan = { summary: "Plan", totalEstimatedCost: 0, days: [
     { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] }] };

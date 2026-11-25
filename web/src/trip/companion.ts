@@ -36,7 +36,7 @@ import { askConfirm } from "../core/ask";
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }
 /** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
-interface StopOp { op: "add" | "remove" | "time"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number }
+interface StopOp { op: "add" | "remove" | "time" | "where"; day: number; place: string; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
 /** Anything else they can change by hand (see EDITS_DOC in server/trip/companion.ts). */
 interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string }
@@ -374,7 +374,9 @@ function changeNote(c: PlanChange) {
 /** The stop edits in words. */
 function stopLines(ops?: StopOp[]) {
   return (ops || []).map((o) => o.op === "add" ? `Day ${o.day}, ${o.time}: add ${o.place}${o.where ? ` (${o.where})` : ""}`
-    : o.op === "remove" ? `Day ${o.day}: remove ${o.place}` : `Day ${o.day}: ${o.place} at ${o.time}`);
+    : o.op === "remove" ? `Day ${o.day}: remove ${o.place}`
+      : o.op === "where" ? `Day ${o.day}: ${o.place} is at ${o.where}${o.notFound ? " (not found on the map: not moved)" : ""}`
+        : `Day ${o.day}: ${o.place} at ${o.time}`);
 }
 
 /** Makes the stop edits in the plan itself: no model, nothing else on the day changes. */
@@ -388,6 +390,12 @@ function applyStops(ops: StopOp[]) {
     const at = d.items.findIndex((x) => samePlace(x.place, o.place));
     if (o.op === "remove" && at >= 0) d.items.splice(at, 1);
     else if (o.op === "time" && at >= 0 && o.time) d.items[at].time = o.time;
+    // Moved where they said: trusted from now on, like a spot set with the crosshair button (pin.ts).
+    else if (o.op === "where" && at >= 0 && typeof o.lat === "number" && typeof o.lng === "number") {
+      const x = d.items[at];
+      x.lat = o.lat; x.lng = o.lng; x.pinned = true; delete x.fixed;
+      continue; // (the day's order and costs stay as they are)
+    }
     else if (o.op === "add") {
       d.items.push({ time: o.time || "", place: o.place, description: o.description || "", cost: o.cost || 0, kind: o.kind || "sight",
         ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}) });

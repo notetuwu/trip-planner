@@ -70,7 +70,8 @@ export function editOps(v: unknown, days = 0): EditOp[] | null {
 }
 /** A small edit the page makes itself, without re-planning: add a stop at a free time, remove one, or move one's time. */
 export interface StopOp {
-  op: "add" | "remove" | "time";
+  /** "where": the stop is somewhere else (its address given): it's looked up and the stop moved there. */
+  op: "add" | "remove" | "time" | "where";
   /** 1-based day number. */
   day: number;
   place: string;
@@ -82,6 +83,8 @@ export interface StopOp {
   kind?: string;
   lat?: number;
   lng?: number;
+  /** A "where" whose address couldn't be found on the map (nothing is moved). */
+  notFound?: boolean;
 }
 /** Changes to the trip's setup (not the day-by-day plan): how must-sees are fitted in, and the stays' day trips. */
 export interface TripOps {
@@ -117,7 +120,7 @@ CHANGE: {"title": "a short headline of the change, under 60 characters", "days":
 "days" lists the day numbers the change touches (several when it moves things between days, [] when it changes the whole trip).
 Small edits don't need the planner: adding a stop at a time that's free and close to that day's other stops (a few minutes away, so nothing else has to move), removing a stop, or moving a stop to another time. A stop that is further away, or that pushes later stops, dinner or the drive back, is a "request" for the planner for that day ("add X at about 14:00 and re-plan the rest of the day around it"), never an "add". Write those as "stops" instead of "request" (and "days": []); the page makes them straight away, without re-planning the day:
 CHANGE: {"days": [], "request": "", "stops": [{"op": "add", "day": 5, "time": "14:30", "place": "Aussichtsturm Gaflei", "where": "Gafleistrasse, Triesenberg, Liechtenstein", "description": "what it is and why go, how to get there, how long to allow", "cost": 0, "kind": "sight"}]}
-Other ops: {"op": "remove", "day": 5, "place": "the stop's name exactly as in the plan"} and {"op": "time", "day": 5, "place": "the stop's name exactly as in the plan", "time": "08:00"} (e.g. breakfast moved to when the café opens). For an added stop, "where" is its address or "place, town, country" (it's looked up on the map, so it must be the real location). Use "request" instead when other stops would have to move or the day needs rearranging.
+Other ops: {"op": "remove", "day": 5, "place": "the stop's name exactly as in the plan"} and {"op": "time", "day": 5, "place": "the stop's name exactly as in the plan", "time": "08:00"} (e.g. breakfast moved to when the café opens), and {"op": "where", "day": 5, "place": "the stop's name exactly as in the plan", "where": "its real address, or place, town, country"} when a stop is in the wrong place on the map or they tell you where it really is (they give an address, or say which branch or which side of town): it's moved there, nothing else changes. Give each day's stop its own "where" when the same place is on several days. For an added stop, "where" is its address or "place, town, country" (it's looked up on the map, so it must be the real location). Use "request" instead when other stops would have to move or the day needs rearranging.
 Add "trip" only when the trip's setup changes too (the day-by-day plan is made from it), with just the parts that change, for example: "trip": {"onTheWay": ["Burg Hohenwerfen"]}. Its parts:
 - "onTheWay": places to visit on a travel day between two stays instead of as a day trip (this also takes them off the stays' day trips). Use it whenever they want a place "on the way".
 - "fromStay": places to visit from where they sleep.
@@ -246,18 +249,21 @@ export function stopOps(v: unknown, days = 0): StopOp[] | null {
   if (!Array.isArray(v)) return null;
   const str = (x: unknown, n: number) => (typeof x === "string" ? x.trim().slice(0, n) : "");
   const ops = v.slice(0, 10).map((x: any): StopOp | null => {
-    const op = ["add", "remove", "time"].includes(x?.op) ? x.op : null, day = Number(x?.day), place = str(x?.place, 140);
+    const op = ["add", "remove", "time", "where"].includes(x?.op) ? x.op : null, day = Number(x?.day), place = str(x?.place, 140);
     const time = /^\d{1,2}:\d{2}$/.test(str(x?.time, 5)) ? str(x.time, 5).padStart(5, "0") : "";
-    if (!op || !place || !Number.isInteger(day) || day < 1 || (days && day > days) || (op !== "remove" && !time)) return null;
+    if (!op || !place || !Number.isInteger(day) || day < 1 || (days && day > days) || ((op === "add" || op === "time") && !time)) return null;
+    // A new location needs its address.
+    if (op === "where") return str(x.where, 200) ? { op, day, place, where: str(x.where, 200) } : null;
     return { op, day, place, ...(time ? { time } : {}),
       ...(op === "add" ? { description: str(x.description, 1200), where: str(x.where, 200), cost: Math.max(0, Number(x.cost) || 0), kind: ["sight", "activity", "meal", "other"].includes(x.kind) ? x.kind : "sight" } : {}) };
   }).filter((x): x is StopOp => !!x);
   return ops.length ? ops : null;
 }
 
-/** Added stops get their real spot from their address (not the model's idea of the coordinates). */
+/** Added and moved stops get their real spot from their address (not the model's idea of the coordinates). A moved
+ *  stop's address that can't be found is marked, so nothing is moved and they're told. */
 async function locateStops(stops: StopOp[], dayAt: Record<string, [number, number]> = {}) {
-  for (const s of stops.filter((x) => x.op === "add")) {
+  for (const s of stops.filter((x) => x.op === "add" || x.op === "where")) {
     // First around where they sleep that day (a "Gasthaus Muster" by Bregenz, not the one near Bayreuth), then anywhere.
     const near = Array.isArray(dayAt[s.day]) && dayAt[s.day].length === 2 && dayAt[s.day].every(Number.isFinite) ? dayAt[s.day] : null;
     const tries: [string, [number, number] | null][] = [[s.where || s.place, near], ...(s.where ? [[s.place, near]] as [string, [number, number] | null][] : []), ...(near ? [[s.where || s.place, null]] as [string, null][] : [])];
@@ -265,6 +271,7 @@ async function locateStops(stops: StopOp[], dayAt: Record<string, [number, numbe
       const hit = await geocodeOne(q, undefined, at).catch(() => null);
       if (hit) { s.lat = hit.lat; s.lng = hit.lng; break; }
     }
+    if (s.op === "where" && s.lat == null) s.notFound = true;
   }
 }
 
@@ -423,7 +430,7 @@ These figures in it aren't in the trip or in any lookup result: ${unsure.join(",
   const change = req.mode === "ask" ? null : req.days ? parsed
     : setup && (setup.trip || setup.edits?.length) ? { days: [], request: "", ...(setup.trip ? { trip: setup.trip } : {}), ...(setup.edits?.length ? { edits: setup.edits } : {}), ...(parsed!.title ? { title: parsed!.title } : {}) } : null;
   if (change?.request && unsure.length) change.request += ` (Not verified by a routing lookup: ${unsure.join(", ")}. Don't rely on these; use routed distances.)`;
-  if (change?.stops) { report({ type: "status", text: "Finding the new stops on the map…" }); await locateStops(change.stops, req.dayAt || {}); }
+  if (change?.stops) { report({ type: "status", text: "Finding the stops on the map…" }); await locateStops(change.stops, req.dayAt || {}); }
   if (!text && !change) throw new Error("The model didn't answer properly (no text, only an empty change). Try again, or pick a different model in the chat's menu.");
   const thought = thinking.trim() ? { thinking: thinking.trim().slice(-20_000), thoughtSecs: Math.max(1, Math.round(((thinkTo || Date.now()) - thinkFrom) / 1000)) } : {};
   // A reply that asks something waits for the answer: no change with it.

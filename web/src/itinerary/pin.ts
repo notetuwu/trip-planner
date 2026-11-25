@@ -1,6 +1,5 @@
 // "Set location" on a stop: where it really is, when the planner's or the lookup's spot is wrong (or only a guess).
 // Search for it near that day, or click the map. A location set here is trusted from then on (pinned).
-import { moveTo } from "../map/move";
 import type { GeoHit } from "../../../shared/types";
 import { api, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
@@ -61,7 +60,7 @@ export function openPin(di: number, xi: number, anchor: HTMLElement) {
     const m = mapModule.map;
     if (!m) return;
     panel.remove();
-    if (here) moveTo(m, [here.lat, here.lng], 13);
+    // (The map stays where it is: they may already be looking at the right spot.)
     mapModule.pickOnMap(ends ? `where it arrives in ${ends[1]}` : x.place, (at) => setAt(di, xi, at.lat, at.lng, "the spot you clicked"));
   };
   input.focus(); input.select();

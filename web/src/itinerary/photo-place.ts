@@ -426,14 +426,14 @@ export function placeTool(box: HTMLElement): PlaceTool {
   /** The map goes to a search result and marks it: photos can be dropped on the mark (or the selected placed with a click). */
   function goTo(r: GeoHit) {
     if (!m) return;
-    found.clearLayers();
+    for (const l of [...found.getLayers()]) if (!(l as L.Marker & { psArea?: boolean }).psArea) found.removeLayer(l);
     L.marker([r.lat, r.lng], { zIndexOffset: -400, icon: L.divIcon({ className: "", html: `<div class="pp-found">${icon("pin")}</div>`, iconSize: [32, 32], iconAnchor: [16, 30] }) })
       .bindTooltip(esc(r.name), { direction: "top", offset: [0, -30], permanent: true, className: "pp-found-tip" })
       .on("click", () => clicked(L.latLng(r.lat, r.lng)))
       .addTo(found);
     moveTo(m, [r.lat, r.lng], 17);
   }
-  const searchBar = placeSearch(q<HTMLFormElement>(".pp-search"), { map: () => m, placeholder: "Search places, streets, stations", onPick: goTo, onClear: () => found?.clearLayers() });
+  const searchBar = placeSearch(q<HTMLFormElement>(".pp-search"), { map: () => m, placeholder: "Search places, streets, stations", onPick: goTo, onClear: () => found?.clearLayers(), layer: () => found });
 
   // ---- Layers ----
   const layersBox = q(".pp-layers"), layersBtn = q<HTMLButtonElement>("[data-pp-layers-btn]");

@@ -13,6 +13,7 @@ import { placePictures } from "./geo/wiki-photos";
 import { pickFolder } from "./util/pick-folder";
 import { fsCheck, fsList, fsMkdir, fsPlaces } from "./util/fs-browse";
 import { reverseGeocode, searchPlaces } from "./geo/search";
+import { type Box, searchAreaKinds, searchAreaNames } from "./geo/area-search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
 import { openInBrowser } from "./launcher";
@@ -250,6 +251,13 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "POST" && path === "/api/hours") {
       const body = await readJson(req);
       sendJson(res, 200, (Array.isArray(body?.checks) ? body.checks : []).slice(0, 500).map(checkHours));
+    }
+    // A chain or a kind of place in the map's view: names at once (what=names), kinds of place when they come (what=kinds).
+    else if (method === "GET" && path === "/api/search/area") {
+      const q = (url.searchParams.get("q") || "").trim();
+      const box = ["s", "w", "n", "e"].map((k) => Number(url.searchParams.get(k))) as Box;
+      try { sendJson(res, 200, await (url.searchParams.get("what") === "kinds" ? searchAreaKinds : searchAreaNames)(q, box)); }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
     }
     else if (method === "GET" && path === "/api/search") {
       const q = (url.searchParams.get("q") || "").trim();

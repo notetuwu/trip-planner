@@ -67,6 +67,10 @@ describe("stop edits from the chat", () => {
     expect(stopOps([{ op: "add", day: 30, time: "10:00", place: "X" }, { op: "add", day: 2, place: "Y" }, { op: "time", day: 2, place: "Café", time: "8:00" }], 19))
       .toEqual([{ op: "time", day: 2, place: "Café", time: "08:00" }]);
   });
+  it("can move a stop to its real address (and need one)", () => {
+    const c = parseChange('Moving it.\nCHANGE: {"days": [], "request": "", "stops": [{"op": "where", "day": 3, "place": "Kura Sushi", "where": "1-8-22 Dotonbori, Chuo, Osaka"}, {"op": "where", "day": 3, "place": "Gion"}]}', 14);
+    expect(c?.stops).toEqual([{ op: "where", day: 3, place: "Kura Sushi", where: "1-8-22 Dotonbori, Chuo, Osaka" }]);
+  });
 });
 
 describe("opening hours found online", () => {
