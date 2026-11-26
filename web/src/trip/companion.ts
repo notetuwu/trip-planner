@@ -33,12 +33,14 @@ import * as mapModule from "../map/map";
 import { routeKey, routes } from "../map/routes";
 import { askConfirm } from "../core/ask";
 import { splitGroup } from "./modes";
+import { cleanNames, company } from "../../../shared/people";
+import { showNames } from "./fields";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
 interface TripOps { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }
 /** A small edit made straight away, without re-planning (see server/trip/companion.ts). */
-interface StopOp { op: "add" | "remove" | "time" | "where" | "group"; day: number; place: string; group?: string; people?: number; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
+interface StopOp { op: "add" | "remove" | "time" | "where" | "group"; day: number; place: string; who?: string[]; group?: string; people?: number; time?: string; description?: string; where?: string; cost?: number; kind?: ItineraryItem["kind"]; lat?: number; lng?: number; notFound?: boolean }
 /** Anything else they can change by hand (see EDITS_DOC in server/trip/companion.ts). */
 interface EditOp { op: string; [k: string]: string | number | boolean | undefined }
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string; agreed?: AgreedStop[] }
@@ -145,6 +147,11 @@ function applyEdits(edits: EditOp[]) {
       else if (f === "getAround" && ["", "transit", "car"].includes(s)) state.getAround = s as never;
       else if (f === "interests") state.interests = s;
       else if (f === "wishes") state.wishes = s;
+      else if (f === "people") {
+        const names = cleanNames(s);
+        if (names.length) { state.people = names; if (names.length > state.travelers) state.travelers = names.length; } else delete state.people;
+        showNames();
+      }
     } else if (e.op === "stayNights") { const st = stayOf(e.stay); if (st && Number(e.nights) >= 0) { st.nights = Math.round(Number(e.nights)); chainDates(); } }
     else if (e.op === "stayHotel") { const st = stayOf(e.stay); if (st) st.hotel = s; }
     else if (e.op === "stayTravel") { const st = stayOf(e.stay); if (st && ["car", "train", "bus", "walk", "bike", "ferry", "flight"].includes(s)) st.travel = s as never; }
@@ -312,6 +319,7 @@ const OPEN_KEY = "trip-planner-chat-open";
 export function tripContext(full = true): string {
   const s = state, it = s.itinerary, out: string[] = [];
   const stays = s.stays.filter((x) => x.city);
+  if (s.people?.length) out.push(`Travelers by name: ${s.people.join(", ")}`);
   out.push(`Travelers: ${s.travelers} · budget about ${s.dailyBudget} ${s.currency} per person a day (${s.dailyBudget * Math.max(1, s.travelers)} for the group; day costs in the plan are for the group) · pace: ${s.pace}`);
   // How their days go: the planner plans by these, so the chat should too (and can say when a day doesn't fit them).
   const BREAKFAST: Record<string, string> = { hotel: "at the hotel", out: "out at a café", brunch: "brunch instead", skip: "they skip it" };
@@ -385,14 +393,14 @@ function changeNote(change: PlanChange) {
 /** The stop edits in words. */
 function stopLines(ops?: StopOp[]) {
   return (ops || []).map((o) => o.op === "add" ? `Day ${o.day}, ${o.time}: add ${o.place}${o.where ? ` (${o.where})` : ""}${o.group ? `, ${whoText(o)}` : ""}`
-    : o.op === "group" ? `Day ${o.day}: ${o.place}, ${o.group ? whoText(o) : "everyone together"}`
+    : o.op === "group" ? `Day ${o.day}: ${o.place}, ${o.group || o.who?.length ? whoText(o) : "everyone together"}`
     : o.op === "remove" ? `Day ${o.day}: remove ${o.place}`
       : o.op === "where" ? `Day ${o.day}: ${o.place} is at ${o.where}${o.notFound ? " (not found on the map: not moved)" : ""}`
         : `Day ${o.day}: ${o.place} at ${o.time}`);
 }
 
 /** A group and its head count in words: "Group B, 3 people". */
-const whoText = (o: { group?: string; people?: number }) => `${o.group}${o.people ? `, ${o.people} ${o.people > 1 ? "people" : "person"}` : ""}`;
+const whoText = (o: { group?: string; people?: number; who?: string[] }) => o.who?.length ? o.who.join(" + ") : `${o.group}${o.people ? `, ${o.people} ${o.people > 1 ? "people" : "person"}` : ""}`;
 
 /** Makes the stop edits in the plan itself: no model, nothing else on the day changes. */
 function applyStops(ops: StopOp[]) {
@@ -402,7 +410,9 @@ function applyStops(ops: StopOp[]) {
   for (const o of ops) {
     const d = it.days[o.day - 1];
     if (!d) continue;
-    const at = d.items.findIndex((x) => samePlace(x.place, o.place));
+    // (Of stops with the same name, the one at the time given.)
+    const timed = o.op === "group" && o.time ? d.items.findIndex((x) => samePlace(x.place, o.place) && x.time === o.time) : -1;
+    const at = timed >= 0 ? timed : d.items.findIndex((x) => samePlace(x.place, o.place));
     if (o.op === "remove" && at >= 0) d.items.splice(at, 1);
     else if (o.op === "time" && at >= 0 && o.time) d.items[at].time = o.time;
     // Moved where they said: trusted from now on, like a spot set with the crosshair button (pin.ts).
@@ -414,15 +424,17 @@ function applyStops(ops: StopOp[]) {
     }
     else if (o.op === "group" && at >= 0) {
       const x = d.items[at];
-      delete x.group; delete x.people;
-      if (o.group) { x.group = o.group; if (o.people) x.people = o.people; }
+      delete x.group; delete x.people; delete x.who;
+      const who = company(o.who, state.people || [], state.travelers);
+      if (who.length) x.who = who;
+      else if (o.group) { x.group = o.group; if (o.people) x.people = o.people; }
       continue; // (nothing else about the stop changes)
     }
     else if (o.op === "add") {
       d.items.push({ time: o.time || "", place: o.place, description: o.description || "", cost: o.cost || 0, kind: o.kind || "sight",
         ...(o.where ? { where: o.where } : {}),
         ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}),
-        ...(o.group ? { group: o.group, ...(o.people ? { people: o.people } : {}) } : {}) });
+        ...(o.who?.length ? { who: o.who } : o.group ? { group: o.group, ...(o.people ? { people: o.people } : {}) } : {}) });
     } else continue;
     touched.add(o.day - 1);
   }

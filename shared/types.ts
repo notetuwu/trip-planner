@@ -99,6 +99,9 @@ export interface ItineraryItem {
   lng?: number;
   group?: string;
   people?: number;
+  /** Who does this stop, by name, while the group is apart (or only some meet up); none when everyone does it
+   *  (shared/people.ts). Instead of "group" and "people" on trips whose travelers are named. */
+  who?: string[];
   kind?: "sight" | "activity" | "meal" | "transfer" | "other";
   /** For places with tickets, tours or reservations: how much booking ahead matters. */
   booking?: "essential" | "recommended" | "optional";
@@ -178,6 +181,8 @@ export interface TripRequest {
   budgetPer?: "person";
   currency: string;
   travelers: number;
+  /** The travelers' names, when they gave them: splits are then said by name. */
+  people?: string[];
   pace: string;
   /** How much walking and climbing the plan can ask of them (unset: average). */
   fitness?: "easy" | "average" | "fit";
@@ -230,6 +235,8 @@ export interface AgreedStop {
   /** While the group is split: which subgroup does this stop ("Group A") and how many of them; none when all go. */
   group?: string;
   people?: number;
+  /** Who does it, by name (shared/people.ts); none when all go. */
+  who?: string[];
 }
 
 export type CloudProvider = "anthropic" | "openai" | "openrouter";

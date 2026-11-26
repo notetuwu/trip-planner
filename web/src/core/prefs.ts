@@ -6,6 +6,7 @@ import { api } from "./dom";
 
 export interface AppPrefs {
   units: "km" | "mi";
+  temp: "c" | "f";
   clock: "24" | "12";
   dates: "auto" | "dmy" | "mdy";
   mapNames: "local" | "english";
@@ -28,7 +29,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
+  units: "km", temp: "c", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
   transitLines: false, linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };

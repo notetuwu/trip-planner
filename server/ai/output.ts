@@ -1,6 +1,7 @@
 // Helpers for model output: token counts, tidying itineraries, and pulling JSON out of replies.
 import type { Itinerary } from "../../shared/types";
 import { groupsFromText } from "../../shared/groups";
+import { company } from "../../shared/people";
 import type { OnEvent } from "./types";
 
 /** Reports generated tokens to the browser, at most ~5 times a second (forced for exact counts). */
@@ -14,8 +15,11 @@ export function tokenMeter(onEvent: OnEvent, estimated: boolean) {
   };
 }
 
+/** Who does a stop, as one text (to compare two stops). */
+const doers = (x: any) => (Array.isArray(x.who) ? x.who.join(" + ") : x.group || "");
+
 /** Small models sometimes leave fields out; fill the gaps so the page can render what they did produce. */
-export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
+export function normalizeItinerary(it: any, travelers = 1, names: string[] = []): Itinerary | null {
   if (!it || !Array.isArray(it.days) || !it.days.length) return null;
   for (const d of it.days) {
     d.items = Array.isArray(d.items) ? d.items.filter((x: any) => x && x.place) : [];
@@ -30,6 +34,11 @@ export function normalizeItinerary(it: any, travelers = 1): Itinerary | null {
       // "All" / everyone in the group isn't a split.
       if (!x.group || /^(all|everyone|everybody|together|whole group|both|group)$/i.test(String(x.group).trim()) || (travelers > 1 && x.people >= travelers)) {
         delete x.group; delete x.people;
+      }
+      // Who does it, by name: tidied, and nothing when that's everyone.
+      if (x.who != null) {
+        const who = company(x.who, names, travelers);
+        if (who.length) { x.who = who; delete x.group; delete x.people; } else delete x.who;
       }
     }
     d.estimatedCost = Number(d.estimatedCost) || d.items.reduce((n: number, x: any) => n + (Number(x.cost) || 0), 0);
@@ -80,11 +89,11 @@ export function tidyStops(d: { items: any[] }) {
     const filler = x.kind !== "meal" && !(Number(x.cost) > 0) && String(x.description || "").length < 120
       && PASS_THROUGH.test(name) && !KEEP.test(String(x.place));
     if (filler) {
-      const next = d.items.slice(i + 1).find((y) => (y.group || "") === (x.group || ""));
+      const next = d.items.slice(i + 1).find((y) => doers(y) === doers(x));
       if (next && x.transport && !String(next.transport || "").includes(String(x.transport))) next.transport = [x.transport, next.transport].filter(Boolean).join("; ");
       continue;
     }
-    const key = `${x.group || ""}|${name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
+    const key = `${doers(x)}|${name.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()}`;
     if (x.kind !== "meal" && x.kind !== "transfer" && !/→/.test(name) && seen.has(key)) continue;
     seen.add(key);
     out.push(x);

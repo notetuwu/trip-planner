@@ -341,7 +341,9 @@ function generalHtml() {
     <div class="set-card">
       <b class="card-title">Units &amp; formats</b>
       <div class="set-row"><div><b>Units</b><div class="hint">Distances on the map and in the plan, and temperatures in the forecast.</div></div>
-        <div class="segs">${seg("units", "km", "Kilometres, °C")}${seg("units", "mi", "Miles, °F")}</div></div>
+        <div class="segs">${seg("units", "km", "Kilometres")}${seg("units", "mi", "Miles")}</div></div>
+      <div class="set-row"><div><b>Temperature</b><div class="hint">For the weather on each day.</div></div>
+        <div class="segs">${seg("temp", "c", "°C")}${seg("temp", "f", "°F")}</div></div>
       <div class="set-row"><div><b>Times</b><div class="hint">How the plan's times are shown (14:30 or 2:30 pm). Calendar files always use your calendar's own setting.</div></div>
         <div class="segs">${seg("clock", "24", "24-hour")}${seg("clock", "12", "12-hour")}</div></div>
       <div class="set-row"><div><b>Dates</b><div class="hint">As your system writes them, day first (Mon, 2 Nov) or month first (Mon, Nov 2).</div></div>

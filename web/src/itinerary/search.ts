@@ -6,7 +6,7 @@ import { session, state } from "../core/state";
 import { addDays, fmtDate } from "../core/format";
 
 const norm = (s: unknown) => String(s ?? "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss");
-const itemText = (x: ItineraryItem) => norm([x.place, x.description, x.transport, x.group, x.kind, x.bookAhead].join(" "));
+const itemText = (x: ItineraryItem) => norm([x.place, x.description, x.transport, x.group, x.who?.join(" "), x.kind, x.bookAhead].join(" "));
 // Not the day's notes: they mention many places, so too many whole days would match.
 // Also its number ("day 3"), its date as shown ("Tue, Mar 12") and its stay (town and hotel).
 const dayText = (d: Day, i: number) => {

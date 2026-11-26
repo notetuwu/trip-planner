@@ -20,7 +20,7 @@ export type Edits = Record<string, Edit>;
  *  chat may do by itself, and how plans are made. Kept out of the file shared through a folder, and never taken from it. */
 export const PERSONAL = ["chat", "chatSummary", "chatSummarized", "model", "chatModel", "routeModel", "research", "autoFix", "hoursOnline", "chatMode"] as const;
 
-const DETAILS = ["travelers", "dailyBudget", "budgetPer", "currency", "pace", "fitness", "dayStart", "breakfast", "getAround", "interests", "wishes", "notes", "car", "lastRouteWhat"];
+const DETAILS = ["travelers", "people", "dailyBudget", "budgetPer", "currency", "pace", "fitness", "dayStart", "breakfast", "getAround", "interests", "wishes", "notes", "car", "lastRouteWhat"];
 const PLACES = ["marks", "who", "how", "customPlaces", "kept", "lists", "list", "listSuggest", "listChosen"];
 const PACKING = ["packed", "packingExtra"];
 /** Parts that are a few of the trip's own fields together. */
@@ -217,7 +217,7 @@ export function partLabel(key: string, trip?: Trip | null): string {
 }
 
 const FIELD_WORDS: Record<string, string> = {
-  travelers: "travelers", dailyBudget: "budget", currency: "currency", pace: "pace", fitness: "fitness", dayStart: "start of the day", breakfast: "breakfast",
+  travelers: "travelers", people: "names", dailyBudget: "budget", currency: "currency", pace: "pace", fitness: "fitness", dayStart: "start of the day", breakfast: "breakfast",
   getAround: "getting around", interests: "interests", wishes: "what you want to see", notes: "notes for the plan", car: "car", lastRouteWhat: "route description",
   marks: "must-sees", who: "who wants what", how: "on the way or from a stay", customPlaces: "places picked on the map", kept: "must-sees kept", lists: "place lists", listSuggest: "suggested lists",
   packed: "ticked items", packingExtra: "own items",

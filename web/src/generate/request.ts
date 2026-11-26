@@ -26,6 +26,7 @@ export function tripRequest(change: Change = {}): TripRequest {
       lat: stayLoc(s)?.lat, lng: stayLoc(s)?.lng,
       travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "", people: t.people })),
     })),
+    ...(state.people?.length ? { people: state.people } : {}),
     research: state.research !== false,
     bookings: (state.bookings || []).filter((b) => b.name.trim() && b.date),
     mustSee: marked("must"),

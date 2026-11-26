@@ -29,7 +29,7 @@ import { initMapSearch } from "./map/search";
 import { initChips, renderChips } from "./places/chips";
 import { initLists, loadList, refreshLists } from "./places/lists";
 import { applyState, importTrip, initSaves, refreshSaves, startFresh } from "./saves/saves";
-import { initFields } from "./trip/fields";
+import { initFields, onNames } from "./trip/fields";
 import { initStays, renderStays } from "./trip/stays";
 import { initRoutePlanner } from "./trip/route-planner";
 import { initCompanion } from "./trip/companion";
@@ -58,6 +58,7 @@ setOnRouted(() => { drawMap(); updateLegInfo(); if (document.querySelector(".jou
 // Stops whose words were changed to the timetable's line: drawn again (their leg may now go another way).
 setOnPlanChanged(() => { renderItinerary(); drawMap(); });
 initRideStops(goToStop);
+onNames(() => { renderItinerary(); drawMap({ fit: false }); });
 
 hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();

@@ -38,6 +38,7 @@ export interface Settings {
 export interface AppPrefs {
   /** Distances in kilometres or miles; times as 24-hour or 12-hour; dates as the system does, day first or month first. */
   units: "km" | "mi";
+  temp: "c" | "f";
   clock: "24" | "12";
   dates: "auto" | "dmy" | "mdy";
   /** The map's start: place names in the local language or English; saved places and routes shown. */
@@ -66,7 +67,7 @@ export interface AppPrefs {
 }
 
 export const APP_DEFAULTS: AppPrefs = {
-  units: "km", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
+  units: "km", temp: "c", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
   transitLines: false, linesDownload: true, linesRadius: 10,
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
@@ -77,6 +78,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
   const t: Partial<AppPrefs["newTrip"]> = a.newTrip && typeof a.newTrip === "object" ? a.newTrip : {};
   return {
     units: pick("units", (v) => v === "km" || v === "mi"),
+    temp: pick("temp", (v) => v === "c" || v === "f"),
     clock: pick("clock", (v) => v === "24" || v === "12"),
     dates: pick("dates", (v) => ["auto", "dmy", "mdy"].includes(v as string)),
     mapNames: pick("mapNames", (v) => v === "local" || v === "english"),

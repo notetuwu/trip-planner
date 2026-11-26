@@ -23,7 +23,7 @@ export function journeyRuns(items: ItineraryItem[], isLeg: (x: ItineraryItem) =>
   let run: number[] = [];
   const flush = () => { if (run.some((i) => isLeg(items[i]))) runs.push({ items: run }); run = []; };
   items.forEach((x, i) => {
-    if (!x.group && (isLeg(x) || ENDS.test(x.place))) run.push(i);
+    if (!x.group && !x.who?.length && (isLeg(x) || ENDS.test(x.place))) run.push(i);
     else flush();
   });
   flush();

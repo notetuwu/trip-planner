@@ -6,6 +6,7 @@ import { closeOnBackdrop, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
 import { save, state } from "../core/state";
 import { byTitleMap, geocodeItems, itemLoc } from "../geo/item-loc";
+import { company } from "../../../shared/people";
 import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
 import { legControls } from "./leg-edit";
@@ -50,7 +51,9 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
         <label class="se-f"><span>In words</span><textarea data-f="transport" rows="2" placeholder="e.g. Midosuji Line to Shinsaibashi, then 5 min on foot">${esc(x.transport || "")}</textarea></label>
         <div class="se-leg"></div>
       </fieldset>
-      ${travelers > 1 ? `<fieldset class="se-section"><legend>${icon("users")} Who goes</legend><div class="se-row">
+      ${state.people?.length ? `<fieldset class="se-section"><legend>${icon("users")} Who goes <small>(all ticked or none: everyone)</small></legend><div class="se-row se-who">
+        ${[...new Set([...state.people, ...(x.who || [])])].map((n) => `<label class="inline-check"><input type="checkbox" data-who="${esc(n)}"${!x.who?.length || x.who.includes(n) ? " checked" : ""}> ${esc(n)}</label>`).join("")}
+      </div></fieldset>` : travelers > 1 ? `<fieldset class="se-section"><legend>${icon("users")} Who goes</legend><div class="se-row">
         <label class="se-f se-grow"><span>Group <small>(empty: everyone)</small></span><input type="text" data-f="group" value="${esc(x.group || "")}" placeholder="e.g. Group A"></label>
         <label class="se-f"><span>How many</span><input type="number" min="1" max="${travelers - 1}" data-f="people" value="${x.group && x.people ? esc(x.people) : ""}"></label>
       </div></fieldset>` : ""}
@@ -82,7 +85,12 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     // Their own words for getting here replace the timetable's (and the plan's) from now on.
     const transport = text("transport");
     if (transport !== (x.transport || "")) { set("transport", transport); delete x.transportWas; }
-    if (travelers > 1) {
+    if (state.people?.length) {
+      const boxes = [...dlg.querySelectorAll<HTMLInputElement>("[data-who]")], who = company(boxes.filter((b) => b.checked).map((b) => b.dataset.who!), state.people, travelers);
+      set("who", who.length ? who : undefined);
+      // (Said by name now: a group label from before goes.)
+      if (who.length || boxes.length) { delete x.group; delete x.people; }
+    } else if (travelers > 1) {
       const group = text("group");
       set("group", group);
       set("people", group ? Math.min(travelers - 1, Math.max(1, Number(text("people")) || 1)) : undefined);

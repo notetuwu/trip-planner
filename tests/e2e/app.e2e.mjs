@@ -466,6 +466,26 @@ test("setting a stop's location: the map waits for a click from the start, next 
   assert.equal(await page.eval(`document.querySelector("#map").classList.contains("picking")`), false);
 });
 
+test("a day split by name: in time order, a meet-up as one card, whoever is away noted", async () => {
+  await trip({ ...PADUA_MILANO, travelers: 4 });
+  await page.eval(`planner.applyState({ ...planner.state(), people: ["Me", "Anna", "Ben", "Cara"], itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [
+    stop("09:00", "Rest at the hotel", { who: ["Ben"], lat: 45.4, lng: 11.87, pinned: true }), stop("09:00", "Side quest", { who: ["Cara"], lat: 45.42, lng: 11.9, pinned: true }), stop("12:00", "Cappella degli Scrovegni", { who: ["Me", "Anna"], lat: 45.4115, lng: 11.8795, pinned: true }),
+    stop("18:00", "Back to the hotel", { who: ["Me"], lat: 45.4, lng: 11.87, pinned: true }), stop("17:00", "Caffè Pedrocchi", { who: ["Me", "Anna", "Ben"], lat: 45.4077, lng: 11.8766, pinned: true }),
+    stop("19:00", "Palazzo della Ragione", { who: ["Anna", "Ben"], lat: 45.4072, lng: 11.875, pinned: true })])] } })`);
+  await page.waitFor(`document.querySelectorAll("#output .split").length === 3`);
+  // In time order, though "Back to the hotel" came before the cafe.
+  assert.deepEqual(await page.eval(`planner.state().itinerary.days[0].items.map((x) => x.time)`), ["09:00", "09:00", "12:00", "17:00", "18:00", "19:00"]);
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#output .split")].map((s) => [...s.querySelectorAll(":scope > .tracks > .track")].map((t) => t.dataset.g))`),
+    [["Ben", "Cara", "Me + Anna"], ["Me + Anna + Ben"], ["Me", "Anna + Ben"]]);
+  assert.match(await page.eval(`document.querySelectorAll("#output .meanwhile")[0].textContent`), /Cara: Side quest/);
+  // Each person's way on the map: the cafe is reached by the two from the chapel and by Ben from the hotel.
+  const legs = await page.eval(`planner.dayLegs(planner.state().itinerary.days[0], planner.byTitleMap()).map((l) => [l.fromXi, l.xi, l.group])`);
+  assert.ok(legs.some((l) => l[0] === 2 && l[1] === 3 && l[2] === "Me + Anna"), JSON.stringify(legs));
+  assert.ok(legs.some((l) => l[0] === 3 && l[1] === 4 && l[2] === "Me"), JSON.stringify(legs));
+  // The names are in the sidebar.
+  assert.equal(await page.eval(`document.querySelector("#people").value`), "Me, Anna, Ben, Cara");
+});
+
 test("a split day's groups sit side by side with room, and become tabs without; a shared trip keeps each stop's edit button", async () => {
   await trip({ ...PADUA_MILANO, travelers: 4 });
   const A = `{ group: "Group A", people: 1 }`, B = `{ group: "Group B", people: 3 }`;

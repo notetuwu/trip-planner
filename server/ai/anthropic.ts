@@ -84,7 +84,7 @@ export const runAnthropic: Runner = async (trip, places, onEvent, abort): Promis
     messages.push({ role: "user", content: `Now call the ${OUTPUT_TOOL} tool with the complete itinerary.` });
   }
 
-  const normalized = normalizeItinerary(itinerary, Number(trip.travelers) || 1);
+  const normalized = normalizeItinerary(itinerary, Number(trip.travelers) || 1, trip.people);
   if (!normalized) throw new Error(`${model} didn't return an itinerary.`);
   return {
     itinerary: normalized, reasoning: stream.state.reasoning.trim(), thinking: stream.state.thinking.trim().slice(0, 20000),

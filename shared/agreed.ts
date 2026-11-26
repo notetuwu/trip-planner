@@ -30,19 +30,19 @@ function same(x: ItineraryItem, a: AgreedStop): boolean {
 }
 
 /** Who does an agreed stop: its group and head count, or nothing when everyone goes. */
-const groupOf = (a: AgreedStop) => (a.group ? { group: a.group, ...(a.people ? { people: a.people } : {}) } : {});
+const groupOf = (a: AgreedStop) => (a.who?.length ? { who: a.who } : a.group ? { group: a.group, ...(a.people ? { people: a.people } : {}) } : {});
 
 /** Puts back the agreed stops the planner's version of a day is missing, and the groups it dropped from the ones it
  *  kept (who does what is part of what they agreed); returns how many stops it put back. */
 export function restoreAgreed(day: { items: ItineraryItem[] }, agreed: AgreedStop[]): number {
   const used = new Set<ItineraryItem>();
   // Groups said for some stops: the others are done together, so a group the planner made up for them goes.
-  const split = agreed.some((a) => a.group);
+  const split = agreed.some((a) => a.group || a.who?.length);
   const missing = agreed.filter((a) => {
     const hit = day.items.find((x) => !used.has(x) && same(x, a));
     if (!hit) return true;
     used.add(hit);
-    if (split) { delete hit.group; delete hit.people; Object.assign(hit, groupOf(a)); }
+    if (split) { delete hit.group; delete hit.people; delete hit.who; Object.assign(hit, groupOf(a)); }
     // Where it is, as agreed (the planner may have left it out).
     if (a.where && !hit.where) hit.where = a.where;
     return false;

@@ -3,10 +3,11 @@ import { dayKey } from "../../../shared/edits";
 import { editChip } from "../saves/collab";
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { dayColor, fmtDate, fmtTemp, fmtTime, money, addDays } from "../core/format";
+import { dayColor, fmtDate, fmtTemps, fmtTime, money, addDays } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
-import { dayGroupColors, parentGroup, splitGroup, trackOrder } from "../trip/modes";
+import { byWho, dayGroupColors, parentGroup, splitGroup, stopCompany, trackOrder } from "../trip/modes";
+import { JOIN, sections } from "../../../shared/people";
 import { bookLink } from "./book-ahead";
 import { directionsUrl, mealSearchUrl } from "./directions";
 import { genericMeal, mapsName, placeUrl } from "../core/maps-links";
@@ -82,8 +83,34 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
 function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackColor: Record<string, number>) {
   const item = (x: ItineraryItem, i: number) => itemHtml(d, di, x, i, byTitle, cur);
   let out = "", run: { x: ItineraryItem; i: number }[] = [], forks = 0;
+  /** The split's tabs and columns (split-tabs.ts shows one or the other); `main` opens first. */
+  const splitBox = (key: string, groups: string[], main: string, size: (g: string) => number, cols: string, nest: boolean) => {
+    const tab = (g: string) => `<button type="button" role="tab" class="split-tab t${trackColor[g] ?? 0}" data-split-tab="${esc(g)}">${esc(g)}<span>${size(g)}</span></button>`;
+    return `<div class="split" data-split="${esc(key)}" data-main="${esc(main)}"><div class="split-tabs" role="tablist">${groups.map(tab).join("")}</div><div class="tracks${nest ? " nest" : ""}">${cols}</div></div>`;
+  };
+  const busiest = (groups: string[], size: (g: string) => number) => groups.reduce((a, b) => (size(b) > size(a) ? b : a), groups[0]);
+  /** Who does what, by name: a split for each time people are apart, the meet-ups between them. */
+  const flushWho = () => {
+    const xs = run.map((r) => r.x);
+    for (const s of sections(xs, stopCompany)) {
+      if (!("fork" in s)) continue; // (everyone's stops aren't in the run)
+      const id = `${di}-${forks++}`, { cols, meanwhile } = s.fork;
+      const labels = cols.map((c) => c.who.join(JOIN)), size = (g: string) => cols[labels.indexOf(g)].items.length;
+      for (const g of labels) trackColor[g] ??= Object.keys(trackColor).length % 4;
+      const col = (c: (typeof cols)[number], k: number) => {
+        const slim = c.items.length <= 2 && cols.some((o) => o.items.length > 2);
+        return `<div class="track t${trackColor[labels[k]]}${slim ? " slim" : ""}" data-g="${esc(labels[k])}">
+          <div class="track-head">${esc(labels[k])}<span>${icon("users")} ${c.who.length}</span></div>
+          <ul class="items">${c.items.map((j) => item(run[j].x, run[j].i)).join("")}</ul></div>`;
+      };
+      const still = meanwhile.map((m) => `<li><b>${esc(m.who.join(JOIN))}</b>: ${esc(xs[m.item].place)} <span>(since ${esc(fmtTime(xs[m.item].time))})</span></li>`).join("");
+      out += `<li class="fork"><div class="fork-label">${cols.length > 1 ? "Group splits up" : "Some of the group"}</div>${splitBox(id, labels, busiest(labels, size), size, cols.map(col).join(""), false)}${still ? `<ul class="meanwhile">${still}</ul>` : ""}</li>`;
+    }
+    run = [];
+  };
   const flush = () => {
     if (!run.length) return;
+    if (byWho(d.items)) return flushWho();
     const tracks = new Map<string, typeof run>();
     for (const r of run) { const g = splitGroup(r.x); if (!tracks.has(g)) tracks.set(g, []); tracks.get(g)!.push(r); }
     // A group that splits again later ("Group B" into "Group B1", "B2"…): its new groups side by side inside its own
@@ -110,12 +137,8 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
       </div>`;
     };
     /** The groups side by side, with their tabs for when there's no room (split-tabs.ts). The busiest opens first. */
-    const splitHtml = (key: string, groups: string[], nest: boolean): string => {
-      const main = groups.reduce((a, b) => (size(b) > size(a) ? b : a), groups[0]);
-      const tab = (g: string) => `<button type="button" role="tab" class="split-tab t${trackColor[g] ?? 0}" data-split-tab="${esc(g)}">${esc(g)}<span>${size(g)}</span></button>`;
-      const cols = groups.map((g) => col(g, key, groups)).join("");
-      return `<div class="split" data-split="${esc(key)}" data-main="${esc(main)}"><div class="split-tabs" role="tablist">${groups.map(tab).join("")}</div><div class="tracks${nest ? " nest" : ""}">${cols}</div></div>`;
-    };
+    const splitHtml = (key: string, groups: string[], nest: boolean): string =>
+      splitBox(key, groups, busiest(groups, size), size, groups.map((g) => col(g, key, groups)).join(""), nest);
     for (const g of order) trackColor[g] ??= Object.keys(trackColor).length % 4;
     out += `<li class="fork"><div class="fork-label">Group splits up</div>${splitHtml(id, kids(""), nested)}</li>`;
     run = [];
@@ -172,7 +195,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
         <h4><span class="date">Day ${i + 1} · ${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
           <span class="edit-slot" data-edit="${esc(dayKey(it.days, i))}">${editChip(dayKey(it.days, i))}</span>
-          ${w ? `<span class="weather${w.kind === "typical" ? " typical" : w.kind === "was" ? " was" : ""}" title="${esc(weatherTitle(w))}">${wmoIcon(w.code)}${w.kind === "typical" ? "~" : ""}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
+          ${w ? `<span class="weather${w.kind === "typical" ? " typical" : w.kind === "was" ? " was" : ""}" title="${esc(weatherTitle(w))}">${wmoIcon(w.code)}${w.kind === "typical" ? "~" : ""}${fmtTemps(w.min, w.max)}</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>

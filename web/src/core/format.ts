@@ -42,7 +42,9 @@ export const fmtDist = (m: number) => {
 /** Whole kilometres (detours, drives) in the chosen unit: "245 km" or "152 mi". */
 export const fmtKm = (km: number) => (prefs.app.units === "mi" ? `${Math.round(km / 1.609344).toLocaleString()} mi` : `${Math.round(km).toLocaleString()} km`);
 /** A temperature (°C from the forecast) in the chosen unit, without the unit sign's letter: "18°". */
-export const fmtTemp = (c: number) => `${Math.round(prefs.app.units === "mi" ? c * 1.8 + 32 : c)}°`;
+const degrees = (c: number) => Math.round(prefs.app.temp === "f" ? c * 1.8 + 32 : c);
+/** A day's temperatures, low to high, in the chosen unit: "8–17 °C". */
+export const fmtTemps = (min: number, max: number) => `${degrees(min)}–${degrees(max)} °${prefs.app.temp === "f" ? "F" : "C"}`;
 export const fmtDur = (s: number) => {
   const m = Math.max(1, Math.round(s / 60));
   return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${m % 60 ? `${m % 60} min` : ""}`.trim();

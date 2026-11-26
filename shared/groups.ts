@@ -10,7 +10,7 @@ const LABEL = /^\s*(group\s+[a-z0-9])\b\s*(?:\(\s*(\d+)[^)]*\))?\s*[:.\-–—]\
 export function groupsFromText(days: { items: Stop[] }[]): boolean {
   let changed = false;
   for (const d of days) {
-    if (d.items.some((x) => x.group)) continue; // the model used the field: trust it
+    if (d.items.some((x) => x.group || (x as { who?: string[] }).who?.length)) continue; // the model used the fields: trust them
     const found = d.items.map((x) => x.description?.match(LABEL) || x.place.match(LABEL));
     if (new Set(found.filter(Boolean).map((m) => m![1].toLowerCase())).size < 2) continue; // not a split
     d.items.forEach((x, i) => {

@@ -4,6 +4,7 @@ import { state } from "../core/state";
 import { type IconName, icon } from "../core/icons";
 import { modeOf } from "./mode-of";
 import { groupOrder, lineGroup, onWay, parentGroup } from "./split-tree";
+import { JOIN, byTime, company } from "../../../shared/people";
 export { modeOf };
 
 /** "" lets the planner choose. */
@@ -73,8 +74,23 @@ export function dayGroupColors(items: ItineraryItem[], dayIndex: number): Record
 
 /** Split inside a split (see split-tree.ts), for the plan's stops. */
 export { parentGroup };
-export const onWayOf = (items: ItineraryItem[], y: ItineraryItem, g: string) => onWay(items, y, g, splitGroup);
-export const legGroup = (items: ItineraryItem[], from: string, to: string) => lineGroup(items, from, to, splitGroup);
+/** A day that says who does what by name (not by group labels). */
+export const byWho = (items: ItineraryItem[]) => items.some((x) => x.who?.length);
+/** Who does a stop while the group is apart; none when everyone does. */
+export const stopCompany = (x: ItineraryItem) => company(x.who, state.people || [], state.travelers);
+const namesOf = (g: string) => g.split(JOIN);
+export function onWayOf(items: ItineraryItem[], y: ItineraryItem, g: string) {
+  if (!byWho(items)) return onWay(items, y, g, splitGroup);
+  const gy = splitGroup(y);
+  return !gy || (!!g && namesOf(gy).some((n) => namesOf(g).includes(n)));
+}
+/** Whose line a leg is: the people who make it (at both of its ends). */
+export function legGroup(items: ItineraryItem[], from: string, to: string) {
+  if (!byWho(items)) return lineGroup(items, from, to, splitGroup);
+  if (!from || !to) return from || to;
+  const both = namesOf(to).filter((n) => namesOf(from).includes(n));
+  return both.length ? both.join(JOIN) : to;
+}
 export const trackOrder = (items: ItineraryItem[]) => groupOrder(items, splitGroup);
 
 /** While the group is split, each group's stops one after another (A's, then B's) instead of mixed by time, so
@@ -82,6 +98,12 @@ export const trackOrder = (items: ItineraryItem[]) => groupOrder(items, splitGro
 export function orderSplitRuns(days: { items: ItineraryItem[] }[]): boolean {
   let moved = false;
   for (const d of days) {
+    // By name: simply in time order (who's with whom shows from the names).
+    if (byWho(d.items)) {
+      const sorted = byTime(d.items);
+      if (sorted.some((x, i) => x !== d.items[i])) { d.items = sorted; moved = true; }
+      continue;
+    }
     const out: ItineraryItem[] = [];
     let run: ItineraryItem[] = [];
     const flush = () => {
@@ -92,7 +114,7 @@ export function orderSplitRuns(days: { items: ItineraryItem[] }[]): boolean {
     };
     for (const x of d.items) { if (splitGroup(x)) run.push(x); else { flush(); out.push(x); } }
     flush();
-    if (moved) d.items = out;
+    if (out.some((x, i) => x !== d.items[i])) d.items = out;
   }
   return moved;
 }
@@ -100,6 +122,7 @@ export function orderSplitRuns(days: { items: ItineraryItem[] }[]): boolean {
 /** A stop's subgroup while the travelers are split up, or "" when everyone is together. Some models label shared
  *  stops "All" or give a group with everyone in it; that isn't a split. */
 export const splitGroup = (x: ItineraryItem) => {
+  if (x.who?.length) return stopCompany(x).join(JOIN);
   const g = String(x.group || "").trim();
   if (!g || /^(all|everyone|everybody|together|whole group|both|group)$/i.test(g)) return "";
   if (x.people && x.people >= (state.travelers || 1) && (state.travelers || 1) > 1) return "";

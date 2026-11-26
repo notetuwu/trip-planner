@@ -37,6 +37,7 @@ export const ITINERARY_SCHEMA = {
                 lng: { type: "number", description: "Longitude of the place, best estimate" },
                 group: { type: "string", description: "Only while the travelers split up: short label of the subgroup doing this, e.g. 'Group A'. Omit when everyone is together." },
                 people: { type: "number", description: "How many travelers are in that subgroup. Omit when everyone is together." },
+                who: { type: "array", items: { type: "string" }, description: "Only when the travelers' names are given and not everyone does this stop: the names of those who do. Instead of group and people." },
                 kind: { type: "string", enum: ["sight", "activity", "meal", "transfer", "other"] },
                 booking: {
                   type: "string", enum: ["essential", "recommended", "optional"],

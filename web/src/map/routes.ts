@@ -4,7 +4,7 @@ import { api } from "../core/dom";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc, stayOn } from "../geo/locate";
 import { state } from "../core/state";
-import { chosenMode, cleanStop, legGroup, modeOf, onWayOf, splitGroup } from "../trip/modes";
+import { byWho, chosenMode, cleanStop, legGroup, modeOf, onWayOf, splitGroup, stopCompany } from "../trip/modes";
 import { setMapStatus } from "./status";
 import { DRIVE_KM, arrivalStay, isTransfer, journeyOf, onMap, ownsJourney, viaStops } from "./travel-day";
 
@@ -167,7 +167,10 @@ export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   const via = new Set(drive ? viaStops(arrive, byTitle).map((v) => v.xi) : []);
   const dayMode = arrive > 0 ? state.stays[arrive].travel || "" : "";
   const groups = [...new Set(d.items.map(splitGroup).filter(Boolean))];
-  const paths = groups.length ? groups.map((g) => pts.filter((p) => onWayOf(d.items, p.x, g))) : [pts];
+  // By name, each person's own way (legs people share are drawn once).
+  const names = byWho(d.items) ? [...new Set(d.items.flatMap(stopCompany))] : [];
+  const paths = names.length ? names.map((n) => pts.filter((p) => { const w = stopCompany(p.x); return !w.length || w.includes(n); }))
+    : groups.length ? groups.map((g) => pts.filter((p) => onWayOf(d.items, p.x, g))) : [pts];
   // Keyed by both ends: two groups heading to the same stop (the dinner where they meet again) are two legs.
   const legs = new Map<string, Leg>();
   type Pt = { x: ItineraryItem | null; xi: number; loc: { lat: number; lng: number } };

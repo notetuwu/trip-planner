@@ -91,7 +91,7 @@ export function buildPrompt(full: Trip, allPlaces: Place[], opts: PromptOptions 
   /** Whether anyone in the group goes separate ways (then the rules for splitting the group are needed): set up that
    *  way, asked for in a change ("a split day", "2 of the 4 people"), or already so on a day being changed. */
   const splits = Object.values(trip.mustSeeWho || {}).some((n) => n < trip.travelers) || trip.stays.some((s) => (s.dayTrips || []).some((d) => d.people && d.people < trip.travelers))
-    || (partial && (asksForSplit(trip) || !!trip.edit?.agreed?.some((a) => a.group) || partialDays(trip).some((d) => d.items.some((x) => x.group))));
+    || (partial && (asksForSplit(trip) || !!trip.edit?.agreed?.some((a) => a.group || a.who?.length) || partialDays(trip).some((d) => d.items.some((x) => x.group || x.who?.length))));
   const t = tune();
   const json = opts.notes === "json";
   const research = !!opts.webTools && !!trip.research;
@@ -187,7 +187,8 @@ ${partial ? "" : `
 - All costs in ${trip.currency}.
 - Group nearby places on the same day to minimise transit: sights within about 2 km of each other (a castle and an aquarium in the same part of town, two waterfalls in the same valley) go on the same day, one after the other, and never send them back on another day to a place right next to one they already visited.
 - No duplicates: every sight, activity and restaurant appears once in the whole trip, on one day only (a day of a longer stay in the same town, like a second visit to Verona, gets new places, not the Arena or the old town again). Before answering, check each day's stops against the earlier days. Only hotels, stations and transfers may repeat.
-${!partial || splits ? `- If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.` : ""}`;
+${!partial || splits ? `- If the group splits for part of a day (including splits mentioned in the notes), use "group"/"people" on those items as described above.` : ""}${trip.people?.length ? `
+- The travelers are: ${trip.people.join(", ")}${trip.travelers > trip.people.length ? ` (and ${trip.travelers - trip.people.length} not named)` : ""}. Say who does what BY NAME, instead of "group" and "people" (wherever the rules above say to use those): every stop that not everyone does has "who": the list of names of those who do it. Stops everyone does have no "who". People who meet up again for a stop are simply all in its "who"; no group labels anywhere. Everyone apart needs their own stops (resting at the hotel too), and items go in time order.` : ""}`;
 
   if (trip.revise?.itinerary && trip.revise?.request) {
     prompt += `
@@ -236,7 +237,7 @@ export function editSection({ itinerary, days, request, agreed }: NonNullable<Tr
   // The stops they settled with the chat, by day: the plan for those days, not a suggestion.
   const byDate = new Map<string, NonNullable<typeof agreed>>();
   for (const a of agreed || []) if (a.date) byDate.set(a.date, [...(byDate.get(a.date) || []), a]);
-  const agreedText = [...byDate].map(([date, list]) => `${withDay(date)}:\n${list.map((a) => `- ${a.time || "(any time)"} "${a.place}"${a.where ? ` at ${a.where}` : ""}${a.kind ? ` · kind: ${a.kind}` : ""}${a.cost != null ? ` · cost ${a.cost} for the group` : ""}${a.group ? ` · group: "${a.group}"${a.people ? `, ${a.people} people` : ""}` : ""}${a.note ? ` · ${a.note}` : ""}`).join("\n")}`).join("\n");
+  const agreedText = [...byDate].map(([date, list]) => `${withDay(date)}:\n${list.map((a) => `- ${a.time || "(any time)"} "${a.place}"${a.where ? ` at ${a.where}` : ""}${a.kind ? ` · kind: ${a.kind}` : ""}${a.cost != null ? ` · cost ${a.cost} for the group` : ""}${a.who?.length ? ` · who: ${JSON.stringify(a.who)}` : a.group ? ` · group: "${a.group}"${a.people ? `, ${a.people} people` : ""}` : ""}${a.note ? ` · ${a.note}` : ""}`).join("\n")}`).join("\n");
   return `
 
 ## The rest of the trip (already planned, keep as is)
@@ -250,7 +251,7 @@ ${request}
 ${agreedText ? `
 ## The stops they agreed on (this is the plan for ${byDate.size > 1 ? "those days" : "that day"}: keep it exactly)
 ${agreedText}
-Every stop above becomes one stop in the day, in this order, at its time and with its name as written (a transfer such as a train or a taxi ride is a stop too, with kind "transfer"; so are checking in and the rest of the day at the hotel). Don't leave any out, merge them or add others on ${byDate.size > 1 ? "those days" : "that day"}. Only fill in the details: a description from the note, how they get there ("transport"), the cost given, its "where" as given, coordinates and booking.${(agreed || []).some((a) => a.group) ? ` Give each stop that has a group exactly that "group" and "people"; the stops without one are done together (no group).` : ""}
+Every stop above becomes one stop in the day, in this order, at its time and with its name as written (a transfer such as a train or a taxi ride is a stop too, with kind "transfer"; so are checking in and the rest of the day at the hotel). Don't leave any out, merge them or add others on ${byDate.size > 1 ? "those days" : "that day"}. Only fill in the details: a description from the note, how they get there ("transport"), the cost given, its "where" as given, coordinates and booking.${(agreed || []).some((a) => a.group) ? ` Give each stop that has a group exactly that "group" and "people"; the stops without one are done together (no group).` : ""}${(agreed || []).some((a) => a.who?.length) ? ` Give each stop that has a "who" exactly those names; the stops without one are done by everyone.` : ""}
 ` : ""}
 ## Change only what they asked for
 Make exactly this change and nothing else. Every stop, time, description and cost the request doesn't touch stays as it is: copy it unchanged. Moving stops between these days, or swapping them, is fine when that's what they asked for (then give each stop the date it moves to). Keep day trips, travel between stays, where they sleep and anything booked as they are, unless the request is about them. Don't add places they already visit on another day. Distances and driving times: use the ones in the request or the stays above (both come from a routing service); a new drive that neither gives you is your own estimate, so say so in the day's notes. When the times the request asks for can't work with the real driving time, keep the change itself but let the times follow the drive, and say so plainly in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only these ${these.length} day(s) (${dates}), each complete and with the same dates. "summary" is one sentence on what changed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly say what you changed.`;

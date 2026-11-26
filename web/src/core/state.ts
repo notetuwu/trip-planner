@@ -60,6 +60,8 @@ export interface AppState {
   budgetPer?: "person";
   currency: string;
   travelers: number;
+  /** Their names ("Me", "Anna"…), when given: who does which stop on a split day (shared/people.ts). */
+  people?: string[];
   pace: string;
   /** How much walking and climbing the plan can ask of them. */
   fitness?: "easy" | "average" | "fit";

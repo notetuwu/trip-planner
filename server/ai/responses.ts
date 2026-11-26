@@ -80,7 +80,7 @@ export const runResponses: Runner = async (trip, places, onEvent, abort): Promis
 
   let parsed;
   try { parsed = parseJsonLoose(output.out.content); } catch { /* reported below */ }
-  const itinerary = normalizeItinerary(parsed, Number(trip.travelers) || 1);
+  const itinerary = normalizeItinerary(parsed, Number(trip.travelers) || 1, trip.people);
   if (!itinerary) throw new Error(`${model} didn't return a usable itinerary.${output.out.content ? `\n\nIts answer began:\n${output.out.content.slice(0, 600)}` : ""}`);
   const reasoning = String(itinerary.planningNotes || "").trim();
   delete itinerary.planningNotes;

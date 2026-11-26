@@ -50,7 +50,7 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
 
   let parsed;
   try { parsed = parseJsonLoose(out.content); } catch { /* reported below */ }
-  const itinerary = normalizeItinerary(parsed, Number(trip.travelers) || 1);
+  const itinerary = normalizeItinerary(parsed, Number(trip.travelers) || 1, trip.people);
   if (!itinerary) {
     const why = !out.content.trim()
       ? (out.thinking ? `It only thought (${out.thinking.length.toLocaleString()} characters) and never wrote the itinerary.` : "It returned nothing.")

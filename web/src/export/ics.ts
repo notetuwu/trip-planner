@@ -24,10 +24,10 @@ const nextDay = (date: string) => new Date(Date.parse(date + "T00:00:00Z") + 864
 
 /** A stop ends when the next stop of the same group (or of everyone) starts, else after an hour. */
 export function endMin(d: Day, xi: number, start: number) {
-  const g = d.items[xi].group || "";
+  const g = d.items[xi].group || "", who = d.items[xi].who || [];
   for (let i = xi + 1; i < d.items.length; i++) {
     const y = d.items[i];
-    if (y.group && g && y.group !== g) continue;
+    if ((y.group && g && y.group !== g) || (y.who?.length && who.length && !y.who.some((n) => who.includes(n)))) continue;
     const t = toMin(y.time);
     if (t != null && t > start) return Math.min(t, 23 * 60 + 59);
   }
@@ -62,7 +62,7 @@ export function itineraryIcs(it: Itinerary, opts: IcsOptions = {}) {
       const desc = [x.description, x.transport && `Getting there: ${x.transport}`, x.bookAhead && `Book ${x.bookAhead}`, opts.mapsUrl?.(x, d)].filter(Boolean).join("\n\n");
       event([
         `UID:${uid(`stop-${d.date}-${xi}`)}`, `DTSTART:${stamp(d.date, start)}`, `DTEND:${stamp(d.date, endMin(d, xi, start))}`,
-        `SUMMARY:${esc(x.group ? `${x.place} (${x.group})` : x.place)}`, `LOCATION:${esc(`${x.place}, ${d.city}`)}`,
+        `SUMMARY:${esc(x.who?.length || x.group ? `${x.place} (${x.who?.join(" + ") || x.group})` : x.place)}`, `LOCATION:${esc(`${x.place}, ${d.city}`)}`,
         ...(at ? [`GEO:${at.lat.toFixed(5)};${at.lng.toFixed(5)}`] : []),
         ...(desc ? [`DESCRIPTION:${esc(desc)}`] : []),
       ]);
