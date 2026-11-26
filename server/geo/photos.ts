@@ -9,9 +9,11 @@ import { USER_AGENT, errMsg } from "../config";
 import { readSettings } from "../settings";
 import { diskCache } from "../util/disk-cache";
 import { type Res, sendJson } from "../util/http";
-import { isLocal, listLocal, localFile } from "./local-photos";
+import { isLocal, listLocal, localDelete, localFile } from "./local-photos";
 import { bearer } from "../sync/google";
 import { readVideoHeader, timeFromName } from "./video-header";
+
+export type RemoveKind = "trash" | "permanent" | "remove";
 
 export interface Photo {
   id: string;
@@ -26,6 +28,15 @@ export interface Photo {
   up?: string;
   /** Who uploaded it to Drive (the file's owner, or in a shared drive who last changed it), when Drive says. */
   by?: string;
+  /** That person's profile picture, when Drive gives one. */
+  byPic?: string;
+  /** Who the file itself says took it (a JPEG's EXIF "Artist"; read from pictures on this computer). */
+  author?: string;
+  /** The file's size in bytes. */
+  size?: number;
+  /** Set when it may be taken out: into the trash it can be got back from, only deleted for good, or (someone else's
+   *  file in Drive) only removed from the folder. */
+  del?: RemoveKind;
   /** The folder it's in, when that's a folder inside the shared one. */
   dir?: string;
   /** A thumbnail's address with its size at the end ("=s220"): the browser swaps the size for the one it needs. */
@@ -48,7 +59,7 @@ export interface PhotoList {
   auth?: boolean;
 }
 
-const cache = diskCache<PhotoList>("photos-v3.json");
+const cache = diskCache<PhotoList>("photos-v7.json");
 const MAX_AGE = 60 * 60_000, MAX_PHOTOS = 3000, MAX_DEPTH = 2;
 const FOLDER = "application/vnd.google-apps.folder";
 
@@ -78,6 +89,8 @@ const NO_ACCESS = "Sign in with Google in Settings → Sync (or add a Google API
 /** Thumbnails of photos read as the signed-in account: Google only hands them out to that account, so they come through
  *  here (by file id). */
 const thumbLinks = diskCache<string>("photo-thumbs.json");
+/** The folder each file that can only be removed was found in: what it's removed from. */
+const parents = diskCache<string>("photo-parents.json");
 
 /** What Google said, in words that say what to do (the common causes first). */
 function explain(status: number, body: any): string {
@@ -96,7 +109,7 @@ async function list(dir: string, a: Access, name: string, depth: number, out: Ph
   do {
     const q = new URLSearchParams({
       q: `'${dir}' in parents and trashed = false and (mimeType contains 'image/' or mimeType contains 'video/' or mimeType = '${FOLDER}')`,
-      fields: "nextPageToken,files(id,name,mimeType,thumbnailLink,createdTime,owners(displayName),lastModifyingUser(displayName),imageMediaMetadata(location,time,width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
+      fields: "nextPageToken,files(id,name,mimeType,size,capabilities(canTrash,canRemoveMyDriveParent),thumbnailLink,createdTime,owners(displayName,photoLink),lastModifyingUser(displayName,photoLink),imageMediaMetadata(location,time,width,height,rotation),videoMediaMetadata(width,height,durationMillis))",
       pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
       ...(pageToken ? { pageToken } : {}),
     });
@@ -115,12 +128,18 @@ async function list(dir: string, a: Access, name: string, depth: number, out: Ph
       // A photo with no time of its own (a messenger strips it) often has it in its file name ("IMG_20270910_094103.jpg").
       const t = (typeof meta.time === "string" && /^\d{4}:\d{2}:\d{2} \d{2}:\d{2}/.test(meta.time) ? meta.time.replace(/^(\d{4}):(\d{2}):(\d{2}) /, "$1-$2-$3T") : "") || timeFromName(String(f.name));
       const rot = Number(meta.rotation) || 0;
-      const by = String(f.owners?.[0]?.displayName || f.lastModifyingUser?.displayName || "").slice(0, 80);
+      const user = f.owners?.[0]?.displayName ? f.owners[0] : f.lastModifyingUser;
+      const by = String(user?.displayName || "").slice(0, 80), byPic = by && /^https:\/\//.test(user.photoLink || "") ? String(user.photoLink) : "";
+      // Only the signed-in account can change anything (an API key only reads). Someone else's file can't be trashed,
+      // but may be taken out of the folder.
+      const can = a && "token" in a ? f.capabilities || {} : {};
+      const del: RemoveKind | "" = can.canTrash ? "trash" : can.canRemoveMyDriveParent ? "remove" : "";
+      if (del === "remove") parents.data[f.id] = dir;
       // Read as the account: the thumbnail comes through the planner (see thumbLinks).
       let thumb = String(f.thumbnailLink || "");
       if (thumb && a && "token" in a) { thumbLinks.data[f.id] = thumb; thumb = `/api/photos/thumb?folder=${encodeURIComponent(root)}&id=${encodeURIComponent(f.id)}&px=s220`; }
       out.push({
-        id: f.id, name: f.name, t, ...(isVideo ? { video: true as const, ...(Number(vm.durationMillis) ? { dur: Math.round(Number(vm.durationMillis) / 1000) } : {}), ...(vm.width && vm.height ? { w: vm.width, h: vm.height } : {}) } : {}), ...(!t && f.createdTime ? { up: String(f.createdTime).slice(0, 19) } : {}), ...(name ? { dir: name } : {}), ...(by ? { by } : {}), thumb,
+        id: f.id, name: f.name, t, ...(isVideo ? { video: true as const, ...(Number(vm.durationMillis) ? { dur: Math.round(Number(vm.durationMillis) / 1000) } : {}), ...(vm.width && vm.height ? { w: vm.width, h: vm.height } : {}) } : {}), ...(!t && f.createdTime ? { up: String(f.createdTime).slice(0, 19) } : {}), ...(name ? { dir: name } : {}), ...(by ? { by } : {}), ...(byPic ? { byPic } : {}), ...(Number(f.size) ? { size: Number(f.size) } : {}), ...(del ? { del } : {}), thumb,
         ...(loc && typeof loc.latitude === "number" && typeof loc.longitude === "number" && (loc.latitude || loc.longitude) ? { lat: +loc.latitude.toFixed(6), lng: +loc.longitude.toFixed(6) } : {}),
         // Width and height as the picture is shown (a phone photo stored sideways is turned by its rotation).
         ...(meta.width && meta.height ? (rot % 2 ? { w: meta.height, h: meta.width } : { w: meta.width, h: meta.height }) : {}),
@@ -157,7 +176,7 @@ export async function folderPhotos(link: string, refresh = false): Promise<Photo
   catch (e) { if (hit) return withVideoInfo(hit, a); throw new Error(errMsg(e)); }
   photos.sort((a, b) => (a.t ? 0 : 1) - (b.t ? 0 : 1) || a.t.localeCompare(b.t) || a.name.localeCompare(b.name));
   const out: PhotoList = { folder: id, name, at: Date.now(), photos, total: stats.total, truncated: stats.total > photos.length, ...("token" in a ? { auth: true } : {}) };
-  cache.data[id] = out; cache.save(); thumbLinks.save();
+  cache.data[id] = out; cache.save(); thumbLinks.save(); parents.save();
   return withVideoInfo(out, a);
 }
 
@@ -197,6 +216,38 @@ export async function photoFile(link: string, photoId: string, res: Res, range =
     "Cache-Control": "private, max-age=86400",
   });
   Readable.fromWeb(r.body as any).on("error", () => res.destroy()).pipe(res);
+}
+
+/** Takes a photo of a listed folder out, the way `how` says (what was agreed to): a Drive file goes to the Drive trash,
+ *  or is only removed from its folder (it stays its owner's), as the signed-in account when it's allowed to; a file on
+ *  this computer as localDelete says. */
+export async function deletePhoto(link: string, photoId: string, how: RemoveKind): Promise<void> {
+  if (isLocal(link)) return localDelete(link, photoId, how === "permanent");
+  const hit = cache.data[folderId(link)];
+  if (!hit?.photos.some((p) => p.id === photoId)) throw new Error("That photo isn't in the folder.");
+  const token = await bearer();
+  if (!token) throw new Error("Sign in with Google in Settings → Sync to delete photos from Drive.");
+  let query = "supportsAllDrives=true";
+  if (how === "remove") {
+    const dir = parents.data[photoId];
+    if (!dir) throw new Error("Refresh the photos and try again.");
+    query += `&removeParents=${encodeURIComponent(dir)}`;
+  }
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(photoId)}?${query}`, {
+    method: "PATCH", headers: { "User-Agent": USER_AGENT, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(how === "remove" ? {} : { trashed: true }), signal: AbortSignal.timeout(30000),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    if (res.status !== 403) throw new Error(explain(res.status, body));
+    throw new Error(how === "remove" ? "Google doesn't let this account remove that file from the folder." : "Google doesn't let this account delete that file (usually only its owner may).");
+  }
+  // Out of every kept list it's in (a folder and one inside it can both be listed).
+  for (const list of Object.values(cache.data)) {
+    const rest = list.photos.filter((p) => p.id !== photoId);
+    if (rest.length < list.photos.length) { list.photos = rest; list.total--; }
+  }
+  cache.save();
 }
 
 /** A thumbnail of a photo read as the signed-in account, at `px` pixels (only photos of a folder listed before). */

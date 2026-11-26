@@ -27,6 +27,7 @@ import { bookAheadList } from "../itinerary/book-ahead";
 import { byTitleMap, geocodeItems, itemLoc } from "../geo/item-loc";
 import { runGeneration } from "../generate/run";
 import { mdLite } from "../itinerary/panels";
+import { type Ask, drawAsk, picks, withoutClosingQuestion } from "./chat-ask";
 import { renderItinerary } from "../itinerary/render";
 import { drawMap } from "../map/draw";
 import * as mapModule from "../map/map";
@@ -34,6 +35,7 @@ import { routeKey, routes } from "../map/routes";
 import { askConfirm } from "../core/ask";
 import { splitGroup } from "./modes";
 import { cleanNames, company } from "../../../shared/people";
+import { dayKey, removedStops } from "../../../shared/edits";
 import { showNames } from "./fields";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
@@ -48,7 +50,6 @@ type Source = ChatSource;
 /** revises: their message is an edit to the change offered just before it (sent back from its card). */
 type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean };
 /** A question the chat asked, with answers to pick from, and what they answered (once they have). */
-type Ask = { q: string; options: string[]; multi?: boolean; answered?: string };
 
 /** The chat's modes, in the order Shift+Tab goes through them. */
 type Mode = "ask" | "manual" | "auto";
@@ -364,6 +365,8 @@ export function tripContext(full = true): string {
         const at = i.where ? ` @ ${i.where}` : "";
         out.push(`- ${i.time} ${i.place}${at}${who}${extra ? ` [${extra}]` : ""}${full && i.description ? `: ${i.description}` : ""}`);
       }
+      const gone = removedStops(s.log || [], dayKey(it.days, k), d.items.map((i) => i.place));
+      if (gone.length) out.push(`  Removed from this day earlier (no longer planned): ${gone.join(", ")}`);
       if (d.notes) out.push(`  Notes: ${d.notes}`);
     });
     if (it.holidaysAndEvents?.length) out.push("", "Holidays and events:", ...it.holidaysAndEvents.map((h) => `- ${h.date}${h.where ? ` (${h.where})` : ""}: ${h.name}: ${h.impact}`));
@@ -460,84 +463,33 @@ function opsLines(t?: TripOps) {
   ];
 }
 
-/** A question with answers to pick from: buttons (checkboxes and Send when several can apply), and their own answer.
- *  Answered (or no longer the latest message): what they said. */
-function askCard(a: Ask, k: number, live: boolean) {
-  const head = (hint: string) => `<div class="cp-ask-head"><span class="cp-ask-chip">${icon("chat")} Question</span>${hint ? `<span class="hint">${hint}</span>` : ""}</div>`;
-  if (a.answered || !live) return `<div class="cp-ask done">${head("")}<div class="cp-ask-q">${esc(a.q)}</div>${a.answered ? `<div class="cp-ask-answer">${icon("check")} ${esc(a.answered)}</div>` : ""}</div>`;
-  // Numbered rows with a radio (pick one) or a checkbox (pick any); the last, "Other", opens a box for their own answer.
-  // Each input has its own name: a shared one would let the arrow keys pick (and send) as they move.
-  const type = a.multi ? "checkbox" : "radio";
-  const row = (value: string, n: number, text: string) => `<label class="cp-opt${value === OTHER ? " other" : ""}"><input type="${type}" name="ask-${k}-${n}" value="${esc(value)}"><span class="cp-opt-n">${n}</span><span class="cp-opt-text">${text}</span></label>`;
-  const n = a.options.length + 1;
-  return `<div class="cp-ask${a.multi ? " multi" : ""}" data-ask-card="${k}">${head(a.multi ? "Pick any" : "Pick one")}<div class="cp-ask-q">${esc(a.q)}</div>
-    <div class="cp-ask-list" role="group">${a.options.map((o, i) => row(o, i + 1, esc(o))).join("")}${row(OTHER, n, `Other <span class="hint">· write your own answer</span>`)}
-      <div class="cp-ask-other" hidden><textarea rows="2" maxlength="400" placeholder="Your answer…"></textarea></div></div>
-    <div class="cp-ask-foot"><span class="hint"><kbd>↑</kbd><kbd>↓</kbd> or <kbd>1</kbd>–<kbd>${n}</kbd> to pick${a.multi ? ", <kbd>Space</kbd> to tick" : ""} · <kbd>Enter</kbd> to send</span><button type="button" class="btn solid" data-ask-send disabled>Send</button></div></div>`;
+/** A question asked earlier in the conversation, and what they said. (The one waiting for an answer sits in the
+ *  message box: see chat-ask.ts.) */
+function askCard(a: Ask) {
+  return `<div class="cp-ask-done"><div class="cp-ask-q">${esc(a.q)}</div>${a.answered ? `<div class="cp-ask-answer">${icon("check")}<span>${esc(a.answered)}</span></div>` : ""}</div>`;
 }
 
-const OTHER = "__other__";
-
-/** The question card's picking: a single answer goes as soon as it's picked; ticked ones (or their own) with Send. */
-function wireAsk(card: HTMLElement) {
-  const k = +card.dataset.askCard!, multi = card.classList.contains("multi");
-  const inputs = [...card.querySelectorAll<HTMLInputElement>(".cp-opt input")];
-  const other = inputs[inputs.length - 1], box = card.querySelector<HTMLElement>(".cp-ask-other")!, text = box.querySelector("textarea")!;
-  const send = card.querySelector<HTMLButtonElement>("[data-ask-send]")!;
-  const picked = () => {
-    const own = other.checked ? text.value.trim() : "";
-    return [...inputs.filter((x) => x.checked && x !== other).map((x) => x.value), ...(own ? [own] : [])];
-  };
-  const sync = () => {
-    box.hidden = !other.checked;
-    for (const x of inputs) x.closest(".cp-opt")!.classList.toggle("on", x.checked);
-    send.disabled = !picked().length;
-    // A single answer that isn't their own goes straight away: Send is only for ticks and their own words.
-    card.querySelector<HTMLElement>(".cp-ask-foot")!.classList.toggle("wait", !multi && !other.checked);
-  };
-  const go = () => { const p = picked(); if (p.length) answer(k, p.join(", ")); };
-  const pick = (x: HTMLInputElement) => {
-    if (!multi) { for (const y of inputs) y.checked = y === x; }
-    else x.checked = !x.checked;
-    sync();
-    if (x === other && other.checked) text.focus();
-    else if (!multi) go();
-  };
-  for (const x of inputs) {
-    // The row's own click, not "change": the keyboard handler below decides what Enter and Space do.
-    x.closest("label")!.onclick = (e) => { e.preventDefault(); x.focus(); pick(x); };
-  }
-  text.oninput = sync;
-  send.onclick = go;
-  card.onkeydown = (e) => {
-    if (e.target === text) {
-      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); }
-      else if (e.key === "Escape") { e.stopPropagation(); other.checked = false; sync(); other.focus(); }
-      return;
-    }
-    const at = inputs.indexOf(document.activeElement as HTMLInputElement);
-    const num = /^[1-9]$/.test(e.key) ? +e.key - 1 : -1;
-    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      e.preventDefault();
-      inputs[(Math.max(0, at) + (e.key === "ArrowDown" ? 1 : inputs.length - 1)) % inputs.length].focus();
-    } else if (num >= 0 && num < inputs.length) { e.preventDefault(); inputs[num].focus(); pick(inputs[num]); }
-    else if (e.key === " " && at >= 0) { e.preventDefault(); pick(inputs[at]); }
-    else if (e.key === "Enter" && at >= 0) {
-      e.preventDefault();
-      if (multi && picked().length) go(); else pick(inputs[at]);
-    }
-  };
-  sync();
+/** The question the conversation is waiting on: the last message's, not answered yet. */
+function openQuestion(): Ask | null {
+  const t = chat().at(-1);
+  return !running && !compacting && t?.role === "ai" && t.ask && !t.ask.answered ? t.ask : null;
 }
 
-/** Answers the chat's question: noted on its card, and sent as their next message. */
-function answer(k: number, text: string) {
-  const t = chat()[k];
-  if (!t?.ask || !text.trim() || running) return;
-  t.ask.answered = text.trim();
+/** Sends what's picked of the open question (and what they wrote, with "Other") as their next message. */
+function answer() {
+  const a = openQuestion();
+  if (!a || picks.ask !== a) return;
+  const own = picks.other ? box().value.trim() : "", sent = picks.other ? pictures : [];
+  const text = [...a.options.filter((o) => picks.chosen.has(o)), ...(own ? [own] : [])].join(", ");
+  if (!text && !sent.length) return;
+  a.answered = text || "A picture";
+  if (picks.other) { box().value = ""; pictures = []; renderPictures(); fit(); }
   save();
-  ask({ text: text.trim(), pictures: [] });
+  ask({ text, pictures: sent });
 }
+
+/** Enter or the send button: the open question's answer, else the message. */
+const submit = () => (openQuestion() ? answer() : ask());
 
 /** The change card: what it changes, and (on the latest message only) Apply / Undo. Older cards just say how it went. */
 function changeCard(c: PlanChange, k: number, latest: boolean) {
@@ -678,7 +630,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     return j >= 0 && turns[j].modelName !== t.modelName ? `<div class="cp-switch"><span>${icon("sparkles")} Switched to ${esc(t.modelName)}</span></div>` : "";
   };
   const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${t.revises ? `<span class="cp-revise-tag">${icon("pencil")} Change to the proposal</span>` : ""}${esc(t.text)}</div>` : ""}${marker(k)}`
-    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.ask ? askCard(t.ask, k, k === last && pending == null) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
+    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.ask ? withoutClosingQuestion(t.text) : t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.ask && !(k === last && pending == null && !t.ask.answered) ? askCard(t.ask) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["Check my plan", "What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
@@ -693,8 +645,6 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
         <div class="cp-starters">${starters.map((q) => `<button type="button" class="chip-btn" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div></div>`;
   log.querySelectorAll<HTMLButtonElement>("[data-q]").forEach((b) => { b.onclick = () => { box().value = b.dataset.q!; ask(); }; });
   log.querySelectorAll<HTMLButtonElement>("[data-apply]").forEach((b) => { b.onclick = () => apply(+b.dataset.apply!); });
-  // The chat's question: an answer picked, several ticked and sent, or their own written.
-  log.querySelectorAll<HTMLElement>(".cp-ask[data-ask-card]").forEach(wireAsk);
   // Sending an offered change back with an edit.
   log.querySelectorAll<HTMLButtonElement>("[data-revise]").forEach((b) => { b.onclick = () => { revising = +b.dataset.revise!; render(); log.querySelector<HTMLTextAreaElement>("#cpRevise")?.focus(); }; });
   log.querySelectorAll<HTMLFormElement>("[data-revise-form]").forEach((f) => {
@@ -729,6 +679,9 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
   // The live thinking scrolls to its newest line (unless they scrolled up in it); then the log.
   const live = log.querySelector<HTMLElement>(".pending .cp-think[open] .cp-think-body");
   if (live) live.scrollTop = liveFollow ? live.scrollHeight : liveTop;
+  // The question waiting for an answer, in the message box (the log makes room for it before it scrolls).
+  drawAsk($("#cpAsk"), pending == null ? openQuestion() : null, { box: box(), onChange: idle, onSend: answer });
+  panel().style.setProperty("--cp-input-h", `${$("#cpForm").offsetHeight}px`);
   log.scrollTop = follow ? log.scrollHeight : top;
   idle();
 }
@@ -1029,6 +982,8 @@ function renderPictures() {
   const el = $("#cpAttach");
   el.hidden = !pictures.length;
   el.innerHTML = pictures.map((p, k) => `<span class="cp-thumb"><img src="${p.thumb}" alt="" data-zoom title="Click to see it big"><button type="button" data-unpic="${k}" title="Remove">${icon("x")}</button></span>`).join("");
+  // A picture added (or the last taken off) answers an open question like writing does.
+  picks.write(!!box().value.trim() || !!pictures.length);
   idle();
 }
 
@@ -1096,7 +1051,10 @@ function idle() {
     send.innerHTML = icon(busy ? "stop" : "arrowUp");
     send.title = busy ? "Stop" : "Send (Enter) · new line with Shift+Enter";
   }
-  send.disabled = !busy && !box().value.trim() && !pictures.length;
+  // A question waiting: only an answer goes (one picked, or their own, which writing here picks).
+  const asking = openQuestion(), wrote = !!box().value.trim() || !!pictures.length;
+  box().placeholder = !asking ? "Ask anything, or ask for a change…" : picks.other ? "Your answer…" : "Pick an answer, or write your own…";
+  send.disabled = !busy && (asking ? !(picks.chosen.size || (picks.other && wrote)) : !wrote);
   const ring = $<HTMLButtonElement>("#cpCompact"), use = contextUse();
   ring.hidden = busy || use.messages < 2;
   if (!ring.hidden) {
@@ -1240,16 +1198,23 @@ export function initCompanion() {
   main.addEventListener("change", syncModels);
   new MutationObserver(syncModels).observe(main, { childList: true });
   $("#cpClose").onclick = () => setOpen(false);
-  $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else ask(); };
-  box().addEventListener("input", () => { fit(); idle(); });
+  $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else submit(); };
+  box().addEventListener("input", () => { picks.write(!!box().value.trim() || !!pictures.length); fit(); idle(); });
   box().addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); }
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+    // Writing their own answer: Escape goes back to the answers to pick from.
+    if (e.key === "Escape" && openQuestion() && picks.other) { e.preventDefault(); e.stopPropagation(); $<HTMLButtonElement>("#cpAsk .cp-opt.other").click(); }
     // Shift+Tab switches the mode, as in Claude Code.
     if (e.key === "Tab" && e.shiftKey) { e.preventDefault(); nextMode(); }
   });
   // The message box floats over the log: the log keeps room for it at the end, however tall it grows.
   const form = document.querySelector<HTMLElement>("#cpForm");
-  if (form) new ResizeObserver(() => panel().style.setProperty("--cp-input-h", `${form.offsetHeight}px`)).observe(form);
+  // (Reading its end, they stay there while it grows: a question's answers coming up push the conversation up.)
+  if (form) new ResizeObserver(() => {
+    const log = $("#cpLog"), atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+    panel().style.setProperty("--cp-input-h", `${form.offsetHeight}px`);
+    if (atEnd) log.scrollTop = log.scrollHeight;
+  }).observe(form);
   document.querySelector<HTMLButtonElement>("#cpMode")?.addEventListener("click", () => renderMode(!document.querySelector("#cpModeMenu")));
   renderMode();
   $("#cpBox").onclick = (e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("cp-tools-fill")) box().focus(); };

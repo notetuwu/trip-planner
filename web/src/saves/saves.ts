@@ -74,11 +74,13 @@ function showCurrent() {
   if (!syncBtn.disabled) syncBtn.title = `Sync now: send your changes and get everyone else's${syncStatus?.lastRun ? ` (last synced ${ago(syncStatus.lastRun)})` : ""}`;
   // On a trip several people work on: the last change, when it was someone else's.
   const last = current && shared() ? lastEdit() : undefined;
-  const lastText = last && !isMine(last) ? ` · <span class="last-edit" title="${esc(new Date(last.at).toLocaleString())}">changed by ${esc(last.by)} ${esc(ago(last.at))}</span>` : "";
-  if (viewOnly) { el.innerHTML = `Saved as <b>${esc(current)}</b> ${icon("cloud")} · <span class="save-state">view only</span>${lastText}`; return; }
+  const lastText = last && !isMine(last) ? ` · <button type="button" class="last-edit" data-history="" title="${esc(new Date(last.at).toLocaleString())}. Click to see what changed">changed by ${esc(last.by)} ${esc(ago(last.at))}</button>` : "";
+  // Two lines: the name it's saved as, and under it how saving stands.
+  const lines = (cloud: boolean, how: string) => `<span>Saved as <b>${esc(current)}</b>${cloud ? ` ${icon("cloud")}` : ""}</span><span>${how}${lastText}</span>`;
+  if (viewOnly) { el.innerHTML = lines(true, `<span class="save-state">view only</span>`); return; }
   if (!current) { el.textContent = "This trip isn't saved yet (a copy is kept if you open another)"; el.className = "hint"; return; }
   const [text, cls] = failed ? ["couldn't be saved just now, trying again", "bad"] : saving ? ["saving…", ""] : unsaved ? [prefs.app.liveSave ? "saving in a moment" : "unsaved changes: press Save", "warn"] : ["all changes saved", "ok"];
-  el.innerHTML = `Saved as <b>${esc(current)}</b>${synced.has(current) ? ` ${icon("cloud")}` : ""} · <span class="save-state ${cls}">${text}</span>${lastText}`;
+  el.innerHTML = lines(synced.has(current), `<span class="save-state ${cls}">${text}</span>`);
 }
 
 async function listSaves() {
@@ -520,7 +522,7 @@ export function initSaves() {
   }
   initCollab({ apply: applyChange, show: showPart, sync: syncTripNow, canSync: () => !!state.saveName && synced.has(state.saveName) });
   $<HTMLButtonElement>("#syncBtn").onclick = (e) => syncTripNow(e.currentTarget as HTMLButtonElement);
-  $<HTMLButtonElement>("#historyBtn").onclick = openHistory;
+  $<HTMLButtonElement>("#historyBtn").onclick = () => openHistory();
   loadSyncStatus().then(showCurrent);
   $("#exportTrip").onclick = exportTrip;
   const input = $<HTMLInputElement>("#importTrip");

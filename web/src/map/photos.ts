@@ -13,7 +13,7 @@ import { type DayStops, type PhotoSpot, type Spot, anchorsOf, spotByTime, spotKe
 import { onMap } from "./travel-day";
 import { editLine } from "../saves/collab";
 
-interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number; /** Who uploaded it to Drive. */ by?: string }
+interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number; /** Who uploaded it to Drive. */ by?: string; /** Their profile picture. */ byPic?: string; /** Who the file says took it. */ author?: string; /** Bytes. */ size?: number; /** May be deleted (or only removed from its folder), and how. */ del?: "trash" | "permanent" | "remove" }
 interface PhotoList { folder: string; name: string; at: number; photos: Photo[]; total: number; truncated: boolean; pending?: number; skipped?: number }
 /** What's known of one folder: its photos once loaded, or why not. */
 interface Loaded { list: PhotoList | null; loading: boolean; error: string }
@@ -181,6 +181,19 @@ export function setPhotosFolderShown(link: string, shown: boolean) {
   if (shown) hidden.delete(link); else hidden.add(link);
   keepHidden();
   if (shown) loadMissing();
+  draw(); changed();
+}
+
+/** Deletes a photo's file or removes it from its folder (as `del` says), and takes it out of the lists here. Throws
+ *  with the reason. */
+export async function deletePhoto(p: Placed) {
+  await api("/api/photos/delete", { method: "POST", body: JSON.stringify({ folder: p.folder, id: p.id, how: p.del }) });
+  for (const [link, l] of loaded) {
+    // A Drive file has one id wherever it's listed; a file on this computer is that folder's only.
+    if (!l.list || (isLocalFolder(p.folder) ? link !== p.folder : isLocalFolder(link))) continue;
+    const photos = l.list.photos.filter((x) => x.id !== p.id);
+    if (photos.length < l.list.photos.length) loaded.set(link, { ...l, list: { ...l.list, photos, total: l.list.total - 1 } });
+  }
   draw(); changed();
 }
 

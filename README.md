@@ -41,8 +41,9 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 - Hide any of the columns, give the map the whole window, or use it on a phone one section at a time.
 
 **Photos**
-- Show the photos and videos of folders on your computer or in Google Drive on the map, where each was taken, and in a gallery by day of the trip.
+- Show the photos and videos of folders on your computer or in Google Drive on the map, where each was taken, and in a gallery by day of the trip, coloured and filtered by stay.
 - Photos without a location are placed by their time, or by hand: drag them onto the map. Your files aren't changed.
+- Delete a photo from the gallery where you're allowed to: it goes to the Drive trash or your Recycle Bin, after you confirm. Someone else's photo in your Drive folder can only be removed from the folder, where Drive allows it.
 - **Preview** shows the trip in pictures, day by day, with a slideshow.
 
 **Take it with you**

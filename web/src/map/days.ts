@@ -2,7 +2,8 @@
 import { revealInSplit } from "../itinerary/split-tabs";
 import { moveTo } from "./move";
 import * as L from "leaflet";
-import { lightLeg } from "./draw-days";
+import { legLines, lightLegs } from "./draw-days";
+import { stayLines } from "./draw-stays";
 import { showPane } from "../core/layout";
 import { $, $$, esc, toast } from "../core/dom";
 import { dayColor, fmtShort } from "../core/format";
@@ -89,13 +90,28 @@ export function initDays() {
     const b = (e.target as HTMLElement).closest<HTMLElement>("[data-day]"); if (!b) return;
     selectDay(b.dataset.day === "" ? null : +b.dataset.day!, { scroll: true });
   });
-  // Hovering a stop in the itinerary pops its pin on the map.
-  // Hovering a stop in the itinerary pops its pin on the map, and lights up the whole way there.
-  let hot: string | undefined;
+  // Hovering a stop in the itinerary pops its pin on the map, and lights up the whole way there. In a travel day's
+  // journey, the way between the two stays lights up too: anywhere on its card, or on a stop with no line of its own.
+  let hot = "";
+  const light = (keys: string[], stay: number | null) => {
+    const now = `${keys}|${stay}`;
+    if (now === hot) return;
+    hot = now;
+    const line = stay == null ? undefined : stayLines.get(stay);
+    lightLegs(keys, line ? [line] : []);
+  };
   $("#output").addEventListener("mouseover", (e) => {
-    const k = (e.target as HTMLElement).closest<HTMLElement>(".item")?.dataset.k;
+    const at = e.target as HTMLElement, k = at.closest<HTMLElement>(".item")?.dataset.k;
     showPin(k ? itemMarkers.get(k) : undefined);
-    if (k !== hot) { hot = k; lightLeg(k || null); }
+    const card = at.closest<HTMLElement>("[data-stay-leg]"), stay = card ? +card.dataset.stayLeg! : null;
+    if (k) return light([k], legLines.has(k) ? null : stay);
+    light(card ? [...card.querySelectorAll<HTMLElement>(".item")].map((el) => el.dataset.k!) : [], stay);
   });
-  $("#output").addEventListener("mouseleave", () => { showPin(undefined); hot = undefined; lightLeg(null); });
+  $("#output").addEventListener("mouseleave", () => { showPin(undefined); light([], null); });
+  // The same for the way between two stays in the trip's setup.
+  $("#stays").addEventListener("mouseover", (e) => {
+    const leg = (e.target as HTMLElement).closest<HTMLElement>(".stay-leg");
+    light([], leg ? +leg.dataset.i! : null);
+  });
+  $("#stays").addEventListener("mouseleave", () => light([], null));
 }

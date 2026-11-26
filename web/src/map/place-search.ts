@@ -49,6 +49,11 @@ export function placeSearch(form: HTMLFormElement, o: {
   const query = form.querySelector("input")!, results = form.querySelector("ul")!, clearBtn = form.querySelector<HTMLButtonElement>(".ps-clear")!;
   let hits: GeoHit[] = [], asked = 0, active = -1, typing = 0;
   const cache = new Map<string, GeoHit[]>();
+  /** A search by name is under way: the list says so, with a spinner. */
+  let busy = false;
+  const loading = (yes: boolean) => { busy = yes; form.setAttribute("aria-busy", String(yes)); };
+  const spinner = `<i class="ps-spin" aria-hidden="true"></i>`;
+  const waiting = (text: string) => `<li class="muted ps-wait">${spinner}${text}</li>`;
 
   // ---- The area: what's searched, what was found, and its pins ----
   let area: { q: string; hits: GeoHit[]; more: boolean; error: string; box: L.LatLngBounds } | null = null;
@@ -64,14 +69,14 @@ export function placeSearch(form: HTMLFormElement, o: {
     const areaRow = text.length >= 2 ? `<li data-area class="ps-area-row${active === -1 ? " active" : ""}" role="option">${icon("search")}<div><b>${esc(text)}</b><span>${addressLike(text) ? "Find this address" : "Search in this area"}</span></div></li>` : "";
     results.innerHTML = areaRow + (hits.length
       ? hits.map((r, i) => `<li data-r="${i}" role="option" aria-selected="${i === active}"${i === active ? ' class="active"' : ""}>${icon(kindIcon(r.kind || ""))}<div><b>${esc(r.name)}</b><span>${r.near ? "The number wasn't found: the street or area · " : ""}${esc(r.label.replace(new RegExp(`^${r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), ""))}</span></div></li>`).join("")
-      : text.length >= 2 ? "" : `<li class="muted">Searching…</li>`);
+      : busy ? waiting("Searching…") : "");
     if (!results.innerHTML) results.hidden = true;
   }
   function showArea() {
     if (!area) return;
     results.hidden = false;
     const n = area.hits.length;
-    const head = `<li class="ps-area-head">${n ? `${n}${n >= 50 && !area.more ? "+" : ""} result${n === 1 ? "" : "s"} for “${esc(area.q)}” in this area` : area.more ? `Searching this area for “${esc(area.q)}”…` : `Nothing called “${esc(area.q)}” in this area.`}${area.more && n ? ` <span>finding more…</span>` : ""}${area.error ? `<em>${esc(area.error)}</em>` : ""}</li>`;
+    const head = `<li class="ps-area-head">${area.more ? spinner : ""}${n ? `${n}${n >= 50 && !area.more ? "+" : ""} result${n === 1 ? "" : "s"} for “${esc(area.q)}” in this area` : area.more ? `Searching this area for “${esc(area.q)}”…` : `Nothing called “${esc(area.q)}” in this area.`}${area.more && n ? ` <span>finding more…</span>` : ""}${area.error ? `<em>${esc(area.error)}</em>` : ""}</li>`;
     results.innerHTML = head + area.hits.map((r, i) => `<li data-a="${i}" role="option"${i === active ? ' class="active"' : ""}>${icon(kindIcon(r.kind || ""))}<div><b>${esc(r.name)}</b><span>${esc(r.label.replace(new RegExp(`^${r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), ""))}</span></div></li>`).join("");
   }
   function drawPins() {
@@ -93,6 +98,7 @@ export function placeSearch(form: HTMLFormElement, o: {
     clearTimeout(typing);
     hits = []; active = -1; again.hidden = true;
     area = { q, hits: [], more: true, error: "", box: b };
+    loading(false);
     showArea(); drawPins();
     watch(m);
     const names = api<GeoHit[]>(params("names")).catch((e) => { if (area) area.error = (e as Error).message; return [] as GeoHit[]; });
@@ -117,18 +123,22 @@ export function placeSearch(form: HTMLFormElement, o: {
   }
   again.onclick = () => { if (area) { query.value = area.q; searchArea(area.q); } };
 
-  async function search(quick: boolean) {
+  /** `silent`: what's in the list stays until the answer is there. */
+  async function search(quick: boolean, silent = false) {
     const text = typed(), mine = ++asked, m = o.map();
-    if (!text || !m) return;
+    if (!text || !m) return loading(false);
     const c = m.getCenter().wrap(), key = `${quick ? "q" : "f"}|${text.toLowerCase()}|${c.lat.toFixed(1)},${c.lng.toFixed(1)}`;
-    if (!hits.length) show();
+    loading(true);
+    if (!hits.length && !silent) show();
     try {
       const got = cache.get(key) || await api<GeoHit[]>(`/api/search?${new URLSearchParams({ q: text, lat: c.lat.toFixed(4), lng: c.lng.toFixed(4), cc: countryCodes(), ...(quick ? { quick: "1" } : {}) })}`);
       cache.set(key, got);
       if (mine !== asked) return;
       hits = got; active = -1;
+      loading(false);
       show();
     } catch (e) { if (mine === asked) results.innerHTML = `<li class="muted">${esc((e as Error).message)}</li>`; }
+    finally { if (mine === asked) loading(false); }
   }
   /** An address: looked up properly (not just as typed so far), and the map goes to the best match; the others stay in
    *  the list for when it's not the one. */
@@ -136,8 +146,8 @@ export function placeSearch(form: HTMLFormElement, o: {
     const text = typed();
     if (!text) return;
     results.hidden = false;
-    results.innerHTML = `<li class="muted">Finding “${esc(text)}”…</li>`;
-    await search(false);
+    results.innerHTML = waiting(`Finding “${esc(text)}”…`);
+    await search(false, true);
     if (typed() !== text) return; // typed on meanwhile
     if (hits[0]) pick(hits[0], false, true);
     else results.innerHTML = `<li class="muted">Couldn't find “${esc(text)}”. Try the street and town, or a place nearby.</li>`;
@@ -145,12 +155,14 @@ export function placeSearch(form: HTMLFormElement, o: {
   /** A result picked: the map goes there (the area's pins stay when it's one of them). An address keeps its text. */
   function pick(r: GeoHit, fromArea = false, keepText = false) {
     results.hidden = true;
+    // (Picked while still searching: that answer isn't waited for. An area search goes on adding its places.)
+    if (!fromArea) { asked++; loading(false); }
     if (!fromArea) { if (!keepText) query.value = r.name; area = null; drawPins(); again.hidden = true; }
     clearBtn.hidden = false;
     o.onPick(r);
   }
   function clear() {
-    asked++; clearTimeout(typing);
+    asked++; clearTimeout(typing); loading(false);
     query.value = ""; hits = []; active = -1; area = null;
     results.hidden = true; clearBtn.hidden = true; again.hidden = true;
     drawPins();
@@ -163,7 +175,10 @@ export function placeSearch(form: HTMLFormElement, o: {
     if (!query.value) return clear();
     if (area && typed() !== area.q) { area = null; drawPins(); again.hidden = true; }
     hits = []; active = -1;
-    if (typed().length < 2) { asked++; results.hidden = true; return; }
+    // (Whatever was asked for the text before is out of date.)
+    asked++;
+    if (typed().length < 2) { loading(false); results.hidden = true; return; }
+    loading(true);
     show();
     typing = window.setTimeout(() => search(true), 250);
   };

@@ -43,6 +43,10 @@ vi.mock("../server/sync/google", async () => {
   };
 });
 
+// What kind of folder a path is asks the system (on Windows by starting PowerShell, which alone can outlast the test's
+// time limit on a build machine).
+vi.mock("../server/util/folder-kind", async (original) => ({ ...(await original<object>()), folderKind: async () => "onedrive" }));
+
 let sync: typeof import("../server/sync/sync");
 let root = "", saves = "";
 const FOLDER = "folderAAAAAAAAAA", FOLDER2 = "folderBBBBBBBBBB";

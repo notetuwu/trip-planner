@@ -42,6 +42,21 @@ export function journeySpan(items: ItineraryItem[], runs: JourneyRun[]): { from?
   };
 }
 
+/** Moves a stop whose time was set to where that time puts it among the day's stops; the others keep their order. It
+ *  stays where it is when it's in order there already (or has no time). Without a `changed` time, a stop in the small
+ *  hours is left too: at the end of a day it means after midnight. */
+export function moveToTime(items: ItineraryItem[], x: ItineraryItem, changed: boolean): boolean {
+  const at = items.indexOf(x), t = minutes(x.time);
+  if (at < 0 || t == null || (!changed && t < 4 * 60)) return false;
+  const times = (list: ItineraryItem[]) => list.map((y) => minutes(y.time)).filter((m): m is number => m != null);
+  // (A later stop in the small hours is the night after, so it's in order after this one.)
+  if (times(items.slice(0, at)).every((m) => m <= t) && times(items.slice(at + 1)).every((m) => m >= t || m < 4 * 60)) return false;
+  items.splice(at, 1);
+  const to = insertAt(items, x.time);
+  items.splice(to, 0, x);
+  return to !== at;
+}
+
 /** Where a new journey's stops go in the day: by time among the timed stops, else after any check-out at the start. */
 export function insertAt(items: ItineraryItem[], time: string): number {
   const t = minutes(time);

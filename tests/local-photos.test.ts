@@ -10,6 +10,9 @@ import { jpeg } from "./helpers/jpeg";
 // The kept details of each file don't go to the real cache folder.
 vi.mock("../server/util/disk-cache", () => ({ diskCache: () => ({ data: {}, save() {}, saveNow() {} }) }));
 
+// Nor does anything go to the real Recycle Bin.
+vi.mock("../server/util/trash", () => ({ deleteKind: async () => "permanent", moveToTrash: async () => { throw new Error("not in tests"); } }));
+
 class FakeRes extends Writable {
   status = 0; headers: Record<string, string> = {}; chunks: Buffer[] = [];
   writeHead(s: number, h: Record<string, string> = {}) { this.status = s; this.headers = h; return this; }
@@ -52,6 +55,21 @@ describe("listLocal", () => {
   it("says what's wrong with a folder that isn't there", async () => {
     const { listLocal } = await import("../server/geo/local-photos");
     await expect(listLocal(`local:${path.join(dir, "nope")}`)).rejects.toThrow(/isn't on this computer/);
+  });
+});
+
+describe("localDelete", () => {
+  it("deletes only a listed file, and for good only when that was agreed to", async () => {
+    const { listLocal, localDelete } = await import("../server/geo/local-photos");
+    const file = path.join(dir, "gone.jpg");
+    fs.writeFileSync(file, jpeg());
+    expect((await listLocal(link)).photos.find((p) => p.id === "gone.jpg")?.del).toBe("permanent");
+    await expect(localDelete(link, "notes.txt", true)).rejects.toThrow(/isn't in the folder/);
+    await expect(localDelete(link, "gone.jpg", false)).rejects.toThrow(/no Recycle Bin/);
+    expect(fs.existsSync(file)).toBe(true);
+    await localDelete(link, "gone.jpg", true);
+    expect(fs.existsSync(file)).toBe(false);
+    expect(fs.existsSync(path.join(dir, "notes.txt"))).toBe(true);
   });
 });
 

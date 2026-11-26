@@ -89,6 +89,9 @@ function dayFilter() {
   };
 }
 
+/** The line drawn for the way into each stay (by the stay's place in the list), to light up from the plan. */
+export const stayLines = new Map<number, L.Polyline>();
+
 /** Draws the stays; returns their pin positions (for fitting the map). */
 const STAY_LINES = "trip-planner-stay-lines";
 /** The trip's lines between stays (and to day trips) are shown: on by default, switched in the Layers panel. */
@@ -96,6 +99,7 @@ export const stayLinesOn = () => localStorage.getItem(STAY_LINES) !== "0";
 export function setStayLines(on: boolean) { localStorage.setItem(STAY_LINES, on ? "1" : "0"); }
 
 export function drawStays(): LatLng[] {
+  stayLines.clear();
   const accent = cssVar("--accent");
   const pts: LatLng[] = [];
   const only = dayFilter();
@@ -147,6 +151,7 @@ export function drawStays(): LatLng[] {
       opacity: l.trip && !g ? .55 : g ? .9 : .75, interactive: false,
       dashArray: r ? undefined : l.mode === "flight" ? "2 8" : "6 6",
     }).addTo(layers.stays);
+    if (!l.trip) stayLines.set(l.i, vis);
     hoverBand(line, tip, vis).on("click", () => focusStay(l.i, !l.trip)).addTo(layers.stays);
     if (l.trip) L.circleMarker(l.to, { radius: 5, color, weight: 2, fillColor: "#fff", fillOpacity: 1 })
       .bindTooltip(`${modeIcon(l.mode) || icon("pin")} Day trip: ${esc(l.place)}${g ? ` · ${esc(g)}` : ""}`, { direction: "top" }).addTo(layers.stays);

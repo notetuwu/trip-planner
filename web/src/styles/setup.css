@@ -146,7 +146,8 @@
 .trips-open:hover { border-color: var(--accent); background: var(--hover); }
 .trips-open-icon { flex: none; width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); font-size: 16px; }
 .trips-open-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
-.trips-open-text .hint { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trips-open-text .hint { font-size: 12px; }
+.trips-open-text .hint > span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .trips-count { font-size: 11px; font-weight: 700; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0 7px; margin-left: 4px; }
 .trip-bar .btn.solid { height: auto; }
 
@@ -165,6 +166,12 @@
 .trips-search input { width: 100%; height: 38px; padding-left: 36px; border-radius: 10px; }
 .trips-tools select { width: auto; max-width: 200px; height: 34px; }
 .view-segs .seg { display: grid; place-items: center; padding: 6px 10px; font-size: 15px; }
+/* Cards or table, beside the buttons: as tall as they are, the one shown as a raised tile rather than a red block. */
+.trips-acts .btn { height: var(--control-h); box-sizing: border-box; white-space: nowrap; }
+.trips-acts .view-segs { height: var(--control-h); box-sizing: border-box; gap: 2px; padding: 3px; border-color: var(--line); border-radius: 10px; background: var(--field); }
+.trips-acts .view-segs .seg { width: 34px; padding: 0; border: 0; border-radius: 7px; }
+.trips-acts .view-segs .seg:hover { color: var(--ink); }
+.trips-acts .view-segs .seg.on { background: var(--panel); color: var(--accent); box-shadow: var(--shadow); }
 .trips-body { flex: 1; overflow: auto; padding: 16px 22px 24px; background: var(--bg); }
 .trips-group { display: flex; align-items: center; gap: 8px; margin: 18px 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .trips-group:first-child { margin-top: 2px; }

@@ -2,10 +2,17 @@
 import { esc } from "../core/dom";
 import type { Lookup, PromptPart } from "../core/state";
 import { icon } from "../core/icons";
+import { mapsName, searchUrl } from "../core/maps-links";
+
+/** Back from esc(), for what goes into an address. */
+const plain = (s: string) => s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+/** The chat's [Name](map:Name, area, town): a search for it in the maps app chosen in Settings. */
+const mapLinks = (html: string) => html.replace(/\[([^\]\n]+)\]\(\s*maps?:((?:[^()\n]|\([^()\n]*\))+)\)/g, (_, name: string, query: string) =>
+  `<a class="map-link" href="${esc(searchUrl(plain(query).trim()))}" target="_blank" rel="noopener" title="${esc(`Open in ${mapsName()}`)}">${name}${icon("pin")}</a>`);
 
 /** The model's planning notes are light Markdown: paragraphs, "- " bullets, **bold**, # headings. */
 export function mdLite(text: string | undefined) {
-  const inline = (s: string) => esc(s).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  const inline = (s: string) => mapLinks(esc(s)).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)\*(?!\w)/g, "$1<i>$2</i>").replace(/`([^`]+)`/g, "<code>$1</code>");
   const bullet = /^\s*(?:[-*•]|\d+[.)]) /;
   return String(text || "").trim().split(/\n\s*\n/).map((block) => {
     // Some models put several bullets on one line ("- a - b - c"); give each its own line.

@@ -257,11 +257,23 @@ export interface DriveFile {
   md5Checksum?: string;
   modifiedTime?: string;
   size?: string;
-  lastModifyingUser?: { displayName?: string; emailAddress?: string };
+  lastModifyingUser?: { displayName?: string; emailAddress?: string; photoLink?: string };
   capabilities?: { canEdit?: boolean };
   properties?: Record<string, string>;
 }
-const FILE_FIELDS = "id,name,md5Checksum,modifiedTime,size,lastModifyingUser(displayName,emailAddress),capabilities(canEdit),properties";
+const FILE_FIELDS = "id,name,md5Checksum,modifiedTime,size,lastModifyingUser(displayName,emailAddress,photoLink),capabilities(canEdit),properties";
+
+/** The signed-in account's profile picture. */
+export async function myPicture(): Promise<{ email?: string; url?: string }[]> {
+  const about: any = await driveJson(`${DRIVE}/about?fields=user(emailAddress,photoLink)`);
+  return [{ email: about?.user?.emailAddress, url: about?.user?.photoLink }];
+}
+/** The pictures of the people a folder is shared with (Google only tells those who may edit it). */
+export async function folderPeople(id: string): Promise<{ email?: string; url?: string }[]> {
+  if (!isDriveId(id)) return [];
+  const json: any = await driveJson(`${DRIVE}/files/${id}/permissions?fields=permissions(emailAddress,photoLink)&pageSize=100&supportsAllDrives=true`);
+  return (json.permissions || []).map((p: any) => ({ email: p.emailAddress, url: p.photoLink }));
+}
 
 /** A folder's name and whether this account may add files to it. */
 export async function folderInfo(id: string): Promise<{ id: string; name: string; canWrite: boolean }> {

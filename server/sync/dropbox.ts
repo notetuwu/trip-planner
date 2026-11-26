@@ -189,6 +189,23 @@ export async function folderInfo(id: string): Promise<{ id: string; name: string
   return { id: PREFIX + m.id, name: m.name, canWrite: !m.sharing_info?.read_only };
 }
 
+/** The signed-in account's profile picture (none unless one was set). */
+export async function myPicture(): Promise<{ email?: string; url?: string }[]> {
+  const me = await rpc("/2/users/get_current_account", null);
+  return [{ email: me?.email, url: me?.profile_photo_url }];
+}
+/** The pictures of the members of a shared folder (or of the shared folder it's in). */
+export async function folderPeople(id: string): Promise<{ email?: string; url?: string }[]> {
+  const m = await rpc("/2/files/get_metadata", { path: raw(id) });
+  const shared = m?.sharing_info?.shared_folder_id || m?.sharing_info?.parent_shared_folder_id;
+  if (!shared) return [];
+  const members = await rpc("/2/sharing/list_folder_members", { shared_folder_id: shared, limit: 100 });
+  const ids = (members?.users || []).map((u: any) => u.user?.account_id).filter(Boolean);
+  if (!ids.length) return [];
+  const accounts = await rpc("/2/users/get_account_batch", { account_ids: ids });
+  return (Array.isArray(accounts) ? accounts : []).map((a: any) => ({ email: a.email, url: a.profile_photo_url }));
+}
+
 async function listAll(pathArg: string): Promise<Meta[]> {
   const out: Meta[] = [];
   let r = await rpc("/2/files/list_folder", { path: pathArg, include_mounted_folders: true, limit: 1000 });

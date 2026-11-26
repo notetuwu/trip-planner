@@ -4,12 +4,12 @@
 // waiting, with Update. Either way a note says who changed what, and Review lists it, with Undo for each change. When you
 // and someone else changed the same thing, yours stays on screen and theirs is a click away (and kept as a copy).
 import type { Change, Edit } from "../../../shared/edits";
-import { changedParts, describePart, partLabel, partsOf, setPart } from "../../../shared/edits";
+import { changedParts, changesTo, describePart, partLabel, partsOf, setPart } from "../../../shared/edits";
 import { same } from "../../../shared/merge";
 import { type AppState, state } from "../core/state";
 import { closeOnBackdrop, esc } from "../core/dom";
 import { icon } from "../core/icons";
-import { syncStatus } from "./sync-client";
+import { onSyncStatus, syncStatus } from "./sync-client";
 
 // ---- Who and when ----------------------------------------------------------------------------------------------------------
 /** The change was made by this person (on this computer or another of theirs). */
@@ -19,8 +19,12 @@ export const whoOf = (e: Edit) => (isMine(e) ? "you" : e.by || "someone");
 const initial = (name: string) => (name.trim()[0] || "?").toUpperCase();
 /** A colour for a person, the same everywhere. */
 const hue = (name: string) => [...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
-/** A small round mark with their initial. */
-export const avatar = (e: Edit, cls = "") => `<span class="who-dot ${cls}" style="--h:${hue(e.by)}" aria-hidden="true">${esc(initial(e.by))}</span>`;
+/** A small round mark for a person: their profile picture when there's one, else (and if it doesn't load) their
+ *  initial. */
+export const personDot = (name: string, picture = "", cls = "") =>
+  `<span class="who-dot ${cls}" style="--h:${hue(name)}" aria-hidden="true"><i>${esc(initial(name))}</i>${picture ? `<img src="${esc(picture)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}</span>`;
+/** The mark of who made a change, with their picture from Drive or Dropbox when known. */
+export const avatar = (e: Edit, cls = "") => personDot(e.by, (e.id && syncStatus?.pictures?.[e.id]) || "", cls);
 
 /** "just now", "5 min ago", "3 h ago", "yesterday", "Nov 24". */
 export function ago(at: number, now = Date.now()) {
@@ -40,11 +44,11 @@ export const shared = () => !!state.sync;
 export const editOf = (key: string): Edit | undefined => state.edits?.[key];
 
 /** "Lena · 5 min ago" for a part, or "" (not a shared trip, or not known). `verb` goes in its tooltip ("Changed",
- *  "Placed"). */
-export function editChip(key: string, verb = "Changed") {
+ *  "Placed"). Clicked, it lists the changes to that part (`parts`: to all those it stands for). */
+export function editChip(key: string, verb = "Changed", parts = [key]) {
   const e = shared() ? editOf(key) : undefined;
   if (!e) return "";
-  return `<span class="edit-chip${isMine(e) ? " mine" : ""}" title="${esc(`${verb} by ${whoOf(e)} · ${fullTime(e.at)}`)}">${avatar(e)}<span>${esc(isMine(e) ? "You" : e.by)} · ${esc(ago(e.at))}</span></span>`;
+  return `<button type="button" class="edit-chip${isMine(e) ? " mine" : ""}" data-history="${esc(parts.join(" "))}" title="${esc(`${verb} by ${whoOf(e)} · ${fullTime(e.at)}. Click to see what changed`)}">${avatar(e)}<span>${esc(isMine(e) ? "You" : e.by)} · ${esc(ago(e.at))}</span></button>`;
 }
 /** "Placed by Lena · 2 h ago", for a tooltip or caption ("" when not known). */
 export function editLine(key: string, verb = "Changed") {
@@ -67,7 +71,7 @@ export function renderEditChips() {
   for (const el of document.querySelectorAll<HTMLElement>("[data-edit]")) {
     const keys = el.dataset.edit!.split(/\s+/);
     const key = keys.filter((k) => editOf(k)).sort((a, b) => editOf(b)!.at - editOf(a)!.at)[0];
-    el.innerHTML = key ? editChip(key) : "";
+    el.innerHTML = key ? editChip(key, "Changed", keys) : "";
   }
 }
 
@@ -297,8 +301,9 @@ function rowText(r: { changes: Change[]; first: Change }) {
   return { label: partLabel(r.first.key, state), what: r.first.what };
 }
 
-/** Changes: the trip's latest changes, who made them and when, each with Show. */
-export function openHistory() {
+/** Changes: the trip's latest changes, who made them and when, each with Show. `keys`: only those to these parts, with a
+ *  button for all of them. */
+export function openHistory(keys?: string[]) {
   const d = document.createElement("dialog");
   d.className = "keys-dialog collab-review collab-history";
   document.body.append(d);
@@ -306,7 +311,10 @@ export function openHistory() {
   d.addEventListener("close", () => d.remove());
   let others = false;
   const draw = () => {
-    const rowsAll = historyRows(state.log, others ? (c) => !isMine(c) : undefined).slice(0, 250);
+    const log = keys ? changesTo(state.log || [], keys) : state.log;
+    const rowsAll = historyRows(log, others ? (c) => !isMine(c) : undefined).slice(0, 250);
+    const title = keys ? `Changes: ${keys.map((k) => partLabel(k, state)).join(", ")}` : "Changes to this trip";
+    const none = others ? "Nobody else has changed this yet." : keys ? "No details are recorded for this change." : "No changes recorded yet. From now on every change is listed here, with who made it and when.";
     let day = "";
     const items = rowsAll.map((r, i) => {
       const { label, what } = rowText(r), h = dayHeading(r.first.at);
@@ -316,11 +324,12 @@ export function openHistory() {
         <div class="cr-acts">${canShow(r.first.key) ? `<button type="button" class="btn" data-ch-show="${i}">Show</button>` : ""}</div></li>`;
     }).join("");
     d.innerHTML = `<form method="dialog" class="ask-form">
-      <h3>${icon("history")} Changes to this trip</h3>
+      <h3>${icon("history")} ${esc(title)}</h3>
       ${shared() ? `<div class="segs ch-filter"><button type="button" class="seg${others ? "" : " on"}" data-ch-who="all">Everyone</button><button type="button" class="seg${others ? " on" : ""}" data-ch-who="others">Others only</button></div>` : ""}
-      ${items ? `<ul class="cr-list ch-list">${items}</ul>` : `<p class="ask-text">${others ? "Nobody else has changed this trip yet." : "No changes recorded yet. From now on every change is listed here, with who made it and when."}</p>`}
-      <div class="ask-acts"><button type="submit" class="btn solid">Close</button></div>
+      ${items ? `<ul class="cr-list ch-list">${items}</ul>` : `<p class="ask-text">${none}</p>`}
+      <div class="ask-acts">${keys ? `<button type="button" class="btn" data-ch-all>All changes</button>` : ""}<button type="submit" class="btn solid">Close</button></div>
     </form>`;
+    d.querySelector<HTMLButtonElement>("[data-ch-all]")?.addEventListener("click", () => { keys = undefined; draw(); });
     d.querySelectorAll<HTMLButtonElement>("[data-ch-who]").forEach((b) => { b.onclick = () => { others = b.dataset.chWho === "others"; draw(); }; });
     d.querySelectorAll<HTMLButtonElement>("[data-ch-show]").forEach((b) => { b.onclick = () => { d.close(); reveal(rowsAll[+b.dataset.chShow!].first.key); }; });
   };
@@ -339,6 +348,15 @@ export const syncNow = (button?: HTMLButtonElement) => syncHook?.(button) ?? Pro
  *  `canSync`: Sync now. Handed in to keep the imports one way. */
 export function initCollab(o: { apply: (next: AppState) => Promise<void>; show: (key: string) => void; sync: (button?: HTMLButtonElement) => Promise<void>; canSync: () => boolean }) {
   apply = o.apply; reveal = o.show; syncHook = o.sync; canSyncHook = o.canSync;
+  // The who-changed-it marks. Caught on the way down: they sit in headings that do something of their own when clicked.
+  document.addEventListener("click", (e) => {
+    const mark = (e.target as HTMLElement).closest<HTMLElement>("[data-history]");
+    if (!mark) return;
+    e.preventDefault(); e.stopPropagation();
+    openHistory(mark.dataset.history ? mark.dataset.history.split(" ") : undefined);
+  }, true);
+  // Pictures come with the sync status.
+  onSyncStatus(renderEditChips);
   // The "5 min ago"s stay right.
   window.setInterval(() => { renderEditChips(); if (!banner().hidden && !fades) drawBanner(); }, 60_000);
 }

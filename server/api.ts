@@ -1,14 +1,15 @@
 // All /api routes. Used by the production server (main.ts) and mounted into Vite's dev server (vite.config.ts).
+import fs from "node:fs";
 import { cloudModels } from "./ai/cloud-models";
 import { detectLocalModels } from "./ai/local-models";
 import { ensureOllama, gpuInfo, ollamaInstalled } from "./ai/ollama-start";
 import { findClaude } from "./ai/claude-bin";
-import { VERSION, errMsg } from "./config";
+import { SAVES_DIR, VERSION, errMsg } from "./config";
 import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, cancelLines, localLine, routeStops, routesStops, setLinesDir } from "./geo/transit-lines";
 import { localThumb } from "./geo/local-photos";
-import { driveThumb, folderPhotos, photoFile } from "./geo/photos";
+import { deletePhoto, driveThumb, folderPhotos, photoFile } from "./geo/photos";
 import { placePictures } from "./geo/wiki-photos";
 import { pickFolder } from "./util/pick-folder";
 import { fsCheck, fsList, fsMkdir, fsPlaces } from "./util/fs-browse";
@@ -16,7 +17,7 @@ import { reverseGeocode, searchPlaces } from "./geo/search";
 import { type Box, searchAreaKinds, searchAreaNames } from "./geo/area-search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
-import { openInBrowser } from "./launcher";
+import { openFolder, openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
 import { handleHistory, handleRescue, handleSaves } from "./routes/saves";
@@ -72,6 +73,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const body = await readJson(req);
       sendJson(res, openInBrowser(String(body?.url || "")) ? 200 : 400, { ok: true }); return true;
     }
+    // Your trips → Open folder: where the saved trips are on this computer (never from a phone: lan.ts).
+    if (method === "POST" && path === "/api/open/saves") {
+      fs.mkdirSync(SAVES_DIR, { recursive: true });
+      openFolder(SAVES_DIR);
+      sendJson(res, 200, { ok: true }); return true;
+    }
     if (path === "/api/settings") { await handleSettings(req, res); return true; }
     if (path === "/api/lan" || path.startsWith("/api/lan/")) { await handleLan(req, res, path); return true; }
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
@@ -99,7 +106,18 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     }
     // The photos of a shared Google Drive folder, for the map's Photos layer ("?folder=<link or id>[&refresh=1]").
     else if (method === "GET" && path === "/api/photos") {
-      try { sendJson(res, 200, await folderPhotos(url.searchParams.get("folder") || "", url.searchParams.get("refresh") === "1")); }
+      try {
+        const list = await folderPhotos(url.searchParams.get("folder") || "", url.searchParams.get("refresh") === "1");
+        // Deleting stays on this computer (lan.ts): a phone isn't offered it.
+        sendJson(res, 200, (req as Req & { lan?: boolean }).lan ? { ...list, photos: list.photos.map(({ del: _, ...p }) => p) } : list);
+      }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
+    // Deletes a photo's file, or removes it from its folder: { folder, id, how } (how: what was agreed to).
+    else if (method === "POST" && path === "/api/photos/delete") {
+      const body = await readJson(req);
+      const how = body?.how === "permanent" || body?.how === "remove" ? body.how : "trash";
+      try { await deletePhoto(String(body?.folder || ""), String(body?.id || ""), how); sendJson(res, 200, { ok: true }); }
       catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
     }
     // A photo's original file (the viewer swaps it in for the thumbnail): "?folder=<link or id>&id=<file id>".

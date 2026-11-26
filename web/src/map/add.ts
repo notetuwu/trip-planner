@@ -8,7 +8,8 @@ import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
 import { addCustomPlace, addStop } from "./edit";
 import { map } from "./map";
-import { icon } from "../core/icons";
+import { ext, icon } from "../core/icons";
+import { mapsName, pointUrl, searchUrl } from "../core/maps-links";
 
 /** Puts text on the clipboard; also over plain http on the home network, where the clipboard API isn't offered. */
 export async function copyText(text: string) {
@@ -65,7 +66,7 @@ export function openAddPopup(latlng: L.LatLng, preset: Preset = {}) {
   const popup = L.popup({ minWidth: 250, autoPanPaddingTopLeft: [10, 64] }).setLatLng(latlng).setContent(`
     <form class="add-form">
       <b>${it ? "Add to the itinerary" : "Add as a must-see place"}</b>
-      <div class="pop-addr"><div class="pop-meta ${preset.name ? "" : "lookup"}" data-label>${preset.name ? esc(preset.label || "") : "Looking up this spot…"}</div>
+      <div class="pop-addr"><div class="pop-meta ${preset.name ? "" : "lookup"}" data-label>${preset.name ? "" : "Looking up this spot…"}</div>
         <button type="button" class="icon-btn pop-copy" data-copy title="Copy the address" aria-label="Copy the address">${icon("copy")}</button></div>
       <input name="placeName" required placeholder="Name" value="${esc(preset.name || "")}">
       <div class="name-options" data-options></div>
@@ -81,16 +82,22 @@ export function openAddPopup(latlng: L.LatLng, preset: Preset = {}) {
   const nameInput = field("placeName"), daySelect = field<HTMLSelectElement>("day"), timeInput = field("time");
   if (it) daySelect.onchange = () => { timeInput.value = defaultTime(+daySelect.value, latlng); };
   let address = preset.label || "";
+  // The address is the link into the maps app; without one, the spot's coordinates, as a pin there.
+  const showAddress = (text: string) => {
+    const url = text ? searchUrl(text, latlng) : pointUrl(latlng, nameInput.value.trim());
+    el.querySelector("[data-label]")!.innerHTML = `<a href="${esc(url)}" target="_blank" rel="noopener" title="Open in ${esc(mapsName())}">${esc(text || `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`)}${ext()}</a>`;
+  };
+  if (preset.name) showAddress(address);
   if (!preset.name) {
     api<ReverseHit>(`/api/reverse?lat=${latlng.lat}&lng=${latlng.lng}`).then((r) => {
-      el.querySelector("[data-label]")!.textContent = r.label || "";
       address = r.short || r.label || "";
       if (!nameInput.value) nameInput.value = pickName(r)?.name || r.name || "";
+      showAddress(r.label || "");
       if ((r.options || []).length > 1) {
         el.querySelector("[data-options]")!.innerHTML = r.options.map((o) =>
           `<button type="button" class="${o.name === nameInput.value ? "on" : ""}" data-name="${esc(o.name)}" title="${o.level}">${esc(o.name)}</button>`).join("");
       }
-    }).catch(() => { el.querySelector("[data-label]")!.textContent = ""; });
+    }).catch(() => showAddress(""));
   }
   el.querySelector<HTMLButtonElement>("[data-copy]")!.onclick = async (e) => {
     const b = e.currentTarget as HTMLButtonElement, text = el.querySelector("[data-label]")!.textContent?.trim() || `${latlng.lat.toFixed(5)}, ${latlng.lng.toFixed(5)}`;

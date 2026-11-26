@@ -166,6 +166,7 @@
     <div id="cpLog" class="rc-log cp-log"></div>
     <form id="cpForm" class="rc-input">
       <div class="cp-box" id="cpBox">
+        <div class="cp-ask" id="cpAsk" hidden></div>
         <div class="cp-attach" id="cpAttach" hidden></div>
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
         <div class="cp-tools">
@@ -304,6 +305,7 @@
       <button class="btn" id="tripsNew" type="button"><i data-icon="plus"></i> New trip</button>
       <label class="btn" title="Open a trip file someone shared"><i data-icon="upload"></i> Import<input type="file" id="tripsImport" accept=".json,application/json" hidden></label>
       <button class="btn" id="tripsRecover" type="button" title="Earlier versions of saved trips, and copies of trips that were replaced">Recover…</button>
+      <button class="btn" id="tripsFolder" type="button" title="Open the folder on this computer where your saved trips are"><i data-icon="folder"></i> Open folder</button>
       <button class="btn solid" id="tripsSave" type="button" title="Save the trip on screen">Save this trip</button>
       <form method="dialog"><button class="icon-btn" title="Close"><i data-icon="x"></i></button></form>
     </div>

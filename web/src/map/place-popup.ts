@@ -43,7 +43,7 @@ async function renameCustom(t: string) {
 export function wirePlacePopup(el: HTMLElement) {
   for (const b of $$("[data-add-place]", el)) b.onclick = () => {
     const p = session.places.find((x) => x.title === b.dataset.addPlace), loc = p && placeLoc(p);
-    if (p && loc) openAddPopup(L.latLng(loc.lat, loc.lng), { name: p.title, fromList: true });
+    if (p && loc) openAddPopup(L.latLng(loc.lat, loc.lng), { name: p.title, label: p.address, fromList: true });
   };
   for (const b of $$("[data-remove-custom]", el)) b.onclick = () => {
     const t = b.dataset.removeCustom!;

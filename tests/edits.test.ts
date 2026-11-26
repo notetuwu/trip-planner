@@ -1,6 +1,6 @@
 // Who changed which part of a trip, joining those stamps, and what changed in words.
 import { describe, expect, it } from "vitest";
-import { changedParts, dayKey, describePart, joinEdits, joinLogs, logChanges, mergeTrip, partLabel, partOfPath, partsOf, setPart, stamp } from "../shared/edits";
+import { changedParts, changesTo, dayKey, describePart, joinEdits, joinLogs, logChanges, mergeTrip, partLabel, partOfPath, partsOf, removedStops, setPart, stamp } from "../shared/edits";
 
 const day = (date: string, city: string, places: string[]) => ({ date, city, title: city, estimatedCost: 0, items: places.map((place, i) => ({ time: `${9 + i}:00`, place, description: "" })) });
 const trip = (extra: object = {}) => ({
@@ -128,5 +128,21 @@ describe("the history of changes", () => {
     expect(m.clashes).toEqual([]);
     expect((m.value as any).log.map((c: any) => c.by)).toEqual(["Me", "Lena"]);
     expect(joinLogs(a.log, a.log, b.log)).toHaveLength(2);
+  });
+});
+
+describe("removed stops", () => {
+  const day = (...places: string[]) => ({ itinerary: { days: [{ date: "2026-05-01", items: places.map((place) => ({ place, time: "10:00" })) }] } });
+
+  it("lists what was taken off a day and isn't back on it", () => {
+    const log = logChanges(day("Castle", "Old ruin", "Dinner"), day("Castle", "Dinner"), { by: "Lena" }, 1000);
+    expect(removedStops(log, "day:2026-05-01", ["Castle", "Dinner"])).toEqual(["Old ruin"]);
+    expect(removedStops(log, "day:2026-05-01", ["Castle", "Old ruin"])).toEqual([]);
+  });
+
+  it("includes changes to many days at once for a day", () => {
+    const log = [{ key: "plan", by: "Lena", at: 1, what: "6 days changed" }, { key: "stays", by: "Lena", at: 2, what: "added Bern" }];
+    expect(changesTo(log, ["day:2026-05-01"])).toEqual([log[0]]);
+    expect(changesTo(log, ["stays"])).toEqual([log[1]]);
   });
 });

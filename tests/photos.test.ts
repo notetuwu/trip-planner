@@ -6,8 +6,9 @@ import { folderId, folderPhotos } from "../server/geo/photos";
 // Neither the real settings (a key saved there) nor the real cache folder take part.
 vi.mock("../server/settings", () => ({ readSettings: () => ({ googleKey: "" }) }));
 vi.mock("../server/util/disk-cache", () => ({ diskCache: () => ({ data: {}, save() {}, saveNow() {} }) }));
-// Nor a Google sign-in on this computer (Settings → Sync): these are about the API key.
-vi.mock("../server/sync/google", () => ({ bearer: async () => null }));
+// Nor a Google sign-in on this computer (Settings → Sync): these are about the API key, unless a test signs in.
+const signedIn = vi.hoisted(() => ({ token: null as string | null }));
+vi.mock("../server/sync/google", () => ({ bearer: async () => signedIn.token }));
 
 describe("folderId", () => {
   it("takes the id from a share link, an old-style link or the id itself", () => {
@@ -69,6 +70,47 @@ describe("photoFile", () => {
     await photoFile(folder, "somebody-elses-file", res);
     expect(res.status).toBe(404);
     expect(res.body).not.toContain("secret-key");
+  });
+});
+
+describe("who uploaded", () => {
+  afterEach(() => { vi.unstubAllGlobals(); delete process.env.GOOGLE_API_KEY; });
+
+  it("keeps the uploader's name with their picture, when it's a proper address", async () => {
+    process.env.GOOGLE_API_KEY = "test-key";
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ files: [
+      { id: "a", name: "a.jpg", mimeType: "image/jpeg", owners: [{ displayName: "Lena", photoLink: "https://lh3.example/lena" }] },
+      { id: "b", name: "b.jpg", mimeType: "image/jpeg", lastModifyingUser: { displayName: "Tom", photoLink: "javascript:1" } },
+    ] }) })));
+    const r = await folderPhotos("1UploaderUploader12345", true);
+    expect(r.photos.map((p) => [p.by, p.byPic])).toEqual([["Lena", "https://lh3.example/lena"], ["Tom", undefined]]);
+  });
+});
+
+describe("deletePhoto", () => {
+  afterEach(() => { vi.unstubAllGlobals(); signedIn.token = null; });
+
+  it("trashes the account's own files, removes others from the folder, and offers neither without permission", async () => {
+    const { deletePhoto } = await import("../server/geo/photos");
+    const folder = "1DeleteDeleteDelete123";
+    signedIn.token = "t";
+    const calls: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+      if (init.method === "PATCH") calls.push([new URL(_url).searchParams.get("removeParents"), init.body]);
+      return { ok: true, status: 200, json: async () => ({ files: [
+        { id: "mine", name: "a.jpg", mimeType: "image/jpeg", capabilities: { canTrash: true } },
+        { id: "theirs", name: "b.jpg", mimeType: "image/jpeg", capabilities: { canTrash: false, canRemoveMyDriveParent: true } },
+        { id: "locked", name: "c.jpg", mimeType: "image/jpeg", capabilities: { canTrash: false, canRemoveMyDriveParent: false } },
+      ] }) };
+    }));
+    const r = await folderPhotos(folder, true);
+    expect(r.photos.map((p) => p.del)).toEqual(["trash", "remove", undefined]);
+    await expect(deletePhoto(folder, "somebody-elses-file", "trash")).rejects.toThrow(/isn't in the folder/);
+    await deletePhoto(folder, "mine", "trash");
+    // Someone else's is only taken out of the folder, never trashed.
+    await deletePhoto(folder, "theirs", "remove");
+    expect(calls).toEqual([[null, '{"trashed":true}'], [folder, "{}"]]);
+    await expect(deletePhoto(folder, "mine", "trash")).rejects.toThrow(/isn't in the folder/);
   });
 });
 

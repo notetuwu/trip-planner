@@ -396,6 +396,10 @@ export function initTrips(a: Actions) {
   now.onclick = () => syncAll(now);
   $("#tripsNew").before(now);
   onSyncStatus(() => { if (dialog().open && cards) render(); });
+  // The saved trips' folder opens on the computer the planner runs on: not offered on a phone.
+  const folder = $<HTMLButtonElement>("#tripsFolder");
+  folder.hidden = !["localhost", "127.0.0.1", "[::1]", ""].includes(location.hostname);
+  folder.onclick = () => { api("/api/open/saves", { method: "POST" }).catch((e: Error) => toast(`Couldn't open the folder: ${e.message}`)); };
   dialog().addEventListener("close", closed);
   const search = $<HTMLInputElement>("#tripsSearch");
   search.oninput = () => { query = search.value; render(); };

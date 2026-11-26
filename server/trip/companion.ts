@@ -10,6 +10,7 @@ import { planKind } from "../../shared/agreed";
 import { cleanNames } from "../../shared/people";
 import type { AgreedStop } from "../../shared/types";
 import type { Report } from "../util/progress-stream";
+import { asksForPlaces, linkSuggested, townOf, withEverySuggestion } from "./chat-places";
 import { type Source, type Town, parseLookups, runLookups, withoutLookups } from "./chat-lookups";
 
 export interface CompanionTurn { role: "me" | "ai"; text: string }
@@ -183,6 +184,7 @@ Use the place's real name and where it is (look it up first if you aren't sure).
 ## Asking them
 When you need them to decide something before you can go on (how they get around, which of two options, which days, how much time they have), ask it with answers to pick from: end your reply with one last line exactly like this:
 QUESTION: {"question": "the short question", "options": ["a likely answer", "another one", "a third"], "multi": false}
+Also whenever they ask for options or suggestions to choose between (restaurants, hotels, things to do): describe them in the text (each as a map link), then ask which one with this line, the places' names as the answers: every place you listed, none left out (up to 8, plain names, no links in the QUESTION line).
 Two to five short answers that cover what they'll most likely say (they can always write their own instead); "multi": true when several can apply at once (which interests, which days). One question at a time, on a single line, and never in the same reply as a CHANGE line: ask first, then offer the change once they've answered. Say why you're asking in the text above it. Don't use it for a question with no likely answers to offer, nor to confirm a change you could just offer (offer it, they apply it or not).
 `;
   return `You are the travel companion for the trip below: a friendly, well-travelled local expert the travelers can ask anything about their trip, before or during it.
@@ -202,14 +204,15 @@ Distances and driving times: never state one from memory, and never write one in
 
 ## How to answer
 - Answer from the trip above when the question is about it (dates, days, stops, stays, costs, bookings, their ideas notes). Say which day or stay you mean.
+- Each day's list of stops is what's planned now. A day's title and notes may be older and still mention stops since removed or swapped: when they say they removed something, it's the one under "Removed from this day earlier" if that's there (not a similar stop still listed). Otherwise take their word for it and help with what they ask, without trying to work out which it was.
 - Only state what you know or looked up. If you're unsure, say so plainly in the answer (not only in your thinking) and ask rather than describe a place confidently.
 - For anything else (food, getting around, what's worth it, weather, customs, packing, alternatives) use what you know about the places; say when something is worth checking (opening hours, prices and timetables change).
 - Be concrete and brief: a few sentences or a short list. Suggest a change to the plan when it helps.
-- Plain text with light Markdown only (**bold**, "- " bullets). No tables.
+- Plain text with light Markdown only (**bold**, "- " bullets, and the map links below). No tables.
 - Answer in the language the traveler writes in.
 - Opening hours, prices and timetables you didn't look up (and that the trip doesn't give): say they're unverified and worth checking, rather than stating them as facts.
-- Don't write links or a list of sources yourself: the page adds the pages, places and routes you looked up under your answer, with map links.${req.today ? `\n- Today is ${clip(req.today, 20)}.` : ""}
-${changes}${asking}${req.summary ? `\n## Earlier in this conversation (summary)\n${clip(req.summary, 8_000)}\n` : ""}${history ? `\n## The conversation so far\n${history}\n` : ""}
+- Every real place you suggest or name as an option (a restaurant, café, bar, shop, hotel, sight) is written as a map link: [Name](map:Name, neighbourhood or street, town), for example [Ichiran Ramen](map:Ichiran Ramen, Asakusa, Tokyo). The page turns it into a link that searches the traveler's maps app, so give the place's real name and where it is, never a web address. It needs no coordinates and no lookup (say what's unverified in words), and it's what to give when they ask for Google Maps or other map links.\n- Don't write any other links or a list of sources yourself: the page adds the pages, places and routes you looked up under your answer.${req.today ? `\n- Today is ${clip(req.today, 20)}.` : ""}
+${changes}${asking}${req.summary ? `\n## Earlier in this conversation (summary)\n${clip(req.summary, 8_000)}\n` : ""}${history ? `\n## The conversation so far\n${history}\n` : ""}${asksForPlaces(req.question || "") ? "\n(In this answer, write every place you name as a map link: [Name](map:Name, area, town).)\n" : ""}
 ## The traveler says
 ${clip(req.question, MAX_TURN)}${req.images?.length ? `
 
@@ -227,6 +230,21 @@ export const cleanAnswer = (text: string) =>
     // A change written without "CHANGE:" (the JSON on its own, at the end or as the whole reply) isn't text to show.
     .replace(/(^|\n)[ \t`]*(json)?\s*\{\s*"(days|request|trip)"[\s\S]*\}[ \t`]*$/, "").trim();
 
+/** A map link as the model writes one: [Name](map:Name, area, town). */
+const MAP_LINK = /\[([^\]\n]+)\]\(\s*maps?:(?:[^()\n]|\([^()\n]*\))+\)/g;
+
+/** The reply lists places to choose between but has no question to pick one with (smaller models forget the line): the
+ *  places it linked, as that question. That's when they asked for options, or the reply ends asking them to choose
+ *  ("Want me to lock one in for Day 14?", which then is the question). */
+export function optionsQuestion(asked: string, answer: string): ChatQuestion | null {
+  const last = answer.trim().split("\n").pop() || "";
+  const closing = /\?[*_\s]*$/.test(last) ? (last.match(/[^.!?]+\?(?=[*_\s]*$)/)?.[0] || "").replace(/^[*_\s-]+/, "") : "";
+  const offered = /\b(which|choose|pick|prefer|one of (?:these|them|those)|(?:lock|pencil|book|add|put|slot) (?:one|any))\b/i.test(closing);
+  if (!offered && !/\b(options?|choices?|choose|pick|suggestions?|alternatives?)\b/i.test(asked)) return null;
+  const options = [...new Set([...answer.matchAll(MAP_LINK)].map((m) => m[1].replace(/\*/g, "").trim().slice(0, 120)))].filter(Boolean);
+  return options.length >= 2 && options.length <= 8 ? { q: offered ? closing.slice(0, 300) : "Which one would you like?", options } : null;
+}
+
 /** The question at the end of a reply, if there's a valid one: a question and two to six short answers. */
 export function parseQuestion(text: string): ChatQuestion | null {
   const m = text.match(/QUESTION:[ \t]*(\{[^\n]*\})/);
@@ -234,7 +252,7 @@ export function parseQuestion(text: string): ChatQuestion | null {
   try {
     const j = JSON.parse(m[1]);
     const q = typeof j.question === "string" ? j.question.trim().slice(0, 300) : "";
-    const options = [...new Set((Array.isArray(j.options) ? j.options : []).filter((o: unknown) => typeof o === "string").map((o: string) => o.trim().slice(0, 120)).filter(Boolean))].slice(0, 6) as string[];
+    const options = [...new Set((Array.isArray(j.options) ? j.options : []).filter((o: unknown) => typeof o === "string").map((o: string) => o.replace(MAP_LINK, "$1").trim().slice(0, 120)).filter(Boolean))].slice(0, 8) as string[];
     return q && options.length >= 2 ? { q, options, ...(j.multi === true ? { multi: true } : {}) } : null;
   } catch { return null; }
 }
@@ -424,6 +442,8 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
   const data: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.data || {}).slice(0, 12)) if (typeof v === "string") data[k.slice(0, 30)] = v.slice(0, 12_000);
   let checked = false, pushed = false;
+  // This round's thinking: after a lookup it goes back to the model, which would otherwise work it all out again.
+  let thoughts = "";
   // What figures may come from: the trip, what the traveler said, and every lookup result.
   let known = `${req.context || ""}\n${req.question || ""}\n${(req.history || []).filter((t) => t.role === "me").map((t) => t.text).join("\n")}`;
   const draft = (a: string) => `${cleanAnswer(a)}\n${parseChange(a, req.days || 0)?.request || ""}`;
@@ -431,11 +451,13 @@ export async function askCompanion(req: CompanionRequest, report: Report, signal
   // Up to MAX_ROUNDS of lookups: the model asks, gets the results, and is asked again.
   for (let round = 0; ; round++) {
     const last = round >= MAX_ROUNDS;
+    thoughts = "";
     answer = await askModel(req.model, last && looked.length ? `${prompt}\n\nNo more lookups now: answer with what you have.` : prompt, (n) => report({ type: "tokens", n }), {
       signal, text: true, images,
       nudge: "Answer the traveler right away, briefly.",
       // The answer so far goes out as it's written (as "reasoning", the channel the page already shows live).
       onText: (reply, thought) => {
+        thoughts = thought;
         const all = earlier + thought;
         if (thought && all !== thinking) { thinking = all; thinkFrom ||= Date.now(); report({ type: "thinking", text: all }); }
         const shown = cleanAnswer(reply);
@@ -479,11 +501,13 @@ This says the change is made (or will be), but it has no CHANGE line, so nothing
     earlier = `${thinking}${thinking ? "\n\n" : ""}Looked up: ${lookups.map((l) => l.args.join(" → ")).join("; ")}\n\n`;
     thinking = earlier;
     report({ type: "thinking", text: thinking });
-    prompt += `\n\n## Lookup results (round ${round + 1})\n${results}\n\nNow answer the traveler using these results${round + 1 < MAX_ROUNDS ? " (or look up something else, if you still need to)" : ""}.`;
+    // (The end of it, where it had got to: the start is mostly reading the question.)
+    const sofar = thoughts.trim() ? `\n\n## Your thinking before lookup ${round + 1}\n${thoughts.trim().slice(-6_000)}\n\nYou've worked that out already: carry on from there, don't go over it again.` : "";
+    prompt += `${sofar}\n\n## Lookup results (round ${round + 1})\n${results}\n\nNow answer the traveler using these results${round + 1 < MAX_ROUNDS ? " (or look up something else, if you still need to)" : ""}.${sofar ? " In your thinking, start at the results: don't restate their message or go through the plan again." : ""}`;
   }
   // Figures nothing backs up are marked as such (in the answer, and for the planner), never passed off as facts.
   const unsure = unverifiedFigures(draft(answer), known);
-  const text = cleanAnswer(answer) + (unsure.length ? `\n\n*Not verified: ${unsure.join(", ")}. No lookup confirmed ${unsure.length > 1 ? "these" : "this"}, so treat ${unsure.length > 1 ? "them" : "it"} as unknown.*` : "");
+  const written = cleanAnswer(answer) + (unsure.length ? `\n\n*Not verified: ${unsure.join(", ")}. No lookup confirmed ${unsure.length > 1 ? "these" : "this"}, so treat ${unsure.length > 1 ? "them" : "it"} as unknown.*` : "");
   // Without a plan, only setup changes count (must-sees, day trips): nothing on the days to change yet.
   const parsed = parseChange(answer, req.days || 0);
   // Ask mode never changes anything, whatever the model wrote.
@@ -492,10 +516,15 @@ This says the change is made (or will be), but it has no CHANGE line, so nothing
     : setup && (setup.trip || setup.edits?.length) ? { days: [], request: "", ...(setup.trip ? { trip: setup.trip } : {}), ...(setup.edits?.length ? { edits: setup.edits } : {}), ...(parsed!.title ? { title: parsed!.title } : {}) } : null;
   if (change?.request && unsure.length) change.request += ` (Not verified by a routing lookup: ${unsure.join(", ")}. Don't rely on these; use routed distances.)`;
   if (change?.stops) { report({ type: "status", text: "Finding the stops on the map…" }); await locateStops(change.stops, req.dayAt || {}); }
-  if (!text && !change) throw new Error("The model didn't answer properly (no text, only an empty change). Try again, or pick a different model in the chat's menu.");
+  if (!written && !change) throw new Error("The model didn't answer properly (no text, only an empty change). Try again, or pick a different model in the chat's menu.");
   const thought = thinking.trim() ? { thinking: thinking.trim().slice(-20_000), thoughtSecs: Math.max(1, Math.round(((thinkTo || Date.now()) - thinkFrom) / 1000)) } : {};
   // A reply that asks something waits for the answer: no change with it.
-  const question = parseQuestion(answer);
+  // A reply about places: those it suggests are map links, whether or not the model wrote them so.
+  const recent = (req.history || []).slice(-4).reverse().map((t) => String(t.text || ""));
+  const about = asksForPlaces(`${req.question || ""}\n${recent[0] || ""}`);
+  const asked = parseQuestion(answer);
+  const text = about ? linkSuggested(written, asked?.options || [], townOf([written.split(/\n\s*(?:[-*•]|\d+[.)]) /)[0], req.question || "", ...recent], towns.map((t) => t.name.split(",")[0].trim()))) : written;
+  const question = asked ? { ...asked, options: withEverySuggestion(asked.options, text) } : change ? null : optionsQuestion(req.question || "", text);
   if (question) return { answer: text || question.q, question, ...(looked.length ? { lookups: looked } : {}), ...(sources.length ? { sources: sources.slice(0, 12) } : {}), ...thought };
   return { answer: text || "I'll change that.", ...(change ? { change } : {}), ...(looked.length ? { lookups: looked } : {}), ...(sources.length ? { sources: sources.slice(0, 12) } : {}), ...thought };
 }

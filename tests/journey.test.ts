@@ -1,7 +1,7 @@
 // A travel day's journey: its rides and check-out/check-in as runs (one card each), a stop on the way between them,
 // and where new rides go in the day.
 import { describe, expect, it } from "vitest";
-import { insertAt, journeyRuns, journeySpan, namesRide } from "../web/src/itinerary/journey-model";
+import { insertAt, journeyRuns, journeySpan, moveToTime, namesRide } from "../web/src/itinerary/journey-model";
 
 const s = (time: string, place: string, extra: Record<string, unknown> = {}) => ({ time, place, description: "", ...extra }) as any;
 const isLeg = (x: any) => x.kind === "transfer" || / → /.test(x.place) || namesRide(x);
@@ -40,5 +40,25 @@ describe("a travel day's journey", () => {
     expect(insertAt(day7, "13:00")).toBe(2);
     expect(insertAt(day7, "")).toBe(1);
     expect(insertAt([s("18:00", "Dinner")], "")).toBe(0);
+  });
+});
+
+describe("moveToTime", () => {
+  const day = (...times: string[]) => times.map((time, i) => ({ time, place: `p${i}`, description: "" }));
+  const order = (items: { place: string }[]) => items.map((x) => x.place).join(" ");
+
+  it("moves a re-timed stop to where its time puts it, keeping the others' order", () => {
+    const items = day("11:00", "13:00", "12:30", "14:30");
+    expect(moveToTime(items, items[2], true)).toBe(true);
+    expect(order(items)).toBe("p0 p2 p1 p3");
+    items[1].time = "15:00";
+    moveToTime(items, items[1], true);
+    expect(order(items)).toBe("p0 p1 p3 p2");
+  });
+
+  it("leaves a stop that's in order, has no time, or is after midnight and unchanged", () => {
+    const items = day("11:00", "", "23:00", "00:30");
+    for (const x of [...items]) expect(moveToTime(items, x, false)).toBe(false);
+    expect(order(items)).toBe("p0 p1 p2 p3");
   });
 });

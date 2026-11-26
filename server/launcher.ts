@@ -58,6 +58,12 @@ function openBrowserWindow(url: string, dataDir: string) {
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();
 }
 
+/** Shows a folder in the system's file manager (Explorer, Finder…). */
+export function openFolder(dir: string) {
+  const cmd = process.platform === "win32" ? "explorer.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+  spawn(cmd, [dir], { stdio: "ignore", detached: true }).on("error", (e) => console.log(`Couldn't open ${dir}: ${e.message}`)).unref();
+}
+
 /** Opens a web address in the default browser (only http and https). */
 export function openInBrowser(url: string) {
   if (!/^https?:\/\/[^\s"]+$/i.test(url)) return false;

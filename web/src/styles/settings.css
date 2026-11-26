@@ -498,11 +498,14 @@ button.refine:hover { border-color: var(--accent); }
 .plan-card .check { margin: 0; }
 .plan-card .model-hint:empty { display: none; }
 .notes-fold { margin: 18px 0 4px; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; }
-.notes-fold summary { display: flex; align-items: baseline; gap: 8px; padding: 11px 0; cursor: pointer; list-style: none; font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 700; }
+.notes-fold summary { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; padding: 11px 0; cursor: pointer; list-style: none; font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 700; }
 .notes-fold summary::-webkit-details-marker { display: none; }
 .notes-fold summary::before { content: "▸"; font-size: 10px; transition: transform .15s; }
 .notes-fold[open] summary::before { transform: rotate(90deg); }
-.notes-fold summary .hint { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
+.notes-fold summary > span:first-child { white-space: nowrap; }
+.notes-fold summary .edit-slot { margin-left: auto; }
+.notes-fold summary .edit-slot:empty { display: none; }
+.notes-fold summary .hint { flex-basis: 100%; margin: 0; padding-left: 16px; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 12px; }
 .notes-fold[open] { padding-bottom: 12px; }
 /* The places table: compact enough that the How column fits. */
 .pt-name { max-width: 300px; }
@@ -620,6 +623,9 @@ button.refine:hover { border-color: var(--accent); }
 .cp-summary summary .i { width: 12px; height: 12px; }
 
 /* The chat's message box, like Claude's: pictures above, the text, then a toolbar (picture, model, compact, send). */
+.map-link { color: var(--accent); font-weight: 600; text-decoration: none; }
+.map-link:hover { text-decoration: underline; }
+.map-link .i { width: 12px; height: 12px; margin-left: 3px; vertical-align: -1px; }
 .cp-head-fill { flex: 1; }
 .cp-box {
   display: flex; flex-direction: column; gap: 4px; padding: 8px 8px 6px 12px; cursor: text;
@@ -954,44 +960,34 @@ button.refine:hover { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) { .lightbox .lightbox-stage img.drift { animation: none; } }
 .lightbox-bar > button[data-play] { height: 30px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 
-/* A question from the chat, with answers to pick from. */
-/* Like a terminal's prompt, styled: a chip, the question, numbered rows with a radio (pick one) or a checkbox (pick
-   any), the row in focus marked with ❯, and "Other" last, which opens a box for their own answer. */
-.cp-ask { margin-top: 10px; padding: 10px 6px 8px; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--panel); display: grid; gap: 6px; }
-.cp-ask-head { display: flex; align-items: center; gap: 8px; padding: 0 6px; }
-.cp-ask-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 600 11px/1.5 Inter, system-ui, sans-serif; letter-spacing: .02em; }
-.cp-ask-chip .i { width: 12px; height: 12px; }
-.cp-ask-head .hint { font-size: 11px; }
-.cp-ask-q { padding: 0 6px; font-weight: 600; font-size: 13px; line-height: 1.4; }
-.cp-ask-list { display: grid; gap: 1px; }
-.cp-opt { position: relative; display: flex; align-items: flex-start; gap: 9px; padding: 6px 8px 6px 22px; border-radius: 7px; cursor: pointer; font-size: 12.5px; line-height: 1.4; }
-.cp-opt:hover { background: var(--hover); }
-.cp-opt:has(input:focus-visible) { background: var(--hover); }
-.cp-opt:has(input:focus-visible)::before { content: "❯"; position: absolute; left: 8px; top: 6px; color: var(--accent); font-weight: 700; }
-.cp-opt input { appearance: none; flex: none; width: 15px; height: 15px; margin: 1px 0 0; border: 1.5px solid var(--line-strong); border-radius: 50%; background: var(--field); display: grid; place-content: center; cursor: pointer; outline: none; transition: border-color .12s; }
-.cp-ask.multi .cp-opt input { border-radius: 4px; }
-.cp-opt input::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); transform: scale(0); transition: transform .12s; }
-.cp-opt input::before { content: none; }
-.cp-ask.multi .cp-opt input::after { width: 9px; height: 9px; border-radius: 0; background: var(--accent-ink); clip-path: polygon(14% 52%, 0 66%, 38% 100%, 100% 26%, 86% 12%, 38% 72%); }
-.cp-opt input:checked { border-color: var(--accent); }
-.cp-ask.multi .cp-opt input:checked { background: var(--accent); }
-.cp-opt input:checked::after { transform: scale(1); }
-.cp-opt-n { flex: none; min-width: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.cp-opt.on .cp-opt-text { color: var(--accent); font-weight: 600; }
-.cp-opt.on .cp-opt-n { color: var(--accent); }
-.cp-opt.other .cp-opt-text .hint { font-weight: 400; }
-.cp-opt.other { margin-top: 3px; border-top: 1px dashed var(--line); border-radius: 0 0 7px 7px; padding-top: 8px; }
-.cp-opt.other:has(input:focus-visible)::before { top: 8px; }
-.cp-ask-other { padding: 0 8px 2px 46px; }
-.cp-ask-other textarea { width: 100%; min-height: 54px; resize: vertical; font: inherit; font-size: 12.5px; padding: 7px 9px; border-radius: 7px; }
-.cp-ask-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 6px 0; border-top: 1px solid var(--line); margin-top: 2px; padding-top: 7px; }
-.cp-ask-foot .hint { font-size: 11px; }
-.cp-ask-foot .btn { height: 28px; padding: 0 12px; font-size: 12.5px; }
-.cp-ask-foot.wait .btn { display: none; }
-.cp-ask kbd, .cp-revise kbd { font: 600 10px/1 Inter, system-ui, sans-serif; padding: 2px 4px; margin: 0 1px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--field); color: var(--muted); }
-.cp-ask.done { gap: 4px; padding-bottom: 9px; opacity: .85; }
-.cp-ask-answer { display: flex; align-items: center; gap: 6px; padding: 0 6px; font-size: 12.5px; color: var(--ok); }
-.cp-ask-answer .i { flex: none; }
+/* The chat's question, with answers to pick from: the top of the message box, which grows upwards to hold it. */
+.cp-ask { box-sizing: border-box; display: grid; gap: 8px; margin: -8px -8px 4px -12px; padding: 12px 8px 8px; max-height: min(46vh, 380px); overflow-y: auto; border-bottom: 1px solid var(--line); cursor: default; }
+.cp-ask[hidden] { display: none; }
+/* Growing or shrinking: nothing spills out, and no scrollbar flashes up. */
+.cp-ask.moving { box-sizing: border-box; overflow: hidden; align-content: start; }
+.cp-ask.closing { pointer-events: none; }
+.cp-ask-head { display: flex; align-items: baseline; gap: 10px; padding: 0 6px; }
+.cp-ask-head .cp-ask-q { flex: 1; min-width: 0; font-weight: 600; font-size: 13.5px; line-height: 1.45; }
+.cp-ask-head .hint { flex: none; margin: 0; font-size: 11px; }
+.cp-ask-list { display: grid; gap: 4px; }
+.cp-opt { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 7px 10px 7px 8px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); color: var(--ink); font-size: 13px; line-height: 1.4; cursor: pointer; transition: border-color .12s, background-color .12s; }
+.cp-opt:hover, .cp-opt:focus-visible { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); background: var(--hover); }
+.cp-opt:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
+.cp-opt.on { border-color: var(--accent); background: var(--accent-soft); }
+.cp-opt-n { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--field); color: var(--muted); font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cp-opt.on .cp-opt-n { background: var(--accent); color: var(--accent-ink); }
+.cp-opt-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cp-opt-text .hint { margin-left: 6px; font-size: 11.5px; }
+.cp-opt > .i { flex: none; width: 15px; height: 15px; color: var(--accent); visibility: hidden; }
+.cp-opt.on > .i { visibility: visible; }
+.cp-opt.other { border-style: dashed; background: none; }
+.cp-opt.other.on { border-style: solid; background: var(--accent-soft); }
+.cp-revise kbd { font: 600 10px/1 Inter, system-ui, sans-serif; padding: 2px 4px; margin: 0 1px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--field); color: var(--muted); }
+/* A question answered earlier. */
+.cp-ask-done { display: grid; gap: 4px; margin-top: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+.cp-ask-done .cp-ask-q { font-weight: 600; font-size: 12.5px; line-height: 1.4; }
+.cp-ask-answer { display: flex; align-items: flex-start; gap: 6px; font-size: 12.5px; color: var(--ok); }
+.cp-ask-answer .i { flex: none; margin-top: 3px; }
 
 /* Sending an offered change back with an edit: the box on its card, and the tag on their message. */
 .cp-revise { display: grid; gap: 6px; padding: 8px 0 0; border-top: 1px dashed var(--line); }
@@ -1047,6 +1043,9 @@ button.refine:hover { border-color: var(--accent); }
 /* A person: a round mark with their initial, in a colour of their own. */
 .who-dot { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: hsl(var(--h, 210) 55% 45%); color: #fff; font: 700 10px/1 Inter, system-ui, sans-serif; }
 .who-dot svg { width: 11px; height: 11px; }
+.who-dot i, .who-dot img { grid-area: 1 / 1; }
+.who-dot i { font-style: normal; }
+.who-dot img { width: 100%; height: 100%; min-width: 0; min-height: 0; border-radius: 50%; object-fit: cover; }
 /* "Lena · 5 min ago": who changed a part last. */
 .edit-slot:empty { display: none; }
 .edit-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 2px; border-radius: 999px; background: var(--hover); color: var(--muted); font: 500 11px/1.5 Inter, system-ui, sans-serif; white-space: nowrap; vertical-align: 1px; text-transform: none; letter-spacing: 0; }
@@ -1054,7 +1053,10 @@ button.refine:hover { border-color: var(--accent); }
 .edit-chip.mine { opacity: .75; }
 h2 .edit-slot { margin-left: 6px; }
 .day-head .edit-slot .edit-chip span:last-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
-.last-edit { color: var(--muted); }
+button.edit-chip { border: 0; cursor: pointer; }
+button.edit-chip:hover { color: var(--text); }
+.last-edit { padding: 0; border: 0; background: none; font: inherit; color: var(--muted); cursor: pointer; }
+.last-edit:hover { text-decoration: underline; }
 /* The Sync button by Save. */
 .sync-now.spinning svg { animation: sync-spin .9s linear infinite; }
 @keyframes sync-spin { to { transform: rotate(360deg); } }

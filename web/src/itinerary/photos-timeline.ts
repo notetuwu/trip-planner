@@ -6,6 +6,8 @@ export type TimelineDay = {
   /** On the line itself: "Day 3". */ label: string;
   /** In the bubble beside the pointer: the day in full, then its town and how many photos. */ title: string;
   sub: string;
+  /** The colour of the day's stay ("" when it's no stay's). */
+  color?: string;
   /** Its part of the gallery. */ el: HTMLElement;
 };
 
@@ -45,6 +47,8 @@ export function photoTimeline(nav: HTMLElement, scroller: HTMLElement) {
     if (nav.hidden || !at.length) return;
     const y = across(scroller.scrollTop, at, ys), i = dayAt(y);
     now.style.top = `${rows.offsetTop + y}px`;
+    // In the colour of the day's piece of the line.
+    now.style.setProperty("--stay", days[i].color || "");
     rows.querySelectorAll("button").forEach((b, n) => b.classList.toggle("on", n === i));
   }
 
@@ -113,7 +117,7 @@ export function photoTimeline(nav: HTMLElement, scroller: HTMLElement) {
     tip.hidden = true;
     nav.hidden = list.length < 2;
     scroller.classList.toggle("timed", !nav.hidden);
-    rows.innerHTML = list.map((d) => `<button type="button" aria-label="${esc([d.title, d.sub].filter(Boolean).join(", "))}"><span>${esc(d.label)}</span></button>`).join("");
+    rows.innerHTML = list.map((d) => `<button type="button"${d.color ? ` style="--stay:${d.color}"` : ""} aria-label="${esc([d.title, d.sub].filter(Boolean).join(", "))}"><span>${esc(d.label)}</span></button>`).join("");
     // From the keyboard (the pointer is handled above).
     rows.querySelectorAll("button").forEach((b, i) => { b.onclick = (e) => { if (!e.detail && at.length) scroller.scrollTop = at[i]; }; });
     layout();

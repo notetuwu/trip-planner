@@ -49,11 +49,12 @@ const baseOf = (line: L.Polyline) => {
   if (!b) drawnAs.set(line, (b = { weight: line.options.weight ?? 3, opacity: line.options.opacity ?? 1 }));
   return b;
 };
-/** Lights up the whole way to a stop (its leg, walks and rides), thicker and in front; null puts it back. */
-export function lightLeg(key: string | null) {
+/** Lights up the whole way to these stops (their legs, walks and rides) and any other lines given, thicker and in
+ *  front; what was lit before goes back. */
+export function lightLegs(keys: string[], others: L.Polyline[] = []) {
   for (const line of lit) line.setStyle(baseOf(line));
   lit = [];
-  for (const line of new Set((key && legLines.get(key)) || [])) {
+  for (const line of new Set([...others, ...keys.flatMap((k) => legLines.get(k) || [])])) {
     lit.push(line);
     line.setStyle({ weight: baseOf(line).weight + 4, opacity: 1 });
     line.bringToFront();

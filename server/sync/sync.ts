@@ -27,6 +27,7 @@ import { cleanBundledList, readList, writeList } from "../lists/store";
 import { keepVersion, keepVersionText, stable } from "../util/versions";
 import { PERSONAL, mergeTrip, partOfPath } from "../../shared/edits";
 import * as g from "./google";
+import { knownPictures, pictureOf, refreshPeople, remember } from "./people";
 import * as store from "./store";
 import * as box from "./dropbox";
 import { fsCheck } from "../util/fs-browse";
@@ -261,12 +262,14 @@ async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
     f.name = info.name; f.canWrite = info.canWrite;
     const out: RemoteFile[] = [];
     for (const d of await store.listTripFiles(f.id)) {
+      remember([{ email: d.lastModifyingUser?.emailAddress, url: d.lastModifyingUser?.photoLink }]);
       const md5 = d.md5Checksum || "";
       let tripId = d.properties?.tripPlannerId || "";
       try { const c = await content(d.id, md5); const data = JSON.parse(c.text); tripId = cleanShare((data?.format === FORMAT ? data.trip : data)?.sync)?.id || tripId; }
       catch { /* unreadable: listed, but it can't be opened */ }
       out.push({ id: d.id, name: d.name, md5, at: d.modifiedTime || "", by: d.lastModifyingUser?.displayName || d.lastModifyingUser?.emailAddress || "", byEmail: d.lastModifyingUser?.emailAddress || "", canEdit: d.capabilities?.canEdit !== false, tripId });
     }
+    if (p !== "local") await refreshPeople(f.id, p);
     f.error = undefined;
     state().remote[f.id] = { at: Date.now(), files: out };
     return out;
@@ -623,13 +626,23 @@ export function status(): SyncStatus {
     };
   }
   return {
-    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids, editIds: store.me().ids.map(editId),
+    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids, editIds: store.me().ids.map(editId), pictures: pictures(),
     dropbox: { configured: !!box.appKey(), keyFrom: box.keyFrom(), ...box.account(), ...box.signInState() },
     folders: s.folders, trips, running: !!current, lastRun, error: lastError, notices: s.notices,
   };
 }
 
 export function dismissNotices() { state().notices = []; save(); }
+
+/** Profile pictures by the same fingerprint as the stamps. Your own changes carry one of your identities: each gets
+ *  whichever of your pictures there is (Google's first). */
+function pictures(): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [email, url] of knownPictures()) out[editId(email)] = url;
+  const mine = store.me().ids, own = mine.map(pictureOf).find(Boolean);
+  if (own) for (const id of mine) out[editId(id)] ||= own;
+  return out;
+}
 
 /** Who made a change, as it's stamped on the trip's parts (shared/edits.ts): the name to show, and a fingerprint of who it
  *  is rather than their account or this computer's name (the stamps go into the shared file). */

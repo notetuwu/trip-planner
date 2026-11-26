@@ -72,12 +72,26 @@ export function wherePanel(o: WhereOptions) {
   function close() { panel.remove(); clearInterval(gone); mapModule.stopPicking(onMap); }
 }
 
+/** Draws the plan again with what `selector` names staying where it is on screen. (The new plan is laid out before its
+ *  travel lines are filled in, which can leave the list scrolled further down than it was.) */
+function keepingPlace(selector: string, draw: () => void) {
+  const top = () => document.querySelector(selector)?.getBoundingClientRect().top;
+  const was = top();
+  draw();
+  const now = top();
+  if (was == null || now == null || Math.abs(now - was) < 1) return;
+  // What scrolls it: its column, or (on a phone) the page.
+  let box = document.querySelector(selector)!.parentElement;
+  while (box && !(box.scrollHeight > box.clientHeight && /auto|scroll/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+  (box || window).scrollBy({ top: now - was, behavior: "instant" });
+}
+
 /** Puts the stop where they said and redraws the plan and the map. */
 function setAt(di: number, xi: number, lat: number, lng: number, label: string) {
   const x = state.itinerary?.days[di]?.items[xi];
   if (!x) return;
   x.lat = lat; x.lng = lng; x.pinned = true; delete x.fixed;
-  save(); renderItinerary(); drawMap({ fit: false });
+  save(); keepingPlace(`.item[data-k="${di}-${xi}"]`, renderItinerary); drawMap({ fit: false });
   toast(`${x.place}: set to ${label}`);
 }
 

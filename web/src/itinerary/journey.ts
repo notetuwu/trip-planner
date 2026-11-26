@@ -31,12 +31,12 @@ function rideMode(x: ItineraryItem): TravelMode {
 }
 
 /** The travel day's journey, worked out once per render: its runs, where each starts, and which stops are in one. */
-export interface DayJourney { from?: Stay; to?: Stay; runs: JourneyRun[]; start: Map<number, number>; inRun: Set<number> }
+export interface DayJourney { /** The stay arrived at, by its place in the list. */ arrive: number; from?: Stay; to?: Stay; runs: JourneyRun[]; start: Map<number, number>; inRun: Set<number> }
 export function dayJourney(d: Day): DayJourney | null {
   const j = journeyOf(d);
   if (!j) return null;
   return {
-    from: state.stays[j.arrive - 1], to: state.stays[j.arrive], runs: j.runs,
+    arrive: j.arrive, from: state.stays[j.arrive - 1], to: state.stays[j.arrive], runs: j.runs,
     start: new Map(j.runs.map((r, k) => [r.items[0], k])), inRun: new Set(j.runs.flatMap((r) => r.items)),
   };
 }
@@ -50,7 +50,7 @@ export function journeyCard(d: Day, j: DayJourney, k: number, rows: string, cur:
   const main = modes.find((m) => ["flight", "train", "ferry"].includes(m)) || modes[0];
   const span = journeySpan(d.items, j.runs);
   const meta = first ? [modes.length ? `by ${modes.map(modeName).join(" + ")}` : "", span.from ? `${span.from} → ${span.to}` : "", span.cost ? money(span.cost, cur) : ""].filter(Boolean).join(" · ") : "";
-  return `<li class="journey">
+  return `<li class="journey" data-stay-leg="${j.arrive}">
     <div class="journey-head"><span class="journey-icon">${modeIcon(main) || icon("route")}</span><b>${esc(town(j.from))} → ${esc(town(j.to))}</b>${first ? "" : `<span class="hint">continued</span>`}${meta ? `<span class="journey-meta">${esc(meta)}</span>` : ""}</div>
     ${first ? `<div class="journey-end">${icon("bed")} Leave ${esc(hotelOf(j.from))}</div>` : ""}
     <ul class="items">${rows}</ul>
@@ -84,7 +84,7 @@ export function suggestedJourney(di: number, j: DayJourney) {
     ? rides.map((r) => `<li><span class="journey-ride-icon">${icon(rideIcon(r))}</span>${r.dep ? `<time>${esc(r.dep)}</time>` : ""}<span>${esc([rideWord(r), r.line].filter(Boolean).join(" "))}: ${esc(r.on.n || "?")} → ${esc(r.off.n || "?")}</span></li>`).join("")
     : route ? `<li><span class="journey-ride-icon">${modeIcon(mode) || icon("route")}</span><span>${esc(modeName(mode) || "There")}: ${(route.d / 1000).toFixed(0)} km, about ${fmtMin(route.t)}</span></li>` : "";
   const how = mode ? `by ${modeName(mode)}` : "the planner decides how";
-  return `<li class="journey suggested">
+  return `<li class="journey suggested" data-stay-leg="${j.arrive}">
     <div class="journey-head"><span class="journey-icon">${modeIcon(mode) || icon("route")}</span><b>${esc(town(j.from))} → ${esc(town(j.to))}</b><span class="journey-meta">${esc([how, route ? fmtMin(route.t) : ""].filter(Boolean).join(" · "))}</span></div>
     <div class="journey-end">${icon("bed")} Leave ${esc(hotelOf(j.from))}</div>
     ${rows ? `<ul class="journey-rides">${rows}</ul>` : `<p class="hint journey-none">${mode ? "The way there is still being looked up (it shows on the map)." : "Pick how they travel between the stays in the setup to see the way here."}</p>`}

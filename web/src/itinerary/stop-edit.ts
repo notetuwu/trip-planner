@@ -9,6 +9,7 @@ import { byTitleMap, geocodeItems, itemLoc } from "../geo/item-loc";
 import { company } from "../../../shared/people";
 import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
+import { moveToTime } from "./journey-model";
 import { legControls } from "./leg-edit";
 import { openPin } from "./pin";
 import { renderItinerary } from "./render";
@@ -72,6 +73,7 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     if (!name) { field("place")!.focus(); return; }
     const text = (f: string) => (field<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(f)?.value ?? "").trim();
     const set = <K extends keyof ItineraryItem>(k: K, v: ItineraryItem[K] | "" | undefined) => { if (v === "" || v === undefined) delete x[k]; else x[k] = v as ItineraryItem[K]; };
+    const retimed = text("time") !== (field("time")!.defaultValue || "");
     x.time = text("time"); x.place = name; x.description = text("description");
     set("kind", text("kind") as ItineraryItem["kind"] | "");
     const cost = text("cost");
@@ -99,6 +101,8 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     if (l) x.leg = l; else delete x.leg;
     // The day's total follows the costs.
     d.estimatedCost = d.items.reduce((n, y) => n + (Number(y.cost) || 0), 0);
+    // A new time puts it in its place in the day (after the leg fields are read, which go by its old place).
+    moveToTime(d.items, x, retimed);
     close();
     save(); renderItinerary(); drawMap({ fit: false });
     geocodeItems(); // a new "where" is looked up

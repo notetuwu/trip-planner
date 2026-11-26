@@ -7,6 +7,7 @@
 import { $$, api, closeOnBackdrop, esc, toast } from "./dom";
 import { askText, tell } from "./ask";
 import { icon } from "./icons";
+import { fmtBytes } from "./format";
 import { loadSyncStatus } from "../saves/sync-client";
 import { classifyLink } from "../../../shared/folder-link";
 
@@ -39,7 +40,7 @@ const when = (iso?: string) => {
   return d.toDateString() === now.toDateString() ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
     : d.toLocaleDateString([], { day: "numeric", month: "short", ...(d.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }) });
 };
-const size = (n?: number) => (n == null ? "" : n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(1)} GB`);
+const size = (n?: number) => (n == null ? "" : fmtBytes(n));
 const driveLink = (id: string) => `https://drive.google.com/drive/folders/${id}`;
 
 /** A path as the folders down to it: "C:\Users\me" → C:\, Users, me (each with its full path). */

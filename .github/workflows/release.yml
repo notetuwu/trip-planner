@@ -47,13 +47,22 @@ jobs:
           $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
           if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
           & $iscc "/DAppVersion=$version" packaging\trip-planner.iss
-      - uses: actions/upload-artifact@v4
+      # GitHub's file storage sometimes times out (mostly from the Intel Mac), so a failed upload is tried once more.
+      - id: upload
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
         with:
           name: trip-planner-${{ matrix.os }}
-          path: |
+          path: &built |
             release/*.zip
             release/*.tar.gz
             release/*-setup.exe
+      - if: steps.upload.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: trip-planner-${{ matrix.os }}
+          path: *built
+          overwrite: true
 
   release:
     needs: build

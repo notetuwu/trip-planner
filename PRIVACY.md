@@ -14,8 +14,11 @@ Sync is off unless you set it up with your own Google client ID and secret and s
 - **Access:** the app asks for Google Drive access, which technically covers your whole Drive, because that is what it
   takes to see files other people put in a folder shared with you. The app only uses the folders you add in Settings →
   Sync: it reads their names and trip files, writes the trips you choose to sync, and can make a new folder when you ask
-  it to. It never deletes anything in your Drive.
+  it to. Sync never deletes anything in your Drive. In the photo gallery you can delete a photo: after you confirm, your
+  own file goes to the Drive trash, and someone else's is only removed from the folder.
 - **Your account:** your name and email address are read to show who is signed in and to record who shared a trip.
+- **Profile pictures:** the addresses of your picture and of the people on a shared folder or photo folder are kept on
+  your computer to show who changed or uploaded what. The pictures load from Google; none are put in a trip file.
 - **Shared trips:** a synced trip file holds the trip, its selected place lists, and the name and email address of the
   person who shared it. Everyone who can open that Drive folder can read it. Photo folders on your computer, file paths
   of place lists, and the prompts sent to AI models are left out.
@@ -35,6 +38,7 @@ Sync with Dropbox is off unless you set it up with your own Dropbox app key and 
   you choose to sync, makes a new folder when you ask it to, and adds a folder shared with you to your Dropbox when you
   choose it. It never deletes anything in your Dropbox.
 - **Your account:** your name and email address are read to show who is signed in and to record who shared a trip.
+  Profile pictures of you and a shared folder's members are shown as described for Google Drive above.
 - **Shared trips** and **storage** work as for Google Drive above: the token and app key stay in the app's data folder and
   are sent only to Dropbox.
 - **Removing it:** sign out in Settings → Sync, or remove the app at <https://www.dropbox.com/account/connected_apps>.
@@ -55,6 +59,7 @@ under its own privacy policy:
   answer (including those of a synced trip you're working on). A local model keeps them on your computer.
 - Web research, if used: the search engine and the websites that are read.
 - Optional features you switch on or set up, such as Google Drive photo folders and pictures from Wikimedia.
+- Resting the mouse on a photo in the gallery sends where it was taken to OpenStreetMap, to show the place's name.
 - Update checks: GitHub (can be switched off in Settings → Updates).
 
 ## Questions

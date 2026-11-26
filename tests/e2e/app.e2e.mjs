@@ -1032,15 +1032,15 @@ test("the chat can ask with answers to pick from; the one picked is sent as the 
   await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
   await page.eval(`window.__e2e.companion = { answer: "To bring the transport up to date I need to know one thing.", question: { q: "How do you get around?", options: ["Public transport and the odd taxi", "By car"] } };
     (() => { const q = document.querySelector("#cpQ"); q.value = "bring my trip up to date"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
-  // Two answers and "Other" last, as radio rows.
-  await page.waitFor(`document.querySelectorAll(".cp-ask .cp-opt input[type=radio]").length === 3`, 10000, "the question's answers");
+  // Two answers and "Other" last, as radio rows at the top of the message box.
+  await page.waitFor(`document.querySelectorAll("#cpBox .cp-ask .cp-opt[role=radio]").length === 3`, 10000, "the question's answers");
   assert.match(await page.eval(`document.querySelector(".cp-ask").textContent`), /How do you get around\?/);
   if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/question.png`, ".cp-ask");
   await page.eval(`window.__e2e.companion = { answer: "Got it, by car." }; document.querySelectorAll(".cp-ask .cp-opt")[1].click()`);
   await page.waitFor(`window.__e2e.companionAsked.question === "By car"`, 10000, "the answer sent");
   await page.waitFor(`document.querySelectorAll("#cpLog .rc-msg.ai:not(.pending)").length === 2`, 10000, "the reply");
-  assert.match(await page.eval(`document.querySelector(".cp-ask.done").textContent`), /By car/, "the card says what they answered");
-  assert.equal(await page.eval(`document.querySelectorAll(".cp-ask .cp-opt").length`), 0, "no answers to pick any more");
+  assert.match(await page.eval(`document.querySelector("#cpLog .cp-ask-done").textContent`), /By car/, "the card says what they answered");
+  assert.equal(await page.eval(`document.querySelectorAll(".cp-ask:not(.closing) .cp-opt").length`), 0, "no answers to pick any more");
   assert.match(await page.eval(`JSON.stringify(window.__e2e.companionAsked.history)`), /Asked: How do you get around\?/);
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });

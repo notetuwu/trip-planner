@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { errMsg } from "../config";
 import { diskCache } from "../util/disk-cache";
+import { deleteKind, moveToTrash } from "../util/trash";
 import { type Res, sendJson } from "../util/http";
 import { pool } from "../trip/overpass";
 import { type Exif, readExif, turnFor } from "./exif";
@@ -19,14 +20,18 @@ const MIME: Record<string, string> = {
   // A phone's .mov is usually the same H.264 video as an .mp4: browsers play it as one.
   mp4: "video/mp4", m4v: "video/mp4", mov: "video/mp4", webm: "video/webm",
 };
+/** Whether this account may delete the file: it and the folder it's in can be written to. */
+const mayDelete = async (file: string) => {
+  try { await Promise.all([file, path.dirname(file)].map((f) => fs.promises.access(f, fs.constants.W_OK))); return true; } catch { return false; }
+};
 const mimeOf = (file: string) => MIME[path.extname(file).slice(1).toLowerCase()] || "application/octet-stream";
 
 export const isLocal = (link: string) => /^local:/i.test(String(link || "").trim());
 export const localRoot = (link: string) => path.resolve(String(link).trim().slice(6).trim());
 
-interface Meta { t?: string; lat?: number; lng?: number; rot?: number; dur?: number }
+interface Meta { t?: string; author?: string; lat?: number; lng?: number; rot?: number; dur?: number }
 /** What was read from each file, by "path|size|changed": not read again while the file is as it was. */
-const metas = diskCache<Meta>("local-photo-meta.json");
+const metas = diskCache<Meta>("local-photo-meta-v2.json");
 /** The last list of each folder, so the file and thumbnail routes only serve what's in one. */
 const lists = new Map<string, PhotoList>();
 
@@ -49,7 +54,7 @@ async function metaOf(file: string, size: number, mtime: number, video: boolean,
       m = { ...(h.t ? { t: h.t } : {}), ...(h.lat != null ? { lat: h.lat, lng: h.lng } : {}), ...(h.dur ? { dur: h.dur } : {}) };
     } else if (jpeg) {
       const buf = await readAt(file, 0, 192 * 1024), x: Exif = buf ? readExif(buf) : {}, rot = turnFor(x.orientation);
-      m = { ...(x.t ? { t: x.t } : {}), ...(x.lat != null ? { lat: x.lat, lng: x.lng } : {}), ...(rot ? { rot } : {}) };
+      m = { ...(x.t ? { t: x.t } : {}), ...(x.lat != null ? { lat: x.lat, lng: x.lng } : {}), ...(rot ? { rot } : {}), ...(x.author ? { author: x.author } : {}) };
     }
   } catch { /* unreadable: listed without its details */ }
   metas.data[key] = m; metas.save();
@@ -86,14 +91,14 @@ export async function listLocal(link: string): Promise<PhotoList> {
   try { st = await fs.promises.stat(root); } catch { throw new Error(`The folder ${root} isn't on this computer (or can't be opened). If it's on another drive or computer, it has to be connected.`); }
   if (!st.isDirectory()) throw new Error(`${root} isn't a folder.`);
   const { files, heic, total } = await walk(root);
-  const enc = encodeURIComponent(link);
+  const enc = encodeURIComponent(link), kind = await deleteKind(root);
   const photos = (await pool(files, 8, async ({ rel, abs }): Promise<Photo | null> => {
     let s: fs.Stats;
     try { s = await fs.promises.stat(abs); } catch { return null; }
     const video = VID.test(rel), m = await metaOf(abs, s.size, s.mtimeMs, video, /\.jpe?g$/i.test(rel));
-    const t = m.t || timeFromName(path.basename(rel)), dir = path.posix.dirname(rel);
+    const t = m.t || timeFromName(path.basename(rel)), dir = path.posix.dirname(rel), del = await mayDelete(abs);
     return {
-      id: rel, name: path.basename(rel), t, ...(!t ? { up: new Date(s.mtimeMs).toISOString().slice(0, 19) } : {}), ...(dir !== "." ? { dir } : {}),
+      id: rel, name: path.basename(rel), t, size: s.size, ...(del ? { del: kind } : {}), ...(m.author ? { author: m.author } : {}), ...(!t ? { up: new Date(s.mtimeMs).toISOString().slice(0, 19) } : {}), ...(dir !== "." ? { dir } : {}),
       // The size comes last ("=s220"): the page swaps it for the one it needs, like a Google thumbnail's.
       thumb: `/api/photos/thumb?folder=${enc}&id=${encodeURIComponent(rel)}&px=s220`,
       ...(m.lat != null ? { lat: m.lat, lng: m.lng } : {}), ...(m.rot ? { rot: m.rot } : {}),
@@ -113,6 +118,20 @@ async function fileOf(link: string, id: string): Promise<{ abs: string; photo: P
   if (!list || !photo) return null;
   const root = localRoot(link), abs = path.resolve(root, id);
   return abs.startsWith(root + path.sep) ? { abs, photo } : null;
+}
+
+/** Deletes a file of a listed folder: into the bin, or for good where there's none (only when `permanent` says that
+ *  was agreed to). */
+export async function localDelete(link: string, id: string, permanent: boolean): Promise<void> {
+  const f = lists.has(link) ? await fileOf(link, id) : null;
+  if (!f) throw new Error("That file isn't in the folder.");
+  if (!(await mayDelete(f.abs))) throw new Error("You don't have permission to delete this file.");
+  const kind = await deleteKind(localRoot(link));
+  if (kind === "permanent" && !permanent) throw new Error("This drive has no Recycle Bin. Refresh the photos and try again.");
+  try { await (kind === "trash" ? moveToTrash(f.abs) : fs.promises.unlink(f.abs)); }
+  catch (e) { throw new Error(`Couldn't delete it: ${errMsg(e)}`); }
+  const list = lists.get(link)!;
+  lists.set(link, { ...list, photos: list.photos.filter((p) => p.id !== id), total: list.total - 1 });
 }
 
 /** The file itself, with the parts a browser asks for (how a video is played and sought in). */

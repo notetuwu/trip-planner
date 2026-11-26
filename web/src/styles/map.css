@@ -124,6 +124,8 @@
 .leaflet-popup-content { margin: 10px 12px; }
 .leaflet-popup-content b { display: block; margin-bottom: 2px; }
 .leaflet-popup-content .pop-meta { color: var(--muted); font-size: 12px; }
+.leaflet-popup-content .add-form [data-label] a { color: inherit; text-decoration: underline; }
+.leaflet-popup-content .add-form [data-label] a:hover { color: var(--accent); }
 .leaflet-popup-content .pop-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
 .leaflet-popup-content .pop-actions button { flex: none; white-space: nowrap; line-height: 1.5; border: 1px solid var(--line); background: var(--bg); color: var(--ink); border-radius: 999px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
 .leaflet-popup-content .pop-actions button:hover { border-color: var(--accent); }
@@ -171,6 +173,9 @@
 .map-pick { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-strong); box-shadow: var(--shadow-pop); font-size: 13px; max-width: calc(100% - 24px); }
 .map-pick .btn { height: 30px; }
 #map.picking, #map.picking .leaflet-interactive { cursor: crosshair; }
+/* While picking, a click goes through pins and lines to the map: on one of them it sets the spot too, rather than
+   jumping to that stop in the plan. */
+#map.picking .leaflet-interactive { pointer-events: none !important; }
 /* The Layers panel's "Download this area" and the trip's download progress. */
 .lp-download { display: grid; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
 .lp-download .btn { height: 30px; justify-self: start; display: inline-flex; gap: 6px; align-items: center; }
@@ -242,17 +247,44 @@
 .photos-dialog .pl-head .hint { flex: 1; margin: 0; min-width: 0; }
 /* On the left everything to set up, on the right the photos. */
 .ph-wrap { flex: 1; min-height: 0; display: grid; grid-template-columns: 310px minmax(0, 1fr); }
-.ph-side { overflow: auto; padding: 6px 16px 20px; border-right: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; gap: 4px; }
-.ph-side section { padding: 10px 0 12px; border-bottom: 1px solid var(--line); }
-.ph-side section:last-child { border-bottom: 0; }
-.ph-side h4 { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.ph-side { position: relative; min-height: 0; border-right: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; }
+/* (Room under the last card, so the button floating there never covers it for good.) */
+.ph-side-scroll { flex: 1; min-height: 0; overflow: auto; padding: 12px 12px 72px; display: flex; flex-direction: column; gap: 10px; }
+/* Refresh all floats over the cards at the bottom, like the chat's message box. */
+.ph-refresh { position: absolute; left: 12px; right: 12px; bottom: 12px; height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line-strong); border-radius: 18px; background: var(--field); color: var(--ink); box-shadow: var(--shadow-pop); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; transition: border-color .15s; }
+.ph-refresh:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line-strong)); }
+.ph-side summary { cursor: pointer; list-style: none; }
+.ph-side summary::-webkit-details-marker { display: none; }
+.ph-side summary h4 { margin: 0; }
+.ph-side summary h4 .i:last-child { margin-left: auto; transform: rotate(-90deg); transition: transform .15s; }
+.ph-side details[open] summary h4 { margin-bottom: 6px; }
+.ph-side details[open] summary h4 .i:last-child { transform: none; }
+.ph-side summary:hover h4 { color: var(--ink); }
+.ph-side section { flex: none; padding: 11px 12px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.ph-side section[hidden] { display: none; }
+.ph-side h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .ph-side .hint { margin: 6px 0 0; font-size: 11.5px; line-height: 1.45; }
 .ph-side .hint[hidden] { display: none; }
 .ph-side .ph-err { color: var(--warn); }
 .ph-side form { display: flex; gap: 6px; }
 .ph-side form input { flex: 1; min-width: 0; font-size: 12.5px; }
 .ph-side .btn { height: var(--control-h); flex: none; display: inline-flex; align-items: center; gap: 6px; }
-.ph-side section > .btn { margin-top: 8px; }
+.ph-side .drive-add { margin-top: 10px; }
+/* The stays, each in its colour: the one picked is filled with it. */
+.ph-stays { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.ph-stays button { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 9px; padding: 6px 8px; border: 1px solid transparent; border-radius: 9px; cursor: pointer; color: var(--ink); font-size: 13px; }
+.ph-stays button:hover { background: var(--field); }
+.ph-stays button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ph-stays button[aria-pressed="true"] { border-color: var(--stay, var(--line-strong)); background: color-mix(in srgb, var(--stay, var(--line-strong)) 16%, var(--panel)); }
+.ph-stays button:disabled { opacity: .5; cursor: default; background: none; }
+.ph-stays button > i, .ph-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--stay, transparent); }
+.ph-stays .ph-what { flex: 1; min-width: 0; display: grid; }
+.ph-stays .who-dot { width: 22px; height: 22px; font-size: 11px; }
+.ph-stays .ph-everyone { background: var(--field); color: var(--muted); }
+.ph-stays b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ph-stays small { color: var(--muted); font-size: 11.5px; }
+.ph-stays em { font-style: normal; font-size: 11.5px; color: var(--muted); }
+.ph-dot { align-self: center; }
 .ph-sources { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
 .ph-sources li { display: flex; align-items: flex-start; gap: 9px; padding: 8px 6px 8px 10px; border-radius: 10px; background: var(--field); border: 1px solid var(--line); }
 .ph-sources li.off { opacity: .6; }
@@ -277,13 +309,14 @@
 .pt-rows { position: relative; flex: 1; min-height: 0; }
 .ph-time button { all: unset; position: absolute; left: 0; right: 0; cursor: pointer; }
 .ph-time button span { position: absolute; right: 18px; top: 0; transform: translateY(-50%); font-size: 11px; line-height: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
-.ph-time button::after { content: ""; position: absolute; right: 7px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong); }
+/* A thin line, broken between days, each piece in a soft shade of its stay's colour (fuller for the day on screen). */
+.ph-time button::after { content: ""; position: absolute; right: 8px; top: 1px; bottom: 1px; width: 2px; border-radius: 1px; background: color-mix(in srgb, var(--stay, var(--muted)) 40%, var(--panel)); }
 .ph-time button.bare span { display: none; }
-.ph-time button:hover span, .ph-time button.on span { color: var(--accent); }
-.ph-time button.on::after { background: var(--accent); }
+.ph-time button:hover span, .ph-time button.on span { color: var(--ink); }
+.ph-time button:hover::after, .ph-time button.on::after { background: color-mix(in srgb, var(--stay, var(--muted)) 75%, var(--panel)); }
 .ph-time button:focus-visible span { display: block; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
-.pt-now { position: absolute; right: 2px; width: 14px; height: 3px; margin-top: -1.5px; border-radius: 2px; background: var(--accent); pointer-events: none; }
-.pt-tip { position: absolute; right: calc(100% + 2px); transform: translateY(-50%); display: grid; gap: 1px; padding: 7px 11px; border: 1px solid var(--line); border-right: 3px solid var(--accent); border-radius: 8px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); font-size: 12.5px; white-space: nowrap; pointer-events: none; z-index: 5; }
+.pt-now { position: absolute; right: 2px; width: 14px; height: 3px; margin-top: -1.5px; border-radius: 2px; background: color-mix(in srgb, var(--stay, var(--muted)) 75%, var(--panel)); pointer-events: none; }
+.pt-tip { position: absolute; right: calc(100% + 2px); transform: translateY(-50%); display: grid; gap: 1px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); font-size: 12.5px; white-space: nowrap; pointer-events: none; z-index: 5; }
 .pt-tip[hidden] { display: none; }
 .pt-tip span { color: var(--muted); font-size: 11.5px; }
 /* Filling the whole window, and the sidebar hidden (the buttons in the title line). */
@@ -302,7 +335,18 @@
 .ph-pin svg { width: 13px; height: 13px; }
 .ph-tile:hover .ph-pin, .ph-pin:focus-visible { opacity: 1; }
 .ph-pin:hover { background: var(--accent); }
-@media (hover: none) { .ph-pin { opacity: 1; } }
+.ph-del { all: unset; position: absolute; right: 5px; top: 5px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.ph-del svg { width: 13px; height: 13px; }
+.ph-tile:hover .ph-del, .ph-del:focus-visible { opacity: 1; }
+.ph-del:hover { background: var(--accent); }
+@media (hover: none) { .ph-pin, .ph-del { opacity: 1; } }
+/* What's known of the photo under the mouse, beside the pointer. */
+.ph-tip { position: fixed; left: 0; top: 0; z-index: 20; width: max-content; max-width: min(340px, 80vw); padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); font-size: 12.5px; line-height: 1.4; pointer-events: none; overflow-wrap: anywhere; }
+.ph-tip[hidden] { display: none; }
+.ph-tip b { display: block; margin-bottom: 5px; }
+.ph-tip dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; margin: 0; }
+.ph-tip dt { color: var(--muted); }
+.ph-tip dd { margin: 0; }
 .ph-empty { margin: 60px auto; text-align: center; color: var(--ink); }
 .ph-note.err { display: flex; gap: 6px; align-items: baseline; margin: 10px 0 0; padding: 8px 12px; border-radius: 9px; background: color-mix(in srgb, var(--warn) 12%, var(--panel)); font-size: 12.5px; }
 /* A photo with no GPS, put where the plan has them at that time: a dashed border says it's a guess. */
@@ -416,6 +460,11 @@
 .ps-box > svg { width: 18px; height: 18px; flex: none; }
 .ps-box input { flex: 1; min-width: 0; height: 100%; border: 0 !important; outline: 0; background: transparent !important; box-shadow: none !important; color: var(--ink); font-size: 14.5px; padding: 0; }
 .ps-box input::-webkit-search-cancel-button { display: none; }
+/* Searching: a spinner in the list of results. */
+.ps-spin { flex: none; width: 18px; height: 18px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: ps-spin .7s linear infinite; }
+@keyframes ps-spin { to { transform: rotate(360deg); } }
+.place-search li.ps-area-head .ps-spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -2px; }
+.place-search li.ps-wait { display: flex; align-items: center; gap: 10px; }
 .ps-clear { all: unset; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; cursor: pointer; color: var(--muted); }
 .ps-clear[hidden] { display: none; }
 .ps-clear:hover { background: var(--field); color: var(--ink); }

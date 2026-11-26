@@ -381,6 +381,8 @@ export interface SyncStatus {
   identities: string[];
   /** The same as they're stamped on the parts of a trip someone changed (shared/edits.ts): to tell one's own changes. */
   editIds: string[];
+  /** Profile pictures from Drive and Dropbox, by the same stamps' id. */
+  pictures?: Record<string, string>;
   /** Things the person should know about (a trip removed from a folder in Drive, so it stopped syncing there). */
   notices: string[];
 }

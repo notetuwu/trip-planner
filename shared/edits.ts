@@ -200,6 +200,22 @@ export function setPart(trip: Trip, key: string, value: unknown): boolean {
   return false;
 }
 
+/** The history's entries about these parts. A day also gets the changes to many days at once (a re-planned stay), which
+ *  are noted on the plan as a whole. */
+export function changesTo(log: Change[], keys: string[]): Change[] {
+  const day = keys.some((k) => k.startsWith("day:"));
+  return log.filter((c) => keys.includes(c.key) || (day && c.key === "plan" && /\d+ days changed/.test(c.what)));
+}
+
+/** The stops the history says were taken off a day and that aren't on it now, newest first. */
+export function removedStops(log: Change[], key: string, now: string[]): string[] {
+  const on = new Set(now.map(short));
+  const names = log.filter((c) => c.key === key).sort((a, b) => b.at - a.at)
+    .flatMap((c) => c.what.split("; ").filter((w) => w.startsWith("removed ")))
+    .flatMap((w) => w.slice(8).replace(/ and \d+ more$/, "").split(", "));
+  return [...new Set(names)].filter((n) => n && !on.has(n));
+}
+
 // ---- In words ------------------------------------------------------------------------------------------------------------
 const short = (s: unknown) => String(s ?? "").split(",")[0].trim();
 const list = (xs: string[], max = 3) => (xs.length <= max ? xs.join(", ") : `${xs.slice(0, max).join(", ")} and ${xs.length - max} more`);

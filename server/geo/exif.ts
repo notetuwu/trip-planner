@@ -7,6 +7,8 @@ export interface Exif {
   t?: string;
   lat?: number;
   lng?: number;
+  /** Who took it, when the camera or an editor wrote that in ("Artist"). */
+  author?: string;
   /** EXIF orientation 1-8 (1: as stored; 6: turn 90° clockwise to see it upright; 3: 180°; 8: 90° anticlockwise). */
   orientation?: number;
   /** The embedded preview (a small JPEG), stored unrotated. */
@@ -58,6 +60,9 @@ export function readExif(buf: Buffer): Exif {
     const i0 = ifd(u32(tiff + 4));
     const o = num(i0.entries.get(0x0112));
     if (o && o >= 1 && o <= 8) out.orientation = o;
+    // (Written as UTF-8 by most that fill it in.)
+    const author = Buffer.from(text(i0.entries.get(0x013b)), "latin1").toString("utf8").trim().slice(0, 80);
+    if (author) out.author = author;
     const exifPtr = num(i0.entries.get(0x8769)), gpsPtr = num(i0.entries.get(0x8825));
     const ex = exifPtr ? ifd(exifPtr) : null;
     const t = when(text(ex?.entries.get(0x9003))) || when(text(ex?.entries.get(0x9004))) || when(text(i0.entries.get(0x0132)));

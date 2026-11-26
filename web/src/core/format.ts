@@ -20,6 +20,9 @@ export const fmtTime = (t: string) => {
 export const todayIso = () => new Date().toLocaleDateString("sv");
 export const daysBetween = (a: string, b: string) => Math.round((+new Date(b + "T00:00:00Z") - +new Date(a + "T00:00:00Z")) / 864e5);
 
+/** A file's size: "840 KB", "4.2 MB". */
+export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${Math.round(n / 1024)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(1)} GB`);
+
 /** "5 min ago", "3 h ago"… */
 export const ago = (iso: string | undefined) => {
   const m = Math.round((Date.now() - +new Date(iso || 0)) / 60000);

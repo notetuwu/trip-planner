@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { nameVariants } from "../server/trip/chat-lookups";
-import { companionPrompt, parseChange, statesFigures } from "../server/trip/companion";
+import { companionPrompt, parseChange, optionsQuestion, statesFigures } from "../server/trip/companion";
 
 describe("distances in the chat", () => {
   it("spots distances and driving times, but not other numbers", () => {
@@ -200,5 +200,28 @@ describe("a reply that promises a change without one", () => {
     expect(promisesChange("Kura Sushi opens at 11:00 and the walk from Namba is about 5 minutes.")).toBe(false);
     expect(promisesChange("You could move the castle to Day 3 if you like: want me to?")).toBe(false);
     expect(promisesChange("The shops now have winter hours.")).toBe(false);
+  });
+});
+
+describe("optionsQuestion", () => {
+  const reply = "Two good ones:\n- **[Ichiran](map:Ichiran Ramen, Asakusa, Tokyo)**: ramen\n- [Kura Sushi](map:Kura Sushi (ROX), Asakusa, Tokyo): sushi";
+
+  it("offers the linked places to pick from when they asked for options and the reply forgot to ask", () => {
+    expect(optionsQuestion("give me options for dinner", reply)).toEqual({ q: "Which one would you like?", options: ["Ichiran", "Kura Sushi"] });
+  });
+
+  it("offers them too when the reply itself ends by asking them to choose", () => {
+    expect(optionsQuestion("give me google maps links for them", `${reply}\n\nAll are close by. Want me to lock one in for Day 14?`))
+      .toEqual({ q: "Want me to lock one in for Day 14?", options: ["Ichiran", "Kura Sushi"] });
+    expect(optionsQuestion("links please", `${reply}\n\nAnything else?`)).toBeNull();
+  });
+
+  it("asks nothing when no options were asked for, or fewer than two places are named", () => {
+    expect(optionsQuestion("when does day 3 start?", reply)).toBeNull();
+    expect(optionsQuestion("any options?", "Only [Ichiran](map:Ichiran, Tokyo).")).toBeNull();
+  });
+
+  it("keeps link syntax out of the answers of a question the model wrote", () => {
+    expect(parseQuestion('QUESTION: {"question": "Which?", "options": ["[Ichiran](map:Ichiran, Tokyo)", "Sushi"]}')?.options).toEqual(["Ichiran", "Sushi"]);
   });
 });
