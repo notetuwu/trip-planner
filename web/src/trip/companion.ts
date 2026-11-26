@@ -962,8 +962,9 @@ function appData(): Record<string, string> {
   const problems = planProblems(it).map((p) => `Day ${p.day + 1}: ${p.text}`);
   const over = it.days.map((d, i) => (perDay && Number(d.estimatedCost) > perDay ? `Day ${i + 1}: over the daily budget (${d.estimatedCost} of ${perDay} ${cur})` : "")).filter(Boolean);
   out.checks = [...problems, ...long.map((x) => `${x} (a long drive day)`), ...over].join("\n") || "The checks found nothing: no stops in the wrong place or closed at their time, no very long drive days, no day over budget.";
-  const w = it.days.map((d, i) => (session.weather[d.date] ? `Day ${i + 1} (${d.date}): weather code ${session.weather[d.date].code}, ${session.weather[d.date].min}-${session.weather[d.date].max} °C` : "")).filter(Boolean);
-  out.weather = w.length ? `Forecast (Open-Meteo):\n${w.join("\n")}` : "No forecast yet: forecasts are only available for days in the next two weeks.";
+  const what = { forecast: "forecast", was: "what it was", typical: "typical for the date (5-year average, not a forecast)" } as const;
+  const w = it.days.map((d, i) => { const x = session.weather[d.date]; return x ? `Day ${i + 1} (${d.date}): weather code ${x.code}, ${x.min}-${x.max} °C, ${what[x.kind || "forecast"]}` : ""; }).filter(Boolean);
+  out.weather = w.length ? `Weather (Open-Meteo):\n${w.join("\n")}` : "No weather yet (it's still being looked up).";
   out.places = session.places.slice(0, 400).map((p) => `- ${p.title}${state.marks[p.title] ? ` [${state.marks[p.title]}]` : ""}${p.address ? ` (${p.address})` : ""}`).join("\n") || "No saved places.";
   const book = bookAheadList(it).map((r) => `[${r.done ? "x" : " "}] ${r.label}`);
   out.bookings = [...(state.bookings || []).map((b) => `Their bookings: ${b.name} on ${b.date}${b.from ? ` ${b.from}` : ""}`),

@@ -203,7 +203,7 @@ export const session = {
   /** List summaries from the server. */
   lists: [] as ListSummary[],
   /** Forecast by date. */
-  weather: {} as Record<string, { code: number; max: number; min: number }>,
+  weather: {} as Record<string, { code: number; max: number; min: number; kind?: "forecast" | "was" | "typical" }>,
   /** The day shown on its own on the map, or null for all days. */
   selectedDay: null as number | null,
   /** The user panned or zoomed, so stop auto-fitting the map. */

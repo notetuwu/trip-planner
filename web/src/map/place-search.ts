@@ -3,6 +3,7 @@
 // Biased to where the map is. The first row searches the map's view for everything that matches ("McDonald's in this
 // area", "konbini", "atm"; Enter does the same when no result is picked): red pins and a list, the names at once and the
 // kinds of place added when they come (server/geo/area-search.ts); after the map is moved, "Search this area" asks again.
+// An address (with a number, or in Japanese) is found instead: Enter goes to it, the other matches stay in the list.
 // Used by the main map and by the Photos window's Place on map.
 import * as L from "leaflet";
 import type { GeoHit } from "../../../shared/types";
@@ -26,6 +27,9 @@ export interface PlaceSearch {
 
 /** How close (metres) a kind-of-place result is to a name result to be the same place. */
 const SAME = 40;
+
+/** Typed text that's an address rather than a kind of place (the same test as the server's). */
+const addressLike = (q: string) => /\d/.test(q) || /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(q);
 
 export function placeSearch(form: HTMLFormElement, o: {
   map: () => L.Map | null; placeholder: string; onPick: (hit: GeoHit) => void; onClear?: () => void;
@@ -57,9 +61,9 @@ export function placeSearch(form: HTMLFormElement, o: {
     results.hidden = false;
     const text = typed();
     if (area && text === area.q && !hits.length) return showArea();
-    const areaRow = text.length >= 2 ? `<li data-area class="ps-area-row${active === -1 ? " active" : ""}" role="option">${icon("search")}<div><b>${esc(text)}</b><span>Search in this area</span></div></li>` : "";
+    const areaRow = text.length >= 2 ? `<li data-area class="ps-area-row${active === -1 ? " active" : ""}" role="option">${icon("search")}<div><b>${esc(text)}</b><span>${addressLike(text) ? "Find this address" : "Search in this area"}</span></div></li>` : "";
     results.innerHTML = areaRow + (hits.length
-      ? hits.map((r, i) => `<li data-r="${i}" role="option" aria-selected="${i === active}"${i === active ? ' class="active"' : ""}>${icon(kindIcon(r.kind || ""))}<div><b>${esc(r.name)}</b><span>${esc(r.label.replace(new RegExp(`^${r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), ""))}</span></div></li>`).join("")
+      ? hits.map((r, i) => `<li data-r="${i}" role="option" aria-selected="${i === active}"${i === active ? ' class="active"' : ""}>${icon(kindIcon(r.kind || ""))}<div><b>${esc(r.name)}</b><span>${r.near ? "The number wasn't found: the street or area · " : ""}${esc(r.label.replace(new RegExp(`^${r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")},\\s*`), ""))}</span></div></li>`).join("")
       : text.length >= 2 ? "" : `<li class="muted">Searching…</li>`);
     if (!results.innerHTML) results.hidden = true;
   }
@@ -126,10 +130,22 @@ export function placeSearch(form: HTMLFormElement, o: {
       show();
     } catch (e) { if (mine === asked) results.innerHTML = `<li class="muted">${esc((e as Error).message)}</li>`; }
   }
-  /** A result picked: the map goes there (the area's pins stay when it's one of them). */
-  function pick(r: GeoHit, fromArea = false) {
+  /** An address: looked up properly (not just as typed so far), and the map goes to the best match; the others stay in
+   *  the list for when it's not the one. */
+  async function findAddress() {
+    const text = typed();
+    if (!text) return;
+    results.hidden = false;
+    results.innerHTML = `<li class="muted">Finding “${esc(text)}”…</li>`;
+    await search(false);
+    if (typed() !== text) return; // typed on meanwhile
+    if (hits[0]) pick(hits[0], false, true);
+    else results.innerHTML = `<li class="muted">Couldn't find “${esc(text)}”. Try the street and town, or a place nearby.</li>`;
+  }
+  /** A result picked: the map goes there (the area's pins stay when it's one of them). An address keeps its text. */
+  function pick(r: GeoHit, fromArea = false, keepText = false) {
     results.hidden = true;
-    if (!fromArea) { query.value = r.name; area = null; drawPins(); again.hidden = true; }
+    if (!fromArea) { if (!keepText) query.value = r.name; area = null; drawPins(); again.hidden = true; }
     clearBtn.hidden = false;
     o.onPick(r);
   }
@@ -164,8 +180,9 @@ export function placeSearch(form: HTMLFormElement, o: {
     } else if (e.key === "Enter") {
       e.preventDefault();
       clearTimeout(typing);
-      // A result picked with the arrows goes there; otherwise the area is searched, like a maps app.
+      // A result picked with the arrows goes there; otherwise an address is found, or the area searched, like a maps app.
       if (active >= 0 && list[active]) pick(list[active], list !== hits);
+      else if (addressLike(typed())) findAddress();
       else searchArea();
     } else if (e.key === "Escape" && (!results.hidden || query.value)) {
       // Esc closes the results (then empties the field), not a window it's in.
@@ -178,7 +195,7 @@ export function placeSearch(form: HTMLFormElement, o: {
   results.onclick = (e) => {
     const li = (e.target as HTMLElement).closest<HTMLElement>("li");
     if (!li) return;
-    if (li.dataset.area != null) searchArea();
+    if (li.dataset.area != null) { if (addressLike(typed())) findAddress(); else searchArea(); }
     else if (li.dataset.r != null && hits[+li.dataset.r]) pick(hits[+li.dataset.r]);
     else if (li.dataset.a != null && area?.hits[+li.dataset.a]) pick(area.hits[+li.dataset.a], true);
   };

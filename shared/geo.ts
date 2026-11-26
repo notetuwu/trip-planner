@@ -12,6 +12,8 @@ export interface GeoHit {
   website?: string;
   /** Its other names (local, English, German…), so "Gletschergarten" matches a hit named "Glacier garden". */
   names?: string[];
+  /** An address searched for whose house or block number wasn't found: this is the street or area it's in. */
+  near?: boolean;
 }
 
 export interface ReverseHit {

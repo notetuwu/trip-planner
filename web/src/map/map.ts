@@ -115,9 +115,13 @@ function endPick() {
   map?.getContainer().classList.remove("picking");
 }
 
+/** Stops waiting for a click on the map (the panel that asked for it closed); with `only`, just when that's what it's
+ *  waiting for (not a newer ask). */
+export const stopPicking = (only?: (at: L.LatLng) => void) => { if (!only || picking === only) endPick(); };
+
 /** Asks for a spot on the map: the next click there is handed to `done` (Esc or Cancel gives up). The map scrolls into
- *  view first (on a phone it's above the sidebar). */
-export function pickOnMap(what: string, done: (at: L.LatLng) => void) {
+ *  view first (on a phone it's above the sidebar), unless `scroll` is false (it's offered next to a search). */
+export function pickOnMap(what: string, done: (at: L.LatLng) => void, { scroll = true } = {}) {
   if (!map) return;
   endPick();
   picking = done;
@@ -131,7 +135,7 @@ export function pickOnMap(what: string, done: (at: L.LatLng) => void) {
   bar.querySelector("button")!.onclick = endPick;
   $(".map-wrap").append(bar);
   L.DomEvent.disableClickPropagation(bar);
-  $(".map-wrap").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  if (scroll) $(".map-wrap").scrollIntoView({ block: "nearest", behavior: "smooth" });
   const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { endPick(); document.removeEventListener("keydown", esc); } };
   document.addEventListener("keydown", esc);
 }

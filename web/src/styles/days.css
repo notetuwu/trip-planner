@@ -10,6 +10,8 @@
 .day-head .right { display: flex; gap: 6px; align-items: center; }
 .weather { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .weather svg.i { font-size: 15px; }
+/* Typical for the date (not a forecast): quieter. */
+.weather.typical { opacity: .75; font-style: italic; }
 .budget-pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 600; white-space: nowrap; }
 .budget-pill.over { background: var(--accent-soft); color: var(--accent); }
 /* The timeline: each stop draws its own piece of the line and its dot, both centred on the same x (the stop's left

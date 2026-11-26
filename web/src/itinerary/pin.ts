@@ -26,15 +26,17 @@ interface WhereOptions {
   onPick: (lat: number, lng: number, label: string) => void;
 }
 
-/** The small "where is it?" panel: a search (as they type, nearby first) and "Click it on the map instead". */
+/** The small "where is it?" panel: a search (as they type, nearby first), and the map waiting for a click on the spot
+ *  meanwhile, whichever they do first. */
 export function wherePanel(o: WhereOptions) {
   document.querySelector(".pin-panel")?.remove();
+  mapModule.stopPicking();
   const panel = document.createElement("div");
   panel.className = "pin-panel";
   panel.innerHTML = `<div class="pin-head"><b>${esc(o.title)}</b><button type="button" class="icon-btn" data-pin-close title="Close">${icon("x")}</button></div>
     <form class="pin-search"><input type="search" value="${esc(o.query)}" placeholder="Name and town, or an address"><button class="btn">Search</button></form>
     <ul class="pin-results"></ul>
-    <div class="pin-foot"><button type="button" class="link-btn" data-pin-map>${icon("crosshair")} Click it on the map instead</button>${o.extra ? `<button type="button" class="link-btn" data-pin-extra>${o.extra.html}</button>` : ""}</div>`;
+    <div class="pin-foot"><span class="hint">${icon("crosshair")} Or click the spot on the map</span>${o.extra ? `<button type="button" class="link-btn" data-pin-extra>${o.extra.html}</button>` : ""}</div>`;
   o.host.appendChild(panel);
   const input = panel.querySelector("input")!, list = panel.querySelector<HTMLElement>(".pin-results")!;
   // As they type (Photon only: Nominatim's rules don't allow a search per key press); Enter or Search looks harder.
@@ -50,23 +52,24 @@ export function wherePanel(o: WhereOptions) {
       if (mine !== asked || !panel.isConnected) return;
       list.innerHTML = hits.length ? hits.slice(0, 6).map((h, i) => `<li><button type="button" data-hit="${i}"><b>${esc(h.name || h.label.split(",")[0])}</b><small>${esc(h.label)}</small></button></li>`).join("")
         : `<li class="hint">Nothing found${quick ? " yet: press Enter to look harder" : ". Try the town or address, or click it on the map"}.</li>`;
-      list.querySelectorAll<HTMLButtonElement>("[data-hit]").forEach((b) => { b.onclick = () => { const h = hits[+b.dataset.hit!]; panel.remove(); o.onPick(h.lat, h.lng, h.label.split(",").slice(0, 2).join(",")); }; });
+      list.querySelectorAll<HTMLButtonElement>("[data-hit]").forEach((b) => { b.onclick = () => { const h = hits[+b.dataset.hit!]; close(); o.onPick(h.lat, h.lng, h.label.split(",").slice(0, 2).join(",")); }; });
     } catch (e) { if (mine === asked) list.innerHTML = `<li class="hint">${esc((e as Error).message)}</li>`; }
   };
   panel.querySelector("form")!.onsubmit = (e) => { e.preventDefault(); search(); };
   input.oninput = () => { clearTimeout(typing); typing = window.setTimeout(() => search(input.value.trim().length >= 2), 280); };
-  panel.querySelector<HTMLButtonElement>("[data-pin-close]")!.onclick = () => panel.remove();
-  if (o.extra) panel.querySelector<HTMLButtonElement>("[data-pin-extra]")!.onclick = () => { panel.remove(); o.extra!.onClick(); };
-  // The map's own picking: the click sets the spot instead of offering to add a place there (Cancel or Esc gives up).
-  panel.querySelector<HTMLButtonElement>("[data-pin-map]")!.onclick = () => {
-    if (!mapModule.map) return;
-    panel.remove();
-    // (The map stays where it is: they may already be looking at the right spot.)
-    mapModule.pickOnMap(o.mapLabel, (at) => o.onPick(at.lat, at.lng, "the spot you clicked"));
-  };
+  panel.querySelector<HTMLButtonElement>("[data-pin-close]")!.onclick = () => close();
+  if (o.extra) panel.querySelector<HTMLButtonElement>("[data-pin-extra]")!.onclick = () => { close(); o.extra!.onClick(); };
+  // The map's own picking, from the start: a click there sets the spot instead of offering to add a place (Cancel or Esc
+  // stops it; the search stays). The map stays where it is: they may already be looking at the right spot.
+  const onMap = (at: { lat: number; lng: number }) => { close(); o.onPick(at.lat, at.lng, "the spot you clicked"); };
+  if (mapModule.map) mapModule.pickOnMap(o.mapLabel, onMap, { scroll: false });
+  // The panel gone some other way (the plan drawn again): the map stops waiting too.
+  const gone = window.setInterval(() => { if (!panel.isConnected) { clearInterval(gone); mapModule.stopPicking(onMap); } }, 500);
   input.focus(); input.select();
   search();
   return panel;
+  /** The panel goes, and the map stops waiting for a click. */
+  function close() { panel.remove(); clearInterval(gone); mapModule.stopPicking(onMap); }
 }
 
 /** Puts the stop where they said and redraws the plan and the map. */

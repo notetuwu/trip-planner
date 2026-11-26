@@ -449,6 +449,23 @@ test("a stay can be put on its exact spot by hand, and back on its address", asy
   assert.deepEqual(await page.eval(`(() => { const l = planner.stayLoc(planner.state().stays[1]); return [l.lat, l.lng]; })()`), [35.2324, 139.1069], "back to the town's spot");
 });
 
+test("setting a stop's location: the map waits for a click from the start, next to the search", async () => {
+  await trip(PADUA_MILANO);
+  await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [stop("10:00", "Somewhere in Padua")])] } })`);
+  await page.waitFor(`!!document.querySelector('[data-pin="0-0"]')`);
+  await page.eval(`document.querySelector('[data-pin="0-0"]').click()`);
+  await page.waitFor(`!!document.querySelector(".pin-panel") && document.querySelector("#map").classList.contains("picking")`, 5000, "the panel and the map picking");
+  // A click on the map: the stop goes there, the panel closes and the map stops waiting.
+  await page.eval(`(() => { const m = planner.map(); m.fire("click", { latlng: { lat: 45.41, lng: 11.88 } }); })()`);
+  await page.waitFor(`planner.state().itinerary.days[0].items[0].pinned === true`, 5000, "the stop pinned");
+  assert.deepEqual(await page.eval(`[planner.state().itinerary.days[0].items[0].lat, !!document.querySelector(".pin-panel"), document.querySelector("#map").classList.contains("picking")]`), [45.41, false, false]);
+  // Closing the panel stops the map waiting.
+  await page.eval(`document.querySelector('[data-pin="0-0"]').click()`);
+  await page.waitFor(`document.querySelector("#map").classList.contains("picking")`);
+  await page.eval(`document.querySelector(".pin-panel [data-pin-close]").click()`);
+  assert.equal(await page.eval(`document.querySelector("#map").classList.contains("picking")`), false);
+});
+
 test("a split day's groups sit side by side with room, and become tabs without; a shared trip keeps each stop's edit button", async () => {
   await trip({ ...PADUA_MILANO, travelers: 4 });
   const A = `{ group: "Group A", people: 1 }`, B = `{ group: "Group B", people: 3 }`;

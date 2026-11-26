@@ -13,7 +13,7 @@ import { genericMeal, mapsName, placeUrl } from "../core/maps-links";
 import { itemLoc, stopMapsUrl } from "../geo/item-loc";
 import { distKm, placeLoc, stayLoc } from "../geo/locate";
 import { tipHtml } from "./tips";
-import { wmoIcon } from "./weather";
+import { weatherTitle, wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
 import { isTransfer, onMap } from "../map/travel-day";
 import { dayJourney, journeyCard, suggestedJourney } from "./journey";
@@ -172,7 +172,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
         <h4><span class="date">Day ${i + 1} · ${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
           <span class="edit-slot" data-edit="${esc(dayKey(it.days, i))}">${editChip(dayKey(it.days, i))}</span>
-          ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
+          ${w ? `<span class="weather${w.kind === "typical" ? " typical" : w.kind === "was" ? " was" : ""}" title="${esc(weatherTitle(w))}">${wmoIcon(w.code)}${w.kind === "typical" ? "~" : ""}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>

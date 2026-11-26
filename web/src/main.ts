@@ -23,7 +23,7 @@ import { loadWeather } from "./itinerary/weather";
 import { initDays, selectDay } from "./map/days";
 import { drawMap } from "./map/draw";
 import { initRideStops, setOnPlanChanged, updateLegInfo } from "./map/legs";
-import { initMap } from "./map/map";
+import { initMap, map as leafletMap } from "./map/map";
 import { dayLegs, routeKey, routes, setOnRouted } from "./map/routes";
 import { initMapSearch } from "./map/search";
 import { initChips, renderChips } from "./places/chips";
@@ -71,7 +71,7 @@ $("#generate").onclick = () => runGeneration();
 
 // For debugging in the browser console and for end-to-end tests.
 Object.assign(window, {
-  planner: { state: () => state, session, applyState, importTrip, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, stayLoc, directionsUrl, offlineHtml },
+  planner: { state: () => state, session, applyState, importTrip, selectDay, drawMap, renderItinerary, itemLoc, byTitleMap, dayLegs, routes, routeKey, stayLoc, directionsUrl, offlineHtml, map: () => leafletMap },
 });
 
 // Tells the server this window is open, and when it closes (the packaged app quits after its last window closes).
