@@ -430,8 +430,9 @@
 .pp-check svg { width: 12px; height: 12px; opacity: 0; stroke-width: 3; }
 .pp-tile .pp-check { position: absolute; left: 5px; top: 5px; color: #fff; background: rgba(0, 0, 0, .3); box-shadow: 0 0 3px rgba(0, 0, 0, .5); opacity: 0; transition: opacity .12s; }
 .pp-tile:hover .pp-check, .pp-list.picking .pp-check, .pp-check:focus-visible { opacity: 1; }
-.pp-tile.sel .pp-check, .pp-group.all > header .pp-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); opacity: 1; }
-.pp-tile.sel .pp-check svg, .pp-group.all > header .pp-check svg, .pp-tile .pp-check:hover svg { opacity: 1; }
+.pp-tile.sel .pp-check, .pp-group.all > .pp-head .pp-check { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); opacity: 1; }
+.pp-tile.sel .pp-check svg, .pp-group.all > .pp-head .pp-check svg, .pp-tile .pp-check:hover svg, .pp-head .pp-check:hover svg { opacity: 1; }
+.pp-group.all > .pp-head > header { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 @media (hover: none) { .pp-tile .pp-check { opacity: 1; } }
 
 /* What's selected, at the bottom of the list. */

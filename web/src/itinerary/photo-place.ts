@@ -255,7 +255,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
     for (const el of list.querySelectorAll<HTMLElement>(".pp-tile")) el.classList.toggle("sel", selected.has(el.dataset.key!));
     for (const el of list.querySelectorAll<HTMLElement>(".pp-group")) {
       const keys = [...el.querySelectorAll<HTMLElement>(".pp-tile")].map((t) => t.dataset.key!);
-      el.classList.toggle("all", keys.length > 0 && keys.every((k) => selected.has(k)));
+      const all = keys.length > 0 && keys.every((k) => selected.has(k));
+      el.classList.toggle("all", all);
+      el.querySelector("[data-pp-all]")?.setAttribute("aria-checked", String(all));
     }
     q<HTMLButtonElement>("[data-pp-undo]").disabled = !history.length;
     // A click on the map places the selected photos that are nowhere yet: it says so with a crosshair.
@@ -326,7 +328,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     return `<section class="pp-group${extra ? " pp-spot" : ""}" data-g="${i}">
       <div class="pp-head" draggable="${g.some(fromList)}">
       <header title="Click to select them all; drag to place them together">
-        <span class="pp-check" aria-hidden="true">${icon("check")}</span>
+        <button type="button" class="pp-check" data-pp-all role="checkbox" aria-checked="false" title="Select or unselect these" aria-label="Select all of ${esc(title)}">${icon("check")}</button>
         <div class="pp-gh"><b>${esc(title)}</b><small>${from(g)}</small></div><em>${g.length}</em>${extra}</header>
       ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
       </div>
@@ -576,6 +578,14 @@ export function placeTool(box: HTMLElement): PlaceTool {
     // The heading, or the room between it and the suggestion.
     if (target.closest(".pp-head")) {
       const keys = groupAt(target).map((p) => p.key);
+      // Its circle adds the group to the selection or takes it out, like a photo's tick: other groups stay selected.
+      if (target.closest("[data-pp-all]")) {
+        const on = !keys.every((k) => selected.has(k));
+        for (const k of keys) if (on) selected.add(k); else selected.delete(k);
+        anchor = keys[0] || "";
+        marks(); drawMap();
+        return;
+      }
       // A group all selected already: its heading takes them off again.
       if (keys.every((k) => selected.has(k))) { for (const k of keys) selected.delete(k); marks(); drawMap(); }
       else select(keys, true);
