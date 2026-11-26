@@ -241,6 +241,13 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const around = spots.length ? spots : dayStops().map((s) => L.latLng(s.lat, s.lng));
     moveToAll(m, around, 16, L);
   }
+  /** A group's suggestion: selected, and the map fitted to every spot suggested for it (in or out, whatever it takes). */
+  function showSuggestion(g: Placed[]) {
+    select(g.map((p) => p.key));
+    const spots = g.filter((p) => p.guessed && unplaced(p) && p.lat != null).map((p) => L.latLng(p.lat!, p.lng!));
+    if (!m || !spots.length) return flyToSelection();
+    m.fitBounds(L.latLngBounds(spots).pad(0.25), { maxZoom: 17, animate: true });
+  }
 
   /** The selection's look, the bar under the list and the counts, without drawing the list again. */
   function marks() {
@@ -554,7 +561,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     if (target.closest("[data-pp-close]")) { atSpot = []; selected.clear(); return draw(); }
     if (target.closest("[data-pp-use]")) return accept(groupAt(target));
     // The suggestion itself: the group selected and the map at the spot suggested (only "Use" puts them there).
-    if (target.closest("[data-pp-sugg]")) return select(groupAt(target).map((p) => p.key), true);
+    if (target.closest("[data-pp-sugg]")) return showSuggestion(groupAt(target));
     const el = target.closest<HTMLElement>(".pp-tile");
     if (el) {
       const key = el.dataset.key!;
@@ -579,7 +586,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const el = (e.target as HTMLElement).closest("[data-pp-sugg]");
     if (!el || (e.target as HTMLElement).closest("[data-pp-use]") || (e.key !== "Enter" && e.key !== " ")) return;
     e.preventDefault(); e.stopPropagation();
-    select(groupAt(el).map((p) => p.key), true);
+    showSuggestion(groupAt(el));
   });
   // The photo pointed at in the list lights up its pin on the map.
   list.addEventListener("mouseover", (e) => {

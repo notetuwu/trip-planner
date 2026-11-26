@@ -148,6 +148,9 @@ function banner(): HTMLElement {
     document.addEventListener("close", (e) => {
       if (e.target instanceof HTMLDialogElement && e.target.contains(made)) { document.body.append(made); if (!made.hidden) drawBanner(); }
     }, true);
+    // The note goes by itself after a while (not while the pointer is on it).
+    el.addEventListener("mouseenter", () => clearTimeout(fade));
+    el.addEventListener("mouseleave", () => fadeLater());
     el.addEventListener("click", (e) => {
       const t = e.target as HTMLElement;
       if (t.closest("[data-cb-review]")) openReview();
@@ -158,8 +161,17 @@ function banner(): HTMLElement {
   return el;
 }
 
+/** A note about changes that came in goes after 12 seconds; one that needs you (Update, or you both changed something)
+ *  stays. The changes stay in the trip's history (Changes). */
+let fade: number | undefined, fades = false;
+function fadeLater() {
+  clearTimeout(fade);
+  if (fades) fade = window.setTimeout(() => { pending = null; drawBanner(); }, 12_000);
+}
+
 function drawBanner() {
   const el = banner();
+  clearTimeout(fade); fades = false;
   if (waiting) {
     const e = waiting.edit;
     el.className = "collab-banner waiting";
@@ -183,6 +195,8 @@ function drawBanner() {
     <button type="button" class="btn" data-cb-review>${icon("eye")} Review</button>
     <button type="button" class="icon-btn" data-cb-close title="OK" aria-label="Close">${icon("x")}</button>`;
   show(el);
+  fades = !clashes.length;
+  if (!el.matches(":hover")) fadeLater();
 }
 
 /** On screen, over whatever window was opened last (shown again, it goes on top of the ones opened since). While a
@@ -326,5 +340,5 @@ export const syncNow = (button?: HTMLButtonElement) => syncHook?.(button) ?? Pro
 export function initCollab(o: { apply: (next: AppState) => Promise<void>; show: (key: string) => void; sync: (button?: HTMLButtonElement) => Promise<void>; canSync: () => boolean }) {
   apply = o.apply; reveal = o.show; syncHook = o.sync; canSyncHook = o.canSync;
   // The "5 min ago"s stay right.
-  window.setInterval(() => { renderEditChips(); if (!banner().hidden) drawBanner(); }, 60_000);
+  window.setInterval(() => { renderEditChips(); if (!banner().hidden && !fades) drawBanner(); }, 60_000);
 }

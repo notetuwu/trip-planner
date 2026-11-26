@@ -56,6 +56,18 @@ export async function switchWindowMode(mode: "app" | "browser") {
   return reopen;
 }
 
+/** A browser's app window (Edge) while the app could have its own (WebView2): from before an update that brought it, which
+ *  only reloaded the window that was open. It opens the app's own window and closes itself, once per version. */
+async function moveToOwnWindow() {
+  if ((window as Window & { chrome?: { webview?: unknown } }).chrome?.webview) return;
+  const s = await api<{ ownWindow?: boolean; window?: string; version?: string }>("/api/settings").catch(() => null);
+  if (!s?.ownWindow || s.window !== "app" || localStorage.getItem(MOVED) === s.version) return;
+  localStorage.setItem(MOVED, s.version || "");
+  await api("/api/settings", { method: "POST", body: JSON.stringify({ reopen: true }) }).catch(() => {});
+  setTimeout(() => window.close(), 1500);
+}
+const MOVED = "trip-planner-moved-to-own-window";
+
 export function initWindowMode() {
-  if (inAppWindow) sendLinksToBrowser();
+  if (inAppWindow) { sendLinksToBrowser(); moveToOwnWindow(); }
 }
