@@ -5,6 +5,8 @@
 // stop of the day or a search result, they take its exact spot. A group's suggestion (from the time) is used with one
 // click. The list's filters and the map's (Layers) are separate. Photos with a location of their own are locked unless
 // unlocked. The positions are kept with the trip (state.photoSpots); the files are never changed.
+// On a phone the map is on top and the photos are a strip along the bottom, with the filters behind one button: a tap
+// selects a photo (the button in its corner opens it) and a tap on the map places it; nothing is dragged from the strip.
 import { moveTo, moveToAll } from "../map/move";
 import * as L from "leaflet";
 import type { GeoHit } from "../../../shared/types";
@@ -61,17 +63,20 @@ const pinHtml = (first: Placed, n: number, cls: string, px = 128) =>
   `<div class="pp-pin ${cls}"><div class="photo-pin${n > 1 ? " many" : ""}">${thumbTag(first, px)}${n > 1 ? `<b>${n}</b>` : ""}</div></div>`;
 
 export function placeTool(box: HTMLElement): PlaceTool {
+  const phone = matchMedia("(max-width: 900px)");
   box.innerHTML = `<div class="pp-left">
       <div class="pp-top">
-        <div class="pp-progress"><div><b data-pp-done></b><span data-pp-of></span></div>
+        <div class="pp-progress"><button type="button" class="pp-filter-btn" data-pp-filters aria-expanded="false" title="Which photos are listed">${icon("sliders")}<span></span>${icon("chevronDown")}</button><div><b data-pp-done></b><span data-pp-of></span></div>
           <button type="button" class="icon-btn" data-pp-undo title="Undo your last step (Ctrl+Z)" aria-label="Undo">${icon("undo")}</button>
           <button type="button" class="icon-btn" data-pp-hist title="History: who placed which photo, where, and when" aria-label="History">${icon("history")}</button>
           <button type="button" class="icon-btn" data-pp-sync hidden title="Sync now: send your placements and get everyone else's" aria-label="Sync now">${icon("refresh")}</button></div>
         <div class="pp-bar"><i data-pp-bar></i></div>
+        <div class="pp-more">
         <div class="pp-which" role="tablist">${WHICH.map(([v, label, tip]) => `<button type="button" role="tab" data-pp-which="${v}" title="${tip}"><span>${label}</span><small data-pp-n="${v}"></small></button>`).join("")}</div>
         <div class="pp-filters">
           <select data-pp-day title="Only photos taken on this day"></select>
           <select data-pp-src title="Only photos from this folder"></select>
+        </div>
         </div>
       </div>
       <div class="pp-list"></div>
@@ -130,6 +135,8 @@ export function placeTool(box: HTMLElement): PlaceTool {
    *  doesn't move a photo by accident. */
   const unplaced = (p: Placed) => !p.camera && !p.placed;
   const canDrag = (p: Placed) => !isReadOnly() && !locked(p);
+  /** Dragged from the list: not on a phone, where a swipe along the strip scrolls it. */
+  const fromList = (p: Placed) => !phone.matches && canDrag(p);
   const plural = (n: number, word = "photo") => `${n.toLocaleString()} ${word}${n === 1 ? "" : "s"}`;
 
   // ---- A short note at the bottom of the map, with Undo ----
@@ -194,7 +201,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     if (next) {
       draw();
       select(next.map((p) => p.key), true);
-      list.querySelector(".pp-tile.sel")?.closest(".pp-group")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      list.querySelector(".pp-tile.sel")?.closest(".pp-group")?.scrollIntoView({ block: "nearest", inline: "start", behavior: "smooth" });
     } else draw();
   }
   function skip() {
@@ -261,7 +268,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
       q(`[data-pp-which="${w}"]`).classList.toggle("on", w === which);
       // (By others: only on a trip several people work on, once someone else has placed a photo.)
       if (w === "others") q(`[data-pp-which="${w}"]`).hidden = which !== "others" && !photos.some(byOther);
+      if (w === which) q("[data-pp-filters] span").textContent = `${WHICH.find((x) => x[0] === w)![1]} · ${n.toLocaleString()}`;
     }
+    q("[data-pp-filters]").classList.toggle("narrowed", !!(daySel.value || srcSel.value));
   }
 
   /** The bar under the list: what's selected, what can be done with it, and its suggestion (or why there's none). */
@@ -272,7 +281,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const ro = isReadOnly(), guesses = sel.filter((p) => p.guessed && unplaced(p)), open = sel.filter(unplaced);
     const hint = ro ? "This trip is view only. Make your own copy to place photos."
       : sel.every(locked) ? "These have a location of their own and are locked (Layers → Lock photos with location)."
-        : open.length ? "Drag them onto the map, or click the spot." : "Drag their pin on the map to move them.";
+        : open.length ? (phone.matches ? "Tap the map where they were taken." : "Drag them onto the map, or click the spot.") : "Drag their pin on the map to move them.";
     const why = ro || !open.length || guesses.length ? ""
         : open.every((p) => !p.t) ? "No suggestion: these photos have no time."
           : "No suggestion: nothing with a location was taken within 45 minutes of these, and the plan has no stop with a time that day.";
@@ -297,7 +306,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const badge = p.placed ? "placed" : p.skipped ? "can't place" : p.camera && which !== "open" ? "GPS" : "";
     // Placed (or moved, reset…) by someone else: their initial in the corner.
     const other = byOther(p) ? avatar(editOf(editKey(p))!, "pp-by") : "";
-    return `<div class="pp-tile${selected.has(p.key) ? " sel" : ""}" draggable="${canDrag(p)}" data-key="${esc(p.key)}" title="${esc([p.name, when(p.t), sourceOf(p), placedLine(p)].filter(Boolean).join(" · "))}">${other}${thumbTag(p, 160, 'loading="lazy" decoding="async"')}<button type="button" class="pp-check" data-pp-pick title="Select (or Ctrl+click the photo)" aria-label="Select">${icon("check")}</button>${p.video ? `<span class="pp-vid">${icon("play")}</span>` : ""}${badge ? `<i>${badge}</i>` : ""}</div>`;
+    return `<div class="pp-tile${selected.has(p.key) ? " sel" : ""}" draggable="${fromList(p)}" data-key="${esc(p.key)}" title="${esc([p.name, when(p.t), sourceOf(p), placedLine(p)].filter(Boolean).join(" · "))}">${other}${thumbTag(p, 160, 'loading="lazy" decoding="async"')}<button type="button" class="pp-check" data-pp-pick title="Select (or Ctrl+click the photo)" aria-label="Select">${icon("check")}</button><button type="button" class="pp-zoom" data-pp-view title="Open" aria-label="Open">${icon("maximize")}</button>${p.video ? `<span class="pp-vid">${icon("play")}</span>` : ""}${badge ? `<i>${badge}</i>` : ""}</div>`;
   };
   /** The folders a group's photos are from, and who uploaded them. */
   const from = (g: Placed[]) => [...new Set(g.map(sourceOf))].map(esc).join(" · ");
@@ -308,14 +317,15 @@ export function placeTool(box: HTMLElement): PlaceTool {
   const section = (g: Placed[], i: number, title: string, extra = "") => {
     const guess = !isReadOnly() && g.find((p) => p.guessed && unplaced(p));
     return `<section class="pp-group${extra ? " pp-spot" : ""}" data-g="${i}">
-      <header draggable="${g.some(canDrag)}" title="Click to select them all; drag to place them together">
+      <header draggable="${g.some(fromList)}" title="Click to select them all; drag to place them together">
         <span class="pp-check" aria-hidden="true">${icon("check")}</span>
         <div class="pp-gh"><b>${esc(title)}</b><small>${from(g)}</small></div><em>${g.length}</em>${extra}</header>
-      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg draggable="${g.some(canDrag)}" title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
+      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg draggable="${g.some(fromList)}" title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
       <div class="pp-grid">${g.map(tile).join("")}</div></section>`;
   };
   function drawList() {
-    const top = list.scrollTop;
+    // The list scrolls down; on a phone, sideways.
+    const along = phone.matches ? "scrollLeft" : "scrollTop", top = list[along];
     order = [];
     const spot = atSpot.map((k) => byKey.get(k)).filter((p): p is Placed => !!p), inSpot = new Set(spot.map((p) => p.key));
     groups = burstsOf(photos.filter((p) => listed(p) && !inSpot.has(p.key)));
@@ -325,9 +335,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
         : which === "open" && !photos.some((p) => passes(p) && isWhich(p, "open")) ? "Nothing left to place here. 🎉"
           : "No photos match.";
     // "At this spot" coming, going or growing at the top doesn't move what they're looking at further down.
-    const spotH = () => list.querySelector<HTMLElement>(".pp-spot")?.offsetHeight || 0, before = spotH();
+    const spotH = () => list.querySelector<HTMLElement>(".pp-spot")?.[phone.matches ? "offsetWidth" : "offsetHeight"] || 0, before = spotH();
     list.innerHTML = here + (groups.length ? groups.map((g, i) => section(g, i, heading(g))).join("") : here ? "" : `<p class="ph-empty">${empty}</p>`);
-    list.scrollTop = top > 0 ? Math.max(0, top + spotH() - before) : 0;
+    list[along] = top > 0 ? Math.max(0, top + spotH() - before) : 0;
   }
   const groupAt = (el: Element) => { const i = +(el.closest<HTMLElement>(".pp-group")?.dataset.g ?? NaN); return i === -1 ? atSpot.map((k) => byKey.get(k)!).filter(Boolean) : groups[i] || []; };
 
@@ -546,7 +556,8 @@ export function placeTool(box: HTMLElement): PlaceTool {
     const el = target.closest<HTMLElement>(".pp-tile");
     if (el) {
       const key = el.dataset.key!;
-      if (target.closest("[data-pp-pick]") || e.ctrlKey || e.metaKey) return toggle(key);
+      if (target.closest("[data-pp-view]")) return view(key);
+      if (target.closest("[data-pp-pick]") || e.ctrlKey || e.metaKey || (phone.matches && !e.shiftKey)) return toggle(key);
       if (e.shiftKey && anchor) {
         const a = order.indexOf(anchor), z = order.indexOf(key);
         if (a >= 0) { const was = anchor; select(order.slice(Math.min(a, z), Math.max(a, z) + 1)); anchor = was; return; }
@@ -592,8 +603,17 @@ export function placeTool(box: HTMLElement): PlaceTool {
   list.addEventListener("dragend", () => { edgeScroll(null); dragged = []; dragging = false; q(".pp-map").classList.remove("over"); update(); });
 
   // ---- Filters, layers, keys ----
-  for (const b of box.querySelectorAll<HTMLButtonElement>("[data-pp-which]")) b.onclick = () => { which = b.dataset.ppWhich as Which; selected.clear(); atSpot = []; list.scrollTop = 0; draw(); };
-  for (const s of [daySel, srcSel]) s.onchange = () => { selected.clear(); atSpot = []; list.scrollTop = 0; draw(); };
+  // A phone's filters: folded behind one button, which says what's listed.
+  const filterBtn = q<HTMLButtonElement>("[data-pp-filters]");
+  const setFilters = (open: boolean) => { q(".pp-top").classList.toggle("open", open); filterBtn.setAttribute("aria-expanded", String(open)); };
+  filterBtn.onclick = () => setFilters(!q(".pp-top").classList.contains("open"));
+  box.addEventListener("pointerdown", (e) => { if (!(e.target as HTMLElement).closest(".pp-more, [data-pp-filters]")) setFilters(false); });
+  // A mouse wheel goes along the strip (a narrow window on a computer).
+  list.addEventListener("wheel", (e) => { if (phone.matches && Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); list.scrollLeft += e.deltaY; } }, { passive: false });
+  // Narrowed to a phone's width, or widened again: drawn the other way.
+  phone.addEventListener("change", () => { if (m) { setFilters(false); draw(); requestAnimationFrame(() => m?.invalidateSize()); } });
+  for (const b of box.querySelectorAll<HTMLButtonElement>("[data-pp-which]")) b.onclick = () => { which = b.dataset.ppWhich as Which; selected.clear(); atSpot = []; list.scrollTo(0, 0); setFilters(false); draw(); };
+  for (const s of [daySel, srcSel]) s.onchange = () => { selected.clear(); atSpot = []; list.scrollTo(0, 0); draw(); };
   mapDay.onchange = () => { drawMap(); fit(); };
   for (const c of box.querySelectorAll<HTMLInputElement>("[data-pp-layer]")) c.onchange = () => drawMap();
   lock.onchange = () => { localStorage.setItem(LOCK_KEY, lock.checked ? "1" : "0"); draw(); };
@@ -699,7 +719,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     },
     showOthers() {
       photos = allPhotos(true);
-      if (photos.some(byOther)) { which = "others"; selected.clear(); atSpot = []; list.scrollTop = 0; }
+      if (photos.some(byOther)) { which = "others"; selected.clear(); atSpot = []; list.scrollTo(0, 0); }
     },
     show() {
       const first = !m;

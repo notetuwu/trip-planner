@@ -35,7 +35,8 @@ import { initRoutePlanner } from "./trip/route-planner";
 import { initCompanion } from "./trip/companion";
 import { initPrint } from "./export/print";
 import { initSettings } from "./settings/settings";
-import { initQuickstart, maybeShowQuickstart } from "./setup/quickstart";
+import { initQuickstart } from "./setup/quickstart";
+import { greet } from "./setup/greet";
 import { initSync } from "./core/sync";
 import { loadPrefs, onAppPrefs, prefs } from "./core/prefs";
 import { renderTripTitle } from "./trip/title";
@@ -92,5 +93,5 @@ loadWeather();
 await loadPrefs();
 // Settings → General: start with a new trip (the one that was open goes to Saved trips first).
 if (prefs.app.startWith === "new") await startFresh();
-// The first time the app starts: the quick-start guide.
-maybeShowQuickstart();
+// The first time the app starts: the quick-start guide. The first start after an update: what's new.
+greet();

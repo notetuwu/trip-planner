@@ -1085,3 +1085,20 @@ h2 .edit-slot { margin-left: 6px; }
 .ch-filter { display: inline-flex; width: auto; justify-self: start; align-self: flex-start; margin: 2px 0 8px; }
 .cr-list .ch-day { padding: 8px 2px 0; border: 0; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .ch-list { max-height: 64vh; }
+/* The photo viewer with fingers: swiped through (no arrows) and pinched to zoom; on a phone the picture edge to edge. */
+.lightbox-stage { touch-action: none; }
+@media (hover: none) and (pointer: coarse) {
+  .lightbox-nav { display: none; }
+}
+@media (max-width: 900px) {
+  .lightbox-stage { height: 100dvh; }
+  .lightbox img { max-width: 100vw; border-radius: 0; }
+  .lightbox.gallery .lightbox-stage img { max-height: calc(100dvh - 190px); }
+  .lightbox-x { top: calc(10px + env(safe-area-inset-top)); right: 10px; z-index: 3; background: rgba(0, 0, 0, .55); }
+  .lightbox-bar { box-sizing: border-box; width: max-content; max-width: calc(100vw - 16px); flex-wrap: wrap; justify-content: center; gap: 4px 8px; }
+  .lightbox-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lightbox-bar .hint { text-align: center; font-size: 11.5px; }
+  .lightbox.gallery .lightbox-bar { bottom: calc(66px + env(safe-area-inset-bottom)); }
+  .lightbox-strip { bottom: calc(6px + env(safe-area-inset-bottom)); max-width: calc(100vw - 16px); padding: 4px; gap: 4px; }
+  .lightbox-strip button { width: 54px; height: 42px; }
+}

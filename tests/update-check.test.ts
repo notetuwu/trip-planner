@@ -58,6 +58,13 @@ describe("update check", () => {
     expect(sent["If-None-Match"]).toBe('"a"');
   });
 
+  it("finds an older release to roll back to, and refuses any other", async () => {
+    const { findOlderRelease } = await load(); // the app is 3.0.0 here
+    await expect(findOlderRelease("3.1.0")).rejects.toThrow(/Can't roll back/);
+    await expect(findOlderRelease("../latest")).rejects.toThrow(/Can't roll back/);
+    expect(calls).toHaveLength(0);
+  });
+
   it("asks nothing by itself when the automatic check is off", async () => {
     reply = () => new Response(JSON.stringify(release));
     (await import("../server/settings")).writeSettings({ checkUpdates: false });

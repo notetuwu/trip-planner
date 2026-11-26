@@ -52,8 +52,9 @@ const STUBS = `(() => {
     const stream = (result) => Promise.resolve(new Response([{ type: "status", text: "Working…" }, { type: "tokens", n: 42 }, { type: "reasoning", text: "Lakes first, then the loop home." }, { type: "done", result }]
       .map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10), { status: 200 }));
     if (url.includes("/api/current")) return json({ at: 0 });
-    // The quick-start guide opens by itself on a first start: not over the tests (one test opens it itself).
-    if (url.endsWith("/api/settings") && (o.method || "GET") === "GET" && !window.__e2e.firstStart) return real(u, o).then((r) => r.json()).then((s) => json({ ...s, quickstartSeen: true }));
+    // The quick-start guide opens by itself on a first start, the update log after an update: not over the tests (one
+    // test opens the guide itself).
+    if (url.endsWith("/api/settings") && (o.method || "GET") === "GET" && !window.__e2e.firstStart) return real(u, o).then((r) => r.json()).then((s) => json({ ...s, quickstartSeen: true, seenVersion: "99999.0.0" }));
     if (url.endsWith("/api/setup") && window.__e2e.setup) return json(window.__e2e.setup);
     if (url.endsWith("/api/trips") && window.__e2e.trips) return json(window.__e2e.trips);
     if (url.endsWith("/api/models") && window.__e2e.models) return json(window.__e2e.models);
@@ -952,7 +953,13 @@ test("columns can be hidden and the map can fill the window; a phone shows one s
     await page.waitFor(`!document.querySelector("#mDayBar").hidden && document.querySelectorAll("#mDayBar [data-day]").length === 4`, 5000, "the bar of days");
     await page.eval(`document.querySelector('[data-tab="map"]').click()`);
     assert.deepEqual(await page.eval(`[${shown(".map-panel")}, ${shown("#output")}, document.querySelector("#mDayBar").hidden]`), [true, false, true]);
+    // The chat is a tab of its own: in place of the others, with the tabs still there to leave it.
+    await page.eval(`document.querySelector("[data-tab-chat]").click()`);
+    await page.waitFor(`document.querySelector("[data-tab-chat]").classList.contains("on") && !(${shown(".map-panel")})`, 5000, "the chat's tab");
+    assert.deepEqual(await page.eval(`[${shown(".settings")}, ${shown("#output")}, document.querySelectorAll(".m-tabs .on").length,
+      document.querySelector("#chatPanel").getBoundingClientRect().bottom <= document.querySelector(".m-tabs").getBoundingClientRect().top]`), [false, false, 1, true]);
     await page.eval(`document.querySelector('[data-tab="output"]').click()`);
+    await page.waitFor(`document.querySelector("#chatPanel").hidden && ${shown("#output")}`, 5000, "back from the chat");
   } finally { await page.setViewport(1500, 950); }
 });
 

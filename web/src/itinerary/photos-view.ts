@@ -7,6 +7,7 @@ import { closeOnBackdrop, esc } from "../core/dom";
 import { fmtDate, fmtShort } from "../core/format";
 import { icon } from "../core/icons";
 import { session, state } from "../core/state";
+import { showPane } from "../core/layout";
 import { map } from "../map/map";
 import {
   type Placed, addLocalFolder, addPhotosFolder, allPhotos, duration, folders, isPhotosGuess, isPhotosOn, loadMissing, onPhotosChange,
@@ -40,6 +41,9 @@ try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || "{}")); }
 
 /** Placing photos on the map (instead of the gallery); the window fills the screen meanwhile. */
 let placing = false, tool: PlaceTool | null = null;
+/** A phone has room for one of the two: the photos, or (from its button) the folders and settings in their place. */
+const phone = matchMedia("(max-width: 900px)");
+let phoneSide = false;
 let timeline: ReturnType<typeof photoTimeline>;
 
 function setPlacing(yes: boolean) {
@@ -53,12 +57,12 @@ function applyView() {
   dlg.classList.toggle("placing", placing);
   dlg.querySelectorAll<HTMLButtonElement>("[data-ph-mode]").forEach((b) => b.classList.toggle("on", (b.dataset.phMode === "place") === placing));
   // With no folders yet the sidebar stays: it's where one is added.
-  const none = !folders().length, hidden = view.noSide && !none;
+  const none = !folders().length, hidden = (phone.matches ? !phoneSide : view.noSide) && !none;
   dlg.classList.toggle("full", view.full || placing);
   dlg.classList.toggle("no-side", hidden);
   const side = dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!, full = dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!;
-  side.innerHTML = icon(hidden ? "panelOpen" : "panelClose");
-  side.title = hidden ? "Show the sidebar" : "Hide the sidebar";
+  side.innerHTML = icon(phone.matches ? (hidden ? "folder" : "arrowLeft") : hidden ? "panelOpen" : "panelClose");
+  side.title = phone.matches ? (hidden ? "Photo folders and settings" : "Back to the photos") : hidden ? "Show the sidebar" : "Hide the sidebar";
   side.disabled = none;
   full.innerHTML = icon(view.full ? "minimize" : "maximize");
   full.title = view.full ? "Back to a window" : "Fill the whole window";
@@ -153,6 +157,7 @@ function renderMain() {
       if (pin) {
         const p = all[+pin.dataset.pin!];
         dlg!.close();
+        showPane("map");
         session.userMoved = true;
         if (map) moveTo(map, [p.lat!, p.lng!], 17);
         return;
@@ -237,11 +242,16 @@ export function openPhotosView(mode?: "place", photo?: string) {
     timeline = photoTimeline(dlg.querySelector<HTMLElement>(".ph-time")!, dlg.querySelector<HTMLElement>(".ph-body")!);
     tool = placeTool(dlg.querySelector<HTMLElement>(".pp-wrap")!);
     dlg.querySelectorAll<HTMLButtonElement>("[data-ph-mode]").forEach((b) => { b.onclick = () => setPlacing(b.dataset.phMode === "place"); });
-    dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!.onclick = () => setView({ noSide: !dlg!.classList.contains("no-side") });
+    dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!.onclick = () => {
+      if (phone.matches) { phoneSide = !phoneSide; applyView(); }
+      else setView({ noSide: !dlg!.classList.contains("no-side") });
+    };
+    phone.addEventListener("change", applyView);
     dlg.querySelector<HTMLButtonElement>("[data-ph-full]")!.onclick = () => setView({ full: !view.full });
     // Sources finishing their load, or being added or taken off, show here as they happen.
     onPhotosChange(render);
   }
+  phoneSide = false;
   if (!dlg.open) dlg.showModal();
   // Sources not loaded yet (the layer on the map may be off).
   loadMissing();

@@ -291,10 +291,6 @@
 .photos-dialog.full[open] { height: 100vh; height: 100dvh; max-height: none; }
 .photos-dialog.no-side .ph-side { display: none; }
 .photos-dialog.no-side .ph-wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
-@media (max-width: 820px) {
-  .ph-wrap { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); overflow: auto; }
-  .ph-side { max-height: 44vh; border-right: 0; border-bottom: 1px solid var(--line); }
-}
 .ph-day h3 { display: flex; align-items: baseline; gap: 8px; margin: 18px 0 8px; font-size: 14px; color: var(--ink); text-transform: none; letter-spacing: 0; }
 .ph-day h3 .hint { margin: 0; font-size: 12px; font-weight: 400; }
 .ph-n { margin-left: auto; font-size: 11.5px; font-weight: 500; color: var(--muted); }
@@ -472,11 +468,6 @@
 .pp-found svg { width: 32px; height: 32px; fill: currentColor; stroke: #fff; stroke-width: 1.5; }
 .pp-found-tip { font-weight: 700; }
 .pp-tip img { display: block; max-width: 200px; max-height: 200px; border-radius: 6px; margin-bottom: 4px; }
-@media (max-width: 760px) {
-  .photos-dialog.placing .pp-wrap { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
-  .pp-left { border-right: 0; border-bottom: 1px solid var(--line); }
-  .pp-search { width: calc(100% - 130px); }
-}
 
 /* The trip preview. */
 .preview-dialog { width: min(1180px, 97vw); max-width: none; padding: 0; }
@@ -536,11 +527,10 @@
 .ride-board .line-chip svg { width: 12px; height: 12px; vertical-align: -2px; }
 .leg-tip-pop .leaflet-popup-content { margin: 6px 10px; font-weight: 600; }
 
-/* A phone: the Photos and Preview windows fill the screen like the others. */
+/* A phone: the Preview window fills the screen like the others. */
 @media (max-width: 760px) {
-  .photos-dialog, .preview-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
-  .photos-dialog[open], .preview-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
-  .ph-full-btn { display: none; } /* it already does */
+  .preview-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
+  .preview-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
 }
 /* A photo someone else placed (or moved, or reset): their initial in the corner. */
 .pp-tile .pp-by { position: absolute; right: 4px; top: 4px; width: 18px; height: 18px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .85); pointer-events: none; }
@@ -572,8 +562,93 @@
 .pp-h.go:hover .pp-h-go { opacity: 1; }
 [data-pp-hist].on { color: var(--accent); background: var(--accent-soft); }
 .pp-progress [hidden] { display: none; }
-@media (max-width: 760px) {
-  /* (Narrow: History over the photos.) */
-  .photos-dialog.placing .pp-wrap.hist { grid-template-columns: 1fr; }
-  .pp-hist { grid-row: 1; grid-column: 1; z-index: 5; border-right: 0; }
+
+
+/* A phone: the Photos window fills the screen, with a one-line title bar. */
+.pp-filter-btn, .pp-zoom { display: none; }
+.pp-more { display: contents; }
+@media (max-width: 900px) {
+  .photos-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
+  .photos-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
+  .photos-dialog .ph-full-btn { display: none; } /* it already does */
+  .photos-dialog .pl-head { flex-wrap: nowrap; gap: 8px; padding: 8px 10px; }
+  .photos-dialog .pl-head > * { order: 0; }
+  .photos-dialog .pl-head > h2 { order: 0; flex: 1; min-width: 0; font-size: 15px; white-space: nowrap; overflow: hidden; }
+  .photos-dialog .pl-head > .hint { display: none; } /* the pictures' own title says how many */
+  .photos-dialog .pl-head > .ph-modes { order: 0; flex: none; }
+  .photos-dialog .pl-head > form { order: 0; margin: 0; }
+  .photos-dialog .ph-modes .seg { padding: 6px 10px; font-size: 12.5px; white-space: nowrap; }
+
+  /* The gallery: the photos over the whole width; the folders and settings in their place, from the button. */
+  .ph-wrap, .photos-dialog.no-side .ph-wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .ph-side { border-right: 0; }
+  .photos-dialog:not(.no-side) .ph-main { display: none; }
+  .ph-body { padding: 0 8px 20px; }
+  .ph-body.timed { padding-right: 2px; }
+  .ph-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 3px; }
+  .ph-tile { border-radius: 6px; }
+  .ph-day h3 { margin: 14px 0 6px; }
+  .ph-hero.pv-hero { grid-template-rows: 92px 92px; gap: 3px; }
+  .ph-hero .pv-title { padding: 30px 12px 10px; }
+  .ph-hero .pv-title h3 { font-size: 20px; }
+  .ph-hero .pv-title p { font-size: 12px; }
+  .ph-time { width: 46px; }
+  .ph-time button span { right: 9px; font-size: 10px; max-width: 37px; }
+  .ph-time button::after { right: 2px; }
+  .pt-now { right: 0; width: 8px; }
+
+  /* Place on map: the map on top, the photos in a strip along the bottom. */
+  .photos-dialog.placing .pp-wrap, .photos-dialog.placing .pp-wrap.hist { display: flex; flex-direction: column; }
+  .pp-right { order: 1; flex: 1 1 0; }
+  .pp-hist { order: 2; flex: 0 0 45%; border-right: 0; border-top: 1px solid var(--line); }
+  .pp-left { order: 3; flex: none; z-index: 1100; border-right: 0; border-top: 1px solid var(--line); }
+  .pp-wrap.hist .pp-left { display: none; }
+  .pp-top { gap: 5px; padding: 6px 10px 0; border-bottom: 0; }
+  .pp-progress > div { display: none; }
+  .pp-progress { gap: 4px; }
+  .pp-filter-btn { display: inline-flex; align-items: center; gap: 7px; height: 32px; margin-right: auto; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 16px; background: var(--field); color: var(--ink); font: 600 12.5px Inter, system-ui, sans-serif; font-variant-numeric: tabular-nums; cursor: pointer; }
+  .pp-filter-btn.narrowed { border-color: var(--accent); color: var(--accent); }
+  .pp-filter-btn[aria-expanded="true"] svg:last-child { transform: rotate(180deg); }
+  .pp-bar { height: 3px; margin: 0; }
+  /* The filters, opened over the map. */
+  .pp-more { display: none; position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); z-index: 2; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow-pop); }
+  .pp-top.open .pp-more { display: grid; }
+  .pp-top.open ~ .pp-sel { display: none; }
+  .pp-list { flex: none; display: flex; gap: 12px; height: 166px; overflow: auto hidden; padding: 5px 10px calc(8px + env(safe-area-inset-bottom)); overscroll-behavior-x: contain; scrollbar-width: none; }
+  .pp-list > .ph-empty { margin: auto; }
+  .pp-group { flex: none; display: flex; flex-direction: column; min-width: 190px; padding-top: 0; }
+  .pp-spot { margin-top: 0; padding: 0 6px 4px; }
+  /* A long group's name and suggestion stay in view while its photos go by. */
+  .pp-group > header, .pp-sugg { position: sticky; left: 0; width: min(100%, 250px); }
+  .pp-group > header { padding: 1px 2px 3px; line-height: 1.25; }
+  .pp-sugg { margin: 0 0 4px; padding: 3px 9px; }
+  .pp-grid { display: flex; gap: 4px; margin-top: auto; }
+  .pp-tile { flex: none; width: 82px; height: 82px; cursor: pointer; }
+  .pp-tile[draggable] { cursor: pointer; }
+  .pp-zoom { all: unset; position: absolute; right: 3px; bottom: 3px; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; cursor: pointer; }
+  .pp-zoom svg { width: 13px; height: 13px; }
+  .pp-vid { right: auto; bottom: auto; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  /* What's selected: a card over the bottom of the map, so the strip stays where it is. */
+  .pp-sel { position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); z-index: 1; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-pop); }
+  .pp-sel-head, .pp-sel .hint, .pp-sel-acts { grid-column: 1 / -1; }
+  .pp-sel .hint { margin: 0; }
+  /* The suggestion and the other buttons side by side, to leave more of the map. */
+  .pp-use ~ .pp-sel-acts { grid-column: auto; grid-template-columns: none; grid-auto-flow: column; }
+  .pp-sel .pp-why, .pp-use kbd { display: none; }
+  .pp-use { min-height: 40px; }
+  .pp-sel-acts .btn { height: 32px; }
+  .pp-use ~ .pp-sel-acts .btn { height: 100%; }
+  /* The map's own controls: a narrow search, Layers as a round button, fingers instead of zoom buttons. */
+  .pp-search { left: 8px; top: 8px; width: calc(100% - 64px); }
+  .pp-search .ps-box { height: 40px; }
+  .pp-layers-btn { right: 8px; top: 8px; width: 40px; justify-content: center; padding: 0; }
+  .pp-layers-btn span { display: none; }
+  .pp-layers { right: 8px; top: 54px; max-height: calc(100% - 62px); overflow: auto; }
+  .pp-right .ps-again { top: 56px; }
+  .pp-right .leaflet-control-zoom { display: none; }
+  .pp-toast { top: 56px; bottom: auto; width: max-content; max-width: calc(100% - 20px); box-sizing: border-box; white-space: normal; }
+}
+@media (max-width: 420px) {
+  .photos-dialog .pl-head > h2 { font-size: 0; }
+  .photos-dialog .pl-head > h2 .i { font-size: 18px; }
 }

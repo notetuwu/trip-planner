@@ -6,6 +6,7 @@
 // TRIP_PLANNER_NO_UPDATES=1 or Settings → Updates turns the automatic check off. Also works out how this copy can update itself.
 import fs from "node:fs";
 import path from "node:path";
+import { canRollBack } from "../../shared/version";
 import { PACKAGED, USER_AGENT, VERSION } from "../config";
 import { readSettings } from "../settings";
 
@@ -36,6 +37,8 @@ export interface UpdateState {
   auto: boolean;
   /** Only the packaged app checks. */
   available: boolean;
+  /** How this copy can install a version (also an older one: Settings → Updates → Roll back). */
+  mode: UpdateMode;
 }
 
 const newerThan = (a: string, b: string) => {
@@ -54,6 +57,29 @@ export function updateMode(): UpdateMode {
 
 interface Release { tag: string; url: string; assets: { name: string; url: string; size: number; sha256?: string }[] }
 
+const headers = () => ({ "User-Agent": USER_AGENT, Accept: "application/vnd.github+json" });
+
+/** A release as GitHub's API describes it. */
+const toRelease = (rel: any): Release => ({
+  tag: String(rel.tag_name || ""), url: rel.html_url,
+  assets: (rel.assets || []).map((a: any) => ({ name: a.name, url: a.browser_download_url, size: a.size, sha256: String(a.digest || "").replace(/^sha256:/, "") || undefined })),
+});
+
+/** Throws when GitHub's answer is "too many requests": when it may be asked again is in the error. */
+function checkRefused(res: Response) {
+  if (res.status !== 403 && res.status !== 429) return;
+  // Primary limit: x-ratelimit-reset (seconds since 1970); secondary: retry-after (seconds); otherwise an hour.
+  const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000, after = Number(res.headers.get("retry-after")) * 1000;
+  const until = after > 0 ? Date.now() + after : reset > Date.now() ? reset : Date.now() + 3600e3;
+  throw new Refused(`GitHub asked to wait (too many requests from this connection)`, until);
+}
+
+/** The file of a release that this copy installs (none: it's downloaded by hand). */
+function assetFor(rel: Release, mode: UpdateMode) {
+  const suffix = mode === "installer" ? "-windows-x64-setup.exe" : mode === "portable" ? "-windows-x64-portable.zip" : null;
+  return suffix ? rel.assets.find((x) => x.name.endsWith(suffix)) : undefined;
+}
+
 /** GitHub refused (rate limit): don't ask again before `until`, and don't try github.com pages either. */
 class Refused extends Error { constructor(msg: string, readonly until: number) { super(msg); } }
 
@@ -65,23 +91,15 @@ let etag = "", lastRelease: Release | null = null;
 async function fromApi(): Promise<Release> {
   // TRIP_PLANNER_UPDATE_URL: a different place to ask (for testing the updater against a local fake release).
   const res = await fetch(process.env.TRIP_PLANNER_UPDATE_URL || `https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { "User-Agent": USER_AGENT, Accept: "application/vnd.github+json", ...(etag && lastRelease ? { "If-None-Match": etag } : {}) },
+    headers: { ...headers(), ...(etag && lastRelease ? { "If-None-Match": etag } : {}) },
     signal: AbortSignal.timeout(10000),
   });
   if (res.status === 304 && lastRelease) return lastRelease;
-  if (res.status === 403 || res.status === 429) {
-    // Primary limit: x-ratelimit-reset (seconds since 1970); secondary: retry-after (seconds); otherwise an hour.
-    const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000, after = Number(res.headers.get("retry-after")) * 1000;
-    const until = after > 0 ? Date.now() + after : reset > Date.now() ? reset : Date.now() + 3600e3;
-    throw new Refused(`GitHub asked to wait (too many requests from this connection)`, until);
-  }
+  checkRefused(res);
   if (!res.ok) throw new Error(`GitHub API: HTTP ${res.status}`);
   const rel: any = await res.json();
   etag = res.headers.get("etag") || "";
-  return lastRelease = {
-    tag: String(rel.tag_name || ""), url: rel.html_url,
-    assets: (rel.assets || []).map((a: any) => ({ name: a.name, url: a.browser_download_url, size: a.size, sha256: String(a.digest || "").replace(/^sha256:/, "") || undefined })),
-  };
+  return lastRelease = toRelease(rel);
 }
 
 /** When the API can't be reached at all (not when it refused): the releases page redirects to the latest tag, and
@@ -97,12 +115,12 @@ async function fromReleasesPage(): Promise<Release> {
   return { tag, url: `https://github.com/${REPO}/releases/tag/${tag}`, assets };
 }
 
-let cached: UpdateInfo | null = null, error = "", waitUntil = 0, lastAsked = 0;
+let cached: UpdateInfo | null = null, error = "", waitUntil = 0, refusedUntil = 0, lastAsked = 0;
 let inFlight: Promise<UpdateInfo | null> | null = null;
 
 const available = () => PACKAGED && !process.env.TRIP_PLANNER_NO_UPDATES && VERSION !== "dev";
 
-export const updateState = (): UpdateState => ({ info: cached, error, waitUntil, auto: readSettings().checkUpdates, available: available() });
+export const updateState = (): UpdateState => ({ info: cached, error, waitUntil, auto: readSettings().checkUpdates, available: available(), mode: updateMode() });
 
 /** The latest release. `force` (Check now) asks GitHub unless it did in the last minute or asked to wait; otherwise
  *  the answer from the last hour is used, and nothing is asked at all when the automatic check is off. */
@@ -128,17 +146,33 @@ async function ask(): Promise<UpdateInfo | null> {
   } catch (e) {
     error = (e as Error).message;
     waitUntil = e instanceof Refused ? e.until : Date.now() + FAIL_WAIT;
+    if (e instanceof Refused) refusedUntil = e.until;
     if (process.env.TRIP_PLANNER_UPDATE_URL) waitUntil = 0;
     throw e;
   }
   error = ""; waitUntil = 0;
   const latest = rel.tag.replace(/^v/, "");
   const mode = updateMode();
-  const suffix = mode === "installer" ? "-windows-x64-setup.exe" : mode === "portable" ? "-windows-x64-portable.zip" : null;
-  const asset = suffix ? rel.assets.find((x) => x.name.endsWith(suffix)) : undefined;
+  const asset = assetFor(rel, mode);
   cached = {
-    current: VERSION, latest, newer: !!latest && newerThan(latest, VERSION), notesUrl: rel.url, mode: asset || !suffix ? mode : "manual",
+    current: VERSION, latest, newer: !!latest && newerThan(latest, VERSION), notesUrl: rel.url, mode: asset ? mode : "manual",
     ...(asset ? { asset } : {}), checkedAt: Date.now(),
   };
   return cached;
+}
+
+/** An older version's release, to roll back to it (asked only when someone presses Roll back). It waits like the update
+ *  check when GitHub has refused. */
+export async function findOlderRelease(version: string): Promise<UpdateInfo> {
+  if (!available()) throw new Error("Only the installed app can change its version.");
+  if (!/^\d+\.\d+\.\d+$/.test(version) || !canRollBack(version, VERSION)) throw new Error(`Can't roll back to ${version}.`);
+  if (Date.now() < refusedUntil) throw new Error("GitHub asked to wait (too many requests from this connection). Try again later.");
+  const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/v${version}`, { headers: headers(), signal: AbortSignal.timeout(10000) });
+  try { checkRefused(res); }
+  catch (e) { refusedUntil = waitUntil = (e as Refused).until; error = (e as Error).message; throw e; }
+  if (res.status === 404) throw new Error(`There's no download of ${version} on GitHub.`);
+  if (!res.ok) throw new Error(`GitHub API: HTTP ${res.status}`);
+  const rel = toRelease(await res.json()), mode = updateMode(), asset = assetFor(rel, mode);
+  if (!asset) throw new Error(`${version} has no download this copy can install by itself.`);
+  return { current: VERSION, latest: version, newer: false, notesUrl: rel.url, mode, asset, checkedAt: Date.now() };
 }

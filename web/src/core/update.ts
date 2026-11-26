@@ -33,15 +33,20 @@ async function reloadWhenBack(from: string) {
   bar(`<span>The update is taking long. Close this window and start Trip Planner again.</span>`);
 }
 
-/** Update now (Windows): downloads and installs it, with the progress in the bar at the top. */
-export async function install(info: UpdateInfo) {
-  try { await api("/api/update", { method: "POST" }); } catch (e) { bar(`<span>Couldn't update: ${esc((e as Error).message)}</span>`); return; }
+/** Update now, or rolling back to an older version (Windows): downloads and installs it, with the progress in the bar at
+ *  the top. */
+export async function install(info: UpdateInfo, rollback = false) {
+  if (rollback) bar(`<span>Looking for Trip Planner ${esc(info.latest)}…</span>`);
+  try {
+    if (rollback) await api("/api/update/rollback", { method: "POST", body: JSON.stringify({ version: info.latest }) });
+    else await api("/api/update", { method: "POST" });
+  } catch (e) { bar(`<span>Couldn't ${rollback ? "roll back" : "update"}: ${esc((e as Error).message)}</span>`); return; }
   for (;;) {
     const s = await api<UpdateStatus>("/api/update/status").catch(() => null);
     // Restarting: "installing", gone for a moment, or already the new version back saying "idle" (the restart can be
     // quicker than this check, so the "installing" moment is easy to miss).
     if (!s || s.phase === "installing" || s.phase === "idle") break;
-    if (s.phase === "error") { bar(`<span>Update failed: ${esc(s.error)}</span> <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">Download it instead${ext()}</a>`); return; }
+    if (s.phase === "error") { bar(`<span>${rollback ? "Rolling back" : "Update"} failed: ${esc(s.error)}</span> <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">Download it instead${ext()}</a>`); return; }
     bar(`<span>Downloading Trip Planner ${esc(info.latest)}… ${mb(s.received)} of ${mb(s.total)}</span>`);
     await new Promise((r) => setTimeout(r, 500));
   }

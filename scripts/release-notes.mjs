@@ -1,6 +1,7 @@
 // Writes the release notes for a version tag: "What's new" from the commit messages since the previous version, then
 // how to download and run it. Used by the release workflow:  node scripts/release-notes.mjs v3.5.0 > notes.md
 import { execFileSync } from "node:child_process";
+import { LOG_FORMAT, isNews, parseCommits } from "./changelog.mjs";
 
 const git = (...args) => execFileSync("git", args, { encoding: "utf8" }).trim();
 const tag = process.argv[2] || git("describe", "--tags", "--abbrev=0");
@@ -8,27 +9,7 @@ const tag = process.argv[2] || git("describe", "--tags", "--abbrev=0");
 let previous = "";
 try { previous = git("describe", "--tags", "--abbrev=0", `${tag}^`); } catch { /* the first release */ }
 
-// Each commit: subject, then body (separated by markers that won't appear in messages). In the body, "- " lines are
-// points; a short line ending in ":" ("Map:") starts a group of points under that heading; other lines before the first
-// point are an introduction.
-const log = git("log", "--format=%x1e%s%x1f%b", previous ? `${previous}..${tag}` : tag);
-const commits = log.split("\x1e").filter((c) => c.trim()).map((c) => {
-  const [subject, body = ""] = c.split("\x1f");
-  const groups = [{ head: "", points: [] }], intro = [];
-  for (const raw of body.split("\n")) {
-    const l = raw.trim();
-    if (!l || /^co-authored-by:/i.test(l)) continue;
-    if (l.startsWith("- ")) groups[groups.length - 1].points.push(l.slice(2));
-    else if (/^[^-].{0,40}:$/.test(l)) groups.push({ head: l.slice(0, -1), points: [] });
-    else if (groups.length === 1 && !groups[0].points.length) intro.push(l);
-  }
-  return {
-    // "…; version 3.5.0" says nothing new on the release page.
-    subject: subject.trim().replace(/;?\s*version \d+\.\d+\.\d+\s*$/i, "").trim(),
-    intro: intro.join(" "),
-    groups: groups.filter((g) => g.points.length),
-  };
-}).filter((c) => c.subject && !/^(merge|bump)\b/i.test(c.subject));
+const commits = parseCommits(git("log", LOG_FORMAT, previous ? `${previous}..${tag}` : tag)).filter(isNews);
 
 // A heading per change, its introduction, then its points (grouped under small headings when the commit groups them).
 const section = (c) => [

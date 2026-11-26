@@ -24,6 +24,7 @@ import { SEARXNG_LOCAL } from "./searxng-local";
 import { renderSync } from "./sync-tab";
 import { loadSyncStatus } from "../saves/sync-client";
 import { askConfirm } from "../core/ask";
+import { markNewSince, setRollback, updateLog } from "./update-log";
 
 interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
 export type ServiceKey = "brave" | "geoapify" | "google";
@@ -37,7 +38,7 @@ interface LibModel { name: string; description: string; caps: string[]; sizes: s
 interface LibTag { name: string; sizeGb: number; context: string; inputs: string }
 interface Rec { model: string; tag: string; sizeGb: number; context: string; caps: string[]; description: string; downloads: number }
 
-interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean }
+interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean; mode?: UpdateInfo["mode"] }
 
 type Tab = "general" | "map" | "planning" | "keys" | "models" | "sync" | "phone" | "updates" | "credits";
 const TABS: [Tab, Parameters<typeof icon>[0], string][] = [
@@ -57,6 +58,8 @@ const tagsOf = new Map<string, LibTag[] | "loading" | "error">();
 const opened = new Set<string>();
 let allVariants = false;
 let updates: UpdateState | null = null, checking = false;
+/** Set while Settings shows what an update brought: the version it came from ("" = not known). */
+let updatedFrom: string | null = null;
 let setup: OllamaInstall | null = null, setupPoll: number | undefined;
 
 const gb = (bytes: number) => `${(bytes / 1024 ** 3).toFixed(bytes > 10 * 1024 ** 3 ? 0 : 1)} GB`;
@@ -66,10 +69,20 @@ const dialog = () => $<HTMLDialogElement>("#settingsDialog");
 /** Opens Settings at a tab; onKeyChange runs when it closes, if an AI key was added or removed meanwhile. */
 export async function openSettings(which: Tab = tab, onKeyChange?: () => void) {
   tab = which; find = "";
+  updatedFrom = null;
   keysChanged = false; onKeysClosed = onKeyChange || null;
   if (!dialog().open) dialog().showModal();
   render();
   await load();
+}
+
+/** The first start after an update: Settings opens at Updates, with the versions newer than `from` marked. */
+export function showUpdated(from: string) {
+  openSettings("updates");
+  updatedFrom = from;
+  markNewSince(from);
+  renderUpdates();
+  $("#setMain").scrollTop = 0;
 }
 
 async function load() {
@@ -175,6 +188,7 @@ function render() {
   if (find) renderFind();
   else if (tab === "general") renderGeneral();
   else if (tab === "credits") $("#setMain").innerHTML = creditsHtml();
+  else if (loadError && tab === "updates") $("#setMain").replaceChildren(updateLog());
   else if (loadError) $("#setMain").innerHTML = `<p class="hint">${esc(loadError)}</p>`;
   else if (tab === "map") renderMap();
   else if (tab === "planning") renderPlanning();
@@ -219,6 +233,7 @@ const LIVE_HITS: Hit[] = [
   { tab: "phone", title: "Phone access", hint: "Use the planner on your phone over Wi-Fi: a link and a QR code." },
   { tab: "phone", title: "Away from home", hint: "Use the planner anywhere with Tailscale, a free private network." },
   { tab: "updates", title: "Version", hint: "Which version you have, and what's new." },
+  { tab: "updates", title: "Update log", hint: "What changed in every version: the release notes, changelog and version history." },
   { tab: "updates", title: "Check now", hint: "Look for a new version of Trip Planner." },
   { tab: "updates", title: "Check automatically", hint: "Look for updates every hour while the app runs." },
   { tab: "credits", title: "Credits", hint: "The maps, data and open-source software the planner uses." },
@@ -628,6 +643,7 @@ export function wireServiceKeys(root: ParentNode, after: (s: Settings) => void) 
   for (const box of $$(".kf-svc", root)) wireKeyFields(box, async (id, key) => after(await saveServiceKey(id as ServiceKey, key)), names);
 }
 
+declare const __APP_VERSION__: string;
 const time = (ms: number) => new Date(ms).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
 function renderUpdates() {
@@ -645,9 +661,11 @@ function renderUpdates() {
   const auto = info?.newer && (info.mode === "installer" || info.mode === "portable");
   main.innerHTML = `
     <h3>Updates</h3>
+    ${updatedFrom === null ? "" : `<div class="log-hero"><span class="log-hero-icon">${icon("sparkles")}</span><div><b>Updated to ${esc(__APP_VERSION__)}</b>
+      <div class="hint">${updatedFrom ? `You had ${esc(updatedFrom)}. ` : ""}What's new is marked below.</div></div></div>`}
     <div class="set-card">
       <div class="set-row"><div><b>Version</b><div class="hint">You have Trip Planner ${esc(s?.version || info?.current || "")}.</div></div>
-        <a class="btn" href="https://github.com/notetuwu/trip-planner/releases" target="_blank" rel="noopener">What's new${ext()}</a></div>
+        <a class="btn" href="https://github.com/notetuwu/trip-planner/releases" target="_blank" rel="noopener">All releases${ext()}</a></div>
       <div class="set-row"><div><b class="status">${status}</b>
           <div class="hint">${info?.checkedAt ? `Last checked ${time(info.checkedAt)}.` : ""}${waiting ? ` The next check can be after ${time(u!.waitUntil)}.` : ""}</div></div>
         <div class="m-act">
@@ -658,6 +676,9 @@ function renderUpdates() {
         <div class="hint">Every hour while the app runs (and when it starts), a bar at the top offers a new version. It backs off when GitHub says to wait, so your home connection never gets blocked.</div></div></div>` : ""}
     </div>
     <p class="hint">On Windows, Update now downloads the new version (checked against GitHub's checksum), installs it and restarts; your data stays where it is. On macOS and Linux it opens the download page.</p>`;
+  setRollback(!u?.available ? null : u.mode === "installer" || u.mode === "portable" ? "install" : "download");
+  // The same element each time, so what's unfolded in it stays so when the status above redraws.
+  main.append(updateLog());
   document.querySelector<HTMLButtonElement>("#updCheck")?.addEventListener("click", async () => {
     checking = true; renderUpdates();
     updates = await api<UpdateState>("/api/update/check", { method: "POST" }).catch((e) => ({ ...updates!, error: (e as Error).message }));

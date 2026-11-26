@@ -199,12 +199,6 @@ export function openQuickstart() {
   api("/api/settings", { method: "POST", body: JSON.stringify({ quickstartSeen: true }) }).catch(() => {});
 }
 
-/** The first time the app starts (on this computer; not on a phone), the guide opens by itself. */
-export async function maybeShowQuickstart() {
-  const s = await api<{ quickstartSeen?: boolean }>("/api/settings").catch(() => null);
-  if (s && !s.quickstartSeen) openQuickstart();
-}
-
 export function initQuickstart() {
   $("#quickstartBtn").onclick = openQuickstart;
   $("#qsRecheck").onclick = () => check();

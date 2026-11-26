@@ -419,3 +419,9 @@ export interface PlacePicture {
   author: string;
   licence: string;
 }
+
+/** One change in the update log: its headline, an introduction, and its points, grouped under small headings where there
+ *  are some. */
+export interface Change { subject: string; intro: string; groups: { head: string; points: string[] }[] }
+/** One version in the update log (Settings → Updates); made from the commit messages by scripts/changelog.mjs. */
+export interface Release { version: string; date: string; changes: Change[] }

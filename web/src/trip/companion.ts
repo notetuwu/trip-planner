@@ -1186,11 +1186,14 @@ function setOpen(open: boolean) {
   if (open) { render(); fit(); }
 }
 
-/** On a phone the chat covers the screen: sized to the part you can see, so the on-screen keyboard (Safari on iOS
- *  shrinks the visible area, not the page) doesn't push the box out of sight or the page sideways. */
+/** On a phone the chat is a tab, between the header and the tabs. While the on-screen keyboard is up it takes all of the
+ *  part you can see instead (Safari on iOS shrinks the visible area, not the page), so the box isn't pushed out of sight
+ *  and there's room for the messages. */
 function fitViewport() {
   const vv = window.visualViewport, el = panel();
-  if (!vv || window.innerWidth > 900 || el.hidden) { el.style.removeProperty("height"); el.style.removeProperty("top"); el.style.removeProperty("bottom"); return; }
+  const typing = !!vv && window.innerWidth <= 900 && !el.hidden && window.innerHeight - vv.height * vv.scale > 150;
+  document.body.classList.toggle("chat-typing", typing);
+  if (!vv || !typing) { el.style.removeProperty("height"); el.style.removeProperty("top"); el.style.removeProperty("bottom"); return; }
   el.style.height = `${Math.round(vv.height)}px`;
   el.style.top = `${Math.round(vv.offsetTop)}px`;
   el.style.bottom = "auto";
@@ -1208,7 +1211,8 @@ export function openChat(text?: string) {
   setOpen(true);
   if (text != null && !box().value) box().value = text;
   fit(); idle();
-  box().focus();
+  // On a phone, switching to the chat's tab doesn't bring up the keyboard by itself.
+  if (text != null || window.innerWidth > 900) box().focus();
 }
 
 export function initCompanion() {

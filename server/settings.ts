@@ -25,6 +25,9 @@ export interface Settings {
   googleKey: string;
   /** The quick-start guide was shown (it opens by itself only the first time the app starts). */
   quickstartSeen: boolean;
+  /** The newest version whose update log was shown, or that a first start began with ("" = none yet): the first start
+   *  of a newer one opens the log, once. */
+  seenVersion: string;
   /** Where the map's downloaded transport lines are kept ("" = in the app's cache folder; Settings → General → Map). */
   linesDir: string;
   tune: Tune;
@@ -145,6 +148,7 @@ function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
 
 const FILE = path.join(ROOT, "settings.json");
 const CTX = [0, 16384, 32768, 65536, 131072, 196608, 262144];
+const isVersion = (v: unknown): v is string => typeof v === "string" && /^\d{1,5}\.\d{1,5}\.\d{1,5}$/.test(v);
 export const newToken = () => crypto.randomBytes(18).toString("base64url");
 
 export function readSettings(): Settings {
@@ -161,6 +165,7 @@ export function readSettings(): Settings {
     geoapifyKey: typeof saved.geoapifyKey === "string" ? saved.geoapifyKey : "",
     googleKey: typeof saved.googleKey === "string" ? saved.googleKey : "",
     quickstartSeen: saved.quickstartSeen === true,
+    seenVersion: isVersion(saved.seenVersion) ? saved.seenVersion : "",
     linesDir: typeof saved.linesDir === "string" ? saved.linesDir : "",
     tune: cleanTune(saved.tune),
     app: cleanApp(saved.app),
@@ -183,6 +188,7 @@ export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { 
     geoapifyKey: typeof next.geoapifyKey === "string" ? next.geoapifyKey.trim().slice(0, 100) : now.geoapifyKey,
     googleKey: typeof next.googleKey === "string" ? next.googleKey.trim().slice(0, 100) : now.googleKey,
     quickstartSeen: typeof next.quickstartSeen === "boolean" ? next.quickstartSeen : now.quickstartSeen,
+    seenVersion: isVersion(next.seenVersion) ? next.seenVersion : now.seenVersion,
     // Set only through the lines' own call (it moves what's there first), never from the settings form.
     linesDir: typeof next.linesDir === "string" ? next.linesDir : now.linesDir,
     tune: next.tune ? cleanTune(next.tune, now.tune) : now.tune,

@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { ROOT, errMsg } from "../config";
 import { extractFromZip } from "../util/zip";
-import { type UpdateInfo, checkForUpdate } from "./check";
+import { backUpData } from "./backup";
+import { type UpdateInfo, checkForUpdate, findOlderRelease } from "./check";
 
 export interface UpdateStatus { phase: "idle" | "downloading" | "installing" | "error"; received: number; total: number; error?: string }
 export const status: UpdateStatus = { phase: "idle", received: 0, total: 0 };
@@ -55,8 +56,10 @@ function launch(file: string, args: string[]): Promise<void> {
  *  keep the update from going ahead (that left the window at "restarting" for good). */
 const stopServer = () => Promise.race([shutdown().catch(() => {}), sleep(3000)]);
 
-async function install(info: UpdateInfo) {
+/** `beforeInstall` runs once the download is there and checked; if it fails, nothing is installed. */
+async function install(info: UpdateInfo, beforeInstall?: () => void) {
   const data = await download(info.asset!);
+  beforeInstall?.();
   status.phase = "installing";
   if (info.mode === "installer") {
     const setup = path.join(os.tmpdir(), info.asset!.name);
@@ -93,7 +96,21 @@ export async function startUpdate(): Promise<UpdateStatus> {
   if (status.phase === "downloading" || status.phase === "installing") return status;
   const info = await checkForUpdate();
   if (!info?.newer || !info.asset || info.mode === "manual") throw new Error("No update this copy can install by itself.");
-  install(info).catch((e) => { status.phase = "error"; status.error = errMsg(e); console.error("Update failed:", errMsg(e)); });
+  install(info).catch(failed);
+  return status;
+}
+
+const failed = (e: unknown) => { status.phase = "error"; status.error = errMsg(e); console.error("Update failed:", errMsg(e)); };
+
+/** The same for an older version (Settings → Updates → Roll back), with a copy of the trips and settings kept first: the
+ *  older version may not know everything that's in them. */
+export async function startRollback(version: string): Promise<UpdateStatus> {
+  if (status.phase === "downloading" || status.phase === "installing") return status;
+  const before = { ...status };
+  Object.assign(status, { phase: "downloading", received: 0, total: 0, error: undefined }); // taken, while GitHub is asked
+  let info: UpdateInfo;
+  try { info = await findOlderRelease(version); } catch (e) { Object.assign(status, before); throw e; }
+  install(info, () => console.log(`Rolling back to ${version}: your data was copied to ${backUpData(ROOT, `before-${version}`)}.`)).catch(failed);
   return status;
 }
 

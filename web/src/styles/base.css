@@ -123,7 +123,7 @@ main {
   body.app.resizing-map, body.app.resizing-map * { cursor: ns-resize !important; user-select: none !important; }
 }
 /* The chat: a column beside the map and the plan where there's room for it (1180px and up); a drawer over the right
-   of the page on smaller screens, so the plan keeps its width; over everything on a phone. */
+   of the page on smaller screens, so the plan keeps its width; a tab of its own on a phone. */
 @media (min-width: 1180px) {
   body.chat-open main { grid-template-columns: minmax(300px, 360px) minmax(0, 1fr) minmax(300px, 360px); grid-template-areas: "settings map chat" "settings output chat"; grid-template-rows: auto minmax(0, 1fr); }
   body.app.chat-open .chat-panel { align-self: stretch; }
@@ -138,8 +138,8 @@ main {
 }
 @media (max-width: 900px) {
   .chat-panel { position: fixed; inset: 0; z-index: 2000; border-radius: 0; border: 0; }
-  .chat-toggle span { display: none; }
-  .chat-toggle { width: 34px; padding: 0; justify-content: center; }
+  /* The chat has its tab along the bottom (and its cross isn't needed: another tab leaves it). */
+  body.app .chat-toggle, body.app #cpClose { display: none; }
 }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; grid-template-areas: "map" "settings" "output"; grid-template-rows: auto; padding: 10px 16px 40px; }
@@ -147,6 +147,16 @@ main {
   .header-tools { gap: 8px; }
   .window-mode > span { display: none; }
   .trip-title h1 { font-size: 18px; }
+  /* The app's header in one row, to leave the height for the page: the logo (without the name), the trip on two short
+     lines, the buttons. The version is in Settings → Updates. */
+  body.app header { grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "brand title tools"; gap: 10px; padding: 8px 16px 0; }
+  body.app .brand { font-size: 0; gap: 0; }
+  body.app .trip-title h1 { font-size: 15px; }
+  body.app .trip-title .tt-top { gap: 7px; }
+  body.app .countdown { font-size: 11px; padding: 0 8px; }
+  body.app .trip-title p { display: block; margin: 0; font-size: 11.5px; white-space: nowrap; text-overflow: ellipsis; }
+  body.app .header-tools { gap: 6px; }
+  body.app .app-version { display: none; }
 }
 h2 { font-size: 11.5px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); margin: 22px 0 10px; font-weight: 700; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 h2:first-child { margin-top: 0; }
@@ -241,6 +251,9 @@ input[type="date"]::-webkit-date-and-time-value, input[type="time"]::-webkit-dat
   body.app.m-map .map-panel { position: fixed; top: calc(var(--mhead, 60px) + 10px); left: 16px; right: 16px; bottom: calc(62px + 10px + env(safe-area-inset-bottom)); z-index: 5; padding: 0; display: flex; flex-direction: column; }
   body.app.m-map .map-wrap { flex: 1; min-height: 0; }
   body.app.m-map #map { height: 100%; }
+  /* The chat's tab: in the same place as the map's. With the keyboard up, all of what's visible (see companion.ts). */
+  body.app .chat-panel { top: calc(var(--mhead, 60px) + 10px); left: 16px; right: 16px; bottom: calc(62px + 10px + env(safe-area-inset-bottom)); z-index: 5; border: 1px solid var(--line); border-radius: 12px; }
+  body.app.chat-typing .chat-panel { left: 0; right: 0; z-index: 2000; border: 0; border-radius: 0; }
   .m-tabs { display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; padding: 4px 6px env(safe-area-inset-bottom); background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 -4px 18px rgba(0, 0, 0, .08); }
   .m-tabs button { all: unset; flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0 6px; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 10px; -webkit-tap-highlight-color: transparent; }
   .m-tabs button svg { font-size: 21px; }

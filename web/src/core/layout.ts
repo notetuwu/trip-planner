@@ -1,7 +1,7 @@
 // What the page shows. On a computer: any of the three columns (the trip's settings, the plan, the map) can be hidden
 // from the header, and the map can take the whole window (the button on the map, or Escape to come back). On a phone:
-// one of them at a time, picked in a bar along the bottom (with the chat), and while going through the plan a bar of
-// its days along the top, to jump to any of them.
+// one of them or the chat at a time, picked in a bar along the bottom, and while going through the plan a bar of its
+// days along the top, to jump to any of them.
 import { $, $$ } from "./dom";
 import { icon } from "./icons";
 import { session, state } from "./state";
@@ -25,7 +25,8 @@ export const isPhone = () => window.innerWidth <= 900;
 const mapFull = () => hidden.has("settings") && hidden.has("output");
 /** Side by side from this width (narrower: the map over the plan). */
 const ROW = 1200;
-const chatColumn = () => document.body.classList.contains("chat-open") && window.innerWidth >= 1180;
+const chatOpen = () => document.body.classList.contains("chat-open");
+const chatColumn = () => chatOpen() && window.innerWidth >= 1180;
 /** The map over the plan (rather than beside it): a narrow window, or the chat taking a column under 1500px. */
 const stackedNow = () => !isPhone() && !hidden.has("output") && !hidden.has("map") && (window.innerWidth < ROW || (chatColumn() && window.innerWidth < 1500));
 const MAP_H = "trip-planner-map-height";
@@ -55,7 +56,8 @@ function desktopGrid() {
 
 function apply() {
   const body = document.body, phone = isPhone();
-  const tab = tabNow();
+  // On a phone the open chat is a tab of its own, in place of the others.
+  const tab = chatOpen() && phone ? "chat" : tabNow();
   for (const p of PANES) {
     body.classList.toggle(`hide-${p}`, !phone && hidden.has(p));
     body.classList.toggle(`m-${p}`, phone && tab === p);
@@ -68,6 +70,7 @@ function apply() {
     b.title = `${on ? "Hide" : "Show"} ${p === "settings" ? "the trip's settings" : p === "output" ? "the plan" : "the map"}`;
   }
   for (const b of $$<HTMLButtonElement>("[data-tab]")) b.classList.toggle("on", b.dataset.tab === tab);
+  $("[data-tab-chat]").classList.toggle("on", tab === "chat");
   const full = document.querySelector<HTMLButtonElement>("#mapFullBtn");
   if (full) { full.innerHTML = icon(mapFull() ? "minimize" : "maximize"); full.title = mapFull() ? "Back to the columns (Esc)" : "The map over the whole window"; }
   // Where the header ends (the map on a phone fills what's below it).
@@ -96,7 +99,9 @@ export function toggleMapFull() {
 /** Brings a pane into view: on a phone its tab, on a computer the column if it was hidden. */
 export function showPane(p: Pane) {
   if (isPhone()) {
-    if (tabNow() === p) return;
+    const fromChat = chatOpen();
+    if (fromChat) $("#cpClose").click();
+    if (tabNow() === p && !fromChat) return;
     chosen = p; sessionStorage.setItem(PHONE_TAB, p);
     window.scrollTo({ top: 0 });
     apply();
@@ -106,7 +111,7 @@ export function showPane(p: Pane) {
 /** The bar of days along the top on a phone, once the plan is scrolled to its days. */
 function dayBar() {
   const bar = document.querySelector<HTMLElement>("#mDayBar")!, days = $$<HTMLElement>("#output .day");
-  const want = isPhone() && tabNow() === "output" && days.length > 0;
+  const want = isPhone() && !chatOpen() && tabNow() === "output" && days.length > 0;
   if (!want) { bar.hidden = true; return; }
   const it = state.itinerary;
   const key = days.map((d) => d.dataset.date).join(",");
@@ -186,7 +191,7 @@ export function initLayout() {
   $(".map-toggles").insertAdjacentHTML("beforeend", `<button type="button" class="map-pill map-full-btn" id="mapFullBtn"></button>`);
   for (const b of $$<HTMLButtonElement>("[data-pane]")) b.onclick = () => togglePane(b.dataset.pane as Pane);
   for (const b of $$<HTMLButtonElement>("[data-tab]")) b.onclick = () => showPane(b.dataset.tab as Pane);
-  $("[data-tab-chat]").onclick = () => $("#chatBtn").click();
+  $("[data-tab-chat]").onclick = () => { if (!chatOpen()) $("#chatBtn").click(); };
   $("#mapFullBtn").onclick = toggleMapFull;
   $("#mDayBar").onclick = (e) => { const b = (e.target as HTMLElement).closest<HTMLElement>("[data-day]"); if (b) jumpToDay(+b.dataset.day!); };
   // On a phone, making a plan shows it.
@@ -200,7 +205,13 @@ export function initLayout() {
   addEventListener("scroll", () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(dayBar); }, { passive: true });
   let wasPhone = isPhone();
   addEventListener("resize", () => { if (isPhone() !== wasPhone) { wasPhone = isPhone(); apply(); } else { desktopGrid(); dayBar(); } });
-  // The chat opening or closing changes the columns; a new plan, the day bar.
+  // The chat opening or closing changes the columns (on a phone, the tab); a new plan, the day bar.
+  let chatWas = chatOpen();
+  new MutationObserver(() => {
+    const chat = chatOpen(), turned = chat !== chatWas;
+    chatWas = chat;
+    if (isPhone() && turned) { window.scrollTo({ top: 0 }); apply(); }
+  }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
   new MutationObserver(() => { if (!isPhone()) { const was = document.body.classList.contains("map-stacked"); desktopGrid(); if (hidden.size || was !== document.body.classList.contains("map-stacked")) requestAnimationFrame(mapShown); } }).observe(document.body, { attributes: true, attributeFilter: ["class"] });
   mapResizer();
   new MutationObserver(() => { if (!chosen && isPhone()) apply(); else dayBar(); }).observe($("#output"), { childList: true });
