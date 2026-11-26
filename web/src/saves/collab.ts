@@ -123,7 +123,7 @@ function rows() {
 function whoText(edits: (Edit | undefined)[]) {
   if (pending?.from === "window") return "Your other window";
   const names = [...new Set(edits.filter((e): e is Edit => !!e && !isMine(e)).map((e) => e.by))];
-  if (!names.length) return edits.some(isMine) ? "You, on another computer," : "Someone";
+  if (!names.length) return edits.some(isMine) ? "You (on another computer)" : "Someone";
   return names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
@@ -143,6 +143,11 @@ function banner(): HTMLElement {
     // A popover: shown above the page's windows (the Photos window, Settings…), which a fixed note would be under.
     if ("showPopover" in el) el.popover = "manual";
     document.body.append(el);
+    // The window it was in closed: back over the page.
+    const made = el;
+    document.addEventListener("close", (e) => {
+      if (e.target instanceof HTMLDialogElement && e.target.contains(made)) { document.body.append(made); if (!made.hidden) drawBanner(); }
+    }, true);
     el.addEventListener("click", (e) => {
       const t = e.target as HTMLElement;
       if (t.closest("[data-cb-review]")) openReview();
@@ -158,7 +163,7 @@ function drawBanner() {
   if (waiting) {
     const e = waiting.edit;
     el.className = "collab-banner waiting";
-    el.innerHTML = `${e ? avatar(e) : icon("users")}<span><b>${esc(e && !isMine(e) ? e.by : "Someone")}</b> changed this trip${e ? ` ${esc(ago(e.at))}` : ""}, while you had it open.</span>
+    el.innerHTML = `${e ? avatar(e) : icon("users")}<span class="cb-text"><b>${esc(e && !isMine(e) ? e.by : "Someone")}</b> changed this trip${e ? ` ${esc(ago(e.at))}` : ""}, while you had it open.</span>
       <button type="button" class="btn solid" data-cb-take title="Bring their changes in now (yours stay)">${icon("refresh")} Update</button>`;
     show(el);
     return;
@@ -166,19 +171,26 @@ function drawBanner() {
   const list = rows();
   if (!pending || !list.length) { el.hidden = true; if (el.popover) try { el.hidePopover(); } catch { /* not shown */ } pending = list.length ? pending : null; return; }
   const clashes = list.filter((r) => pending!.clashes.has(r.keys[0]));
-  const names = list.map((r) => (r.keys[0].startsWith("photo:") ? photoSummary(r.keys) : partLabel(r.keys[0], state)));
-  const what = names.length <= 3 ? names.join(", ") : `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+  // Photos say what was done ("placed 9 photos"); other parts are "changed Day 3".
+  const parts = list.filter((r) => !r.keys[0].startsWith("photo:")).map((r) => partLabel(r.keys[0], state));
+  const photoRow = list.find((r) => r.keys[0].startsWith("photo:"));
+  const changed = parts.length ? `changed ${parts.length <= 3 ? parts.join(", ") : `${parts.slice(0, 2).join(", ")} and ${parts.length - 2} more`}` : "";
+  const what = [changed, photoRow ? photoSummary(photoRow.keys) : ""].filter(Boolean).join(" and ");
   const first = list.map((r) => r.edit).find((e) => e && !isMine(e)) || list[0].edit;
   el.className = `collab-banner${clashes.length ? " clash" : ""}`;
   el.innerHTML = `${first && pending.from === "drive" ? avatar(first) : icon("users")}
-    <span><b>${esc(whoText(list.map((r) => r.edit)))}</b> changed ${esc(what)}${clashes.length ? `. <b>You changed ${clashes.length === 1 ? "that" : "some of that"} too</b>: yours is kept` : ""}.</span>
+    <span class="cb-text"><b>${esc(whoText(list.map((r) => r.edit)))}</b> ${esc(what)}${clashes.length ? `. <b>You changed ${clashes.length === 1 ? "that" : "some of that"} too</b>: yours is kept` : ""}.</span>
     <button type="button" class="btn" data-cb-review>${icon("eye")} Review</button>
     <button type="button" class="icon-btn" data-cb-close title="OK" aria-label="Close">${icon("x")}</button>`;
   show(el);
 }
 
-/** On screen, over whatever window was opened last (shown again, it goes on top of the ones opened since). */
+/** On screen, over whatever window was opened last (shown again, it goes on top of the ones opened since). While a
+ *  window is open (the Photos window, Settings…) everything outside it can't be clicked, so the note goes inside the
+ *  topmost one, and back out when that closes. */
 function show(el: HTMLElement) {
+  const host = [...document.querySelectorAll<HTMLDialogElement>("dialog[open]")].filter((d) => d.matches(":modal")).pop() || document.body;
+  if (el.parentElement !== host) { if (el.popover) try { el.hidePopover(); } catch { /* not shown */ } host.append(el); }
   el.hidden = false;
   if (!el.popover) return;
   try { if (el.matches(":popover-open")) el.hidePopover(); el.showPopover(); } catch { /* an older browser: a fixed note */ }

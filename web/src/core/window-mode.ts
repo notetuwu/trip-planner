@@ -12,6 +12,21 @@ if (new URLSearchParams(location.search).get("window") === "app") {
 }
 export const inAppWindow = sessionStorage.getItem(KEY) === "1";
 
+/** What the planner is shown in: "Own window · WebView2 158", "Browser tab · Firefox 140"… */
+export function engineText() {
+  const ua = navigator.userAgent, nav = navigator as Navigator & { brave?: unknown; userAgentData?: { brands: { brand: string }[] } };
+  const chromium = ua.match(/(?:Chrome|Edg)\/(\d+)/)?.[1] || "";
+  const brands = nav.userAgentData?.brands.map((b) => b.brand) || [];
+  const engine = (window as Window & { chrome?: { webview?: unknown } }).chrome?.webview ? `WebView2 ${chromium}`
+    : nav.brave ? "Brave"
+    : brands.includes("Microsoft Edge") ? `Edge ${chromium}`
+    : brands.includes("Google Chrome") ? `Chrome ${chromium}`
+    : /Firefox\/(\d+)/.test(ua) ? `Firefox ${ua.match(/Firefox\/(\d+)/)![1]}`
+    : /Version\/[\d.]+ .*Safari/.test(ua) ? "Safari"
+    : chromium ? `Chromium ${chromium}` : "a browser";
+  return `${inAppWindow ? "Own window" : "Browser tab"} · ${engine.trim()}`;
+}
+
 const external = (href: string) => /^https?:/i.test(href) && new URL(href, location.href).origin !== location.origin;
 const openOutside = (url: string) => api("/api/open", { method: "POST", body: JSON.stringify({ url }) }).catch(() => window.open(url, "_blank"));
 

@@ -105,7 +105,10 @@ class TripWindow : Form
         try
         {
             Directory.CreateDirectory(profile);
-            CoreWebView2Environment env = await CoreWebView2Environment.CreateAsync(null, profile, null);
+            // Without the Edge extras WebView2 still has: the pop-up over selected text (msWebOOUI), the one over PDFs,
+            // and SmartScreen checking every address with Microsoft.
+            CoreWebView2EnvironmentOptions options = new CoreWebView2EnvironmentOptions("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection");
+            CoreWebView2Environment env = await CoreWebView2Environment.CreateAsync(null, profile, options);
             await web.EnsureCoreWebView2Async(env);
         }
         catch (Exception e)

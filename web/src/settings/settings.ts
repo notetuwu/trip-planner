@@ -12,7 +12,7 @@ import { type AppPrefs, prefs, setPrefs } from "../core/prefs";
 import { CURRENCIES } from "../core/format";
 import { type Choice, choice, setTheme } from "../core/theme";
 import { type UpdateInfo, install } from "../core/update";
-import { switchWindowMode } from "../core/window-mode";
+import { engineText, switchWindowMode } from "../core/window-mode";
 import { renderKeyRows } from "../generate/keys";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
@@ -171,6 +171,7 @@ function render() {
       <div class="set-side">
         <label class="set-find"><span class="set-find-icon">${icon("search")}</span><input id="setFind" type="search" placeholder="Search settings" autocomplete="off" spellcheck="false"></label>
         <nav class="set-nav" id="setNav"></nav>
+        <p class="set-engine" title="What the planner is shown in">${esc(engineText())}</p>
       </div>
       <div class="set-main" id="setMain"></div>`;
     const input = $<HTMLInputElement>("#setFind");

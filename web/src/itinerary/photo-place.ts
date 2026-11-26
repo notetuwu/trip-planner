@@ -317,10 +317,12 @@ export function placeTool(box: HTMLElement): PlaceTool {
   const section = (g: Placed[], i: number, title: string, extra = "") => {
     const guess = !isReadOnly() && g.find((p) => p.guessed && unplaced(p));
     return `<section class="pp-group${extra ? " pp-spot" : ""}" data-g="${i}">
-      <header draggable="${g.some(fromList)}" title="Click to select them all; drag to place them together">
+      <div class="pp-head" draggable="${g.some(fromList)}">
+      <header title="Click to select them all; drag to place them together">
         <span class="pp-check" aria-hidden="true">${icon("check")}</span>
         <div class="pp-gh"><b>${esc(title)}</b><small>${from(g)}</small></div><em>${g.length}</em>${extra}</header>
-      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg draggable="${g.some(fromList)}" title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
+      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
+      </div>
       <div class="pp-grid">${g.map(tile).join("")}</div></section>`;
   };
   function drawList() {
@@ -564,7 +566,8 @@ export function placeTool(box: HTMLElement): PlaceTool {
       }
       return view(key);
     }
-    if (target.closest("header")) {
+    // The heading, or the room between it and the suggestion.
+    if (target.closest(".pp-head")) {
       const keys = groupAt(target).map((p) => p.key);
       // A group all selected already: its heading takes them off again.
       if (keys.every((k) => selected.has(k))) { for (const k of keys) selected.delete(k); marks(); drawMap(); }

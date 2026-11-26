@@ -883,6 +883,7 @@ button.refine:hover { border-color: var(--accent); }
 /* Settings: the search box above the tabs, its results, and the setting a result leads to (lit up for a moment). */
 .set-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
 .set-side .set-nav { flex: 1; border-right: 0; padding-top: 4px; overflow: auto; }
+.set-engine { margin: 0; padding: 8px 22px 12px; font-size: 11.5px; color: var(--muted); }
 .set-find { position: relative; display: block; margin: 12px 10px 4px; }
 .set-find-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); display: flex; pointer-events: none; }
 .set-find input { width: 100%; height: 34px; padding-left: 32px; border-radius: 9px; font-size: 13px; }
@@ -1062,7 +1063,7 @@ h2 .edit-slot { margin-left: 6px; }
 .collab-banner[hidden] { display: none; }
 /* (As a popover: none of the browser's own centring and frame.) */
 .collab-banner[popover] { inset: auto; top: 64px; left: 50%; margin: 0; overflow: visible; }
-.collab-banner > span { flex: 1; min-width: 0; }
+.collab-banner > .cb-text { flex: 1; min-width: 0; }
 .collab-banner .who-dot { width: 24px; height: 24px; font-size: 12px; }
 .collab-banner.waiting { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .collab-banner.clash { border-color: var(--warn); }
