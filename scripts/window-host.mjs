@@ -20,12 +20,16 @@ export async function buildWindowHost(out) {
   const data = Buffer.from(await res.arrayBuffer());
   if (crypto.createHash("sha256").update(data).digest("hex") !== SHA256) throw new Error("WebView2 package: checksum mismatch.");
   fs.writeFileSync(path.join(out, "webview2.zip"), data);
-  execFileSync("powershell", ["-NoProfile", "-Command", `Expand-Archive -Path '${path.join(out, "webview2.zip")}' -DestinationPath '${pkg}' -Force`], { stdio: "inherit" });
+  // With Windows's own tar, which reads zip files. (Not PowerShell's Expand-Archive: started from PowerShell 7, as in the
+  // release build, Windows PowerShell picks up the wrong version of it and it fails.)
+  fs.mkdirSync(pkg, { recursive: true });
+  const windows = process.env.WINDIR || "C:\\Windows";
+  execFileSync(path.join(windows, "System32", "tar.exe"), ["-xf", path.join(out, "webview2.zip"), "-C", pkg], { stdio: "inherit" });
 
   const libs = ["lib/net462/Microsoft.Web.WebView2.Core.dll", "lib/net462/Microsoft.Web.WebView2.WinForms.dll", "runtimes/win-x64/native/WebView2Loader.dll", "LICENSE.txt"];
   for (const f of libs) fs.copyFileSync(path.join(pkg, f), path.join(bin, f === "LICENSE.txt" ? "WebView2-LICENSE.txt" : path.basename(f)));
 
-  const csc = path.join(process.env.WINDIR || "C:\\Windows", "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe");
+  const csc = path.join(windows, "Microsoft.NET", "Framework64", "v4.0.30319", "csc.exe");
   execFileSync(csc, [
     "/nologo", "/target:winexe", "/platform:x64", "/optimize+", "/warnaserror+",
     `/out:${path.join(bin, "Trip Planner Window.exe")}`,
