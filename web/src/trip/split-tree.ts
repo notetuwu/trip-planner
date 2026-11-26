@@ -47,3 +47,16 @@ export function groupOrder<T extends Stop>(items: T[], who: Who<T>): string[] {
   kids("").sort((a, b) => first(a).localeCompare(first(b))).forEach(walk);
   return out;
 }
+
+/** The stops that light up a leg's line: the one it leads to and, of those listed since the stop it starts at, the same
+ *  group's and the transfers on its way (`group`: whose line it is). A split day lists its groups one after another, so
+ *  other groups' stops are in between too. */
+export function legStops<T>(items: T[], leg: { fromXi: number; xi: number; group?: string }, who: Who<T>, isTransfer: (y: T) => boolean): number[] {
+  const own = who(items[leg.xi]);
+  const out: number[] = [];
+  for (let k = Math.max(0, leg.fromXi + 1); k < leg.xi; k++) {
+    const y = items[k];
+    if (who(y) === own || (isTransfer(y) && onWay(items, y, leg.group || "", who))) out.push(k);
+  }
+  return [...out, leg.xi];
+}

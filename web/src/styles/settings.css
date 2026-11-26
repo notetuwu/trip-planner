@@ -1041,3 +1041,47 @@ button.refine:hover { border-color: var(--accent); }
 .lp-how .hint { font-size: 11.5px; }
 .lp-hand { display: grid; gap: 8px; }
 .lp-hand[hidden] { display: none; }
+
+/* ---- Working on a trip together (saves/collab.ts) ---- */
+/* A person: a round mark with their initial, in a colour of their own. */
+.who-dot { display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; border-radius: 50%; background: hsl(var(--h, 210) 55% 45%); color: #fff; font: 700 10px/1 Inter, system-ui, sans-serif; }
+.who-dot svg { width: 11px; height: 11px; }
+/* "Lena · 5 min ago": who changed a part last. */
+.edit-slot:empty { display: none; }
+.edit-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 2px; border-radius: 999px; background: var(--hover); color: var(--muted); font: 500 11px/1.5 Inter, system-ui, sans-serif; white-space: nowrap; vertical-align: 1px; text-transform: none; letter-spacing: 0; }
+.edit-chip .who-dot { width: 15px; height: 15px; font-size: 9px; }
+.edit-chip.mine { opacity: .75; }
+h2 .edit-slot { margin-left: 6px; }
+.day-head .edit-slot .edit-chip span:last-child { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.last-edit { color: var(--muted); }
+/* The Sync button by Save. */
+.sync-now.spinning svg { animation: sync-spin .9s linear infinite; }
+@keyframes sync-spin { to { transform: rotate(360deg); } }
+/* What came in while the trip was open. */
+.collab-banner { position: fixed; top: 64px; left: 50%; transform: translateX(-50%); z-index: 1900; display: flex; align-items: center; gap: 10px; max-width: min(640px, calc(100vw - 24px)); padding: 8px 8px 8px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); font-size: 13px; animation: collab-in .25s ease-out; }
+.collab-banner[hidden] { display: none; }
+/* (As a popover: none of the browser's own centring and frame.) */
+.collab-banner[popover] { inset: auto; top: 64px; left: 50%; margin: 0; overflow: visible; }
+.collab-banner > span { flex: 1; min-width: 0; }
+.collab-banner .who-dot { width: 24px; height: 24px; font-size: 12px; }
+.collab-banner.waiting { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.collab-banner.clash { border-color: var(--warn); }
+.collab-banner .btn { white-space: nowrap; }
+@keyframes collab-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+.collab-review { width: min(560px, calc(100vw - 24px)); }
+.cr-list { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 6px; max-height: 60vh; overflow: auto; }
+.cr-list li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius); }
+.cr-list li.clash { border-color: var(--warn); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.cr-list .who-dot { width: 26px; height: 26px; font-size: 12px; }
+.cr-what { flex: 1; min-width: 0; display: grid; gap: 1px; }
+.cr-what span { color: var(--ink); font-size: 13px; }
+.cr-what small { color: var(--muted); font-size: 11.5px; }
+.cr-acts { display: flex; gap: 6px; flex: none; }
+.collab-flash { animation: stay-flash 1.6s ease-out; border-radius: var(--radius); }
+/* A name that can't be used (another trip has it), under the field. */
+.ask-error { margin: 6px 0 0; color: var(--accent); font-size: 12.5px; }
+/* Changes: the trip's history, by day. */
+.collab-history { width: min(600px, calc(100vw - 24px)); }
+.ch-filter { display: inline-flex; width: auto; justify-self: start; align-self: flex-start; margin: 2px 0 8px; }
+.cr-list .ch-day { padding: 8px 2px 0; border: 0; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.ch-list { max-height: 64vh; }

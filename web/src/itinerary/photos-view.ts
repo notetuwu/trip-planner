@@ -1,10 +1,10 @@
 // The trip's photos in a window. On the left (a sidebar that can be hidden), everything to set up: where the photos come from (Google Drive folders and
 // folders on this computer, as many as the trip has) and how they show on the map. On the right, every photo laid out by
-// the day of the trip it was taken on (the others by date), with or without a spot on the map. Click one to go through
-// them big (arrows, a strip along the bottom); the pin on a photo moves the map to where it was taken.
+// the day of the trip it was taken on (the others by date), with or without a spot on the map, and a timeline of the days
+// down its right edge to jump between them. Click one to go through them big (arrows, a strip along the bottom); the pin on a photo moves the map to where it was taken.
 import { moveTo } from "../map/move";
 import { closeOnBackdrop, esc } from "../core/dom";
-import { fmtDate } from "../core/format";
+import { fmtDate, fmtShort } from "../core/format";
 import { icon } from "../core/icons";
 import { session, state } from "../core/state";
 import { map } from "../map/map";
@@ -18,6 +18,7 @@ import { askText, tell } from "../core/ask";
 import { loadSyncStatus } from "../saves/sync-client";
 import { highlights } from "./preview-data";
 import { type PlaceTool, placeTool } from "./photo-place";
+import { photoTimeline } from "./photos-timeline";
 
 /** A collage of their photos on top: one from as many days as there are, with the trip's name and when. */
 function hero(all: Placed[], index: Map<Placed, number>) {
@@ -39,6 +40,7 @@ try { Object.assign(view, JSON.parse(localStorage.getItem(VIEW_KEY) || "{}")); }
 
 /** Placing photos on the map (instead of the gallery); the window fills the screen meanwhile. */
 let placing = false, tool: PlaceTool | null = null;
+let timeline: ReturnType<typeof photoTimeline>;
 
 function setPlacing(yes: boolean) {
   placing = yes;
@@ -72,18 +74,18 @@ function setView(change: Partial<typeof view>) {
 function groups(photos: Placed[]) {
   const days = state.itinerary?.days || [], byDate = new Map<string, Placed[]>();
   for (const p of photos) { const d = p.t.slice(0, 10); byDate.set(d, [...(byDate.get(d) || []), p]); }
-  const out: { head: string; sub: string; photos: Placed[] }[] = [];
+  const out: { head: string; short: string; sub: string; photos: Placed[] }[] = [];
   const used = new Set<string>();
   days.forEach((d, i) => {
     const list = byDate.get(d.date);
     if (!list) return;
     used.add(d.date);
-    out.push({ head: `Day ${i + 1} · ${fmtDate(d.date) || d.date}`, sub: d.city || "", photos: list });
+    out.push({ head: `Day ${i + 1} · ${fmtDate(d.date) || d.date}`, short: `Day ${i + 1}`, sub: d.city || "", photos: list });
   });
   // Dates that aren't a day of the trip (before it, after it, or a trip with no plan yet); photos with no time last.
   for (const [date, list] of [...byDate].sort((a, b) => (a[0] ? 0 : 1) - (b[0] ? 0 : 1) || a[0].localeCompare(b[0]))) {
     if (used.has(date)) continue;
-    out.push({ head: date ? fmtDate(date) || date : "No date", sub: !date ? "The photo has no time in it" : days.length ? "Not a day of the trip" : "", photos: list });
+    out.push({ head: date ? fmtDate(date) || date : "No date", short: date ? fmtShort(date) || date : "No date", sub: !date ? "The photo has no time in it" : days.length ? "Not a day of the trip" : "", photos: list });
   }
   return out;
 }
@@ -123,13 +125,14 @@ function renderMain() {
   const noSpot = all.filter((p) => p.lat == null).length, byTime = all.filter((p) => p.guessed).length, videos = all.filter((p) => p.video).length;
   dlg.querySelector<HTMLElement>("[data-ph-count]")!.textContent = all.length
     ? `${all.length - videos} photo${all.length - videos === 1 ? "" : "s"}${videos ? ` · ${videos} video${videos === 1 ? "" : "s"}` : ""}${byTime ? ` · ${byTime} placed by their time` : ""}${noSpot ? ` · ${noSpot} that can't be placed` : ""}${loading ? " · loading more…" : ""}` : "";
-  let body: string;
+  let body: string, shown: ReturnType<typeof groups> = [];
   if (!folders().length) body = `<p class="ph-empty">No photo folders for this trip yet.<br><span class="hint">Add a Google Drive folder, or a folder from this computer, in the sidebar.</span></p>`;
   else if (!all.length) body = `${errors}<p class="ph-empty">${loading ? "Loading the photos…" : "No photos found in the shown folders."}</p>`;
   else {
     // The index in the whole list, so the viewer goes on from a photo into the next ones.
     const index = new Map(all.map((p, i) => [p, i]));
-    body = errors + hero(all, index) + groups(all).map((g) => `<section class="ph-day"><h3>${esc(g.head)}${g.sub ? ` <span class="hint">${esc(g.sub)}</span>` : ""} <span class="ph-n">${g.photos.length}</span></h3>
+    shown = groups(all);
+    body = errors + hero(all, index) + shown.map((g) => `<section class="ph-day"><h3>${esc(g.head)}${g.sub ? ` <span class="hint">${esc(g.sub)}</span>` : ""} <span class="ph-n">${g.photos.length}</span></h3>
       <div class="ph-grid">${g.photos.map((p) => `<div class="ph-tile" data-i="${index.get(p)}" title="${esc(p.name)}">
         ${thumbTag(p, 320, 'loading="lazy" decoding="async"')}
         ${p.video ? `<span class="ph-play"><i></i>${p.dur ? esc(duration(p.dur)) : ""}</span>` : ""}
@@ -137,6 +140,11 @@ function renderMain() {
   }
   const scroll = dlg.querySelector<HTMLElement>(".ph-body")!, top = scroll.scrollTop;
   scroll.innerHTML = body;
+  const sections = scroll.querySelectorAll<HTMLElement>(".ph-day");
+  timeline(shown.map((g, i) => ({
+    label: g.short, title: g.head, el: sections[i],
+    sub: [g.sub, `${g.photos.length} photo${g.photos.length === 1 ? "" : "s"}`].filter(Boolean).join(" · "),
+  })));
   scroll.scrollTop = top;
   scroll.querySelectorAll<HTMLElement>(".ph-hero [data-i]").forEach((b) => { b.onclick = () => showGallery(all.map(viewItem), +b.dataset.i!); });
   scroll.querySelectorAll<HTMLElement>(".ph-tile").forEach((t) => {
@@ -211,8 +219,9 @@ function wireSide(d: HTMLDialogElement) {
   q<HTMLButtonElement>("[data-ph-refresh]").onclick = () => loadMissing(true);
 }
 
-/** Opens the window with the trip's photos and their settings. */
-export function openPhotosView() {
+/** Opens the window with the trip's photos and their settings (`place`: at Place on map, showing "By others" when it's a
+ *  trip several people work on). */
+export function openPhotosView(mode?: "place", photo?: string) {
   if (!dlg) {
     dlg = document.createElement("dialog");
     dlg.className = "keys-dialog photos-dialog";
@@ -220,11 +229,12 @@ export function openPhotosView() {
         <div class="segs ph-modes"><button type="button" class="seg" data-ph-mode="gallery">Gallery</button><button type="button" class="seg" data-ph-mode="place" title="Drag photos onto the map to say where they were taken">Place on map</button></div>
         <button type="button" class="icon-btn ph-full-btn" data-ph-full></button>
         <form method="dialog"><button class="icon-btn" title="Close">${icon("x")}</button></form></div>
-      <div class="ph-wrap">${SIDE()}<div class="ph-body"></div></div><div class="pp-wrap"></div>`;
+      <div class="ph-wrap">${SIDE()}<div class="ph-main"><div class="ph-body"></div><nav class="ph-time" aria-label="Jump to a day" hidden></nav></div></div><div class="pp-wrap"></div>`;
     document.body.append(dlg);
     // A click on the dimmed area around it closes it, like the other windows.
     closeOnBackdrop(dlg);
     wireSide(dlg);
+    timeline = photoTimeline(dlg.querySelector<HTMLElement>(".ph-time")!, dlg.querySelector<HTMLElement>(".ph-body")!);
     tool = placeTool(dlg.querySelector<HTMLElement>(".pp-wrap")!);
     dlg.querySelectorAll<HTMLButtonElement>("[data-ph-mode]").forEach((b) => { b.onclick = () => setPlacing(b.dataset.phMode === "place"); });
     dlg.querySelector<HTMLButtonElement>("[data-ph-toggle-side]")!.onclick = () => setView({ noSide: !dlg!.classList.contains("no-side") });
@@ -235,6 +245,9 @@ export function openPhotosView() {
   if (!dlg.open) dlg.showModal();
   // Sources not loaded yet (the layer on the map may be off).
   loadMissing();
+  if (mode === "place") { placing = true; if (!photo) tool!.showOthers(); }
   render();
   if (placing) tool!.show();
+  // A photo from Changes: History open at it, and the map there.
+  if (photo) tool!.focus(photo);
 }

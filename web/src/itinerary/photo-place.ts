@@ -18,12 +18,17 @@ import { type Placed, allPhotos, folderOf, folders, loadMissing, planDays, setSp
 import { type PhotoSpot, burstsOf } from "../map/photo-spot";
 import { placeSearch } from "../map/place-search";
 import { isReadOnly } from "../saves/read-only";
+import { ago, avatar, canSyncNow, editLine, editOf, historyRows, isMine, shared, syncNow } from "../saves/collab";
 
 export interface PlaceTool {
   /** The tool came on screen: the map takes its size, and starts where the photos are. */
   show: () => void;
   /** The photos changed. */
   update: () => void;
+  /** Lists the photos someone else placed, moved or reset (when there are any). */
+  showOthers: () => void;
+  /** Opens History at a photo (by its key) and shows where it went on the map. */
+  focus: (key: string) => void;
 }
 
 /** How far apart (screen pixels) pictures must be to be shown separately, and how near a drop snaps to a spot. */
@@ -35,11 +40,18 @@ const LOCK_KEY = "trip-planner-photos-lock";
 /** English place names on this map (unset: as Settings → General says for the main map). */
 const ENGLISH_KEY = "trip-planner-photos-english";
 
-type Which = "open" | "placed" | "skipped" | "all";
+type Which = "open" | "placed" | "skipped" | "all" | "others";
 const WHICH: [Which, string, string][] = [
   ["open", "To place", "Photos without a location yet"], ["placed", "Placed", "Placed or moved by hand"],
   ["skipped", "Skipped", "Marked “can't place”"], ["all", "All", "Every photo"],
+  ["others", "By others", "Placed, moved or reset by someone else who works on this trip"],
 ];
+
+/** A photo's spot was last changed by someone else (on a trip several people work on). */
+const editKey = (p: Placed) => `photo:${p.key}`;
+const byOther = (p: Placed) => { const e = shared() ? editOf(editKey(p)) : undefined; return !!e && !isMine(e); };
+/** "Placed by Lena · 2 h ago" (or moved, reset…), for a tooltip. */
+const placedLine = (p: Placed) => editLine(editKey(p), p.skipped ? "Marked can't place" : p.placed ? "Placed" : "Reset");
 
 /** "where you took a photo 2 min before" stays; a stop's name is "near" it. */
 const nearText = (near = "") => (/^where /.test(near) ? near : `near ${near}`);
@@ -52,7 +64,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
   box.innerHTML = `<div class="pp-left">
       <div class="pp-top">
         <div class="pp-progress"><div><b data-pp-done></b><span data-pp-of></span></div>
-          <button type="button" class="icon-btn" data-pp-undo title="Undo (Ctrl+Z)" aria-label="Undo">${icon("history")}</button></div>
+          <button type="button" class="icon-btn" data-pp-undo title="Undo your last step (Ctrl+Z)" aria-label="Undo">${icon("undo")}</button>
+          <button type="button" class="icon-btn" data-pp-hist title="History: who placed which photo, where, and when" aria-label="History">${icon("history")}</button>
+          <button type="button" class="icon-btn" data-pp-sync hidden title="Sync now: send your placements and get everyone else's" aria-label="Sync now">${icon("refresh")}</button></div>
         <div class="pp-bar"><i data-pp-bar></i></div>
         <div class="pp-which" role="tablist">${WHICH.map(([v, label, tip]) => `<button type="button" role="tab" data-pp-which="${v}" title="${tip}"><span>${label}</span><small data-pp-n="${v}"></small></button>`).join("")}</div>
         <div class="pp-filters">
@@ -62,6 +76,12 @@ export function placeTool(box: HTMLElement): PlaceTool {
       </div>
       <div class="pp-list"></div>
       <div class="pp-sel" hidden></div>
+    </div>
+    <div class="pp-hist" hidden>
+      <div class="pp-hist-head"><b>${icon("history")} History</b>
+        <div class="segs pp-hist-who"><button type="button" class="seg on" data-pp-hwho="all">Everyone</button><button type="button" class="seg" data-pp-hwho="others">Others</button></div>
+        <button type="button" class="icon-btn" data-pp-hist-close title="Close" aria-label="Close">${icon("x")}</button></div>
+      <ul class="pp-hist-list"></ul>
     </div>
     <div class="pp-right"><div class="pp-map"></div>
       <form class="pp-search"></form>
@@ -100,7 +120,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
 
   /** The list's filters (the map has its own). */
   const passes = (p: Placed) => (!daySel.value || (p.t.slice(0, 10) || "none") === daySel.value) && (!srcSel.value || p.folder === srcSel.value);
-  const isWhich = (p: Placed, w: Which) => w === "all" || (w === "open" && !p.camera && !p.placed && !p.skipped) || (w === "placed" && !!p.placed) || (w === "skipped" && !!p.skipped);
+  const isWhich = (p: Placed, w: Which) => w === "all" || (w === "open" && !p.camera && !p.placed && !p.skipped) || (w === "placed" && !!p.placed) || (w === "skipped" && !!p.skipped) || (w === "others" && byOther(p));
   const listed = (p: Placed) => passes(p) && isWhich(p, which);
   const chosen = () => [...selected].map((k) => byKey.get(k)).filter((p): p is Placed => !!p);
   const lock = q<HTMLInputElement>("[data-pp-lock]");
@@ -230,13 +250,17 @@ export function placeTool(box: HTMLElement): PlaceTool {
   }
 
   function drawTop() {
+    q("[data-pp-sync]").hidden = !canSyncNow();
     const need = photos.filter((p) => !p.camera), done = need.filter((p) => p.placed).length, skipped = need.filter((p) => p.skipped).length;
     q("[data-pp-done]").textContent = !photos.length ? "No photos yet" : !need.length ? "Every photo has a location" : `${done.toLocaleString()} of ${need.length.toLocaleString()} placed`;
     q("[data-pp-of]").textContent = need.length && skipped ? ` · ${skipped.toLocaleString()} skipped` : "";
     q("[data-pp-bar]").style.width = `${need.length ? Math.round(((done + skipped) / need.length) * 100) : 100}%`;
     for (const [w] of WHICH) {
-      q(`[data-pp-n="${w}"]`).textContent = photos.filter((p) => passes(p) && isWhich(p, w)).length.toLocaleString();
+      const n = photos.filter((p) => passes(p) && isWhich(p, w)).length;
+      q(`[data-pp-n="${w}"]`).textContent = n.toLocaleString();
       q(`[data-pp-which="${w}"]`).classList.toggle("on", w === which);
+      // (By others: only on a trip several people work on, once someone else has placed a photo.)
+      if (w === "others") q(`[data-pp-which="${w}"]`).hidden = which !== "others" && !photos.some(byOther);
     }
   }
 
@@ -271,7 +295,9 @@ export function placeTool(box: HTMLElement): PlaceTool {
   const tile = (p: Placed) => {
     order.push(p.key);
     const badge = p.placed ? "placed" : p.skipped ? "can't place" : p.camera && which !== "open" ? "GPS" : "";
-    return `<div class="pp-tile${selected.has(p.key) ? " sel" : ""}" draggable="${canDrag(p)}" data-key="${esc(p.key)}" title="${esc([p.name, when(p.t), sourceOf(p)].filter(Boolean).join(" · "))}">${thumbTag(p, 160, 'loading="lazy" decoding="async"')}<button type="button" class="pp-check" data-pp-pick title="Select (or Ctrl+click the photo)" aria-label="Select">${icon("check")}</button>${p.video ? `<span class="pp-vid">${icon("play")}</span>` : ""}${badge ? `<i>${badge}</i>` : ""}</div>`;
+    // Placed (or moved, reset…) by someone else: their initial in the corner.
+    const other = byOther(p) ? avatar(editOf(editKey(p))!, "pp-by") : "";
+    return `<div class="pp-tile${selected.has(p.key) ? " sel" : ""}" draggable="${canDrag(p)}" data-key="${esc(p.key)}" title="${esc([p.name, when(p.t), sourceOf(p), placedLine(p)].filter(Boolean).join(" · "))}">${other}${thumbTag(p, 160, 'loading="lazy" decoding="async"')}<button type="button" class="pp-check" data-pp-pick title="Select (or Ctrl+click the photo)" aria-label="Select">${icon("check")}</button>${p.video ? `<span class="pp-vid">${icon("play")}</span>` : ""}${badge ? `<i>${badge}</i>` : ""}</div>`;
   };
   /** The folders a group's photos are from, and who uploaded them. */
   const from = (g: Placed[]) => [...new Set(g.map(sourceOf))].map(esc).join(" · ");
@@ -285,7 +311,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
       <header draggable="${g.some(canDrag)}" title="Click to select them all; drag to place them together">
         <span class="pp-check" aria-hidden="true">${icon("check")}</span>
         <div class="pp-gh"><b>${esc(title)}</b><small>${from(g)}</small></div><em>${g.length}</em>${extra}</header>
-      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg title="Show them where their time suggests on the map">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
+      ${guess ? `<div class="pp-sugg" role="button" tabindex="0" data-pp-sugg draggable="${g.some(canDrag)}" title="Click to show them where their time suggests on the map; drag to place them together">${icon("sparkles")}<span>Suggested: ${esc(nearText(guess.near))}</span><button type="button" class="pp-sugg-use" data-pp-use title="Put them there">Use</button></div>` : ""}
       <div class="pp-grid">${g.map(tile).join("")}</div></section>`;
   };
   function drawList() {
@@ -365,11 +391,14 @@ export function placeTool(box: HTMLElement): PlaceTool {
       const lat = group.reduce((s, p) => s + p.lat!, 0) / n, lng = group.reduce((s, p) => s + p.lng!, 0) / n;
       const guess = first.guessed, lockedHere = group.some(locked);
       const cls = [guess ? "guess" : "", group.every((p) => p.placed) ? "placed" : "", sel ? "sel" : "", lockedHere ? "locked" : ""].join(" ");
-      const what = n > 1 ? `${n} photos<br><span class="pop-meta">${[...new Set(group.map(folderOf))].map(esc).join(", ")}</span>`
-        : `${esc(first.name)}<br><span class="pop-meta">${esc(when(first.t))}<br>${esc(sourceOf(first))}</span>`;
+      // Who placed them, when it's known (the newest of a group's).
+      const newest = group.filter((p) => editOf(editKey(p))).sort((a, b) => editOf(editKey(b))!.at - editOf(editKey(a))!.at)[0];
+      const placedBy = newest && !guess ? placedLine(newest) : "";
+      const what = n > 1 ? `${n} photos<br><span class="pop-meta">${[...new Set(group.map(folderOf))].map(esc).join(", ")}${placedBy ? `<br>${esc(placedBy)}${group.length > 1 ? " (the latest)" : ""}` : ""}</span>`
+        : `${esc(first.name)}<br><span class="pop-meta">${esc(when(first.t))}<br>${esc(sourceOf(first))}${placedBy ? `<br>${esc(placedBy)}` : ""}</span>`;
       const how = guess ? "Suggested from the time · Use puts them here; or drag it to the right spot" : lockedHere ? "Click to open · locked" : "Click to open · drag to move";
       const mk = L.marker([lat, lng], {
-        pane: "photos", zIndexOffset: sel ? 1000 : 0, draggable: !isReadOnly() && !lockedHere, autoPan: false, // (dragged to the edge, the map stays put)
+        pane: "photos", zIndexOffset: sel ? 1000 : 0, draggable: !isReadOnly() && !lockedHere, autoPan: true, // (dragged to the edge, the map scrolls along)
         icon: L.divIcon({ className: "", html: pinHtml(first, n, cls), iconSize: [PIN_W, PIN_H], iconAnchor: [PIN_W / 2, PIN_H] }),
       }).bindTooltip(`<div class="pp-tip">${thumbTag(first, 320)}${what}<br><span class="pop-meta">${how}</span></div>`, { direction: "top", offset: [0, -PIN_H - 4] })
         .addTo(pins);
@@ -407,7 +436,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     try {
       next = wanted
         ? (await import("../map/english-map")).englishLayer((why) => { say(why, false); english.checked = false; setBase(); })
-        : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+        : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxNativeZoom: 19, maxZoom: 22, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
     } catch (e) {
       // (Back to the local names, and the reason why.)
       say((e as Error).message, false);
@@ -441,7 +470,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
   });
 
   function makeMap() {
-    m = L.map(q(".pp-map"), { worldCopyJump: true, zoomControl: false }).setView([30, 10], 2);
+    m = L.map(q(".pp-map"), { worldCopyJump: true, zoomControl: false, maxZoom: 22 }).setView([30, 10], 2);
     L.control.zoom({ position: "bottomright" }).addTo(m);
     setBase();
     // Their own pane, as on the main map: in Leaflet's marker pane its styles size pictures to their own shape.
@@ -451,15 +480,41 @@ export function placeTool(box: HTMLElement): PlaceTool {
     m.on("click", (e) => clicked(snap(e.latlng)));
     // Photos dragged from the list: they land where the point of the pin they're dragged as is.
     const el = m.getContainer();
-    el.addEventListener("dragover", (e) => { if (dragged.length) { e.preventDefault(); e.dataTransfer!.dropEffect = "move"; el.classList.add("over"); } });
-    el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget as Node | null)) el.classList.remove("over"); });
+    el.addEventListener("dragover", (e) => {
+      if (!dragged.length) return;
+      e.preventDefault(); e.dataTransfer!.dropEffect = "move"; el.classList.add("over");
+      edgeScroll(e.clientX, e.clientY);
+    });
+    el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget as Node | null)) { el.classList.remove("over"); edgeScroll(null); } });
     el.addEventListener("drop", (e) => {
       e.preventDefault();
+      edgeScroll(null);
       el.classList.remove("over");
       const keys = dragged;
       dragged = []; dragging = false;
       if (keys.length) put(keys, snap(m!.mouseEventToLatLng(e)));
     });
+  }
+
+  /** Photos dragged from the list near the map's edge: the map scrolls that way, faster the closer they are, for as long
+   *  as they stay there (null stops it). */
+  let edgeAt: { x: number; y: number } | null = null, edgeFrame = 0;
+  function edgeScroll(x: number | null, y = 0) {
+    edgeAt = x == null ? null : { x, y };
+    if (!edgeAt) { cancelAnimationFrame(edgeFrame); edgeFrame = 0; return; }
+    if (edgeFrame) return;
+    const EDGE = 48, FAST = 14;
+    const step = () => {
+      edgeFrame = 0;
+      if (!edgeAt || !m) return;
+      const b = m.getContainer().getBoundingClientRect();
+      const push = (near: number) => (near < EDGE ? Math.ceil(FAST * (1 - Math.max(0, near) / EDGE)) : 0);
+      const dx = push(edgeAt.x - b.left) ? -push(edgeAt.x - b.left) : push(b.right - edgeAt.x);
+      const dy = push(edgeAt.y - b.top) ? -push(edgeAt.y - b.top) : push(b.bottom - edgeAt.y);
+      if (dx || dy) m.panBy([dx, dy], { animate: false });
+      edgeFrame = requestAnimationFrame(step);
+    };
+    edgeFrame = requestAnimationFrame(step);
   }
 
   const draw = () => { if (dragging) return; drawList(); marks(); drawMap(); };
@@ -476,6 +531,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     atSpot = atSpot.filter((k) => byKey.has(k));
     drawFilters();
     draw();
+    if (!histBox.hidden) drawHist();
   }
 
   // ---- What the list does ----
@@ -533,7 +589,7 @@ export function placeTool(box: HTMLElement): PlaceTool {
     // (The ghost has room around the pin for the count's badge.)
     e.dataTransfer!.setDragImage(ghost, 12 + PIN_W / 2, 12 + PIN_H);
   });
-  list.addEventListener("dragend", () => { dragged = []; dragging = false; q(".pp-map").classList.remove("over"); update(); });
+  list.addEventListener("dragend", () => { edgeScroll(null); dragged = []; dragging = false; q(".pp-map").classList.remove("over"); update(); });
 
   // ---- Filters, layers, keys ----
   for (const b of box.querySelectorAll<HTMLButtonElement>("[data-pp-which]")) b.onclick = () => { which = b.dataset.ppWhich as Which; selected.clear(); atSpot = []; list.scrollTop = 0; draw(); };
@@ -543,6 +599,66 @@ export function placeTool(box: HTMLElement): PlaceTool {
   lock.onchange = () => { localStorage.setItem(LOCK_KEY, lock.checked ? "1" : "0"); draw(); };
   english.onchange = () => { localStorage.setItem(ENGLISH_KEY, english.checked ? "1" : "0"); setBase(); };
   q<HTMLButtonElement>("[data-pp-undo]").onclick = undo;
+  q<HTMLButtonElement>("[data-pp-sync]").onclick = (e) => { syncNow(e.currentTarget as HTMLButtonElement); };
+
+  // ---- History: who placed which photo where, and when (the trip's history of changes, state.log) ----
+  const histBox = q(".pp-hist"), histList = q(".pp-hist-list");
+  let histOthers = false, histFocus = "", histRows: ReturnType<typeof historyRows> = [];
+  function setHist(open: boolean) {
+    histBox.hidden = !open;
+    box.classList.toggle("hist", open);
+    q("[data-pp-hist]").classList.toggle("on", open);
+    if (open) drawHist();
+    requestAnimationFrame(() => m?.invalidateSize());
+  }
+  /** Where a spot is, in words: the plan's nearest stop (or where they slept) within 2 km, else its position. */
+  function whereText(spot: unknown) {
+    const s = spot as { lat?: number; lng?: number; skip?: true } | undefined;
+    if (!s) return "";
+    if (s.skip) return "can't place";
+    if (s.lat == null || s.lng == null) return "";
+    const here = L.latLng(s.lat, s.lng);
+    let best = "", dist = 2000;
+    for (const d of planDays()) for (const x of [...d.stops, ...(d.home ? [d.home] : [])]) {
+      const m2 = here.distanceTo([x.lat, x.lng]);
+      if (m2 < dist) { dist = m2; best = x.name; }
+    }
+    return best ? `near ${best}` : `${s.lat.toFixed(4)}, ${s.lng.toFixed(4)}`;
+  }
+  function drawHist() {
+    histRows = historyRows(state.log, (c) => c.key.startsWith("photo:") && (!histOthers || !isMine(c))).slice(0, 300);
+    for (const b of box.querySelectorAll<HTMLButtonElement>("[data-pp-hwho]")) b.classList.toggle("on", (b.dataset.ppHwho === "others") === histOthers);
+    box.querySelector<HTMLElement>(".pp-hist-who")!.hidden = !shared();
+    histList.innerHTML = histRows.map((r, i) => {
+      const c = r.first, keys = r.changes.map((x) => x.key.slice(6)), n = keys.length, p = byKey.get(keys[0]);
+      const pics = keys.slice(0, 4).map((k) => byKey.get(k)).filter((x): x is Placed => !!x).map((x) => thumbTag(x, 160, 'loading="lazy"')).join("");
+      const what = n > 1 ? `${c.what} ${n} photos` : c.what, where = whereText(c.to), was = c.what === "moved" ? whereText(c.from) : "";
+      const canGo = keys.some((k) => byKey.has(k)) && !!(c.to as { lat?: number } | undefined)?.lat;
+      return `<li class="pp-h${keys.includes(histFocus) ? " on" : ""}${canGo ? " go" : ""}" data-h="${i}" ${canGo ? 'title="Show where on the map"' : ""}>
+        <div class="pp-h-pics${n > 1 ? " many" : ""}">${pics || icon("image")}${n > 1 ? `<b>${n}</b>` : ""}</div>
+        <div class="pp-h-text"><b>${esc(n > 1 ? what : p?.name || "A photo not loaded here")}</b>
+          <span>${esc(n > 1 ? "" : what)}${where ? `${n > 1 ? "" : " "}${esc(where)}` : ""}</span>${was && was !== where ? `<span class="pp-h-was">from ${esc(was)}</span>` : ""}
+          <small>${avatar(c)}<span>${esc(isMine(c) ? "You" : c.by)} · ${esc(ago(c.at))}</span></small></div>
+        ${canGo ? `<span class="pp-h-go" aria-hidden="true">${icon("crosshair")}</span>` : ""}
+      </li>`;
+    }).join("") || `<p class="ph-empty">${histOthers ? "Nobody else has placed photos yet." : "No photos placed yet. Every photo placed, moved or reset is listed here, with who did it and when."}</p>`;
+  }
+  /** To a change in History: its photos listed on top, and the map where it put them. */
+  function jump(i: number) {
+    const r = histRows[i], to = r?.first.to as { lat?: number; lng?: number } | undefined;
+    if (!r || to?.lat == null || to.lng == null || !m) return;
+    const keys = r.changes.map((c) => c.key.slice(6)).filter((k) => byKey.has(k));
+    histFocus = keys[0] || "";
+    keep(keys);
+    moveTo(m, [to.lat, to.lng], 17);
+    drawHist();
+  }
+  histList.addEventListener("click", (e) => { const li = (e.target as HTMLElement).closest<HTMLElement>(".pp-h.go"); if (li) jump(+li.dataset.h!); });
+  q<HTMLButtonElement>("[data-pp-hist]").onclick = () => setHist(histBox.hidden !== false);
+  q<HTMLButtonElement>("[data-pp-hist-close]").onclick = () => setHist(false);
+  for (const b of box.querySelectorAll<HTMLButtonElement>("[data-pp-hwho]")) b.onclick = () => { histOthers = b.dataset.ppHwho === "others"; drawHist(); };
+  // Changes saved (with who made them) come back from the server a moment after they're made.
+  document.addEventListener("trip-log", () => { if (!histBox.hidden) drawHist(); });
   const dialog = box.closest("dialog")!;
   /** The keys are the tool's while it's on screen and no other window (or a photo full screen) is over it. They're
    *  listened for on the page: the focus may be nowhere (after a button it was on went away). */
@@ -571,6 +687,20 @@ export function placeTool(box: HTMLElement): PlaceTool {
   let fitted = "";
   return {
     update,
+    focus(key: string) {
+      update();
+      histFocus = key; histOthers = false;
+      setHist(true);
+      const i = histRows.findIndex((r) => r.changes.some((c) => c.key === `photo:${key}`));
+      requestAnimationFrame(() => {
+        if (i >= 0) { jump(i); histList.querySelector(".pp-h.on")?.scrollIntoView({ block: "nearest" }); }
+        else if (byKey.has(key)) { keep([key]); const p = byKey.get(key)!; if (p.lat != null && m) moveTo(m, [p.lat, p.lng!], 17); }
+      });
+    },
+    showOthers() {
+      photos = allPhotos(true);
+      if (photos.some(byOther)) { which = "others"; selected.clear(); atSpot = []; list.scrollTop = 0; }
+    },
     show() {
       const first = !m;
       if (first) makeMap();

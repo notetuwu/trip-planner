@@ -11,6 +11,7 @@ import { stayLoc, stayOn } from "../geo/locate";
 import { cleanStop } from "../trip/modes";
 import { type DayStops, type PhotoSpot, type Spot, anchorsOf, spotByTime, spotKey, withSpot } from "./photo-spot";
 import { onMap } from "./travel-day";
+import { editLine } from "../saves/collab";
 
 interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number; /** Who uploaded it to Drive. */ by?: string }
 interface PhotoList { folder: string; name: string; at: number; photos: Photo[]; total: number; truncated: boolean; pending?: number; skipped?: number }
@@ -111,6 +112,9 @@ export function planDays(): DayStops[] {
   });
 }
 export const onPhotosChange = (f: () => void) => { listeners.add(f); };
+/** The trip on screen was replaced (another trip, or changes that came in from someone else): the layer, the gallery and
+ *  placing photos show its spots. */
+export function refreshPhotos() { if (layer) draw(); changed(); }
 
 /** For the panel: each folder with its status, and the totals of what's shown. */
 export function photosState() {
@@ -254,7 +258,7 @@ export const viewItem = (p: Placed): ViewItem => ({
     : isLocalFolder(p.folder) ? {} : { full: apiUrl(`/api/photos/image?folder=${encodeURIComponent(p.folder)}&id=${encodeURIComponent(p.id)}`) }),
   ...(p.rot ? { turn: p.rot } : {}),
   thumb: sized(p.thumb, 160),
-  caption: [p.video ? `Video${p.dur ? ` ${duration(p.dur)}` : ""} · ${p.name}` : p.name, when(p.t), sourceOf(p), p.guessed ? `placed by its time, near ${p.near}` : "", p.placed ? "placed by hand" : "", !p.t && p.up ? `no camera time (uploaded ${when(p.up)})` : ""].filter(Boolean).join(" · "),
+  caption: [p.video ? `Video${p.dur ? ` ${duration(p.dur)}` : ""} · ${p.name}` : p.name, when(p.t), sourceOf(p), p.guessed ? `placed by its time, near ${p.near}` : "", p.placed ? editLine(`photo:${p.key}`, "placed by hand") || "placed by hand" : "", !p.t && p.up ? `no camera time (uploaded ${when(p.up)})` : ""].filter(Boolean).join(" · "),
 });
 
 /** Every photo of the trip's shown folders (`every`: of all its folders, hidden here or not), with or without a spot, in

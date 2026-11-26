@@ -9,10 +9,14 @@
 //  - changed in both: the two are joined (shared/merge.ts: what each side changed, against what both had last); only when
 //    both changed the same thing differently is nothing overwritten: the trip shows the clash in Your trips and the person
 //    picks which to keep (the other one is kept as a version). A view-only trip someone else shared always takes Drive's.
+//  - Drive can't refuse a save made from an older version, so two saves at nearly the same moment would leave only the
+//    last: each file notes the versions it was made from (`lineage`), and a computer that finds its own last upload
+//    saved over without having been seen joins its changes back in (from what the file held before that upload).
 //
 // What it never does: delete or trash anything in Drive (a trip deleted here, or a folder removed in Settings, only stops
 // syncing; the file stays in the folder), touch files outside the sync folders, or send this computer's details along
-// (photo folders on this disk, place lists' file paths, the prompt and the model's thinking are left out of the file).
+// (photo folders on this disk, place lists' file paths, the prompt and the model's thinking are left out of the file),
+// or each person's own settings (shared/edits.ts PERSONAL: never sent, never taken).
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,7 +25,7 @@ import { SAVES_DIR, VERSION, cleanName, errMsg } from "../config";
 import { isLocal } from "../geo/local-photos";
 import { cleanBundledList, readList, writeList } from "../lists/store";
 import { keepVersion, keepVersionText, stable } from "../util/versions";
-import { merge3 } from "../../shared/merge";
+import { PERSONAL, mergeTrip, partOfPath } from "../../shared/edits";
 import * as g from "./google";
 import * as store from "./store";
 import * as box from "./dropbox";
@@ -43,6 +47,25 @@ function setBase(fileId: string, text: string) {
 function readBase(fileId: string): string | null {
   try { return fileId ? fs.readFileSync(path.join(BASE_DIR(), `${store.fileKey(fileId)}.json`), "utf8") : null; } catch { return null; }
 }
+/** What the file held before this computer's last upload over it (its checksum and text): the starting point for joining
+ *  again when someone saved over that upload without having seen it (see overwritten). */
+const PREV_DIR = () => path.join(g.SYNC_DIR, "base-prev");
+function setPrev(fileId: string, md5: string, text: string | null) {
+  if (!fileId) return;
+  const file = path.join(PREV_DIR(), `${store.fileKey(fileId)}.json`);
+  if (!text || !md5) { fs.rmSync(file, { force: true }); return; }
+  fs.mkdirSync(PREV_DIR(), { recursive: true });
+  fs.writeFileSync(file, JSON.stringify({ md5, text }));
+}
+function readPrev(fileId: string): { md5: string; text: string } | null {
+  try { const p = JSON.parse(fs.readFileSync(path.join(PREV_DIR(), `${store.fileKey(fileId)}.json`), "utf8")); return typeof p?.md5 === "string" && typeof p?.text === "string" ? p : null; } catch { return null; }
+}
+/** The checksums of the versions a file's trip was made from, newest first (written by this app since 3.29; none in older
+ *  files, which are then trusted as before). */
+function lineageOf(text: string | null): string[] | null {
+  try { const l = text ? JSON.parse(text)?.lineage : null; return Array.isArray(l) ? l.filter((x: unknown) => typeof x === "string") : null; } catch { return null; }
+}
+const LINEAGE = 30;
 /** The trip in a file's text, as it's compared (without its sync block, which each side keeps for itself). */
 function tripOfText(text: string): any {
   const data = JSON.parse(text), trip = data?.format === FORMAT ? data.trip : data;
@@ -61,6 +84,8 @@ interface Link {
   local: string;
   /** Changed in both places: the Drive version waiting for a decision. */
   conflict?: { md5: string; by: string; at: string };
+  /** The version agreed on (md5) was uploaded from here: a newer one that wasn't made from it lost this computer's changes. */
+  ours?: boolean;
 }
 interface Tracked { folders: Record<string, Link>; /** The trip's share as Drive last had it (who shared it, edit or view). */ share?: TripShare | null; error?: string }
 interface RemoteFile { id: string; name: string; md5: string; at: string; by: string; byEmail: string; canEdit: boolean; tripId: string }
@@ -144,16 +169,17 @@ function writeLocal(name: string, trip: any, { keep = "always" as "always" | "sp
   if (keep) keepVersion(SAVES_DIR, clean, file, keep === "always");
   const text = JSON.stringify({ ...trip, saveName: clean });
   if (fromDrive) {
-    // What the page may still have on screen: its changes are joined with this one when it writes (see pageWrite).
-    try { replaced.set(clean, { text: fs.readFileSync(file, "utf8"), at: state().updated[clean] || 0 }); } catch { replaced.delete(clean); }
+    // What the page may still have on screen: its changes are joined with this one when it writes (see pageWrite). The last
+    // few, so a page that missed more than one update (a tab in the background) is still joined, not refused.
+    try { replaced.set(clean, [{ text: fs.readFileSync(file, "utf8"), at: state().updated[clean] || 0 }, ...(replaced.get(clean) || [])].slice(0, 8)); } catch { replaced.delete(clean); }
   }
   fs.writeFileSync(file, text);
   if (fromDrive) state().updated[clean] = Date.now();
   return text;
 }
 
-/** By save name: what the save held before sync last wrote Drive's version into it, and the stamp it had then. */
-const replaced = new Map<string, { text: string; at: number }>();
+/** By save name: what the save held before sync wrote Drive's versions into it, and the stamp it had then (newest first). */
+const replaced = new Map<string, { text: string; at: number }[]>();
 
 function freeName(base: string) {
   const b = (cleanName(base) || "Shared trip").slice(0, 70);
@@ -168,9 +194,12 @@ const placeOf = ({ title, note, url, tags, comment, address, lat, lng }: Bundled
 const listNames = (trip: any): string[] => (Array.isArray(trip?.lists) ? trip.lists.map(String) : trip?.list ? [String(trip.list)] : []);
 
 /** The trip as it goes into a folder: like Export (the ticked place lists go along), minus what only matters on this
- *  computer: the prompt and thinking, photo folders on this disk, list file paths. */
-export function toSharedText(trip: any, share: TripShare): string {
-  const { meta, saveName: _n, photoFolders, photosFolder, sync: _s, ...rest } = trip || {};
+ *  computer: the prompt and thinking, photo folders on this disk, list file paths, and each person's own settings
+ *  (shared/edits.ts PERSONAL). `lineage`: the checksums of the versions it was made from, newest first. */
+export function toSharedText(trip: any, share: TripShare, lineage?: string[]): string {
+  const { meta, saveName: _n, photoFolders, photosFolder, sync: _s, ...all } = trip || {};
+  const rest = { ...all };
+  for (const k of PERSONAL) delete rest[k];
   const lean = meta && typeof meta === "object" ? (({ prompt: _p, thinking: _t, ...m }) => m)(meta) : null;
   const lists = listNames(trip).map((n) => readList(n)).filter((l): l is NonNullable<typeof l> => !!l).map((l) => ({
     name: l.name, title: l.title, ...(l.source?.type === "google" ? { source: l.source } : {}), places: l.places.map(placeOf),
@@ -182,6 +211,7 @@ export function toSharedText(trip: any, share: TripShare): string {
   const drivePhotos = (Array.isArray(photoFolders) ? photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link)).map((f: any) => ({ link: f.link }));
   return JSON.stringify({
     format: FORMAT, version: VERSION, exportedAt: new Date().toISOString(),
+    ...(lineage?.length ? { lineage: lineage.slice(0, LINEAGE) } : {}),
     trip: { ...rest, kept, meta: lean, photoFolders: drivePhotos, ...(typeof photosFolder === "string" && photosFolder && !isLocal(photosFolder) ? { photosFolder } : {}), sync: share },
     lists,
   }, null, 1);
@@ -206,8 +236,9 @@ export function fromSharedText(text: string, local: any | null, name: string): a
   // Which folders are shown is this computer's own choice (kept outside the trip), never the other side's.
   out.photoFolders = [...(Array.isArray(trip.photoFolders) ? trip.photoFolders : []).filter((f: any) => f && typeof f.link === "string" && !isLocal(f.link)).map((f: any) => ({ link: f.link })), ...own];
   if (typeof out.photosFolder !== "string" || isLocal(out.photosFolder)) delete out.photosFolder;
-  // The models picked here stay (the other computer may plan with models that aren't on this one).
-  if (local) for (const k of ["model", "chatModel", "routeModel"]) if (local[k] !== undefined) out[k] = local[k];
+  // Each person's own settings stay as they are here (the models picked here, which the other computer may not have; what
+  // the chat may do by itself; how plans are made), and are never taken from the file (an older app put them in).
+  for (const k of PERSONAL) { if (local?.[k] !== undefined) out[k] = local[k]; else delete out[k]; }
   return out;
 }
 
@@ -361,10 +392,14 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
     if (there) {
       // The folder already has this trip (it was put there from elsewhere): this computer's version goes up, Drive's is
       // kept as a version here first. If it may not be changed from here, Drive's comes down instead.
-      link.fileId = there.id; link.md5 = there.md5; link.local = "";
+      link.fileId = there.id; link.md5 = there.md5; link.local = ""; link.ours = false;
       remote = there;
       if (editable && folder.canWrite && there.canEdit) {
-        try { keepVersionText(SAVES_DIR, local.name, JSON.stringify(fromSharedText((await content(there.id, there.md5)).text, local.trip, local.name))); } catch { /* unreadable: Drive keeps its versions too */ }
+        try {
+          const c = await content(there.id, there.md5);
+          setBase(there.id, c.text);
+          keepVersionText(SAVES_DIR, local.name, JSON.stringify(fromSharedText(c.text, local.trip, local.name)));
+        } catch { /* unreadable: Drive keeps its versions too */ }
       } else return applyRemote(id, t, link, local, remote);
     } else {
       if (!editable || !folder.canWrite) {
@@ -374,7 +409,7 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
       }
       const text = toSharedText(local.trip, share);
       const up = await store.upload({ folder: folderId, name: fileName(local.name), text, properties: { tripPlannerId: id } });
-      link.fileId = up.id; link.md5 = up.md5Checksum || ""; link.local = localHash;
+      link.fileId = up.id; link.md5 = up.md5Checksum || ""; link.local = localHash; link.ours = true;
       setBase(up.id, text);
       return local;
     }
@@ -388,6 +423,19 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
   }
   if (!remoteChanged && !localChanged) return local;
   const canUpload = editable && folder.canWrite && remote.canEdit;
+  // Someone saved over this computer's last upload without having seen it (two saves at nearly the same moment: Drive keeps
+  // the last one whole, it can't refuse it). This computer's changes aren't lost: they're joined with theirs again, from
+  // what the file held before that upload; when that isn't known or they clash, the person picks (both are kept).
+  if (remoteChanged && link.ours && canUpload) {
+    const lineage = lineageOf((await content(remote.id, remote.md5)).text);
+    if (lineage && !lineage.includes(link.md5)) {
+      const prev = readPrev(link.fileId);
+      const joined = prev && lineage.includes(prev.md5) ? await joinBoth(id, t, link, local, remote, share, mine, prev.text) : null;
+      if (joined) return joined;
+      link.conflict = { md5: remote.md5, by: remote.by, at: remote.at };
+      return local;
+    }
+  }
   if (localChanged && !remoteChanged) {
     // Changes that may not go to Drive (view only, or no edit access there) stay on this computer.
     // The file follows the save's name, for the person who shared it (a file put there by hand keeps its own).
@@ -404,12 +452,12 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
 
 /** This computer's and Drive's changes together (against what both had last), written here and sent to Drive; null when
  *  they changed the same thing differently, or what both had last isn't known (then the person picks). */
-async function joinBoth(id: string, t: Tracked, link: Link, local: Local, remote: RemoteFile, share: TripShare, mine: boolean): Promise<Local | null> {
-  const base = readBase(link.fileId);
+async function joinBoth(id: string, t: Tracked, link: Link, local: Local, remote: RemoteFile, share: TripShare, mine: boolean, from?: string): Promise<Local | null> {
+  const base = from ?? readBase(link.fileId);
   if (!base) return null;
   const c = await content(remote.id, remote.md5);
   let m;
-  try { m = merge3(tripOfText(base), tripOfText(toSharedText(local.trip, share)), tripOfText(c.text)); } catch { return null; }
+  try { m = mergeTrip(tripOfText(base), tripOfText(toSharedText(local.trip, share)), tripOfText(c.text)); } catch { return null; }
   if (m.clashes.length) return null;
   // The page wrote the save since this round read it: the next round joins that too.
   if (fs.existsSync(local.file) && key(fs.readFileSync(local.file, "utf8")) !== key(local.text)) return local;
@@ -430,9 +478,13 @@ async function uploadTo(id: string, link: Link, local: Local, share: TripShare, 
   // Someone saved it in Drive since the folder was looked at: not overwritten (the next round sees their change).
   const fresh = await store.fileMeta(link.fileId);
   if ((fresh.md5Checksum || "") !== link.md5 || fresh.trashed) return;
-  const text = toSharedText(local.trip, share);
+  // The version it replaces (what the file holds now), and the ones that one was made from: another computer can tell from
+  // them whether this was made from its own last upload (see syncLink).
+  const was = readBase(link.fileId);
+  const text = toSharedText(local.trip, share, [link.md5, ...(lineageOf(was) || [])].filter(Boolean));
   const up = await store.upload({ id: link.fileId, name, text, properties: { tripPlannerId: id } });
-  link.md5 = up.md5Checksum || ""; link.local = key(local.text);
+  setPrev(link.fileId, link.md5, was);
+  link.md5 = up.md5Checksum || ""; link.local = key(local.text); link.ours = true;
   setBase(link.fileId, text);
 }
 
@@ -455,7 +507,7 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
   // Changes made here that may not go to Drive (view only) are always kept as a version; otherwise what the save held is
   // already in Drive or an earlier version, so one every 10 minutes is enough.
   const text = writeLocal(local.name, trip, { keep: key(local.text) !== link.local ? "always" : "spaced" });
-  link.md5 = remote.md5; link.local = key(text);
+  link.md5 = remote.md5; link.local = key(text); link.ours = false;
   setBase(remote.id, c.text);
   return { ...local, text, trip };
 }
@@ -499,12 +551,14 @@ export async function resolve(name: string, folderId: string, keep: "mine" | "th
     const { mine } = rights(t, local);
     if (mine) theirs.sync = local.trip.sync; else { const sh = cleanShare(theirs.sync); if (sh) t.share = sh; }
     const text = writeLocal(local.name, theirs);
-    link.md5 = c.md5; link.local = key(text);
+    link.md5 = c.md5; link.local = key(text); link.ours = false;
     setBase(link.fileId, c.text);
   } else {
     keepVersionText(SAVES_DIR, local.name, JSON.stringify(theirs));
-    // Drive's version is now the starting point, so this computer's counts as the change and goes up.
-    link.md5 = c.md5;
+    // Drive's version is now the starting point, so this computer's counts as the change and goes up (also when the save
+    // hasn't changed since its last upload: someone saved over that one).
+    link.md5 = c.md5; link.local = ""; link.ours = false;
+    setBase(link.fileId, c.text);
   }
   delete link.conflict;
   save();
@@ -569,13 +623,21 @@ export function status(): SyncStatus {
     };
   }
   return {
-    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids,
+    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids, editIds: store.me().ids.map(editId),
     dropbox: { configured: !!box.appKey(), keyFrom: box.keyFrom(), ...box.account(), ...box.signInState() },
     folders: s.folders, trips, running: !!current, lastRun, error: lastError, notices: s.notices,
   };
 }
 
 export function dismissNotices() { state().notices = []; save(); }
+
+/** Who made a change, as it's stamped on the trip's parts (shared/edits.ts): the name to show, and a fingerprint of who it
+ *  is rather than their account or this computer's name (the stamps go into the shared file). */
+export const editId = (id: string) => crypto.createHash("sha256").update(id.trim().toLowerCase()).digest("hex").slice(0, 16);
+export function editor(): { by: string; id: string } {
+  const me = store.me();
+  return { by: me.name, id: editId(me.id) };
+}
 
 // ---- Hooks for the saves ---------------------------------------------------------------------------------------------------
 /** For the list of saves: which ones sync, and when sync last wrote into each. */
@@ -589,17 +651,18 @@ export function saveSyncInfo(): { synced: Set<string>; updated: Record<string, n
  *  version sync replaced, its changes and Drive's are joined ("merged": the text to write instead, and the stamp the page
  *  has seen now); when they changed the same thing differently, or it's older still, it's refused ("stale": the page keeps
  *  its changes as a copy and reloads). `seen` is the page's last-known stamp (none: an older page or a rename, let through). */
-export function pageWrite(name: string, seen: string | string[] | undefined, body: string): { ok: true } | { merged: string; at: number } | { stale: true } {
+export function pageWrite(name: string, seen: string | string[] | undefined, body: string): { ok: true } | { merged: string; at: number } | { stale: true; clashes: string[] } {
   const clean = cleanName(name), at = state().updated[clean] || 0;
   if (typeof seen !== "string" || at <= (Number(seen) || 0)) return { ok: true };
-  const before = replaced.get(clean), file = path.join(SAVES_DIR, `${clean}.json`);
-  if (!before || before.at !== (Number(seen) || 0)) return { stale: true };
+  const before = replaced.get(clean)?.find((r) => r.at === (Number(seen) || 0)), file = path.join(SAVES_DIR, `${clean}.json`);
+  if (!before) return { stale: true, clashes: [] };
   try {
     const strip = (text: string) => { const { saveName: _n, ...t } = JSON.parse(text); return t; };
-    const m = merge3(strip(before.text), strip(body), strip(fs.readFileSync(file, "utf8")));
-    if (m.clashes.length) return { stale: true };
+    const theirs = strip(fs.readFileSync(file, "utf8"));
+    const m = mergeTrip(strip(before.text), strip(body), theirs);
+    if (m.clashes.length) return { stale: true, clashes: [...new Set(m.clashes.map((p) => partOfPath(p, theirs)))] };
     return { merged: JSON.stringify({ ...(m.value as object), saveName: clean }), at };
-  } catch { return { stale: true }; }
+  } catch { return { stale: true, clashes: [] }; }
 }
 
 /** The open trip, looked at often while it's on screen: when one of its files changed in Drive, a round runs (so two

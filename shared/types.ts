@@ -369,6 +369,8 @@ export interface SyncStatus {
   dropbox: { configured: boolean; keyFrom: "app" | "env" | ""; signedIn: boolean; expired: boolean; email: string; name: string; signingIn: boolean; signInError: string };
   /** Who this is (the Google account, this computer's user): trips shared by any of these are this person's. */
   identities: string[];
+  /** The same as they're stamped on the parts of a trip someone changed (shared/edits.ts): to tell one's own changes. */
+  editIds: string[];
   /** Things the person should know about (a trip removed from a folder in Drive, so it stopped syncing there). */
   notices: string[];
 }

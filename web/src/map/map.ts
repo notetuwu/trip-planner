@@ -35,16 +35,22 @@ export const itemMarkers = new Map<string, L.Marker>();
 const LABELS_KEY = "trip-planner-map-labels";
 let base: L.Layer | null = null, wanted: Labels = "local";
 
+/** Picks the place names and remembers the choice in this browser (not in the trip). */
+function chooseLabels(labels: Labels) {
+  localStorage.setItem(LABELS_KEY, labels);
+  setLabels(labels);
+}
+
 async function setLabels(labels: Labels) {
   if (!map) return;
   wanted = labels;
-  localStorage.setItem(LABELS_KEY, labels);
   let next: L.Layer;
   try {
     next = labels === "english"
     ? (await import("./english-map")).englishLayer((why) => { toast(why); if (wanted === "english") setLabels("local"); })
+    // As deep as the English map: OSM's tiles end at 19, further in they're enlarged.
     : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxNativeZoom: 19, maxZoom: 22, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     });
   } catch (e) {
     // (Back to the local names, and the reason why.)
@@ -58,12 +64,14 @@ async function setLabels(labels: Labels) {
 }
 
 export function initMap() {
-  map = L.map("map", { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
+  map = L.map("map", { zoomControl: true, worldCopyJump: true, maxZoom: 22 }).setView([30, 10], 2);
   // The stops of the plan's rides (where to get on, with the line): over the lines and photos, under the day's pins.
   map.createPane("rideStops").style.zIndex = "430";
-  // Place names start as set in Settings → General; the map's layer panel changes them until the next start.
-  const saved: Labels = prefs.app.mapNames === "english" ? "english" : "local";
-  setLabels(saved);
+  // Place names: as last picked in this browser, else as set in Settings; picking them in Settings applies at once.
+  const saved = localStorage.getItem(LABELS_KEY);
+  setLabels(saved === "english" || saved === "local" ? saved : prefs.app.mapNames);
+  let setting = prefs.app.mapNames;
+  onAppPrefs(() => { if (prefs.app.mapNames !== setting) chooseLabels(setting = prefs.app.mapNames); });
   // Keep auto-fitting to new pins until the user moves the map themselves.
   for (const ev of ["pointerdown", "wheel"]) $("#map").addEventListener(ev, () => { session.userMoved = true; }, { passive: true });
   for (const layer of Object.values(layers)) layer.addTo(map);
@@ -93,7 +101,7 @@ export function initMap() {
   initPhotos(map);
   $("#photosBtn").onclick = () => openPhotosView();
   // The Layers button (bottom left): map style and transport lines.
-  initLayerPicker(map, { get: () => wanted, set: (l) => { setLabels(l); } });
+  initLayerPicker(map, { get: () => wanted, set: chooseLabels });
   // The trip's areas' lines, downloaded ahead in the background (Settings → General → Map); asked again when that changes.
   initLinesDownload(map);
   onAppPrefs(() => { resyncLines(); linesSettingChanged(); gridSettingChanged(); });

@@ -1203,6 +1203,7 @@ function markHeader() {
 }
 
 /** Opens the chat (with `text` in the box, if given) and puts the cursor there. */
+
 export function openChat(text?: string) {
   setOpen(true);
   if (text != null && !box().value) box().value = text;

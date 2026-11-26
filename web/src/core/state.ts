@@ -2,6 +2,7 @@
 import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMode, Booking, TripShare } from "../../../shared/types";
 import { prefs } from "./prefs";
 import type { PhotoSpot } from "../map/photo-spot";
+import type { Change, Edits } from "../../../shared/edits";
 
 export interface Stay {
   city: string;
@@ -118,8 +119,9 @@ export interface AppState {
   bookings?: Booking[];
   /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */
   okRepeats?: { key: string; name: string }[];
-  /** The shared Google Drive folders whose photos the map's Photos layer shows: each link as pasted, and shown or not.
-   *  Kept with the trip, so every trip has its own. */
+  /** The photo folders (shared Google Drive folders, or folders on this computer) whose photos the map's Photos layer
+   *  shows, each link as pasted. Kept with the trip, so every trip has its own. Whether one is shown is this computer's own
+   *  choice (map/photos.ts); `off` is from before that, and is moved there. */
   photoFolders?: { link: string; off?: boolean }[];
   /** Photos placed on the map by hand, or marked "can't place" (Photos window → Place on map), by photo (spotKey). */
   photoSpots?: Record<string, PhotoSpot>;
@@ -131,7 +133,12 @@ export interface AppState {
   sync?: TripShare;
   /** What the trip chat may do: answer only, offer changes that need Apply, or make small ones by itself. */
   chatMode?: "ask" | "manual" | "auto";
-  /** The trip chat so far. */
+  /** Who changed each part of the trip last, and when (stamped by the server when the trip is saved; shown on trips
+   *  several people work on): see shared/edits.ts. */
+  edits?: Edits;
+  /** The history of changes, oldest first (stamped by the server too; Changes, and History when placing photos). */
+  log?: Change[];
+  /** The trip chat so far: each person's own, never sent through a sync folder (shared/edits.ts PERSONAL). */
   chat?: { role: "me" | "ai"; text: string; modelName?: string; sources?: ChatSource[]; images?: string[]; thinking?: string; thoughtSecs?: number; change?: { days: number[]; request: string; trip?: { onTheWay?: string[]; fromStay?: string[]; removeDayTrips?: { stay: string; place: string }[]; addDayTrips?: { stay: string; place: string; mode: string }[]; addPlaces?: { name: string; where: string; must: boolean }[]; removeMust?: string[]; rescaleCosts?: { from: number; to: number; days?: number[]; after?: string } }; status?: "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised" }; revises?: boolean }[];
 }
 
@@ -170,8 +177,13 @@ const saveHooks: (() => void)[] = [];
 export const onSave = (fn: () => void) => { saveHooks.push(fn); };
 
 export function save() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
+  saveQuietly();
   for (const fn of saveHooks) fn();
+}
+
+/** Keeps the trip in the browser without counting it as a change (for what the server sends back, like who changed what). */
+export function saveQuietly() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch { /* storage full or blocked */ }
 }
 
 /** Data for this session only. */

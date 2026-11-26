@@ -4,7 +4,8 @@ import path from "node:path";
 import type { SaveSummary } from "../../shared/types";
 import { SAVES_DIR, cleanName } from "../config";
 import { type Req, type Res, readBody, readJson, sendJson } from "../util/http";
-import { afterSave, beforeDelete, pageWrite, saveSyncInfo } from "../sync/sync";
+import { afterSave, beforeDelete, editor, pageWrite, saveSyncInfo } from "../sync/sync";
+import { joinLogs, logChanges, stamp } from "../../shared/edits";
 import { keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, versionedNames } from "../util/versions";
 
 function savePath(name: string) {
@@ -37,13 +38,26 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
     // joined (the page then shows the result), or when they clash the page keeps its changes as a copy and reloads,
     // rather than writing over the other person's changes.
     const w = pageWrite(path.basename(file, ".json"), req.headers["x-sync-seen"], body);
-    if ("stale" in w) return sendJson(res, 409, { error: "This trip was just updated from Drive.", syncUpdated: true });
+    if ("stale" in w) return sendJson(res, 409, { error: "This trip was just updated from Drive.", syncUpdated: true, clashes: w.clashes });
     fs.mkdirSync(SAVES_DIR, { recursive: true });
+    // Who changed which part, and when (shown on trips several people work on): the parts that differ from the save.
+    const next = JSON.parse("merged" in w ? w.merged : body);
+    if (next && typeof next === "object" && !Array.isArray(next)) {
+      let prev: any = null;
+      try { prev = JSON.parse(fs.readFileSync(file, "utf8")); } catch { /* a new save */ }
+      // (Another trip saved over this name: what it had says nothing about this one.)
+      if (prev && prev.sync?.id !== next.sync?.id) prev = null;
+      const who = editor(), at = Date.now(), edits = stamp(prev, next, who, at);
+      if (edits) next.edits = edits; else delete next.edits;
+      // And the history of changes (Changes, and placing photos → History).
+      const log = prev ? logChanges(prev, next, who, at) : joinLogs(next.log);
+      if (log.length) next.log = log; else delete next.log;
+    }
     // What the save held until now is kept first (a save made by hand always keeps one; a trip updated by itself, one every 10 minutes).
     keepVersion(SAVES_DIR, path.basename(file, ".json"), file, req.headers["x-keep-version"] === "1");
-    fs.writeFileSync(file, "merged" in w ? w.merged : body);
+    fs.writeFileSync(file, JSON.stringify(next));
     afterSave(path.basename(file, ".json"));
-    return sendJson(res, 200, { name: path.basename(file, ".json"), ...("merged" in w ? { merged: true, syncAt: w.at } : {}) });
+    return sendJson(res, 200, { name: path.basename(file, ".json"), edits: next?.edits || null, log: next?.log || null, ...("merged" in w ? { merged: true, syncAt: w.at } : {}) });
   }
   if (req.method === "DELETE") {
     // A deleted trip stays in its history (the last version), so deleting by mistake can be undone.

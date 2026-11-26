@@ -7,7 +7,6 @@ import { session } from "../core/state";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { dayGroupColors, splitGroup } from "../trip/modes";
 import { cssVar } from "./map";
-import { cellsOf, sharedRuns } from "./shared-runs";
 
 /** While the group is split, its stops and routes take the group's colour (as in the plan); otherwise the day's. */
 let groups: Record<string, number> = {}; // the day being drawn's
@@ -19,8 +18,9 @@ import { highlightItem } from "./days";
 import { hoverBand, legTip, rideColour, rideIcon, ridesHtml } from "./legs";
 import { walksOf } from "./walks";
 import { itemMarkers, layers } from "./map";
-import { dayLegs, flightArc, legRoute } from "./routes";
-import { onMap } from "./travel-day";
+import { dayLegs, flightArc, type Leg, legRoute } from "./routes";
+import { isTransfer, onMap } from "./travel-day";
+import { legStops } from "../trip/split-tree";
 import { icon } from "../core/icons";
 
 function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
@@ -63,9 +63,9 @@ export function lightLeg(key: string | null) {
 /** The lines drawn for each leg, by "<day>-<stop>": the stop it leads to, and any transfer on the way to it (whose trip
  *  it is). Hovering a stop in the itinerary lights them up. */
 export const legLines = new Map<string, L.Polyline[]>();
-const keep = (di: number, fromXi: number, xi: number, ...lines: L.Polyline[]) => {
+const keep = (d: Day, di: number, leg: Leg, ...lines: L.Polyline[]) => {
   for (const line of lines) baseOf(line); // as drawn, before anything lights it up
-  for (let k = Math.max(0, fromXi + 1); k <= xi; k++) legLines.set(`${di}-${k}`, [...(legLines.get(`${di}-${k}`) || []), ...lines]);
+  for (const k of legStops(d.items, leg, splitGroup, isTransfer)) legLines.set(`${di}-${k}`, [...(legLines.get(`${di}-${k}`) || []), ...lines]);
 };
 
 function drawLegs(d: Day, di: number, byTitle: ByTitle) {
@@ -75,18 +75,6 @@ function drawLegs(d: Day, di: number, byTitle: ByTitle) {
     const color = leg.group && leg.group in groups ? cssVar(`--track-${groups[leg.group]}`) || dayColor(di) : dayColor(di);
     return { leg, r, line, color };
   });
-  // Groups often share a stretch (the same train out of town): there, earlier groups get a wider band underneath (added
-  // first, so below every line), so each one's colour still shows along the shared part. Elsewhere lines keep their width.
-  const order = Object.keys(groups);
-  for (const { leg, line, color } of legs) {
-    const rank = leg.group ? order.indexOf(leg.group) : -1;
-    if (rank < 0 || rank === order.length - 1) continue;
-    const others = cellsOf(legs.filter((o) => o.leg.group && order.indexOf(o.leg.group) > rank).map((o) => o.line));
-    for (const run of sharedRuns(line, others, 0.1)) {
-      const band = L.polyline(run, { color, weight: 4 + (order.length - 1 - rank) * 2, opacity: .9, lineCap: "round", interactive: false }).addTo(layers.routes);
-      keep(di, leg.fromXi, leg.xi, band);
-    }
-  }
   for (const { leg, r, line, color } of legs) {
     // Walking: dotted along paths; bike: short dashes along cycle paths; road, rail, tram and metro: solid; boat: long
     // dashes and cable car: dash-dot (along their route, or straight when there's none); flight: a thin dotted arc;
@@ -107,12 +95,12 @@ function drawLegs(d: Day, di: number, byTitle: ByTitle) {
     const drawn = rides.length ? walksOf(line, rides.map((x) => x.c!)) : [line];
     const vis = L.polyline(drawn, { color, opacity: .8, lineCap: "round", interactive: false, ...base }).addTo(layers.routes);
     hoverBand(line, legTip(d, leg, r), vis).on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
-    keep(di, leg.fromXi, leg.xi, vis);
+    keep(d, di, leg, vis);
     for (const ride of rides) {
       const c = rideColour(ride);
       // The ride solid in the day's colour (the walks around it dotted); its stops and badge in the line's colour.
       const rv = L.polyline(ride.c!, { color, weight: 4, opacity: .85, lineCap: "round", interactive: false }).addTo(layers.routes);
-      keep(di, leg.fromXi, leg.xi, rv);
+      keep(d, di, leg, rv);
       hoverBand(ride.c!, `${legTip(d, leg, null).split("<span")[0]}<div class="ride-tips">${ridesHtml([ride], leg.mode)}</div>`, rv).on("click", () => highlightItem(di, leg.xi)).addTo(layers.routes);
       // Where they get on: the line's badge, so where to change is plain on the map.
       L.marker([ride.on.lat, ride.on.lng], { pane: "rideStops", keyboard: false, bubblingMouseEvents: false,

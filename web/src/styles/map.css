@@ -266,7 +266,26 @@
 .ph-sources .icon-btn { width: 26px; height: 26px; flex: none; }
 .ph-check { display: flex; align-items: flex-start; gap: 9px; margin: 8px 0 0; font-size: 12.5px; line-height: 1.4; cursor: pointer; color: var(--ink); }
 .ph-check input { flex: none; margin-top: 1px; }
-.ph-body { min-width: 0; overflow: auto; padding: 8px 20px 24px; }
+.ph-main { display: flex; min-width: 0; min-height: 0; }
+.ph-body { flex: 1; min-width: 0; overflow: auto; padding: 8px 20px 24px; }
+/* With the timeline beside it: it stands in for the scrollbar, and the last day can be scrolled to the top too. */
+.ph-body.timed { padding-right: 8px; scrollbar-width: none; }
+.ph-body.timed .ph-day:last-of-type { min-height: 100%; }
+/* The timeline: the days down a line, a mark where the gallery is, a bubble with the day under the pointer. */
+.ph-time { position: relative; flex: none; width: 76px; display: flex; flex-direction: column; padding: 14px 0; cursor: pointer; user-select: none; touch-action: none; }
+.ph-time[hidden] { display: none; }
+.pt-rows { position: relative; flex: 1; min-height: 0; }
+.ph-time button { all: unset; position: absolute; left: 0; right: 0; cursor: pointer; }
+.ph-time button span { position: absolute; right: 18px; top: 0; transform: translateY(-50%); font-size: 11px; line-height: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; max-width: 56px; overflow: hidden; text-overflow: ellipsis; }
+.ph-time button::after { content: ""; position: absolute; right: 7px; top: -2px; width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong); }
+.ph-time button.bare span { display: none; }
+.ph-time button:hover span, .ph-time button.on span { color: var(--accent); }
+.ph-time button.on::after { background: var(--accent); }
+.ph-time button:focus-visible span { display: block; outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+.pt-now { position: absolute; right: 2px; width: 14px; height: 3px; margin-top: -1.5px; border-radius: 2px; background: var(--accent); pointer-events: none; }
+.pt-tip { position: absolute; right: calc(100% + 2px); transform: translateY(-50%); display: grid; gap: 1px; padding: 7px 11px; border: 1px solid var(--line); border-right: 3px solid var(--accent); border-radius: 8px; background: var(--panel); color: var(--ink); box-shadow: var(--shadow-pop); font-size: 12.5px; white-space: nowrap; pointer-events: none; z-index: 5; }
+.pt-tip[hidden] { display: none; }
+.pt-tip span { color: var(--muted); font-size: 11.5px; }
 /* Filling the whole window, and the sidebar hidden (the buttons in the title line). */
 .photos-dialog.full { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
 .photos-dialog.full[open] { height: 100vh; height: 100dvh; max-height: none; }
@@ -522,4 +541,39 @@
   .photos-dialog, .preview-dialog { width: 100%; max-width: 100%; margin: 0; border-radius: 0; border: 0; box-sizing: border-box; }
   .photos-dialog[open], .preview-dialog[open] { height: 100vh; height: 100dvh; max-height: none; }
   .ph-full-btn { display: none; } /* it already does */
+}
+/* A photo someone else placed (or moved, or reset): their initial in the corner. */
+.pp-tile .pp-by { position: absolute; right: 4px; top: 4px; width: 18px; height: 18px; box-shadow: 0 0 0 2px rgba(255, 255, 255, .85); pointer-events: none; }
+/* Placing photos → History: a second panel beside the photos (which keep their width: the same track as without it); the map gives up the room. */
+.photos-dialog.placing .pp-wrap.hist { grid-template-columns: minmax(320px, 420px) 300px minmax(0, 1fr); }
+.pp-hist { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--panel); }
+.pp-hist[hidden] { display: none; }
+.pp-hist-head { display: flex; align-items: center; gap: 8px; padding: 12px 10px 10px 14px; border-bottom: 1px solid var(--line); }
+.pp-hist-head > b { flex: 1; display: flex; align-items: center; gap: 6px; font-size: 14px; }
+.pp-hist-head .segs[hidden] { display: none; }
+.pp-hist-head .seg { padding: 3px 9px; font-size: 12px; }
+.pp-hist-list { flex: 1; min-height: 0; overflow: auto; list-style: none; margin: 0; padding: 6px; }
+.pp-h { display: flex; align-items: center; gap: 10px; padding: 7px; border-radius: 8px; }
+.pp-h.go { cursor: pointer; }
+.pp-h.go:hover { background: var(--hover); }
+.pp-h.on { background: var(--accent-soft); }
+.pp-h-pics { position: relative; flex: none; width: 52px; height: 52px; border-radius: 7px; overflow: hidden; background: var(--hover); display: grid; place-items: center; color: var(--muted); }
+.pp-h-pics img { width: 100%; height: 100%; object-fit: cover; }
+.pp-h-pics.many { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 1px; }
+.pp-h-pics b { position: absolute; right: 2px; bottom: 2px; padding: 0 5px; border-radius: 6px; background: rgba(0, 0, 0, .65); color: #fff; font-size: 10px; }
+.pp-h-text { flex: 1; min-width: 0; display: grid; gap: 1px; font-size: 12.5px; }
+.pp-h-text > b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pp-h-text > span { color: var(--ink); }
+.pp-h-text > span:empty { display: none; }
+.pp-h-was { color: var(--muted) !important; font-size: 11.5px; }
+.pp-h-text small { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 11.5px; }
+.pp-h-text small .who-dot { width: 15px; height: 15px; font-size: 9px; }
+.pp-h-go { flex: none; color: var(--muted); opacity: 0; transition: opacity .12s; }
+.pp-h.go:hover .pp-h-go { opacity: 1; }
+[data-pp-hist].on { color: var(--accent); background: var(--accent-soft); }
+.pp-progress [hidden] { display: none; }
+@media (max-width: 760px) {
+  /* (Narrow: History over the photos.) */
+  .photos-dialog.placing .pp-wrap.hist { grid-template-columns: 1fr; }
+  .pp-hist { grid-row: 1; grid-column: 1; z-index: 5; border-right: 0; }
 }

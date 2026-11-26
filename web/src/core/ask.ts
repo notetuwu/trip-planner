@@ -38,15 +38,22 @@ function open<T>(o: Base, body: string, read: (d: HTMLDialogElement) => T, cance
 }
 
 /** Asks for some text; resolves with it (trimmed), or null when cancelled. */
-export function askText(o: Base & { value?: string; placeholder?: string; label?: string; multiline?: boolean; required?: boolean }): Promise<string | null> {
+export function askText(o: Base & { value?: string; placeholder?: string; label?: string; multiline?: boolean; required?: boolean; validate?: (v: string) => string }): Promise<string | null> {
   const field = o.multiline
     ? `<textarea class="ask-input" rows="3" placeholder="${esc(o.placeholder || "")}">${esc(o.value || "")}</textarea>`
     : `<input class="ask-input" type="text" value="${esc(o.value || "")}" placeholder="${esc(o.placeholder || "")}" autocomplete="off" spellcheck="false"${o.required ? " required" : ""}>`;
-  return open<string | null>(o, `${o.label ? `<label class="ask-label">${esc(o.label)}</label>` : ""}${field}`,
+  return open<string | null>(o, `${o.label ? `<label class="ask-label">${esc(o.label)}</label>` : ""}${field}${o.validate ? `<p class="ask-error" hidden></p>` : ""}`,
     (d) => d.querySelector<HTMLInputElement | HTMLTextAreaElement>(".ask-input")!.value.trim(), null,
     (d) => {
       const f = d.querySelector<HTMLInputElement | HTMLTextAreaElement>(".ask-input")!;
       f.focus(); f.select();
+      // A check of what's typed (a name already in use): said under the field, as they type, and OK waits for it.
+      if (o.validate) {
+        const err = d.querySelector<HTMLElement>(".ask-error")!, ok = d.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+        const check = () => { const why = f.value.trim() ? o.validate!(f.value.trim()) : ""; err.textContent = why; err.hidden = !why; ok.disabled = !!why; };
+        f.addEventListener("input", check);
+        check();
+      }
       // In a box of several lines, Enter is a new line; Ctrl/Cmd+Enter sends.
       if (o.multiline) f.addEventListener("keydown", (e) => { const k = e as KeyboardEvent; if (k.key === "Enter" && (k.ctrlKey || k.metaKey)) { e.preventDefault(); d.querySelector<HTMLFormElement>("form")!.requestSubmit(); } });
     });

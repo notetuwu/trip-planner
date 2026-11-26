@@ -56,7 +56,7 @@ function cardHtml(c: TripCard, i: number) {
       <span class="tc-when">${w === "past" ? icon("history") : w === "upcoming" ? icon("hourglass") : w === "now" ? icon("plane") : icon("calendar")} ${esc(whenLabel(c, today()))}</span>
       ${current ? `<span class="tc-current">Open now</span>` : ""}
       ${cloudBadge(c.name)}
-      <span class="tc-tools">${syncStatus ? syncButton(c.name, "tc-tool") : ""}<button type="button" class="tc-tool" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="tc-tool" data-delete title="Delete">${icon("trash")}</button></span>
+      <span class="tc-tools">${syncStatus ? syncButton(c.name, "tc-tool") : ""}<button type="button" class="tc-tool" data-copy title="Make a copy">${icon("copy")}</button><button type="button" class="tc-tool" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="tc-tool" data-delete title="Delete">${icon("trash")}</button></span>
     </div>
     <div class="tc-body">
       <h4>${esc(c.name)}</h4>
@@ -197,7 +197,7 @@ function tableHtml(list: (TripCard | RemoteTripCard)[]) {
       ${syncStatus?.folders.length ? `<td>${whereCell(c)}</td>` : ""}
       <td class="hint">${new Date(c.savedAt).toLocaleDateString()}</td>
       <td class="tt-tools">${"fileId" in c ? `<button type="button" class="icon-btn" data-download title="Download it to this computer">${icon("download")}</button>`
-        : `${syncStatus ? syncButton(c.name, "icon-btn") : ""}<button type="button" class="icon-btn" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="icon-btn" data-delete title="Delete">${icon("trash")}</button>`}</td>
+        : `${syncStatus ? syncButton(c.name, "icon-btn") : ""}<button type="button" class="icon-btn" data-copy title="Make a copy">${icon("copy")}</button><button type="button" class="icon-btn" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="icon-btn" data-delete title="Delete">${icon("trash")}</button>`}</td>
     </tr>`).join("")}</tbody></table>`;
 }
 
@@ -244,6 +244,7 @@ function wire(body: HTMLElement) {
     el.onclick = (e) => { if (!(e.target as HTMLElement).closest("button")) openTrip(name); };
     el.onkeydown = (e) => { if (e.key === "Enter" && e.target === el) openTrip(name); };
     el.querySelector<HTMLButtonElement>("[data-rename]")!.onclick = () => rename(name);
+    el.querySelector<HTMLButtonElement>("[data-copy]")!.onclick = () => copyTrip(name);
     el.querySelector<HTMLButtonElement>("[data-delete]")!.onclick = () => remove(name);
     el.querySelector<HTMLButtonElement>("[data-sync]")?.addEventListener("click", () => openSyncPanel(name, () => load()));
     $$<HTMLButtonElement>("[data-keep]", el).forEach((b) => { b.onclick = () => decide(name, b.dataset.folder!, b.dataset.keep as "mine" | "theirs"); });
@@ -304,8 +305,38 @@ async function openTrip(name: string) {
   catch (e) { toast((e as Error).message); }
 }
 
+/** A save name from any text, as the server keeps it: letters, numbers, spaces, - and _. */
+const cleanName = (s: string) => s.replace(/[^\p{L}\p{N} _-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+/** Why a name can't be used ("" when it can): another trip has it (`except`: the trip being renamed may keep its own). */
+const nameProblem = (except = "") => {
+  const taken = new Set((cards || []).map((c) => c.name.toLowerCase()).filter((n) => n !== except.toLowerCase()));
+  return (v: string) => { const n = cleanName(v); return !n ? "Use letters or numbers." : taken.has(n.toLowerCase()) ? `There's already a trip called “${n}”.` : ""; };
+};
+/** A name no trip has yet: "Kyoto copy", "Kyoto copy 2"… */
+const freeName = (base: string) => {
+  const taken = new Set((cards || []).map((c) => c.name.toLowerCase()));
+  let n = cleanName(base);
+  for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${cleanName(base)} ${i}`;
+  return n;
+};
+
+/** Make a copy: the trip under a new name (one no other trip has), as a trip of its own: not synced with the folders the
+ *  original syncs with, and with no history of its own yet. */
+async function copyTrip(from: string) {
+  const to = await askText({ title: `Copy “${from}”`, text: "A trip of its own, to change as you like. The original stays as it is (and keeps syncing, if it does).", label: "Name of the copy", value: freeName(`${from} copy`), ok: "Make a copy", required: true, validate: nameProblem() });
+  if (!to) return;
+  try {
+    const { sync: _s, edits: _e, log: _l, ...data } = await api<AppState>(`/api/saves/${encodeURIComponent(from)}`);
+    const { name } = await api<{ name: string }>(`/api/saves/${encodeURIComponent(cleanName(to))}`, { method: "PUT", body: JSON.stringify({ ...data, saveName: cleanName(to) }) });
+    await actions.afterChange();
+    await load();
+    toast(`Copied as "${name}"`);
+  } catch (e) { toast((e as Error).message); }
+}
+
 async function rename(from: string) {
-  const to = await askText({ title: "Rename trip", label: "Name", value: from, ok: "Rename", required: true });
+  // (Never onto another trip's name: that would write over it.)
+  const to = await askText({ title: "Rename trip", label: "Name", value: from, ok: "Rename", required: true, validate: nameProblem(from) });
   if (!to || to === from) return;
   try {
     const data = await api<AppState>(`/api/saves/${encodeURIComponent(from)}`);

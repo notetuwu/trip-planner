@@ -467,3 +467,9 @@ textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
   .tt-name { flex-wrap: wrap; row-gap: 3px; }
   .tt-tools .icon-btn { width: 28px; }
 }
+/* Sync now and Changes: a row of buttons under the trip bar (each as wide as the other; one alone takes the row). */
+.trip-actions { display: flex; gap: 8px; margin-top: 8px; }
+.trip-actions[hidden], .trip-actions > [hidden] { display: none; }
+.trip-actions .btn { flex: 1; min-width: 0; justify-content: center; gap: 6px; }
+.trip-actions .btn svg { flex: none; }
+.trip-actions .btn:disabled { cursor: progress; }

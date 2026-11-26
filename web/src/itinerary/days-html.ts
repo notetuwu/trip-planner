@@ -1,4 +1,6 @@
 // The days of the itinerary: city bands, stops (with split groups side by side), notes, and the extras at the end.
+import { dayKey } from "../../../shared/edits";
+import { editChip } from "../saves/collab";
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
 import { dayColor, fmtDate, fmtTemp, fmtTime, money, addDays } from "../core/format";
@@ -156,6 +158,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
       <div class="day-head" data-sel="${i}" title="Show this day on the map">
         <h4><span class="date">Day ${i + 1} · ${esc(fmtDate(d.date) || d.date)}</span>${esc(d.title)}${d.items.some(splitGroup) ? `<span class="split-pill">⑂ split</span>` : ""}</h4>
         <span class="right">
+          <span class="edit-slot" data-edit="${esc(dayKey(it.days, i))}">${editChip(dayKey(it.days, i))}</span>
           ${w ? `<span class="weather" title="Forecast">${wmoIcon(w.code)}${fmtTemp(w.max)} / ${fmtTemp(w.min)}</span>` : ""}
           <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>

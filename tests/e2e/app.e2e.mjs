@@ -95,9 +95,11 @@ beforeEach(async () => {
 });
 
 /** Loads a trip into the page and waits for the stays to be located. */
-/** The app's own question dialog (core/ask.ts) that just opened: confirmed as it is (an empty or prefilled answer). */
-async function answerAsk() {
+/** The app's own question dialog (core/ask.ts) that just opened: confirmed as it is (an empty or prefilled answer), or
+ *  with `text` typed in. */
+async function answerAsk(text) {
   await page.waitFor(`!!document.querySelector(".ask-dialog[open]")`, 5000, "the app's dialog");
+  if (text != null) await page.eval(`(() => { const f = document.querySelector(".ask-dialog[open] .ask-input"); f.value = ${JSON.stringify(text)}; f.dispatchEvent(new Event("input")); })()`);
   await page.eval(`document.querySelector(".ask-dialog[open] [type=submit]").click()`);
 }
 
@@ -815,8 +817,9 @@ test("Settings → General: formats, new trips' defaults, saving new plans by th
     await page.waitFor(`fetch("/api/settings").then((r) => r.json()).then((s) => s.app.newTrip.travelers === 4)`, 5000, "the new-trip default saved");
     await page.eval(`document.querySelector("#settingsDialog").close()`);
     await page.eval(`document.querySelector("#newTrip").click()`);
-    await answerAsk();
-    await page.waitFor(`planner.state().travelers === 4 && !planner.state().itinerary`, 5000, "a new trip with 4 travelers");
+    // A new trip asks for its name, and is saved under it.
+    await answerAsk(`E2E new trip ${Date.now()}`);
+    await page.waitFor(`planner.state().travelers === 4 && !planner.state().itinerary && /^E2E new trip/.test(planner.state().saveName || "")`, 5000, "a new trip with 4 travelers");
 
     // A new plan is saved by itself, under its cities' names.
     await setApp({ autoSave: true });

@@ -355,7 +355,7 @@ function mapHtml() {
     <h3>Map</h3>
     <div class="set-card">
       <b class="card-title">The map</b>
-      <div class="set-row"><div><b>Place names</b><div class="hint">What the map starts with: names in the local language and script, or in English. The Layers button on the map changes it until the next start.</div></div>
+      <div class="set-row"><div><b>Place names</b><div class="hint">Names in the local language and script, or in English. The Layers button on the map changes it too; this browser remembers the last choice.</div></div>
         <div class="segs">${seg("mapNames", "local", "Local")}${seg("mapNames", "english", "English")}</div></div>
       <div class="set-row"><div><b>Show at start</b><div class="hint">Your saved places and the routes between stops; the boxes on the map turn them on and off for now.</div></div>
         <div class="set-checks"><label class="inline-check"><input type="checkbox" data-app-check="showPlaces"${a.showPlaces ? " checked" : ""}> Places</label><label class="inline-check"><input type="checkbox" data-app-check="showRoutes"${a.showRoutes ? " checked" : ""}> Routes</label></div></div>

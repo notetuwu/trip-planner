@@ -68,10 +68,12 @@ const readSave = (name: string) => JSON.parse(fs.readFileSync(path.join(saves, `
 const versions = (name: string) => { try { return fs.readdirSync(path.join(saves, ".history", name)).length; } catch { return 0; } };
 const round = async () => { sync.resetForTests(); await sync.runSync(); };
 const onlyFile = () => { expect(drive.files.size).toBe(1); return [...drive.files.values()][0]; };
-/** Someone else saves the trip in Drive. */
-function remoteEdit(change: (t: any) => void, by = { name: "Friend", email: "friend@example.com" }) {
-  const f = onlyFile(), data = JSON.parse(f.text);
+/** Someone else saves the trip in Drive (as this app does: noting the version it was made from). `from`: the file's text
+ *  they had (default: what's there now). */
+function remoteEdit(change: (t: any) => void, by = { name: "Friend", email: "friend@example.com" }, from?: { text: string; md5: string }) {
+  const f = onlyFile(), had = from || { text: f.text, md5: f.md5 }, data = JSON.parse(had.text);
   change(data.trip);
+  data.lineage = [had.md5, ...(data.lineage || [])];
   f.text = JSON.stringify(data); f.md5 = `md5-${Math.random()}`; f.by = by.name; f.byEmail = by.email;
 }
 
@@ -142,9 +144,9 @@ describe("syncing a trip with a Drive folder", () => {
     const w = sync.pageWrite("Kyoto", "0", page) as { merged: string };
     expect(JSON.parse(w.merged)).toMatchObject({ notes: "from my friend", ideas: "temples" });
     // The same thing changed differently: refused (the page keeps its changes as a copy and reloads).
-    expect(sync.pageWrite("Kyoto", "0", JSON.stringify({ ...readSave("Kyoto"), notes: "mine" }))).toEqual({ stale: true });
-    // A page from before an earlier update: refused.
-    expect(sync.pageWrite("Kyoto", String(before - 100000), page)).toEqual({ stale: true });
+    expect(sync.pageWrite("Kyoto", "0", JSON.stringify({ ...readSave("Kyoto"), notes: "mine" }))).toEqual({ stale: true, clashes: ["details"] });
+    // A page whose version isn't known: refused.
+    expect(sync.pageWrite("Kyoto", String(before - 100000), page)).toEqual({ stale: true, clashes: [] });
   });
 
   it("never overwrites when both sides changed: it waits for a decision, and either choice keeps the other version", async () => {
@@ -236,17 +238,94 @@ describe("two people changing a trip at the same time", () => {
     expect(drive.uploads).toBe(n);
   });
 
-  it("keeps both sides' chat messages and changes to different days", async () => {
+  it("joins changes to different days; each side's trip chat stays its own", async () => {
     const day = (city: string) => ({ date: "2027-04-01", city, items: [{ time: "09:00", place: "A" }] });
     await shareTrip("Kyoto", trip({ chat: [{ role: "me", text: "hi" }], itinerary: { days: [day("Kyoto"), day("Nara")] } }));
     const t = readSave("Kyoto");
     t.chat.push({ role: "me", text: "from me" }); t.itinerary.days[0].items[0].place = "Kinkaku-ji";
     writeSave("Kyoto", t);
-    remoteEdit((x) => { x.chat.push({ role: "me", text: "from friend" }); x.itinerary.days[1].items[0].place = "Tōdai-ji"; });
+    remoteEdit((x) => { x.chat = [{ role: "me", text: "from friend" }]; x.itinerary.days[1].items[0].place = "Tōdai-ji"; });
     await round();
     const got = readSave("Kyoto");
-    expect(got.chat.map((m: any) => m.text)).toEqual(["hi", "from me", "from friend"]);
+    expect(got.chat.map((m: any) => m.text)).toEqual(["hi", "from me"]);
+    expect(JSON.parse(onlyFile().text).trip).not.toHaveProperty("chat");
     expect(got.itinerary.days.map((d: any) => d.items[0].place)).toEqual(["Kinkaku-ji", "Tōdai-ji"]);
+  });
+});
+
+describe("never losing a change", () => {
+  it("joins this computer's changes back in when someone saved over its upload without having seen it", async () => {
+    await shareTrip();
+    const v1 = { ...onlyFile() };
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "bring an umbrella" });
+    await round();
+    expect(JSON.parse(onlyFile().text).trip.notes).toBe("bring an umbrella");
+    // A friend saves at the same moment, from the version before that upload: Drive keeps theirs whole.
+    remoteEdit((t) => { t.ideas = "temples"; }, undefined, v1);
+    expect(JSON.parse(onlyFile().text).trip.notes).toBe("");
+    await round();
+    expect(readSave("Kyoto")).toMatchObject({ notes: "bring an umbrella", ideas: "temples" });
+    expect(JSON.parse(onlyFile().text).trip).toMatchObject({ notes: "bring an umbrella", ideas: "temples" });
+    expect(sync.status().trips.Kyoto.conflicts).toEqual([]);
+  });
+
+  it("asks which to keep when the change saved over its upload clashes with it, keeping both", async () => {
+    await shareTrip();
+    const v1 = { ...onlyFile() };
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "mine" });
+    await round();
+    remoteEdit((t) => { t.notes = "theirs"; }, undefined, v1);
+    await round();
+    expect(readSave("Kyoto").notes).toBe("mine");
+    expect(sync.status().trips.Kyoto.conflicts).toHaveLength(1);
+    // Keeping this computer's goes up again, even though the save itself didn't change since its upload.
+    await sync.resolve("Kyoto", FOLDER, "mine");
+    expect(JSON.parse(onlyFile().text).trip.notes).toBe("mine");
+  });
+
+  it("a friend saving on top of this computer's upload is taken as usual", async () => {
+    await shareTrip();
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "mine" });
+    await round();
+    remoteEdit((t) => { t.notes = "theirs, after seeing mine"; });
+    await round();
+    expect(readSave("Kyoto").notes).toBe("theirs, after seeing mine");
+    expect(sync.status().trips.Kyoto.conflicts).toEqual([]);
+  });
+
+  it("joins a page that missed more than one update from Drive", async () => {
+    await shareTrip();
+    const page = JSON.stringify({ ...readSave("Kyoto"), ideas: "onsen" });
+    remoteEdit((t) => { t.notes = "first"; });
+    await round();
+    await new Promise((r) => setTimeout(r, 5));
+    remoteEdit((t) => { t.travelers = 5; });
+    await round();
+    const w = sync.pageWrite("Kyoto", "0", page) as { merged: string };
+    expect(JSON.parse(w.merged)).toMatchObject({ notes: "first", travelers: 5, ideas: "onsen" });
+  });
+
+  it("joins who-changed-what from both sides (newest wins) instead of calling it a clash", async () => {
+    await shareTrip("Kyoto", trip({ edits: { notes: { by: "Me", at: 1 } } }));
+    writeSave("Kyoto", { ...readSave("Kyoto"), ideas: "tea", edits: { notes: { by: "Me", at: 1 }, ideas: { by: "Me", at: 5 } } });
+    remoteEdit((t) => { t.notes = "cash"; t.edits = { notes: { by: "Friend", at: 3 } }; });
+    await round();
+    expect(readSave("Kyoto")).toMatchObject({ ideas: "tea", notes: "cash", edits: { notes: { by: "Friend", at: 3 }, ideas: { by: "Me", at: 5 } } });
+    expect(sync.status().trips.Kyoto.conflicts).toEqual([]);
+  });
+});
+
+describe("each person's own settings", () => {
+  it("aren't put in the shared file, and the file's never replace this computer's", async () => {
+    await shareTrip("Kyoto", trip({ chat: [{ role: "me", text: "private" }], chatSummary: "s", chatMode: "auto", research: true, autoFix: false, model: "opus", chatModel: "x", routeModel: "y", hoursOnline: true }));
+    const shared = JSON.parse(onlyFile().text).trip;
+    for (const k of ["chat", "chatSummary", "chatMode", "research", "autoFix", "model", "chatModel", "routeModel", "hoursOnline"]) expect(shared).not.toHaveProperty(k);
+    // An older app put its own in: they're not taken.
+    remoteEdit((t) => { t.chatMode = "ask"; t.research = false; t.notes = "theirs"; t.chat = [{ role: "me", text: "theirs" }]; });
+    await round();
+    expect(readSave("Kyoto")).toMatchObject({ chat: [{ role: "me", text: "private" }], chatMode: "auto", research: true, autoFix: false, model: "opus", notes: "theirs" });
+    // Opening a friend's trip: none of theirs come along.
+    expect(sync.fromSharedText(onlyFile().text, null, "New")).not.toHaveProperty("chatMode");
   });
 });
 
