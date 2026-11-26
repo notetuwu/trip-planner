@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import * as esbuild from "esbuild";
+import { buildWindowHost } from "./window-host.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8"));
@@ -35,6 +36,10 @@ const walk = (dir) => {
   }
 };
 walk(path.join(ROOT, "dist/web"));
+// On Windows also the app's own window (WebView2), as "window/<name>".
+if (process.platform === "win32") {
+  for (const [name, file] of Object.entries(await buildWindowHost(path.join(WORK, "window-host")))) assets[`window/${name}`] = file;
+}
 fs.writeFileSync(path.join(WORK, "sea-config.json"), JSON.stringify({
   main: "server.cjs", output: "sea.blob", disableExperimentalSEAWarning: true, useCodeCache: true, assets, // code cache: faster start
 }, null, 2));

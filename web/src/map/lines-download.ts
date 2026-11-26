@@ -8,7 +8,7 @@ import { prefs } from "../core/prefs";
 import { state } from "../core/state";
 import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
-import { CELL, cellsInView } from "./transit-lines";
+import { CELL } from "./transit-lines";
 
 export interface DownloadState { total: number; ready: number; left: number; failed: number; disk: { areas: number; bytes: number } }
 const AREAS = "trip-planner-lines-areas";
@@ -41,6 +41,17 @@ function wanted(): string[] {
 }
 const savedAreas = (): string[] => { try { return JSON.parse(localStorage.getItem(AREAS) || "[]"); } catch { return []; } };
 
+/** Of the cells to download, those in a map's view, the one in the middle of the screen first. (Picked from the cells
+ *  asked for, not from every cell in view: zoomed out to the world that's millions, and the page froze for seconds.) */
+function inView(cells: string[], map: L.Map): string[] {
+  const b = map.getBounds(), mid = map.getCenter(), out: { id: string; d: number }[] = [];
+  for (const id of cells) {
+    const [r, c] = id.split("_").map(Number), lat = (r + .5) * CELL, lng = (c + .5) * CELL;
+    if (b.intersects([[r * CELL, c * CELL], [(r + 1) * CELL, (c + 1) * CELL]])) out.push({ id, d: distKm({ lat: mid.lat, lng: mid.lng }, { lat, lng }) });
+  }
+  return out.sort((x, y) => x.d - y.d).map((x) => x.id);
+}
+
 /** Tells the server what to download (nothing when it's switched off) and notes how far it got. */
 async function sync(force = false) {
   clearTimeout(timer);
@@ -51,7 +62,7 @@ async function sync(force = false) {
   // view go along, so the server fetches the trip's areas you're looking at first.
   if (force || key !== lastKey || (last?.left ?? 1) > 0) {
     try {
-      const first = theMap ? cellsInView(theMap).slice(0, 400) : [];
+      const first = theMap ? inView(cells, theMap).slice(0, 400) : [];
       last = await api<DownloadState>("/api/lines/prefetch", { method: "POST", body: JSON.stringify({ cells, first, again }) });
       again = [];
       lastKey = key;

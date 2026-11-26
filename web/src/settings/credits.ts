@@ -77,6 +77,7 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
   {
     title: "The app", ico: "monitor", intro: "What it's made with.",
     items: [
+      { name: "Microsoft Edge WebView2", url: "https://developer.microsoft.com/microsoft-edge/webview2/", what: "The app's window on Windows", licence: "SDK: BSD 3-Clause" },
       { name: "Lucide", url: "https://lucide.dev", what: "The icons", licence: "ISC" },
       { name: "Inter", url: "https://rsms.me/inter/", what: "The typeface (through Google Fonts)", licence: "SIL Open Font License" },
       { name: "qrcode-generator", url: "https://github.com/kazuhikoarase/qrcode-generator", what: "The QR code for your phone", licence: "MIT" },

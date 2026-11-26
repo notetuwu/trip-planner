@@ -1,23 +1,26 @@
-// How the packaged app opens: in its own window (Edge, Chrome or another Chromium browser in app mode: no tabs or
-// address bar, its own profile in the data folder), or as a tab in the default browser: the travelers choose (settings).
+// How the packaged app opens: in its own window, or as a tab in the default browser: the travelers choose (settings).
+// The own window is WebView2 on Windows (window-host.ts). Elsewhere, and on a Windows without WebView2, it's a Chromium
+// browser in app mode (Chrome, Brave, Chromium, else Edge: no tabs or address bar, its own profile in the data folder).
 // Links clicked in the own window open in the default browser (/api/open). The app quits once its last window closes.
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { type WindowMode, readSettings } from "./settings";
 import { allClosed } from "./util/activity";
+import { hasOwnWindow, openOwnWindow } from "./window-host";
 
+/** In the order they're preferred: Edge last, as it adds its own sign-in prompts and pop-ups. */
 const CANDIDATES: Record<string, string[]> = {
   win32: [
-    `${process.env["ProgramFiles(x86)"]}\\Microsoft\\Edge\\Application\\msedge.exe`, `${process.env.ProgramFiles}\\Microsoft\\Edge\\Application\\msedge.exe`,
-    `${process.env.ProgramFiles}\\Google\\Chrome\\Application\\chrome.exe`, `${process.env["ProgramFiles(x86)"]}\\Google\\Chrome\\Application\\chrome.exe`,
-    `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`, `${process.env.ProgramFiles}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+    ...["Google\\Chrome\\Application\\chrome.exe", "BraveSoftware\\Brave-Browser\\Application\\brave.exe", "Chromium\\Application\\chrome.exe",
+      "Microsoft\\Edge\\Application\\msedge.exe"]
+      .flatMap((exe) => [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA].map((base) => `${base}\\${exe}`)),
   ],
   darwin: [
-    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
   ],
-  linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge", "/usr/bin/brave-browser", "/snap/bin/chromium"],
+  linux: ["/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/brave-browser", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/snap/bin/chromium", "/usr/bin/microsoft-edge"],
 };
 
 /** The browser for an app window: TRIP_PLANNER_BROWSER (also used by tests, with TRIP_PLANNER_BROWSER_ARGS for extra
@@ -27,6 +30,8 @@ export function appBrowser() {
   return (CANDIDATES[process.platform] || []).find((p) => p && !p.startsWith("undefined") && fs.existsSync(p)) || null;
 }
 const extraArgs = () => (process.env.TRIP_PLANNER_BROWSER_ARGS || "").split(/\s+/).filter(Boolean);
+/** Whether the app can open in a window of its own here. */
+export const hasAppWindow = () => hasOwnWindow() || !!appBrowser();
 
 /** Is the app already running on this port? Then a second start just opens another tab. */
 export async function alreadyRunning(url: string) {
@@ -39,7 +44,15 @@ export async function alreadyRunning(url: string) {
 /** Opens the app. The browser is started on its own (detached): on Windows, programs started normally are closed
  *  together with the program that started them, which would take the window down when a second launch exits. */
 export function openWindow(url: string, dataDir: string, mode: WindowMode = readSettings().window) {
-  const browser = mode === "app" ? appBrowser() : null;
+  if (mode !== "app") return openInBrowser(url);
+  const page = `${url}${url.includes("?") ? "&" : "?"}window=app`;
+  // A browser asked for by name wins over the app's own window.
+  if (!process.env.TRIP_PLANNER_BROWSER && openOwnWindow(page, dataDir, () => openBrowserWindow(url, dataDir))) return;
+  openBrowserWindow(url, dataDir);
+}
+
+function openBrowserWindow(url: string, dataDir: string) {
+  const browser = appBrowser();
   if (!browser) return openInBrowser(url);
   const [cmd, args] = [browser, [`--app=${url}${url.includes("?") ? "&" : "?"}window=app`, `--user-data-dir=${path.join(dataDir, "window")}`, "--no-first-run", "--no-default-browser-check", "--window-size=1500,950", ...extraArgs()]] as const;
   spawn(cmd, args, { stdio: "ignore", detached: true }).unref();

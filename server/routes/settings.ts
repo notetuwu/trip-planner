@@ -3,7 +3,7 @@
 import type { KeyStatus } from "../../shared/types";
 import { PACKAGED, PORT, ROOT, VERSION } from "../config";
 import { lanStatus, startLan, stopLan } from "../lan";
-import { appBrowser, openWindow } from "../launcher";
+import { hasAppWindow, openWindow } from "../launcher";
 import { newToken, readSettings, writeSettings } from "../settings";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 
@@ -17,7 +17,7 @@ const keyView = (saved: string | undefined, envName: string): KeyStatus => {
 const view = () => {
   const { lanToken: _secret, braveKey, geoapifyKey, googleKey, ...s } = readSettings();
   const serviceKeys = { brave: keyView(braveKey, "BRAVE_API_KEY"), geoapify: keyView(geoapifyKey, "GEOAPIFY_API_KEY"), google: keyView(googleKey, "GOOGLE_API_KEY") };
-  return { ...s, serviceKeys, braveKeySet: serviceKeys.brave.set, geoapifyKeySet: serviceKeys.geoapify.set, googleKeySet: serviceKeys.google.set, packaged: PACKAGED, appWindow: !!appBrowser(), dataDir: ROOT, version: VERSION };
+  return { ...s, serviceKeys, braveKeySet: serviceKeys.brave.set, geoapifyKeySet: serviceKeys.geoapify.set, googleKeySet: serviceKeys.google.set, packaged: PACKAGED, appWindow: hasAppWindow(), dataDir: ROOT, version: VERSION };
 };
 
 export async function handleSettings(req: Req, res: Res) {
