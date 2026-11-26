@@ -1,4 +1,5 @@
 // Renders the itinerary column and wires up its buttons.
+import { initSplitTabs } from "./split-tabs";
 import { openChat } from "../trip/companion";
 import { openCosts } from "./costs";
 import { openPhotosView } from "./photos-view";
@@ -134,7 +135,8 @@ function wire(out: HTMLElement) {
   for (const el of $$<HTMLElement>("[data-show]", out)) el.onclick = () => { const [d, x] = el.dataset.show!.split("-"); showOnMap(+d, +x); };
   for (const el of $$<HTMLElement>("[data-leg-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.legEdit!.split("-"); openStopEdit(+d, +x, "leg"); };
   // The stop's edit window: everything about it at once.
-  for (const el of $$<HTMLElement>("[data-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.edit!.split("-"); openStopEdit(+d, +x); };
+  // (Its own attribute: "data-edit" is where the who-changed-it marks go, see saves/collab.ts.)
+  for (const el of $$<HTMLElement>("[data-stop-edit]", out)) el.onclick = () => { const [d, x] = el.dataset.stopEdit!.split("-"); openStopEdit(+d, +x); };
 }
 
 export function renderItinerary(error?: string) {
@@ -157,6 +159,7 @@ export function renderItinerary(error?: string) {
   const byTitle = byTitleMap();
   out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
   wire(out);
+  initSplitTabs(out);
   showDuplicates(it);
   wireSearch();
   updateLegInfo();

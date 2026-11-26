@@ -449,12 +449,39 @@ test("a stay can be put on its exact spot by hand, and back on its address", asy
   assert.deepEqual(await page.eval(`(() => { const l = planner.stayLoc(planner.state().stays[1]); return [l.lat, l.lng]; })()`), [35.2324, 139.1069], "back to the town's spot");
 });
 
+test("a split day's groups sit side by side with room, and become tabs without; a shared trip keeps each stop's edit button", async () => {
+  await trip({ ...PADUA_MILANO, travelers: 4 });
+  const A = `{ group: "Group A", people: 1 }`, B = `{ group: "Group B", people: 3 }`;
+  await page.eval(`planner.applyState({ ...planner.state(), sync: { id: "t1", owner: "x", mode: "edit" }, itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [
+    stop("09:00", "Caffè Pedrocchi"), stop("10:00", "Rest at the hotel", ${A}),
+    stop("10:00", "Cappella degli Scrovegni", ${B}), stop("12:00", "Palazzo della Ragione", ${B}), stop("14:00", "Basilica di Sant'Antonio", ${B}),
+    stop("19:00", "Dinner together")])] } })`);
+  await page.waitFor(`!!document.querySelector(".split")`);
+  try {
+    // Wide: side by side, the hotel group slim.
+    await page.setViewport(2400, 950);
+    await page.waitFor(`!document.querySelector(".split").classList.contains("tabbed")`, 5000, "side by side");
+    assert.ok(await page.eval(`document.querySelector('.track[data-g="Group A"]').classList.contains("slim")`));
+    // Narrow: tabs, the busiest group open; another tab opens that one.
+    await page.setViewport(390, 844);
+    await page.waitFor(`document.querySelector(".split").classList.contains("tabbed")`, 5000, "tabs");
+    assert.equal(await page.eval(`document.querySelector(".split > .tracks > .track.on").dataset.g`), "Group B");
+    await page.eval(`document.querySelector('[data-split-tab="Group A"]').click()`);
+    assert.equal(await page.eval(`[...document.querySelectorAll(".split > .tracks > .track")].filter((t) => getComputedStyle(t).display !== "none").map((t) => t.dataset.g).join()`), "Group A");
+    // Still open after a redraw.
+    await page.eval(`planner.renderItinerary()`);
+    await page.waitFor(`document.querySelector(".split > .tracks > .track.on")?.dataset.g === "Group A"`, 5000, "the tab kept");
+    // (The who-changed-it marks don't empty the edit buttons.)
+    assert.ok(await page.eval(`!!document.querySelector('[data-stop-edit="0-0"] svg')`));
+  } finally { await page.setViewport(1500, 950); }
+});
+
 test("a stop's edit window changes everything about it at once; Cancel changes nothing", async () => {
   await trip({ ...PADUA_MILANO, travelers: 2 });
   await page.eval(`planner.applyState({ ...planner.state(), itinerary: { summary: "", totalEstimatedCost: 0, days: [day("2027-09-14", "Padua", [
     stop("09:00", "Caffè Pedrocchi", { kind: "meal", cost: 12, lat: 45.4077, lng: 11.8766, pinned: true }), stop("10:30", "Cappella degli Scrovegni", { kind: "sight", cost: 30, transport: "Walk 10 min", lat: 45.4115, lng: 11.8795, pinned: true })])] } })`);
-  await page.waitFor(`!!document.querySelector('[data-edit="0-1"]')`);
-  await page.eval(`document.querySelector('[data-edit="0-1"]').click()`);
+  await page.waitFor(`!!document.querySelector('[data-stop-edit="0-1"]')`);
+  await page.eval(`document.querySelector('[data-stop-edit="0-1"]').click()`);
   await page.waitFor(`!!document.querySelector("dialog.stop-edit[open]")`);
   if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/stop-edit.png`, "dialog.stop-edit");
   // Cancel: nothing changes.
@@ -477,7 +504,7 @@ test("a stop's edit window changes everything about it at once; Cancel changes n
     ["11:15", "Scrovegni Chapel", "Giotto's frescoes.", 34, "person", "essential", "1 week before", "Tram to Eremitani", "Group A", 1, ["transit"]]);
   assert.equal(await page.eval(`planner.state().itinerary.days[0].estimatedCost`), 46, "the day's cost follows");
   // Back to automatic: the hand-set way goes.
-  await page.eval(`document.querySelector('[data-edit="0-1"]').click()`);
+  await page.eval(`document.querySelector('[data-stop-edit="0-1"]').click()`);
   await page.waitFor(`!!document.querySelector("dialog.stop-edit[open]")`);
   await page.eval(`(() => { const a = document.querySelector('dialog.stop-edit .lp-how input[value="auto"]'); a.checked = true; a.dispatchEvent(new Event("change")); document.querySelector("dialog.stop-edit [data-se-save]").click(); })()`);
   await page.waitFor(`!document.querySelector("dialog.stop-edit")`);

@@ -88,7 +88,7 @@ export function openPin(di: number, xi: number, anchor: HTMLElement) {
   wherePanel({
     host, near: here,
     title: ends ? `Where does it arrive in ${ends[1]}?` : `Where is ${x.place}?`,
-    query: ends ? ends[1] : `${x.place}, ${d.city.split("/")[0].trim()}`,
+    query: ends ? ends[1] : `${x.where || x.place}, ${d.city.split("/")[0].trim()}`,
     mapLabel: ends ? `where it arrives in ${ends[1]}` : x.place,
     onPick: (lat, lng, label) => setAt(di, xi, lat, lng, label),
   });

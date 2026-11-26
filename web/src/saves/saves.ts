@@ -120,12 +120,16 @@ export async function applyState(next: Partial<AppState>, { rescue = true, chang
 }
 
 async function replace(next: Partial<AppState>) {
+  // The same trip again (changes that came in through sync, from another window, Undo in Review): the map stays where it
+  // is and the day picked stays picked. Only another trip starts afresh, fitted to it.
+  const sameTrip = !!next.saveName && next.saveName === state.saveName;
   setState(next);
   setListPlaces(session.listPlaces);
   fillFields();
   syncResearch();
-  session.selectedDay = null; session.weather = {}; session.userMoved = false;
-  save(); await refreshLists(); renderStays(); renderBookings(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList();
+  if (!sameTrip) { session.selectedDay = null; session.weather = {}; session.userMoved = false; }
+  else if (session.selectedDay != null && session.selectedDay >= (state.itinerary?.days.length || 0)) session.selectedDay = null;
+  save(); await refreshLists(); renderStays(); renderBookings(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList({ fit: !sameTrip });
   geocodeItems(); loadWeather(); refreshCompanion(); refreshPhotos(); showCurrent();
 }
 

@@ -62,7 +62,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
         <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener"${transfer && x.transportWas !== undefined ? ` title="The line is from the timetable. The plan said: ${esc(x.transportWas)}"` : ""}>${transfer && x.transportWas !== undefined ? `<span class="from-timetable">${icon("clock")}</span>` : ""}${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
         ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
         <span class="item-acts">
-        <button class="pin" data-edit="${di}-${xi}" title="Edit everything about this stop: time, name, description, cost, booking, how you get here">${icon("pencil")}</button>
+        <button class="pin" data-stop-edit="${di}-${xi}" title="Edit everything about this stop: time, name, description, cost, booking, how you get here">${icon("pencil")}</button>
         ${where ? `<button class="pin${x.leg ? " set" : ""}" data-leg-edit="${di}-${xi}" title="${x.leg ? "How you get here is set by hand: change it" : "How you get here: walk, road, train, boat, places on the way"}">${icon("route")}</button>` : ""}
         ${where ? `<button class="pin show-on-map" data-show="${di}-${xi}" title="Show on the map">${icon("pin")}</button>` : ""}
         <button class="pin${pinGuess ? " guess" : ""}" data-pin="${di}-${xi}" title="${pinTitle}">${icon("crosshair")}</button>
@@ -81,7 +81,7 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
 /** Consecutive items with a group label form one fork: a column per subgroup, side by side. */
 function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackColor: Record<string, number>) {
   const item = (x: ItineraryItem, i: number) => itemHtml(d, di, x, i, byTitle, cur);
-  let out = "", run: { x: ItineraryItem; i: number }[] = [];
+  let out = "", run: { x: ItineraryItem; i: number }[] = [], forks = 0;
   const flush = () => {
     if (!run.length) return;
     const tracks = new Map<string, typeof run>();
@@ -94,17 +94,30 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
     const leaves = (g: string): number => kids(g).reduce((n, k) => n + leaves(k), 0) || 1;
     const nested = order.some((g) => parentGroup(g, labels));
     // Nested: each column as wide as the groups it ends up as (a group of three that splits in three gets three widths).
-    const col = (label: string): string => {
+    const id = `${di}-${forks++}`;
+    /** All the stops a group does, with the groups it splits into. */
+    const size = (g: string): number => (tracks.get(g)?.length || 0) + kids(g).reduce((n, k) => n + size(k), 0);
+    const col = (label: string, parent: string, siblings: string[]): string => {
       const rs = tracks.get(label) || [];
       trackColor[label] ??= Object.keys(trackColor).length % 4;
       const people = rs.find((r) => r.x.people)?.x.people, sub = kids(label);
-      return `<div class="track t${trackColor[label]}"${nested ? ` style="flex: ${leaves(label)} 1 ${leaves(label) * 190}px"` : ""}>
+      // A group with a stop or two (resting at the hotel) next to a busier one: a slim column.
+      const slim = !sub.length && rs.length <= 2 && siblings.some((g) => size(g) > 2);
+      return `<div class="track t${trackColor[label]}${slim ? " slim" : ""}" data-g="${esc(label)}"${nested ? ` style="flex: ${leaves(label)} 1 ${leaves(label) * 190}px"` : ""}>
         <div class="track-head">${esc(label)}${people ? `<span>${icon("users")} ${people}</span>` : ""}</div>
         ${rs.length ? `<ul class="items">${rs.map((r) => item(r.x, r.i)).join("")}</ul>` : ""}
-        ${sub.length ? `<div class="fork-label sub">Then splits up</div><div class="tracks nest">${sub.map(col).join("")}</div>` : ""}
+        ${sub.length ? `<div class="fork-label sub">Then splits up</div>${splitHtml(`${parent}/${label}`, sub, true)}` : ""}
       </div>`;
     };
-    out += `<li class="fork"><div class="fork-label">Group splits up</div><div class="tracks${nested ? " nest" : ""}">${kids("").map(col).join("")}</div></li>`;
+    /** The groups side by side, with their tabs for when there's no room (split-tabs.ts). The busiest opens first. */
+    const splitHtml = (key: string, groups: string[], nest: boolean): string => {
+      const main = groups.reduce((a, b) => (size(b) > size(a) ? b : a), groups[0]);
+      const tab = (g: string) => `<button type="button" role="tab" class="split-tab t${trackColor[g] ?? 0}" data-split-tab="${esc(g)}">${esc(g)}<span>${size(g)}</span></button>`;
+      const cols = groups.map((g) => col(g, key, groups)).join("");
+      return `<div class="split" data-split="${esc(key)}" data-main="${esc(main)}"><div class="split-tabs" role="tablist">${groups.map(tab).join("")}</div><div class="tracks${nest ? " nest" : ""}">${cols}</div></div>`;
+    };
+    for (const g of order) trackColor[g] ??= Object.keys(trackColor).length % 4;
+    out += `<li class="fork"><div class="fork-label">Group splits up</div>${splitHtml(id, kids(""), nested)}</li>`;
     run = [];
   };
   // A travel day: its rides as one journey card (or, with none, the stays' way between the towns, offered to add).

@@ -209,6 +209,26 @@ function itemQueries(x: ItineraryItem, d: Day, town = daySegments(d)[0] || ""): 
   return [...new Set([withTown(name), ...alt])];
 }
 const nearOf = (home: Loc): [number, number] => [home.lat, home.lng];
+/** What to look a stop's "where" up as: as written (with the town when it names none of the day's), then just the venue's
+ *  name (before the first comma) with the town, as a full address is often not found. */
+function whereQueries(x: ItineraryItem, d: Day, town: string): string[] {
+  const w = String(x.where || "").trim();
+  if (!w) return [];
+  const segs = daySegments(d), has = (s: string) => segs.some((t) => s.toLowerCase().includes(t.toLowerCase())) || (!!town && s.toLowerCase().includes(bare(town)));
+  const withTown = (s: string) => (town && !has(s) ? `${s}, ${town}` : s);
+  const venue = w.split(",")[0].trim();
+  return [...new Set([withTown(w), ...(venue && venue !== w && !/^\d/.test(venue) ? [withTown(venue)] : [])])];
+}
+/** The stop's "where", found on the map near its town: given on purpose, so taken as it is (it needn't share the name). */
+function whereHit(x: ItineraryItem, d: Day): GeoHit | null {
+  const town = itemTown(x, d), home = town?.loc;
+  if (!home) return null;
+  for (const q of whereQueries(x, d, town!.name)) {
+    const g = geo[geoKey(q, stopCc(town!), nearOf(home), true)];
+    if (usable(g) && distKm(g, home) < 60) return g;
+  }
+  return null;
+}
 /** The countries a stop is searched in: the trip's, plus the country of the town it's in (Liechtenstein for a stop in
  *  Vaduz on a drive from Germany to Switzerland). */
 const stopCc = (town: Town) => [...new Set([...countryCodes().split(","), town.loc.cc || ""].filter(Boolean))].join(",");
@@ -284,6 +304,9 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
     if (near?.same) return near.g;
     return { lat: ref.lat, lng: ref.lng, approx: true, elsewhere: `${at.lat.toFixed(3)}, ${at.lng.toFixed(3)}` };
   }
+  // Where it says it is (the venue of an exhibition, the mall a shop is in).
+  const where = x.where ? whereHit(x, day) : null;
+  if (where) return where;
   const p = byTitle.get(x.place);
   const hotel = !p && hotelLoc(x, day);
   if (hotel) return hotel;
@@ -344,6 +367,7 @@ export function geocodeItems() {
     for (const x of d.items) {
       const town = itemTown(x, d);
       if (!town) continue;
+      for (const q of whereQueries(x, d, town.name)) qs.push({ q, cc: stopCc(town), near: nearOf(town.loc), first: true, stop: true });
       const listed = byTitle.get(x.place);
       const known = poiFor(x.place, d) || (listed && placeLoc(listed));
       // Paid places are looked up even when their spot is known, for their website (ticket links).

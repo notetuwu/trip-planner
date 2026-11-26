@@ -32,6 +32,7 @@ export const ITINERARY_SCHEMA = {
                 cost: { type: "number" },
                 costPer: { type: "string", enum: ["person", "group"] },
                 transport: { type: "string", description: "How to get here from the previous stop" },
+                where: { type: "string", description: "Only when the name isn't the place itself (an exhibition, event, tour, show, or a shop or restaurant inside a building): the venue's real name and area, e.g. 'Shibuya BEAM, Udagawachō, Shibuya'" },
                 lat: { type: "number", description: "Latitude of the place, best estimate" },
                 lng: { type: "number", description: "Longitude of the place, best estimate" },
                 group: { type: "string", description: "Only while the travelers split up: short label of the subgroup doing this, e.g. 'Group A'. Omit when everyone is together." },

@@ -31,6 +31,9 @@ export function offlineHtml() {
   // Every stay unfolded, whatever was folded on screen (the arrows still fold them, see OFFLINE_SCRIPT).
   for (const el of $$(".stay-group.folded", content)) el.classList.remove("folded");
   for (const el of $$(".day.replanning", content)) el.classList.remove("replanning");
+  // Split days: every group shown (no tabs without the page's script; on a phone the groups go one under the other).
+  for (const el of $$(".split-tabs", content)) el.remove();
+  for (const el of $$(".split.tabbed", content)) el.classList.remove("tabbed");
   // The cost breakdown is a window in the planner: here the total is just a figure.
   for (const b of $$<HTMLButtonElement>(".stat-btn", content)) {
     const div = document.createElement("div");

@@ -79,17 +79,18 @@ function merge(lists: Place[][]) {
 }
 
 let loading = 0;
-/** Loads the places of every ticked list. Google lists re-sync quietly when they're more than an hour old. */
-export async function loadList({ autoSync = true } = {}) {
+/** Loads the places of every ticked list. Google lists re-sync quietly when they're more than an hour old. `fit`: the
+ *  map is fitted to the trip afterwards (not when the same trip only changed: the map stays where it is). */
+export async function loadList({ autoSync = true, fit = true } = {}) {
   const names = tickedLists().filter((n) => metaOf(n));
   const mine = ++loading;
-  if (!names.length) { session.fullTitles = new Set(); setListPlaces([]); renderChips(); drawMap({ fit: true }); return; }
+  if (!names.length) { session.fullTitles = new Set(); setListPlaces([]); renderChips(); drawMap({ fit }); return; }
   try {
     const lists = await Promise.all(names.map((n) => api<PlaceList>("/api/lists/" + encodeURIComponent(n))));
     if (mine !== loading) return; // ticked something else meanwhile
     session.fullTitles = new Set(lists.filter((_l, k) => listSuggest(names[k])).flatMap((l) => l.places.map((p) => p.title)));
     setListPlaces(merge(lists.map((l, k) => l.places.map((p) => ({ ...p, from: names[k] })))));
-    renderChips(); renderItinerary(); drawMap({ fit: true }); geocodePlaces();
+    renderChips(); renderItinerary(); drawMap({ fit }); geocodePlaces();
     if (autoSync) for (const l of lists) if (l.source?.type === "google" && Date.now() - +new Date(l.syncedAt || 0) > 3600e3) syncList(l.name, true);
   } catch (e) { $("#counts").textContent = (e as Error).message; }
 }
@@ -102,7 +103,8 @@ async function syncList(name: string, quiet: boolean) {
     const before = metaOf(name)?.count;
     syncing.delete(name);
     await refreshLists();
-    await loadList({ autoSync: false });
+    // (A quiet sync in the background leaves the map where it is.)
+    await loadList({ autoSync: false, fit: !quiet });
     if (!quiet || before !== list.places.length) status(`Synced "${name}": ${list.places.length} places.`);
   } catch (e) {
     syncing.delete(name);

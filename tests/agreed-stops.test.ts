@@ -14,6 +14,15 @@ const day7 = [
 ];
 
 describe("stops agreed in the chat", () => {
+  it("keep where they are, for the map, when the name isn't the place", () => {
+    const show = [{ day: 10, date: "2026-11-11", time: "11:30", place: "Studio Retro exhibition", where: "Shibuya BEAM, Udagawachō, Shibuya" }];
+    const kept = { items: [{ time: "11:30", place: "Studio Retro exhibition", description: "Timed tickets." }] as { time: string; place: string; description: string; where?: string }[] };
+    restoreAgreed(kept, show);
+    expect(kept.items[0].where).toBe("Shibuya BEAM, Udagawachō, Shibuya");
+    const missing = { items: [] as { time: string; place: string; description: string; where?: string }[] };
+    restoreAgreed(missing, show);
+    expect(missing.items[0].where).toBe("Shibuya BEAM, Udagawachō, Shibuya");
+  });
   it("are put back when the planner's day is missing them, in time order", () => {
     const d = { items: [
       { time: "09:00", place: "Check out & Osaka Metro to Shin-Osaka", description: "With all luggage." },

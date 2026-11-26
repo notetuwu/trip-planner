@@ -815,7 +815,6 @@ button.refine:hover { border-color: var(--accent); }
   .item-top .n, .item-top .item-acts { align-self: center; }
   .item-top .item-acts { grid-column: -2; margin-left: 0; }
   .item time { min-width: 0; }
-  .tracks { grid-template-columns: 1fr; }
   .stay-dates { white-space: nowrap; }
 }
 @media (max-width: 420px) {

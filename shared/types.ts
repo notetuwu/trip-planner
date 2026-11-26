@@ -92,6 +92,9 @@ export interface ItineraryItem {
   /** Whether the cost grows with the number of travelers (tickets, meals, fares) or not (the car, parking, a taxi). */
   costPer?: "person" | "group";
   transport?: string;
+  /** Where it is, for finding it on the map, when the name isn't the place itself ("Studio Retro exhibition" is at
+   *  "Shibuya BEAM, Udagawachō, Shibuya"): the venue's name and area, or its address. Looked up before the name. */
+  where?: string;
   lat?: number;
   lng?: number;
   group?: string;

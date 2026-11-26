@@ -49,7 +49,19 @@
 .fork { padding: 2px 0 14px 18px; }
 .fork::before { content: "⑂"; position: absolute; z-index: 1; left: 0; top: -2px; width: 16px; transform: translateX(-50%); text-align: center; background: var(--panel); color: var(--muted); font-size: 14px; line-height: 20px; }
 .fork-label { font-size: 12px; color: var(--muted); font-weight: 600; margin-bottom: 6px; }
-.tracks { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+.tracks { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+.tracks > .track { flex: 1 1 300px; min-width: 0; }
+/* A group with a stop or two: a slim column, so the busy one has the width. */
+.tracks > .track.slim { flex: 0 1 190px; }
+/* No room side by side (split-tabs.ts): tabs, one group at full width. */
+.split-tabs { display: none; }
+.split.tabbed > .split-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.split.tabbed > .tracks > .track { display: none; flex-basis: 100%; }
+.split.tabbed > .tracks > .track.on { display: block; }
+.split-tab { --t: var(--track-0); display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid color-mix(in srgb, var(--t) 40%, var(--line)); border-radius: 999px; background: var(--panel); color: var(--muted); font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.4; cursor: pointer; }
+.split-tab span { font-weight: 500; font-size: 11px; opacity: .8; }
+.split-tab.on { color: var(--t); border-color: var(--t); background: color-mix(in srgb, var(--t) 12%, var(--panel)); }
+.split-tab.t1 { --t: var(--track-1); } .split-tab.t2 { --t: var(--track-2); } .split-tab.t3 { --t: var(--track-3); }
 .track { --t: var(--track-0); border: 1px solid color-mix(in srgb, var(--t) 35%, var(--line)); border-top: 3px solid var(--t); border-radius: 10px; padding: 8px 10px 0; background: color-mix(in srgb, var(--t) 6%, var(--panel)); }
 /* A group that splits again: columns as wide as the groups they end up as, its new groups inside its own column. */
 .tracks.nest { display: flex; flex-wrap: wrap; }

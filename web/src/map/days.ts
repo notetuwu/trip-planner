@@ -1,4 +1,5 @@
 // The day chips above the map, selecting a day, and linking itinerary stops with their pins.
+import { revealInSplit } from "../itinerary/split-tabs";
 import { moveTo } from "./move";
 import * as L from "leaflet";
 import { lightLeg } from "./draw-days";
@@ -32,6 +33,7 @@ export function highlightItem(di: number, xi: number) {
   showPane("output");
   const el = $(`.item[data-k="${di}-${xi}"]`);
   if (!el) return;
+  revealInSplit(el);
   el.scrollIntoView({ behavior: "smooth", block: "center" });
   el.classList.toggle("flash", false); void el.offsetWidth; el.classList.toggle("flash", true);
 }

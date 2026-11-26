@@ -43,11 +43,14 @@ export function restoreAgreed(day: { items: ItineraryItem[] }, agreed: AgreedSto
     if (!hit) return true;
     used.add(hit);
     if (split) { delete hit.group; delete hit.people; Object.assign(hit, groupOf(a)); }
+    // Where it is, as agreed (the planner may have left it out).
+    if (a.where && !hit.where) hit.where = a.where;
     return false;
   });
   for (const a of missing) {
     const item: ItineraryItem = {
       time: a.time, place: a.place, description: a.note || "", fromList: false,
+      ...(a.where ? { where: a.where } : {}),
       ...(a.cost != null ? { cost: a.cost, costPer: "group" as const } : {}),
       ...(planKind(a.kind) ? { kind: planKind(a.kind) } : {}),
       ...groupOf(a),

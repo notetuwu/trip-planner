@@ -352,7 +352,9 @@ export function tripContext(full = true): string {
         const extra = [i.cost ? `${i.cost} ${s.currency}` : "", i.booking ? `booking ${i.booking}` : "", i.transport || ""].filter(Boolean).join(", ");
         // Who does it while the group is split ("Group B, 3 people"): nothing when everyone goes.
         const who = splitGroup(i) ? ` (${whoText(i)})` : "";
-        out.push(`- ${i.time} ${i.place}${who}${extra ? ` [${extra}]` : ""}${full && i.description ? `: ${i.description}` : ""}`);
+        // Where it is, when its name isn't the place (an exhibition at Shibuya BEAM).
+        const at = i.where ? ` @ ${i.where}` : "";
+        out.push(`- ${i.time} ${i.place}${at}${who}${extra ? ` [${extra}]` : ""}${full && i.description ? `: ${i.description}` : ""}`);
       }
       if (d.notes) out.push(`  Notes: ${d.notes}`);
     });
@@ -407,6 +409,7 @@ function applyStops(ops: StopOp[]) {
     else if (o.op === "where" && at >= 0 && typeof o.lat === "number" && typeof o.lng === "number") {
       const x = d.items[at];
       x.lat = o.lat; x.lng = o.lng; x.pinned = true; delete x.fixed;
+      if (o.where) x.where = o.where;
       continue; // (the day's order and costs stay as they are)
     }
     else if (o.op === "group" && at >= 0) {
@@ -417,6 +420,7 @@ function applyStops(ops: StopOp[]) {
     }
     else if (o.op === "add") {
       d.items.push({ time: o.time || "", place: o.place, description: o.description || "", cost: o.cost || 0, kind: o.kind || "sight",
+        ...(o.where ? { where: o.where } : {}),
         ...(typeof o.lat === "number" && typeof o.lng === "number" ? { lat: o.lat, lng: o.lng, fixed: true } : {}),
         ...(o.group ? { group: o.group, ...(o.people ? { people: o.people } : {}) } : {}) });
     } else continue;

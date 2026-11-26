@@ -5,7 +5,7 @@ import type { ItineraryItem } from "../../../shared/types";
 import { closeOnBackdrop, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
 import { save, state } from "../core/state";
-import { byTitleMap, itemLoc } from "../geo/item-loc";
+import { byTitleMap, geocodeItems, itemLoc } from "../geo/item-loc";
 import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
 import { legControls } from "./leg-edit";
@@ -44,6 +44,7 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
         <label class="se-f"><span>Booking</span><select data-f="booking">${opts(BOOKING, x.booking || "")}</select></label>
         <label class="se-f se-grow"><span>How far ahead</span><input type="text" data-f="bookAhead" value="${esc(x.bookAhead || "")}" placeholder="e.g. 2-3 weeks before"></label>
       </div>
+      <label class="se-f"><span>Where</span><input data-f="where" value="${esc(x.where || "")}" placeholder="Venue or address, when the name isn't the place (e.g. Shibuya BEAM, Shibuya)"></label>
       <label class="se-f"><span>Website</span><input type="url" data-f="website" value="${esc(x.website || "")}" placeholder="https://"></label>
       <fieldset class="se-section"><legend>${icon("route")} Getting here</legend>
         <label class="se-f"><span>In words</span><textarea data-f="transport" rows="2" placeholder="e.g. Midosuji Line to Shinsaibashi, then 5 min on foot">${esc(x.transport || "")}</textarea></label>
@@ -76,6 +77,7 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     set("booking", text("booking") as ItineraryItem["booking"] | "");
     set("bookAhead", text("booking") ? text("bookAhead") : "");
     set("website", text("website"));
+    set("where", text("where"));
     set("mustSee", field("mustSee")!.checked || undefined);
     // Their own words for getting here replace the timetable's (and the plan's) from now on.
     const transport = text("transport");
@@ -91,6 +93,7 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     d.estimatedCost = d.items.reduce((n, y) => n + (Number(y.cost) || 0), 0);
     close();
     save(); renderItinerary(); drawMap({ fit: false });
+    geocodeItems(); // a new "where" is looked up
     toast(`Saved “${x.place}”`);
   };
 
