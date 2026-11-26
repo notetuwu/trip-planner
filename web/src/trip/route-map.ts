@@ -50,9 +50,10 @@ function draw() {
   if (end) { pts.push(L.latLng(end.lat, end.lng)); all.push(pts.at(-1)!); }
   if (start) L.circleMarker(pts[0], { radius: 6, color: "#fff", weight: 2, fillColor: "#bc002d", fillOpacity: 1 }).bindTooltip(`Start: ${esc(p.start)}`).addTo(layer);
   if (pts.length > 1) L.polyline(pts, { color: "#bc002d", weight: 2.5, opacity: .8, dashArray: "6 6" }).addTo(layer);
-  // Fit once everything known so far is in, and again when more arrives (not on every redraw).
+  // Fit once everything known so far is in, and again when more arrives (not on every redraw). Without an animation:
+  // opening another trip removes the map, and an animation still running would then fail.
   const sig = all.map((l) => l.toString()).join("|");
-  if (all.length && sig !== fitted) { fitted = sig; map.fitBounds(L.latLngBounds(all).pad(0.12), { maxZoom: 9 }); }
+  if (all.length && sig !== fitted) { fitted = sig; map.fitBounds(L.latLngBounds(all).pad(0.12), { maxZoom: 9, animate: false }); }
 }
 
 /** Shows a planned route on the map in `el` (made the first time), looking up the towns it doesn't know yet. */

@@ -1,4 +1,4 @@
-// Trips kept in step with Google Drive folders (Settings → Sync).
+// Trips kept in step with Google Drive folders (Settings → Accounts).
 //
 // Each synced trip carries a `sync` block (TripShare: its id, who shared it, "edit" or "view"). Per trip and folder this
 // computer remembers which Drive file it is, the file's checksum when they were last the same, and what the save held then.
@@ -284,11 +284,11 @@ export async function addFolder(link: string, label: string): Promise<SyncFolder
   const text = String(link || "").trim();
   // Dropbox: a folder from the browser (one shared with you is added to your Dropbox), or its shared link.
   const dropboxLink = /dropbox\.com\/(scl\/fo|sh)\//i.test(text);
-  if ((text.startsWith(box.PREFIX) || dropboxLink) && !box.ready()) throw new Error("Sign in to Dropbox first (Settings → Sync) to use a Dropbox folder.");
+  if ((text.startsWith(box.PREFIX) || dropboxLink) && !box.ready()) throw new Error("Sign in to Dropbox first (Settings → Accounts) to use a Dropbox folder.");
   const id = text.startsWith(box.PREFIX) ? await box.resolveFolder(text) : dropboxLink ? await box.folderFromLink(text) : folderIdOf(text);
   if (!id) throw new Error("That isn't a Google Drive or Dropbox folder link, or a folder on this computer.");
   const p = store.providerOf(id);
-  if (!store.ready(p)) throw new Error(p === "drive" ? "Sign in with Google first (Settings → Sync) to use a Google Drive folder." : store.notReady(p));
+  if (!store.ready(p)) throw new Error(p === "drive" ? "Sign in with Google first (Settings → Accounts) to use a Google Drive folder." : store.notReady(p));
   return putFolder(await store.folderInfo(id), label);
 }
 export async function newFolder(name: string, label: string): Promise<SyncFolder> {
@@ -522,7 +522,7 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
 export async function setTripSync(name: string, folderIds: string[], mode?: "edit" | "view"): Promise<{ sync: TripShare | null }> {
   const me = store.me();
   const off = folderIds.map((id) => store.providerOf(id)).find((p) => !store.ready(p));
-  if (off) throw new Error(off === "drive" ? "Sign in with Google first (Settings → Sync) to sync with a Google Drive folder." : store.notReady(off));
+  if (off) throw new Error(off === "drive" ? "Sign in with Google first (Settings → Accounts) to sync with a Google Drive folder." : store.notReady(off));
   const local = readLocal(name);
   if (!local) throw new Error("Save the trip first.");
   const s = state();

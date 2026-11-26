@@ -2,7 +2,7 @@
 
 Settings → Sync can keep trips in step through Dropbox folders, yours or ones others shared with you. To sign in, the
 app needs a Dropbox "app key": you register your own free Dropbox app once, in about 5 minutes. The same steps are in the
-app (Settings → Sync → Your Dropbox app).
+app (Settings → Accounts → Your Dropbox app).
 
 If the Dropbox app is installed on your computer, you don't need any of this: add a folder from your Dropbox folder
 under **This computer** instead (Settings → Sync → Add a folder), and Dropbox's own app carries it.
@@ -17,7 +17,7 @@ under **This computer** instead (Settings → Sync → Add a folder), and Dropbo
    `sharing.write`, then press **Submit** at the bottom.
 4. **Settings** tab, under **OAuth 2** → **Redirect URIs**: add `http://localhost:47618/`. Leave **Allow public clients
    (Implicit Grant & PKCE)** on **Allow**.
-5. Copy the **App key** from the top of the Settings tab and paste it in Settings → Sync → Your Dropbox app → **Save**.
+5. Copy the **App key** from the top of the Settings tab and paste it in Settings → Accounts → Your Dropbox app → **Save**.
    The app secret isn't needed (the app signs in with PKCE).
 6. **Sign in to Dropbox** and allow the app.
 
@@ -36,7 +36,7 @@ under **This computer** instead (Settings → Sync → Add a folder), and Dropbo
 - The app key and the sign-in token are in the data folder (`sync/dropbox-client.json`, `sync/dropbox-auth.json`),
   readable only by your user where the system allows. The token is never sent to the page, a phone, a trip or a folder.
   Instead of entering the key you can set `DROPBOX_APP_KEY`.
-- **Sign out** (Settings → Sync) deletes the token and tells Dropbox to end the access. You can also remove the app at
+- **Sign out** (Settings → Accounts) deletes the token and tells Dropbox to end the access. You can also remove the app at
   <https://www.dropbox.com/account/connected_apps>.
 - Nothing is ever deleted in Dropbox. A trip is written as a new version only over the version the app last read; if
   someone saved it meanwhile, the next sync joins the two (see Settings → Sync → Good to know).

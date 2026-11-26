@@ -5,6 +5,7 @@
 /cache/
 /backups/
 /keys.json
+/gemini-usage.json
 /settings.json
 # Drive sync: the Google sign-in token, what's synced, and copies of the folders' trips.
 /sync/

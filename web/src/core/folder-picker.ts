@@ -102,9 +102,9 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
     const side = () => {
       const local = places.map((p) => `<button type="button" data-place="${esc(p.id)}" title="${esc(p.id)}">${icon(PLACE_ICON[p.place || "drive"] || "folder")}<span>${esc(p.name)}</span></button>`).join("");
       const drive = driveOk ? DRIVE_TOPS.map((t) => `<button type="button" data-top="${t.id}" title="${esc(t.hint)}">${icon(t.ic)}<span>${esc(t.name)}</span></button>`).join("")
-        : `<button type="button" data-signin title="Sign in with Google to use Drive (Settings → Sync)">${icon("key")}<span>Sign in…</span></button>`;
+        : `<button type="button" data-signin title="Sign in with Google to use Drive (Settings → Accounts)">${icon("key")}<span>Sign in…</span></button>`;
       const dropbox = dropboxOk ? DROPBOX_TOPS.map((t) => `<button type="button" data-dtop="${t.id}" title="${esc(t.hint)}">${icon(t.ic)}<span>${esc(t.name)}</span></button>`).join("")
-        : `<button type="button" data-signin title="Sign in to Dropbox to use it (Settings → Sync)">${icon("key")}<span>Sign in…</span></button>`;
+        : `<button type="button" data-signin title="Sign in to Dropbox to use it (Settings → Accounts)">${icon("key")}<span>Sign in…</span></button>`;
       return (allowed.includes("local") ? `<div class="dp-group">${icon("monitor")} This computer</div>${local}` : "")
         + (allowed.includes("drive") ? `<div class="dp-group">${icon("drive")} Google Drive</div>${drive}` : "")
         + (allowed.includes("dropbox") ? `<div class="dp-group">${icon("box")} Dropbox</div>${dropbox}` : "");
@@ -134,7 +134,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
       $$<HTMLButtonElement>("[data-place]", d).forEach((b) => { b.onclick = () => { const p = places.find((x) => x.id === b.dataset.place)!; go({ provider: "local", top: "", trail: crumbsOf(p.id).map((c, i, all) => (i === all.length - 1 ? { ...c, name: p.name, canWrite: p.canWrite } : c)) }); }; });
       $$<HTMLButtonElement>("[data-top]", d).forEach((b) => { b.onclick = () => go({ provider: "drive", top: b.dataset.top!, trail: b.dataset.top === "root" ? [{ id: "root", name: "My Drive", canWrite: true }] : [] }); });
       $$<HTMLButtonElement>("[data-dtop]", d).forEach((b) => { b.onclick = () => go({ provider: "dropbox", top: b.dataset.dtop!, trail: b.dataset.dtop === "root" ? [{ id: "root", name: "Dropbox", canWrite: true }] : [] }); });
-      $$<HTMLButtonElement>("[data-signin]", d).forEach((b) => b.addEventListener("click", () => { finish(null); document.dispatchEvent(new CustomEvent("open-settings", { detail: "sync" })); }));
+      $$<HTMLButtonElement>("[data-signin]", d).forEach((b) => b.addEventListener("click", () => { finish(null); document.dispatchEvent(new CustomEvent("open-settings", { detail: "accounts" })); }));
     };
     const drawList = () => {
       const h = here(), local = spot.provider === "local";
@@ -241,7 +241,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
     drawSide(); drawList();
     // The places on this computer and whether Drive can be used, then the first list.
     Promise.all([api<{ entries: Entry[] }>("/api/fs/places").catch(() => ({ entries: [] as Entry[] })), loadSyncStatus()]).then(([p, s]) => {
-      places = p.entries; driveOk = !!s?.signedIn; dropboxOk = !!s?.dropbox?.signedIn;
+      places = p.entries; driveOk = !!s?.signedIn && s.drive !== false; dropboxOk = !!s?.dropbox?.signedIn;
       if (spot.provider === "drive" && !driveOk) spot = { provider: "local", top: "", trail: [] };
       // On this computer, it starts in Pictures (or home) rather than the bare list of places.
       if (spot.provider === "local" && !spot.trail.length) {

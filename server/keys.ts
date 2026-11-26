@@ -10,6 +10,7 @@ export const PROVIDERS: Record<CloudProvider, { env: string; name: string }> = {
   anthropic: { env: "ANTHROPIC_API_KEY", name: "Anthropic" },
   openai: { env: "OPENAI_API_KEY", name: "OpenAI" },
   openrouter: { env: "OPENROUTER_API_KEY", name: "OpenRouter" },
+  gemini: { env: "GEMINI_API_KEY", name: "Google Gemini" },
 };
 export const isProvider = (p: string): p is CloudProvider => p in PROVIDERS;
 
@@ -44,5 +45,5 @@ export function keyStatus(): Record<CloudProvider, KeyStatus> {
     const key = env || (file[p] || "").trim();
     return { set: !!key, source: env ? "env" : key ? "file" : "", hint: key ? `…${key.slice(-4)}` : "" };
   };
-  return { anthropic: status("anthropic"), openai: status("openai"), openrouter: status("openrouter") };
+  return Object.fromEntries((Object.keys(PROVIDERS) as CloudProvider[]).map((p) => [p, status(p)])) as Record<CloudProvider, KeyStatus>;
 }

@@ -6,12 +6,22 @@ import { save, state } from "../core/state";
 import { openKeys } from "./keys";
 import { openSettings } from "../settings/settings";
 import { openQuickstart } from "../setup/quickstart";
+import { loadGemini, setQuotaLines } from "../settings/gemini-panel";
 
 let localModels: LocalModel[] = [], cloudModels: CloudModel[] = [];
 export let lastModels: ModelsResponse | null = null;
 export const isLocal = (id: string) => String(id).startsWith("local|");
 export const isApi = (id: string) => String(id).startsWith("api|");
-const PROVIDER_NAME: Record<CloudProvider, string> = { anthropic: "Anthropic API", openai: "OpenAI API", openrouter: "OpenRouter" };
+const PROVIDER_NAME: Record<CloudProvider, string> = { gemini: "Google Gemini", anthropic: "Anthropic API", openai: "OpenAI API", openrouter: "OpenRouter" };
+const isGemini = (id: string) => String(id).startsWith("api|gemini|");
+
+/** The usage line under the Model menu while a Gemini model is picked (fetched again after each request). */
+export async function refreshQuota() {
+  const id = state.model;
+  if (!isGemini(id) || !lastModels?.keys?.gemini?.set) { setQuotaLines("#modelQuota", null); return; }
+  await loadGemini();
+  if (state.model === id) setQuotaLines("#modelQuota", id.split("|").slice(2).join("|"));
+}
 const ADD_KEY = "__keys", SETUP = "__setup";
 /** Claude through Claude Code (the CLI): not "local|…" or "api|…". */
 const isClaudeCode = (id: string) => !isLocal(id) && !isApi(id);
@@ -25,6 +35,28 @@ export function modelLabel(id: string) {
 const gb = (n?: number) => (n ? ` · ${(n / 1e9).toFixed(1)} GB` : "");
 const option = (value: string, text: string) => `<option value="${esc(value)}">${esc(text)}</option>`;
 
+/**
+ * Another model menu (the trip chat's, the route chat's) filled like the planning one: "Same as planning (…)" first, then
+ * every model in the planning menu's groups (Claude, each provider, each local server), without its actions ("More") or
+ * a choice that isn't available. `chosen` stays picked while it's there.
+ */
+export function copyModelMenu(pick: HTMLSelectElement, chosen?: string) {
+  const main = $<HTMLSelectElement>("#model");
+  const isModel = (o: HTMLOptionElement) => !!o.value && !o.value.startsWith("__");
+  const opts = [...main.options].filter(isModel);
+  const planning = main.selectedOptions[0]?.textContent?.trim() || "the planning model";
+  const one = (o: HTMLOptionElement) => option(o.value, o.textContent?.trim() || o.value);
+  const groups = [...main.children].map((el) => {
+    if (el instanceof HTMLOptionElement) return isModel(el) ? one(el) : "";
+    if (!(el instanceof HTMLOptGroupElement) || el.label === "Not available") return "";
+    const inside = [...el.querySelectorAll("option")].filter(isModel);
+    return inside.length ? `<optgroup label="${esc(el.label)}">${inside.map(one).join("")}</optgroup>` : "";
+  }).join("");
+  const html = `<option value="">Same as planning (${esc(planning)})</option>${groups}`;
+  if (pick.dataset.html !== html) { pick.innerHTML = html; pick.dataset.html = html; }
+  pick.value = chosen && opts.some((o) => o.value === chosen) ? chosen : "";
+}
+
 export async function refreshModels() {
   const sel = $<HTMLSelectElement>("#model");
   try { lastModels = await api<ModelsResponse>("/api/models"); } catch { lastModels = null; }
@@ -35,7 +67,7 @@ export async function refreshModels() {
       ${option("default", "Claude · CLI default")}${option("opus", "Claude Opus")}${option("sonnet", "Claude Sonnet")}${option("haiku", "Claude Haiku (fast)")}</optgroup>` : "";
   for (const p of Object.keys(PROVIDER_NAME) as CloudProvider[]) {
     const ms = cloudModels.filter((m) => m.provider === p);
-    if (ms.length) html += `<optgroup label="${esc(PROVIDER_NAME[p])} (your key, pay per use)">${ms.map((m) => option(m.id, m.name)).join("")}</optgroup>`;
+    if (ms.length) html += `<optgroup label="${esc(PROVIDER_NAME[p])} (your key, ${p === "gemini" ? "free tier or pay per use" : "pay per use"})">${ms.map((m) => option(m.id, m.name)).join("")}</optgroup>`;
   }
   const groups: Record<string, LocalModel[]> = {};
   for (const m of localModels) (groups[m.server] ||= []).push(m);
@@ -56,6 +88,7 @@ export async function refreshModels() {
   sel.value = state.model;
   if (sel.value !== state.model) sel.value = usable[0] || state.model;
   syncResearch();
+  refreshQuota();
   const errors = Object.entries(lastModels?.errors || {}).map(([p, e]) => `${PROVIDER_NAME[p as CloudProvider]}: ${e}`);
   const hint = $("#modelHint");
   hint.textContent = [
@@ -81,6 +114,8 @@ export function syncResearch() {
   $<HTMLInputElement>("#hoursOnline").disabled = state.autoFix === false;
   const why = isLocal(state.model)
     ? "The model looks things up through the planner (DuckDuckGo) before planning; needs a model with tool support"
+    : isGemini(state.model)
+      ? "Gemini searches with Google Search while it plans; where the key's tier doesn't include it (the free tier, for Gemini 3 and newer), it researches through the planner's own search first, like local models (Settings → Search & places)"
     : isApi(state.model)
       ? "The model uses its provider's own web search (billed per search on top of tokens)"
       : "Claude checks opening hours, prices and events on the web (slower, more accurate)";
@@ -97,7 +132,11 @@ export function initModels() {
     if (sel.value === ADD_KEY) { sel.value = state.model; openKeys(refreshModels); return; }
     if (sel.value === SETUP) { sel.value = state.model; openQuickstart(); return; }
     syncResearch();
+    // The field's own listener saves the choice first (fields.ts); the line follows it.
+    setTimeout(refreshQuota);
   });
+  // Every streamed request (plans, fixes, the chat…) may have used the quota: count again when one ends.
+  window.addEventListener("ai-request-done", () => { refreshQuota(); });
   $<HTMLInputElement>("#research").onchange = (e) => { state.research = (e.target as HTMLInputElement).checked; save(); };
   $<HTMLInputElement>("#autoFix").onchange = (e) => { state.autoFix = (e.target as HTMLInputElement).checked; save(); syncResearch(); };
   $<HTMLInputElement>("#hoursOnline").onchange = (e) => { state.hoursOnline = (e.target as HTMLInputElement).checked; save(); };

@@ -91,7 +91,7 @@ function modelSection(s: Setup) {
     </article>
     <article class="qs-opt wide${anyKey(s) ? " on" : ""}">
       <div class="qs-opt-head"><span class="qs-opt-icon">${icon("key")}</span><b>An API key</b>${chip(anyKey(s) ? "ok" : "off", anyKey(s) ? "Set" : "None yet")}</div>
-      <p>Pay per use with Anthropic, OpenAI or OpenRouter (a long trip with research on a top model costs a euro or two). Keys stay on this computer.</p>
+      <p>Start free with a Google Gemini key (a few plans a day on its free tier; <button type="button" class="link-btn" data-settings="ai" data-provider="gemini">step-by-step guide and what to know</button>), or pay per use with Anthropic, OpenAI or OpenRouter (a long trip with research on a top model costs a euro or two). Keys stay on this computer.</p>
       <div id="qsKeys" class="qs-keys"></div>
     </article>
   </div>`;
@@ -103,7 +103,7 @@ function researchSection(s: Setup) {
   const seg = (v: Setup["search"], label: string) => `<button type="button" class="seg${s.search === v ? " on" : ""}" data-search="${v}">${label}</button>`;
   const detail = s.search === "brave" ? `<div class="qs-brave qs-keys kf-svc">${serviceKeyField("brave", serviceKeys.brave, true)}</div>`
     : s.search === "searxng" ? (s.searxngUrl && s.searxngUrl !== SEARXNG_LOCAL
-      ? `<p class="hint">${chip("ok", "Your own server")} Research goes to <code>${esc(s.searxngUrl)}</code>. To run one on this computer instead, change it in Settings → Planning.</p>`
+      ? `<p class="hint">${chip("ok", "Your own server")} Research goes to <code>${esc(s.searxngUrl)}</code>. To run one on this computer instead, change it in Settings → Search &amp; places.</p>`
       : `<div id="qsSearxng"></div>`)
     : `<p class="hint">Automatic uses Brave or SearXNG once one is set up; until then DuckDuckGo, which often stops with a bot check after a few searches. For local models that means thinner research.</p>
        <div class="qs-acts"><button type="button" class="btn solid" data-search="searxng">${icon("container")} Set up SearXNG (free, no account)</button><button type="button" class="btn" data-search="brave">${icon("key")} Use a Brave key</button></div>`;
@@ -117,7 +117,7 @@ function extrasSection() {
   const row = (ico: Parameters<typeof icon>[0], title: string, text: string, tab: string, label: string) => `<div class="qs-link">
     <span class="qs-opt-icon">${icon(ico)}</span><div><b>${title}</b><p>${text}</p></div><button type="button" class="btn" data-settings="${tab}">${label}</button></div>`;
   return section(3, "Make it yours", "Optional, and all in Settings.", `<span class="qs-badge">Optional</span>`, `<div class="qs-links">
-    <div class="qs-link qs-link-key"><span class="qs-opt-icon">${icon("images")}</span><div><b>Your photos on the map</b><p>With a free Google key, the photos of a Google Drive folder (shared as "Anyone with the link") show on the map at the spot each was taken. Settings → API keys says how to get one.</p>
+    <div class="qs-link qs-link-key"><span class="qs-opt-icon">${icon("images")}</span><div><b>Your photos on the map</b><p>With a free Google key, the photos of a Google Drive folder (shared as "Anyone with the link") show on the map at the spot each was taken. Settings → Photos says how to get one.</p>
       <div class="qs-keys kf-svc">${serviceKeyField("google", serviceKeys.google, true)}</div></div></div>
     <div class="qs-link qs-link-key"><span class="qs-opt-icon">${icon("pin")}</span><div><b>Faster place lookups</b><p>A free Geoapify key finds hundreds of saved places much faster (3,000 lookups a day).</p>
       <div class="qs-keys kf-svc">${serviceKeyField("geoapify", serviceKeys.geoapify, true)}</div></div></div>
@@ -149,7 +149,7 @@ function render() {
   const s = setup;
   renderKeyRows($("#qsKeys"), () => { refreshModels(); check(); }, s.keys);
   wireServiceKeys(body, (now) => { serviceKeys = now.serviceKeys || {}; check(); });
-  body.querySelectorAll<HTMLButtonElement>("[data-settings]").forEach((b) => { b.onclick = () => toSettings(b.dataset.settings as Parameters<typeof openSettings>[0]); });
+  body.querySelectorAll<HTMLButtonElement>("[data-settings]").forEach((b) => { b.onclick = () => toSettings(b.dataset.settings as Parameters<typeof openSettings>[0], b.dataset.provider as Parameters<typeof openSettings>[2]); });
   body.querySelectorAll<HTMLButtonElement>("[data-search]").forEach((b) => { b.onclick = () => setSearch(b.dataset.search as Setup["search"]); });
   body.querySelectorAll<HTMLButtonElement>("[data-go]").forEach((b) => { b.onclick = () => go(b.dataset.go!); });
   const sx = document.querySelector<HTMLElement>("#qsSearxng");
@@ -162,10 +162,10 @@ async function setSearch(search: Setup["search"]) {
   if (setup) { setup.search = search; render(); }
 }
 
-function toSettings(tab: Parameters<typeof openSettings>[0]) {
+function toSettings(tab: Parameters<typeof openSettings>[0], provider?: Parameters<typeof openSettings>[2]) {
   // On top of the guide; when Settings closes, the guide checks again (something may have been installed).
   $<HTMLDialogElement>("#settingsDialog").addEventListener("close", () => { if (dialog().open) { check(); refreshModels(); } }, { once: true });
-  openSettings(tab);
+  openSettings(tab, undefined, provider);
 }
 
 function go(what: string) {

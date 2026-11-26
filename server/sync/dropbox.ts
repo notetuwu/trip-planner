@@ -1,4 +1,4 @@
-// Dropbox, for syncing trips (Settings → Sync), like Google Drive (google.ts): each person registers their own free
+// Dropbox, for syncing trips (Settings → Accounts), like Google Drive (google.ts): each person registers their own free
 // Dropbox app and enters its app key; signing in uses Dropbox's flow for desktop apps (PKCE, so no secret), and the
 // browser comes back to a small one-off server on this computer at a fixed address (Dropbox only accepts the exact
 // redirect address registered with the app: http://localhost:47618/).
@@ -30,7 +30,7 @@ const raw = (id: string) => id.slice(PREFIX.length);
 const readJson = <T>(file: string): T | null => { try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return null; } };
 const writeJson = (file: string, v: unknown) => { fs.mkdirSync(SYNC_DIR, { recursive: true }); fs.writeFileSync(file, JSON.stringify(v, null, 2), { mode: 0o600 }); };
 
-/** The person's own Dropbox app key: from Settings → Sync, else DROPBOX_APP_KEY. */
+/** The person's own Dropbox app key: from Settings → Accounts, else DROPBOX_APP_KEY. */
 export function appKey(): string {
   return (readJson<{ key?: string }>(CLIENT_FILE())?.key || process.env.DROPBOX_APP_KEY || "").trim();
 }
@@ -80,7 +80,7 @@ async function token(params: Record<string, string>) {
 /** Starts signing in: Dropbox's page in the default browser, which comes back to http://localhost:47618/. */
 export async function startSignIn(): Promise<string> {
   const key = appKey();
-  if (!key) throw new Error("Add your Dropbox app key first (Settings → Sync).");
+  if (!key) throw new Error("Add your Dropbox app key first (Settings → Accounts).");
   stopPending();
   signInError = "";
   const state = b64url(crypto.randomBytes(24)), verifier = b64url(crypto.randomBytes(48));
@@ -89,7 +89,7 @@ export async function startSignIn(): Promise<string> {
     const url = new URL(req.url || "/", REDIRECT);
     if (url.pathname !== "/" || req.method !== "GET") { res.writeHead(404).end(); return; }
     const answer = (status: number, title: string, text: string) => { res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" }); res.end(page(title, text)); };
-    if (url.searchParams.get("state") !== state) return answer(400, "That didn't work", "This sign-in page is out of date. Start again from Trip Planner (Settings → Sync).");
+    if (url.searchParams.get("state") !== state) return answer(400, "That didn't work", "This sign-in page is out of date. Start again from Trip Planner (Settings → Accounts).");
     const done = (error = "") => { signInError = error; stopPending(); };
     const err = url.searchParams.get("error");
     if (err) {
@@ -140,7 +140,7 @@ async function accessToken(): Promise<string> {
   // PKCE: a refresh needs the app key, not a secret.
   const { ok, json } = await token({ grant_type: "refresh_token", refresh_token: a.refresh, client_id: key });
   if (!ok) {
-    if (json.error === "invalid_grant") { writeAuth({ ...a, refresh: "-", expired: true }); throw new Error("Dropbox signed this computer out. Sign in again in Settings → Sync."); }
+    if (json.error === "invalid_grant") { writeAuth({ ...a, refresh: "-", expired: true }); throw new Error("Dropbox signed this computer out. Sign in again in Settings → Accounts."); }
     throw new Error(`Dropbox: ${json.error_description || json.error || "couldn't sign in"}`);
   }
   access = { token: json.access_token, until: Date.now() + (Number(json.expires_in) || 3600) * 1000 };

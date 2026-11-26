@@ -10,6 +10,7 @@ import { anthropicMaxTokens, parseCloudId } from "./cloud-models";
 import { normalizeItinerary, parseJsonLoose } from "./output";
 import { type ClaudeUsage, claudeCostUsd } from "./prices";
 import { buildPrompt } from "./prompt";
+import { watchedFetch } from "./usage-notices";
 import { ITINERARY_SCHEMA } from "./schema";
 import type { Runner } from "./types";
 
@@ -38,9 +39,9 @@ function tools(model: string, research: boolean): any[] {
 
 export const runAnthropic: Runner = async (trip, places, onEvent, abort): Promise<RunResult> => {
   const apiKey = getKey("anthropic");
-  if (!apiKey) throw new Error("No Anthropic API key. Add one under 🔑 API keys, or set ANTHROPIC_API_KEY.");
+  if (!apiKey) throw new Error("No Anthropic API key. Add one under Settings → AI models, or set ANTHROPIC_API_KEY.");
   const { model } = parseCloudId(trip.model);
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, fetch: watchedFetch("anthropic") });
   const t0 = Date.now();
   const prompt = buildPrompt(trip, places, { webTools: true, outputTool: OUTPUT_TOOL });
   onEvent({

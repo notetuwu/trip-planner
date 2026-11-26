@@ -33,7 +33,11 @@ export async function streamRequest<T>(url: string, body: unknown, onUpdate: (li
         onUpdate(live);
       }
     }
-  } finally { clearInterval(timer); }
+  } finally {
+    clearInterval(timer);
+    // A model was asked: what shows its quota (models.ts) counts again.
+    window.dispatchEvent(new Event("ai-request-done"));
+  }
 }
 
 /** "Choosing towns… · 120 tokens · 14 s" */

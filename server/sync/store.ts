@@ -14,7 +14,7 @@ export const isDriveFolder = (id: string) => providerOf(id) === "drive";
 
 /** Whether a folder's service can be used now (signed in), and what to do when it can't. */
 export const ready = (p: Provider) => (p === "local" ? true : p === "dropbox" ? box.ready() : driveReady());
-export const notReady = (p: Provider) => (p === "dropbox" ? "Sign in to Dropbox (Settings → Sync) to sync with this folder." : "Sign in with Google (Settings → Sync) to sync with this folder.");
+export const notReady = (p: Provider) => (p === "dropbox" ? "Sign in to Dropbox (Settings → Accounts) to sync with this folder." : "Sign in with Google (Settings → Accounts) to sync with this folder.");
 
 const pick = <T>(id: string | undefined, f: { local: () => T; dropbox: () => T; drive: () => T }) => f[providerOf(id)]();
 export const folderInfo = (id: string) => pick(id, { local: () => Promise.resolve(local.folderInfo(id)), dropbox: () => box.folderInfo(id), drive: () => g.folderInfo(id) });
@@ -34,9 +34,9 @@ export function me(): { id: string; name: string; ids: string[] } {
   let user = "you";
   try { user = os.userInfo().username; } catch { /* unknown */ }
   const here = `${user}@${os.hostname()}`;
-  const ids = [...(acc.signedIn ? [acc.email] : []), ...(dbx.signedIn && dbx.email ? [dbx.email] : []), here];
-  const main = acc.signedIn ? { id: acc.email, name: acc.name || acc.email } : dbx.signedIn && dbx.email ? { id: dbx.email, name: dbx.name || dbx.email } : { id: here, name: user };
+  const ids = [...(acc.signedIn && acc.email ? [acc.email] : []), ...(dbx.signedIn && dbx.email ? [dbx.email] : []), here];
+  const main = acc.signedIn && acc.email ? { id: acc.email, name: acc.name || acc.email } : dbx.signedIn && dbx.email ? { id: dbx.email, name: dbx.name || dbx.email } : { id: here, name: user };
   return { ...main, ids: [...new Set(ids)] };
 }
 /** Whether Drive can be used now. */
-export const driveReady = () => !!g.client() && g.account().signedIn;
+export const driveReady = () => !!g.client() && g.account().signedIn && g.account().drive !== false;

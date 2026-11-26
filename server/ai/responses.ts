@@ -9,6 +9,7 @@ import { localOutput } from "./local-output";
 import { normalizeItinerary, parseJsonLoose } from "./output";
 import { buildPrompt } from "./prompt";
 import { LOCAL_SCHEMA } from "./schema";
+import { watchedFetch } from "./usage-notices";
 import type { Runner } from "./types";
 
 // OPENAI_BASE_URL / OPENROUTER_BASE_URL point elsewhere, e.g. a proxy (or a mock server in tests).
@@ -25,7 +26,7 @@ export const runResponses: Runner = async (trip, places, onEvent, abort): Promis
   const { provider, model } = parseCloudId(trip.model);
   const key = getKey(provider), base = BASE[provider];
   if (!base) throw new Error(`Unknown provider ${provider}`);
-  if (!key) throw new Error(`No ${PROVIDERS[provider].name} API key. Add one under 🔑 API keys, or set ${PROVIDERS[provider].env}.`);
+  if (!key) throw new Error(`No ${PROVIDERS[provider].name} API key. Add one under Settings → AI models, or set ${PROVIDERS[provider].env}.`);
   const t0 = Date.now();
   const output = localOutput(onEvent);
   const sources = new Set<string>();
@@ -39,7 +40,7 @@ export const runResponses: Runner = async (trip, places, onEvent, abort): Promis
         + `${withSchema ? "answer constrained to the itinerary JSON schema" : "schema in the prompt"} · billed to your API key.`,
       text: prompt,
     });
-    return fetch(`${base}/responses`, {
+    return watchedFetch(provider)(`${base}/responses`, {
       method: "POST", signal: abort,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({

@@ -18,7 +18,7 @@ export type Edits = Record<string, Edit>;
 /** What's each person's own, not the trip's: their trip chat (kept on their computer; the changes it makes to the plan are
  *  the trip's like any other), the models they plan and chat with (which may not exist on another computer), what the trip
  *  chat may do by itself, and how plans are made. Kept out of the file shared through a folder, and never taken from it. */
-export const PERSONAL = ["chat", "chatSummary", "chatSummarized", "model", "chatModel", "routeModel", "research", "autoFix", "hoursOnline", "chatMode"] as const;
+export const PERSONAL = ["chat", "chatSummary", "chatSummarized", "model", "chatModel", "routeModel", "routePlan", "research", "autoFix", "hoursOnline", "chatMode"] as const;
 
 const DETAILS = ["travelers", "people", "dailyBudget", "budgetPer", "currency", "pace", "fitness", "dayStart", "breakfast", "getAround", "interests", "wishes", "notes", "car", "lastRouteWhat"];
 const PLACES = ["marks", "who", "how", "customPlaces", "kept", "lists", "list", "listSuggest", "listChosen"];

@@ -4,6 +4,7 @@
 //   text      - Claude's planning notes, written before the itinerary
 //   search / fetch - web lookups while researching, with their results as extra prompt parts
 //   progress  - days of the itinerary written so far
+import { noteClaudeLimit } from "./usage-notices";
 import { daysWritten, tokenMeter } from "./output";
 import type { OnEvent } from "./types";
 
@@ -92,6 +93,7 @@ export function claudeStreamHandler(onEvent: OnEvent, outputTool = "StructuredOu
     let ev: any;
     try { ev = JSON.parse(line); } catch { return; }
     if (ev.type === "result") { s.result = ev; return; }
+    if (ev.type === "rate_limit_event") { noteClaudeLimit(ev.rate_limit_info); return; }
     // Tool results (search results, fetched pages) go back to Claude as user messages: show them too.
     if (ev.type === "user" && Array.isArray(ev.message?.content)) return toolResults(ev.message.content);
     if (ev.type === "system" && ev.subtype === "thinking_tokens") {

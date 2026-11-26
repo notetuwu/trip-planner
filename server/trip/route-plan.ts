@@ -20,6 +20,7 @@ export interface RouteRequest {
   startDate: string;
   days: number;
   mode: Mode;
+  /** Most hours of travel on a travel day; 0: however long (flights where needed, and a surprise for what's left open). */
   maxHours: number;
   description: string;
   stays?: string;
@@ -35,10 +36,12 @@ export interface RouteRequest {
    * When they're changing a route: each route suggested so far ("Salzburg (2 nights) → …") and what they said about it.
    * The last one is the route on screen, with what they want changed now.
    */
-  conversation?: { route: string; said?: string }[];
+  conversation?: { route: string; said?: string; qa?: { q: string; a: string }[] }[];
   /** Places they starred, to plan the route around; `how`: on the way between stays, or from a stay. */
   mustSee?: { name: string; lat?: number; lng?: number; how?: "way" | "stay" }[];
 }
+/** Their newest message in the route chat was a question: answered, the route left as it is. */
+export interface RouteAnswer { answer: string }
 /** `way`: they asked to see it on the way, so it becomes a stop on a travel day rather than a day trip. */
 export interface PlannedDayTrip { place: string; why: string; way?: boolean; home?: boolean; lat?: number; lng?: number }
 export interface PlannedStay { city: string; country: string; nights: number; travel: Mode; why: string; dayTrips?: PlannedDayTrip[]; lat?: number; lng?: number }
@@ -48,6 +51,8 @@ export interface PlannedLeg { from: string; to: string; km?: number; hours?: num
 export interface RoutePlan {
   title: string; summary: string; start: string; end: string; startDate: string;
   stays: PlannedStay[]; legs: PlannedLeg[]; nights: number;
+  /** However long a day: how they get home from the last stay (it may differ from how they got there). */
+  homeTravel?: Mode;
 }
 
 const ROAD = new Set(["car", "bus", "bike"]);
@@ -98,7 +103,8 @@ export function untangle(pts: LatLng[]): number[] {
 
 /** What the page shows as the model's reasoning: its own thinking, the "reasoning" it writes first, then the stays so far. */
 export function reasoningSoFar(reply: string, thinking: string) {
-  const m = reply.match(/"reasoning"\s*:\s*"((?:[^"\\]|\\.)*)/);
+  // ("answer": a question answered instead of a route, shown as it's written.)
+  const m = reply.match(/"(?:reasoning|answer)"\s*:\s*"((?:[^"\\]|\\.)*)/);
   let why = "";
   // Cut a half-written escape at the end ("\" or "\u00") so the piece still parses.
   if (m) try { why = JSON.parse(`"${m[1].replace(/\\(u[0-9a-fA-F]{0,3})?$/, "")}"`); } catch { why = m[1]; }
@@ -181,13 +187,16 @@ export function nameForms(place: string): string[] {
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-export async function planRoute(req: RouteRequest, report: Report = () => {}, signal?: AbortSignal): Promise<RoutePlan> {
+export async function planRoute(req: RouteRequest, report?: Report, signal?: AbortSignal): Promise<RoutePlan>;
+export async function planRoute(req: RouteRequest, report?: Report, signal?: AbortSignal): Promise<RoutePlan | RouteAnswer>;
+export async function planRoute(req: RouteRequest, report: Report = () => {}, signal?: AbortSignal): Promise<RoutePlan | RouteAnswer> {
   const days = Math.min(120, Math.max(1, Math.round(Number(req.days) || 7)));
   const nights = days - 1;
   const end = (req.end || "").trim() || req.start;
   const roundTrip = end.toLowerCase() === req.start.trim().toLowerCase();
   const mode: Mode = (MODES as readonly string[]).includes(req.mode) ? req.mode : "";
-  const maxHours = Math.min(14, Math.max(1, Number(req.maxHours) || 5));
+  const anywhere = Number(req.maxHours) === 0;
+  const maxHours = anywhere ? 0 : Math.min(14, Math.max(1, Number(req.maxHours) || 5));
   const howText = mode ? { car: "by car (they drive themselves)", train: "by train", bus: "by bus", bike: "by bike", ferry: "by ferry", flight: "by plane" }[mode] : "however suits each leg (car, train, bus, ferry or plane)";
 
   // An address means nothing to the model on its own: say which town it's in.
@@ -204,10 +213,12 @@ export async function planRoute(req: RouteRequest, report: Report = () => {}, si
   // The whole conversation since the last new route: every request they made stays in force (a long chat used to
   // keep only the last few turns, and the model then undid earlier requests, such as flipping the route back).
   const conv = (Array.isArray(req.conversation) ? req.conversation : []).slice(-40)
-    .map((t) => ({ route: String(t?.route || "").trim().slice(0, 1500), said: String(t?.said || "").trim().slice(0, 600) }))
+    .map((t) => ({ route: String(t?.route || "").trim().slice(0, 1500), said: String(t?.said || "").trim().slice(0, 600),
+      qa: (Array.isArray(t?.qa) ? t.qa : []).slice(-6).map((x) => ({ q: String(x?.q || "").slice(0, 600), a: String(x?.a || "").slice(0, 900) })) }))
     .filter((t) => t.route);
   const now = conv.at(-1);
   const asked = conv.map((t) => t.said).filter(Boolean);
+  const talked = conv.flatMap((t) => t.qa).slice(-6);
   const again = !now?.said ? "" : `
 They're shaping this route with you, step by step. The routes you suggested, then what they said about each (the earlier ones in short):
 ${conv.map((t, k) => `Route ${k + 1}: ${k >= conv.length - 3 ? t.route : t.route.slice(0, 300)}${t.said ? `\nThey said: "${t.said}"` : ""}`).join("\n")}
@@ -216,6 +227,11 @@ Everything they've asked for so far, oldest first. All of it still applies, unle
 ${asked.map((s, k) => `${k + 1}. ${s}`).join("\n")}
 
 Now change Route ${conv.length} (the one on their screen) for their newest message (number ${asked.length} above). Start from it: keep its stays, nights, order and direction (which way round the trip goes), day trips and stops on the way, and change only what the newest message asks for, plus what follows from that (nights moving to keep the total, a neighbouring leg changing). Its order is what they chose, even where it differs from the description above: don't turn the route back round or reorder it unless the newest message asks for that. A place they moved (to a day trip, to the way, out of the route) stays where they put it. Don't start over with a different route.
+${talked.length ? `
+Questions they asked about the route and your answers (for follow-ups):
+${talked.map((x) => `They asked: "${x.q}"\nYou answered: "${x.a}"`).join("\n")}
+` : ""}
+First decide what the newest message is. If it only asks something (a question, an opinion, advice, "why", "is this realistic", "what about …?") and asks for no change to the route, don't change anything: reply with only {"answer": "your answer"} instead of a route. Answer it directly and concisely (markdown is fine), about the route on their screen, and say when something should be checked (prices, timetables, visas, opening seasons), since you can't look it up here. A request to change the route, even worded as a question ("can we skip Milan?"), gets the changed route.
 `;
 
   const must = (Array.isArray(req.mustSee) ? req.mustSee : []).slice(0, 40)
@@ -236,19 +252,20 @@ ${must.join("\n")}
 Start: ${from.text}${req.startDate ? `, leaving on ${req.startDate}` : ""}. That's where they set off from, not a stay.
 End: ${roundTrip ? `back at the start (a round trip)` : to.text}.
 Length: ${days} days, so ${nights} nights away.
-Travel: ${howText}; at most about ${maxHours} h of travel on a travel day.${month ? `
+Travel: ${anywhere ? `${mode && mode !== "flight" ? `${howText} on the ground, flying wherever a place is too far or across water for that` : howText}; a travel day may take however long it takes` : `${howText}; at most about ${maxHours} h of travel on a travel day`}.${month ? `
 Season: they travel in ${month}. Suggest only what works then (no skiing or ski jumps outside winter, no closed mountain passes or huts in winter, no summer-only things out of season).` : ""}
 ${req.travelers ? `Travelers: ${req.travelers}. ` : ""}${req.interests ? `Interests: ${req.interests}.` : ""}${Number(req.budget) > 0 ? ` Budget: about ${Math.round(Number(req.budget))} ${String(req.currency || "EUR").slice(0, 3)} ${req.budgetPer === "person" ? "per person " : ""}a day for activities, food and getting around (stays come on top).` : ""}
-What they want: ${req.description || "a varied, scenic trip"}
+What they want: ${req.description || (anywhere ? "no preferences: surprise them" : "a varied, scenic trip")}${anywhere ? `
+Surprise them: unless they name places or regions (above or in the chat), where this trip goes is entirely your choice, anywhere in the world; don't stay near the start just because it's the start. Make it the trip of a lifetime: remarkable places and experiences, a mix of famous wonders and ones they wouldn't think of, not simply the obvious capitals. Places they do name are included. Whatever they rule out (a country, a kind of place) stays ruled out, transfers and day trips included. Choose places that are safe to visit.` : ""}
 ${req.stays ? `Kind of places to stay: ${req.stays}` : ""}
 ${mustText}${again}
-Choose the stays in travel order, between the start and the end (not the start or end themselves). Give them ${nights} nights in total. Make it a real, drivable (or travelable) route: each leg within about ${maxHours} h, and the last stay within a day of the end. Spend 2-3 nights where there is a lot to see (so there are full days for day trips), 1 night for a stop on the way. Favour the places and regions they asked for; "maybe" means include it if it fits well. People they want to visit (family, friends) get a stay where it fits the route. A town they name is the stay for its area: don't add another stay within about 40 km of it (or of any other stay).
+Choose the stays in travel order, between the start and the end (not the start or end themselves). Give them ${nights} nights in total. ${anywhere ? "Make it a route that really works: connections that exist, as few long-haul flights as the places need, at least 2 nights after a long one, and no more regions than the days can do justice to." : `Make it a real, drivable (or travelable) route: each leg within about ${maxHours} h, and the last stay within a day of the end.`} Spend 2-3 nights where there is a lot to see (so there are full days for day trips), 1 night for a stop on the way. Favour the places and regions they asked for; "maybe" means include it if it fits well. People they want to visit (family, friends) get a stay where it fits the route. A town they name is the stay for its area: don't add another stay within about 40 km of it (or of any other stay).
 Mind what beds cost: tiny, famous places with few and pricey places to stay (Hallstatt, for example) are usually better as a day trip from a nearby town that's easier on the budget (Hallstatt from Salzburg or Bad Ischl), unless they ask to stay there or their budget is generous.
 The route must flow${roundTrip ? " as one loop" : " in one direction"}: each stay moves on from the last, and it never returns to a region it already left (no back and forth, no doubling back across a country). Group the stays by region and visit each region once.
 Day trips: when they mention a place as a day trip ("a day trip to X", "a day in X"), or a place is small and close to a better base (a small country such as Liechtenstein, a single sight, a lake), don't make it a stay of its own: put it in "dayTrips" of the stay closest to it (one with 2+ nights). Only add day trips they asked for or that clearly fit what they want; most stays have none. Use real place names that a map can find (a town or a sight, with its country).
 On the way: a place they ask to see or stop at on the way ("X on the way", "stop at X on the drive", "pass through X", "drop someone off at X"), in the description or in the chat, is never a stay and never a day trip: put it in "onTheWay" of the stay they arrive at after passing it, or in "onTheWayHome" when it's on the drive from the last stay to the end. Only for places they mention that way; leave these empty otherwise.
 Reply with only JSON:
-{"reasoning": "first, think it through in a few short sentences: ${now?.said ? "what you change in the route on their screen and why, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}], "onTheWayHome": [{"place": "town or sight, country", "why": "a few words"}]}`;
+{"reasoning": "first, think it through in a few short sentences: ${now?.said ? "what you change in the route on their screen and why, " : ""}the regions, the order of the loop, where the day trips go, how the nights split", "title": "short trip name", "summary": "2-3 sentences on the route", "stays": [{"city": "town", "country": "country", "nights": 2, ${mode && !anywhere ? "" : `"travel": "car|train|bus|ferry|flight (how they get here from the previous place)", `}"why": "one short sentence: what's there and why stay", "dayTrips": [{"place": "town or sight, country", "why": "a few words"}], "onTheWay": [{"place": "town or sight, country", "why": "a few words"}]}], "onTheWayHome": [{"place": "town or sight, country", "why": "a few words"}]${anywhere ? `, "homeTravel": "car|train|bus|ferry|flight (how they get from the last stay to the end)"` : ""}}`;
 
   const trips = (list: unknown, way: boolean): PlannedDayTrip[] => (Array.isArray(list) ? list : [])
     .map((t: any) => (typeof t === "string" ? { place: t, why: "" } : { place: String(t?.place || ""), why: String(t?.why || "") }))
@@ -264,12 +281,14 @@ Reply with only JSON:
     },
     onRetry: (text) => report({ type: "status", text }),
   }));
+  if (now?.said && typeof parsed?.answer === "string" && parsed.answer.trim() && !parsed.stays?.length) return { answer: parsed.answer.trim().slice(0, 8000) };
   const stays: PlannedStay[] = (Array.isArray(parsed?.stays) ? parsed.stays : [])
     .filter((s: any) => s && typeof s.city === "string" && s.city.trim())
     .slice(0, 60)
     .map((s: any) => ({
       city: s.city.trim(), country: String(s.country || "").trim(), nights: Math.max(1, Math.round(Number(s.nights) || 1)),
-      travel: mode || ((MODES as readonly string[]).includes(s.travel) ? s.travel : "car"), why: String(s.why || "").slice(0, 240),
+      // However long a day: a flight stays a flight, whatever they travel by on the ground.
+      travel: (anywhere && s.travel === "flight" ? "flight" : mode) || ((MODES as readonly string[]).includes(s.travel) ? s.travel : "car"), why: String(s.why || "").slice(0, 240),
       dayTrips: [...trips(s.dayTrips, false), ...trips(s.onTheWay, true)],
     }));
   if (!stays.length) throw new Error("The model didn't come back with a route. Try again, or describe the trip a bit more.");
@@ -317,9 +336,10 @@ Reply with only JSON:
   const wayAt = (Array.isArray(req.mustSee) ? req.mustSee : [])
     .filter((m) => m?.how === "way" && Number.isFinite(m.lat) && Number.isFinite(m.lng)).map((m): LatLng => [+m.lat!, +m.lng!]);
   const via = coords.every(Boolean) ? placeTrips(coords as LatLng[], stays, said, wayAt) : new Map<number, WayStop[]>();
+  const homeTravel: Mode | undefined = anywhere ? (parsed?.homeTravel === "flight" ? "flight" : mode || ((MODES as readonly string[]).includes(parsed?.homeTravel) ? parsed.homeTravel : "flight")) : undefined;
   const legs: PlannedLeg[] = [];
   for (let k = 1; k < places.length; k++) {
-    const travel = k < places.length - 1 ? stays[k - 1].travel : (mode || stays.at(-1)!.travel);
+    const travel = k < places.length - 1 ? stays[k - 1].travel : (homeTravel || mode || stays.at(-1)!.travel);
     const leg: PlannedLeg = { from: places[k - 1].city, to: places[k].city, tooLong: false, ...(via.get(k - 1) ? { via: via.get(k - 1) } : {}) };
     const a = coords[k - 1], b = coords[k];
     if (a && b && ROAD.has(travel)) {
@@ -329,14 +349,14 @@ Reply with only JSON:
       else if (r) {
         leg.km = Math.round(r.d / 1000);
         leg.hours = Math.round(((travel === "bike" ? r.d / 1000 / 18 : r.t / 3600) * (travel === "bus" ? 1.2 : 1)) * 10) / 10;
-        leg.tooLong = leg.hours > maxHours * 1.25;
+        leg.tooLong = !anywhere && leg.hours > maxHours * 1.25;
       }
     }
     legs.push(leg);
   }
   return {
     title: String(parsed?.title || "").slice(0, 80), summary: String(parsed?.summary || "").slice(0, 600),
-    start: req.start, end, startDate: req.startDate, stays, legs, nights,
+    start: req.start, end, startDate: req.startDate, stays, legs, nights, ...(homeTravel ? { homeTravel } : {}),
   };
 }
 

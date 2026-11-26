@@ -245,13 +245,21 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.deepEqual(again.map((t) => t.said), ["less driving", "a night by a lake"], "the whole conversation goes along");
   assert.deepEqual(await page.eval(`[...document.querySelectorAll("#rpChat .rc-msg.me")].map((e) => e.textContent)`), ["less driving", "a night by a lake"]);
   assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.ai").length`), 3);
+  // A question is answered in the chat; the route stays as it is.
+  const route = await page.eval(`window.__e2e.route`);
+  await page.eval(`window.__e2e.route = { answer: "Yes, **about** two and a half hours." }`);
+  await reply("is the first drive long?");
+  await page.waitFor(`/two and a half hours/.test(document.querySelector("#rpChat").textContent) && !document.querySelector("#rpUse").hidden`);
+  assert.ok(await page.eval(`!!document.querySelector("#routeResult .route-result")`), "the route is still there");
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.me").length`), 3);
+  await page.eval(`window.__e2e.route = ${JSON.stringify(route)}`);
   // New route: a fresh one, without the conversation.
   await page.eval(`document.querySelector("#rpGo").click()`);
-  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 4 && !document.querySelector("#rpUse").hidden`);
+  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 5 && !document.querySelector("#rpUse").hidden`);
   assert.equal(await page.eval(`window.__e2e.routeAsked.conversation.length`), 0, "a new route starts the conversation again");
   assert.ok(await page.eval(`!!document.querySelector("#rpChat .rc-new")`), "marked in the chat");
   await reply("fewer stays");
-  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 5 && !document.querySelector("#rpUse").hidden`);
+  await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 6 && !document.querySelector("#rpUse").hidden`);
   assert.deepEqual(await page.eval(`window.__e2e.routeAsked.conversation.map((t) => t.said)`), ["fewer stays"], "only the chat since the new route goes along");
   await page.eval(`document.querySelector("#rpUse").click()`);
   const stays = await page.eval(`planner.state().stays.map((s) => [s.city, s.start, s.nights])`);
@@ -265,21 +273,27 @@ test("plan a route: describe the trip, see the stays and leg times, use them, Un
   assert.deepEqual(await page.eval(`planner.state().stays.map((s) => s.city)`), ["Padua"], "Undo restores the stays");
   assert.equal(await page.eval(`planner.state().wishes || ""`), "", "and what they wanted to see");
   assert.equal(await page.eval(`planner.state().marks.Lugano || ""`), "", "and takes the stop on the way back out");
+  // It's kept with this trip: another trip has none, and coming back shows it again.
+  const kept = await page.eval(`JSON.stringify(planner.state().routePlan)`);
+  await trip({ stays: [{ city: "Graz", start: "2027-10-01", nights: 1, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await page.eval(`document.querySelector("#planRoute").click()`);
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg").length + "|" + !!document.querySelector("#routeResult .route-result")`), "0|false", "another trip has no route");
+  assert.equal(await page.eval(`document.querySelector("#rpWhat").value`), "", "and an empty form");
+  await page.eval(`document.querySelector("#routeDialog").close()`);
+  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false, routePlan: JSON.parse(kept) });
   // Reopening after using the route still shows it and the chat; Start over clears them.
   await page.eval(`document.querySelector("#planRoute").click()`);
   assert.ok(await page.eval(`!!document.querySelector("#routeResult .route-result") && !document.querySelector("#rpUse").hidden`), "the route is still there");
   assert.equal(await page.eval(`document.querySelector("#rpGo").textContent`), "New route");
-  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.me").length`), 3, "the chat is still there");
+  assert.equal(await page.eval(`document.querySelectorAll("#rpChat .rc-msg.me").length`), 4, "the chat is still there");
   await page.eval(`document.querySelector("#routeResult [data-fresh]").click()`);
-  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpChat .rc-msg").length + "|" + !!localStorage.getItem("trip-planner-route") + "|" + document.querySelector("#rpWhy").disabled`), "Plan the route|0|false|true");
+  assert.equal(await page.eval(`document.querySelector("#rpGo").textContent + "|" + document.querySelectorAll("#rpChat .rc-msg").length + "|" + !!planner.state().routePlan + "|" + document.querySelector("#rpWhy").disabled`), "Plan the route|0|false|true");
 });
 
 test("a route saved before the chat existed can still be changed; an empty form says so instead of doing nothing", async () => {
-  await page.eval(`localStorage.setItem("trip-planner-route", JSON.stringify({ tries: ["x"], reasons: ["y"], plan: { title: "Old one", summary: "", start: "Padua", end: "Padua",
-    startDate: "2027-09-01", nights: 2, stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "" }], legs: [{ from: "Padua", to: "Milano", tooLong: false }, { from: "Milano", to: "Padua", tooLong: false }] } }));
-    location.reload()`).catch(() => {});
-  await page.waitFor("document.readyState === 'complete' && !!window.planner");
-  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false });
+  await trip({ stays: [{ city: "Padua", start: "2027-09-01", nights: 2, hotel: "" }], list: "", listChosen: true, autoFix: false,
+    routePlan: { plan: { title: "Old one", summary: "", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 2, stays: [{ city: "Milano", country: "Italy", nights: 2, travel: "car", why: "" }],
+      legs: [{ from: "Padua", to: "Milano", tooLong: false }, { from: "Milano", to: "Padua", tooLong: false }] }, chat: [], form: {} } });
   await page.eval(`window.__e2e.route = { title: "Changed", summary: "", start: "Padua", end: "Padua", startDate: "2027-09-01", nights: 2,
     stays: [{ city: "Lucerne", country: "Switzerland", nights: 2, travel: "car", why: "" }], legs: [{ from: "Padua", to: "Lucerne", tooLong: false }, { from: "Lucerne", to: "Padua", tooLong: false }] }`);
   await page.eval(`document.querySelector("#planRoute").click()`);
@@ -291,7 +305,7 @@ test("a route saved before the chat existed can still be changed; an empty form 
   await page.eval(`document.querySelector("#rpSend").click()`);
   await page.waitFor(`document.querySelectorAll("#rpChat .rc-msg.ai").length === 2`);
   assert.deepEqual(await page.eval(`window.__e2e.routeAsked.conversation.map((t) => [t.route, t.said])`), [["Milano (2 nights)", "more lakes"]]);
-  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-route")).form.rpWhat`), "lakes", "the form is saved with the route");
+  assert.equal(await page.eval(`planner.state().routePlan.form.rpWhat`), "lakes", "the form is saved with the route");
 });
 
 test("trains follow the tracks: a train leg and a train day trip ask for train routes; stays link to Google Maps", async () => {
@@ -639,6 +653,38 @@ test("settings open with their tabs: general, local models, phone", async () => 
   await page.eval(`document.querySelector('[data-theme-choice="system"]')?.click(); localStorage.removeItem("trip-planner-theme")`);
 });
 
+test("settings group their tabs; AI models opens a page per provider; Gemini's has the key, guide and free-tier notes", async () => {
+  await page.eval(`document.querySelector("#settingsBtn").click()`);
+  await page.waitFor(`document.querySelectorAll("#setNav .set-group-name").length === 4`, 10000, "the tab groups");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll("#setNav .set-group-name")].map((e) => e.textContent)`), ["App", "Planning", "Your files", "About"]);
+  await page.eval(`document.querySelector('[data-tab="ai"]').click()`);
+  await page.waitFor(`document.querySelectorAll("#setMain .ai-row").length === 5`, 20000, "a row per provider");
+  await page.eval(`document.querySelector('.ai-row[data-provider="gemini"]').click()`);
+  await page.waitFor(`!!document.querySelector('#aiPage [data-kf="gemini"]')`, 20000, "Gemini's page");
+  // No key yet: the step-by-step guide is open, and what to know about a free key is shown.
+  assert.ok(await page.eval(`document.querySelector("#gmGuide").open`), "the guide is open without a key");
+  assert.match(await page.eval(`document.querySelector(".gm-warn").textContent`), /Model access and rate limits.*Data privacy/s);
+  await page.eval(`document.querySelector(".ai-back").click()`);
+  await page.waitFor(`document.querySelectorAll("#setMain .ai-row").length === 5`, 5000, "back to the list");
+  await page.eval(`document.querySelector('[data-tab="search"]').click()`);
+  assert.equal(await page.eval(`document.querySelectorAll("#setMain [data-kf]").length`), 2, "Brave and Geoapify");
+  await page.eval(`document.querySelector('[data-tab="photos"]').click()`);
+  assert.equal(await page.eval(`document.querySelectorAll("#setMain [data-kf]").length`), 1, "the Google API key");
+  await page.eval(`document.querySelector('[data-tab="accounts"]').click()`);
+  await page.waitFor(`document.querySelectorAll("#setMain [data-account]").length === 2`, 10000, "Google and Dropbox");
+  // Connect opens the steps, one at a time.
+  await page.eval(`document.querySelector('[data-account="google"] [data-connect]').click()`);
+  await page.waitFor(`/step 1 of/.test(document.querySelector(".wz-dialog .wz-for")?.textContent || "")`, 10000, "the first step");
+  await page.eval(`document.querySelector(".wz-dialog [data-next]").click()`);
+  await page.waitFor(`/step 2 of/.test(document.querySelector(".wz-dialog .wz-for").textContent)`, 5000, "the next step");
+  await page.eval(`document.querySelector(".wz-dialog").close(); localStorage.removeItem("trip-planner-connect-drive")`);
+  // The search finds Gemini on its tab.
+  await page.eval(`(() => { const i = document.querySelector("#setFind"); i.value = "gemini"; i.dispatchEvent(new Event("input")); })()`);
+  assert.match(await page.eval(`document.querySelector("#setMain .set-hit")?.textContent || ""`), /AI models.*Google Gemini/s);
+  await page.eval(`(() => { const i = document.querySelector("#setFind"); i.value = ""; i.dispatchEvent(new Event("input")); })()`);
+  await page.eval(`document.querySelector("#settingsDialog").close()`);
+});
+
 test("the trip chat answers from the trip, keeps the conversation, and reads the ideas notes", async () => {
   await trip({ ...PADUA_MILANO, itinerary: { summary: "Plan", totalEstimatedCost: 0, days: [
     { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "15:00", place: "Cappella degli Scrovegni", description: "Giotto frescoes" }] },
@@ -754,6 +800,21 @@ test("the chat can move a stop to where it really is (its address looked up), an
   assert.equal(await page.eval(`window.__e2e.requests.length`), 0, "no new plan asked for");
   await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
   assert.deepEqual(await page.eval(`(({ lat, lng }) => [lat, lng])(planner.state().itinerary.days[0].items[0])`), [45.40, 11.88], "Undo puts it back");
+  await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
+});
+
+test("a setup change from the chat (travelers, budget) shows in the sidebar's fields at once, and Undo puts them back", async () => {
+  await trip({ stays: [{ city: "Padua", start: "2027-09-14", nights: 1, hotel: "" }], list: "", listChosen: true, autoFix: false, travelers: 1, dailyBudget: 100 });
+  await page.eval(`window.__e2e.companion = { answer: "Two of you on 80.", change: { days: [], request: "", edits: [{ op: "set", field: "travelers", value: 2 }, { op: "set", field: "dailyBudget", value: 80 }] } }`);
+  await page.eval(`document.querySelector("#chatBtn").click(); (() => { const q = document.querySelector("#cpQ"); q.value = "we are two, 80 a day"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-apply]")`, 10000, "the offered change");
+  assert.match(await page.eval(`document.querySelector(".cp-change").textContent`), /Travelers: 2/);
+  await page.eval(`document.querySelector("#cpLog [data-apply]").click()`);
+  await page.waitFor(`!!document.querySelector("#cpLog [data-undo]")`, 10000, "applied");
+  const fields = `[document.querySelector("#travelers").value, document.querySelector("#dailyBudget").value]`;
+  assert.deepEqual(await page.eval(fields), ["2", "80"]);
+  await page.eval(`document.querySelector("#cpLog [data-undo]").click()`);
+  assert.deepEqual(await page.eval(fields), ["1", "100"], "Undo puts them back");
   await page.eval(`document.querySelector("#cpClose").click(); window.__e2e.companion = null`);
 });
 
@@ -949,7 +1010,7 @@ test("the cost breakdown shows the total, per person, by kind, per day and alrea
   await page.eval(`document.querySelector("#costsDialog").close()`);
 });
 
-const NO_KEYS = { anthropic: { set: false }, openai: { set: false }, openrouter: { set: false } };
+const NO_KEYS = { anthropic: { set: false }, openai: { set: false }, openrouter: { set: false }, gemini: { set: false } };
 const SX_NONE = { installed: false, linked: false, running: false, container: "", docker: "missing", busy: false, platform: "win32", job: null };
 
 test("the quick start shows what's there and what's missing; without Claude Code the model menu has no Claude", async () => {
@@ -959,7 +1020,7 @@ test("the quick start shows what's there and what's missing; without Claude Code
   assert.equal(await page.eval(`document.querySelectorAll(".qs-check").length`), 5);
   assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(1)").textContent`), /Claude Code.*Not found/);
   assert.match(await page.eval(`document.querySelector(".qs-check:nth-child(3)").textContent`), /Ollama.*No model yet/);
-  assert.equal(await page.eval(`document.querySelectorAll("#qsKeys [data-kf]").length`), 3, "the API key inputs");
+  assert.equal(await page.eval(`document.querySelectorAll("#qsKeys [data-kf]").length`), 4, "the API key inputs (Gemini, Anthropic, OpenAI, OpenRouter)");
   // Choosing SearXNG shows its steps (Docker first).
   await page.eval(`document.querySelector('[data-search="searxng"]').click()`);
   await page.waitFor(`document.querySelectorAll("#qsSearxng .sx-step").length === 5`, 5000, "the SearXNG steps");

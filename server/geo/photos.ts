@@ -1,6 +1,6 @@
 // Photos for the map's Photos layer, from a shared Google Drive folder ("anyone with the link"): the Drive API lists its
 // images and videos, with where and when each photo was taken (the EXIF position Drive keeps from the original file; a
-// video's own header says it, read here). Read with the Google sign-in of Settings → Sync when there is one (then any
+// video's own header says it, read here). Read with the Google sign-in of Settings → Accounts when there is one (then any
 // folder the account can open works, shared or not), else with a Google API key with the Drive API on (Settings → API
 // keys; the folder shared as "anyone with the link"). The list is kept on disk for an hour, so panning and reloading don't
 // ask Google again; the thumbnails come straight from Google's servers to the browser.
@@ -72,7 +72,7 @@ export function folderId(link: string): string {
 
 const googleKey = () => readSettings().googleKey || process.env.GOOGLE_API_KEY || "";
 
-/** How to ask Drive: as the signed-in account (Settings → Sync), else with the API key; "" when neither is set up. */
+/** How to ask Drive: as the signed-in account (Settings → Accounts), else with the API key; "" when neither is set up. */
 type Access = { token: string } | { key: string } | "";
 async function access(): Promise<Access> {
   const token = await bearer();
@@ -85,7 +85,7 @@ function asked(url: string, a: Access, headers: Record<string, string> = {}): [s
   const h = { "User-Agent": USER_AGENT, ...headers, ...(a && "token" in a ? { Authorization: `Bearer ${a.token}` } : {}) };
   return [a && "key" in a ? `${url}${url.includes("?") ? "&" : "?"}key=${encodeURIComponent(a.key)}` : url, { headers: h }];
 }
-const NO_ACCESS = "Sign in with Google in Settings → Sync (or add a Google API key with the Drive API on in Settings → API keys) to show photos from Drive.";
+const NO_ACCESS = "Connect Google (or, for public folders only, add a Google API key) in Settings → Photos to show photos from Drive.";
 /** Thumbnails of photos read as the signed-in account: Google only hands them out to that account, so they come through
  *  here (by file id). */
 const thumbLinks = diskCache<string>("photo-thumbs.json");
@@ -97,7 +97,7 @@ function explain(status: number, body: any): string {
   const e = body?.error, reason = e?.errors?.[0]?.reason || "", msg = String(e?.message || "");
   if (/accessNotConfigured|SERVICE_DISABLED/i.test(reason + msg) || /has not been used|is disabled/i.test(msg))
     return "The Drive API isn't switched on for this key: in the Google Cloud Console, open APIs & Services → Library, find \"Google Drive API\" and press Enable.";
-  if (status === 400 && /API key/i.test(msg)) return "Google doesn't accept this API key. Check it in Settings → Planning.";
+  if (status === 400 && /API key/i.test(msg)) return "Google doesn't accept this API key. Check it in Settings → Photos.";
   if (status === 403 && /referer|restrict/i.test(msg + reason)) return "This API key is restricted (to websites or other APIs). Allow the Drive API for it, with no website restriction.";
   if (status === 403 && /rateLimit|quota/i.test(reason + msg)) return "Google's limit for this key is used up for now. Try again later.";
   if (status === 404 || status === 403) return "Google can't open that folder. Share it as \"Anyone with the link\" (Viewer) and check the link.";
@@ -226,7 +226,7 @@ export async function deletePhoto(link: string, photoId: string, how: RemoveKind
   const hit = cache.data[folderId(link)];
   if (!hit?.photos.some((p) => p.id === photoId)) throw new Error("That photo isn't in the folder.");
   const token = await bearer();
-  if (!token) throw new Error("Sign in with Google in Settings → Sync to delete photos from Drive.");
+  if (!token) throw new Error("Connect Google in Settings → Accounts to delete photos from Drive.");
   let query = "supportsAllDrives=true";
   if (how === "remove") {
     const dir = parents.data[photoId];

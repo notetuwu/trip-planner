@@ -13,6 +13,8 @@ import { parseModelId } from "./local-models";
 import { keepAlive, readSettings, tune } from "../settings";
 import { loopGuard } from "./loop-guard";
 import { BASE } from "./responses";
+import { askGemini } from "./gemini";
+import { noteClaudeLimit, watchedFetch } from "./usage-notices";
 
 const TIMEOUT = 6 * 60_000;
 
@@ -127,13 +129,16 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
       const content = opts.images?.length
         ? [...opts.images.map((i) => ({ type: "image" as const, source: { type: "base64" as const, media_type: i.type as "image/jpeg" | "image/png" | "image/gif" | "image/webp", data: i.data } })), { type: "text" as const, text: prompt }]
         : prompt;
-      const stream = new Anthropic({ apiKey: key }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content }] }, { signal });
+      const stream = new Anthropic({ apiKey: key, fetch: watchedFetch("anthropic") }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content }] }, { signal });
       stream.on("text", (t) => tick(t));
       const msg = await stream.finalMessage();
       return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
     }
+    if (provider === "gemini") {
+      return askGemini({ model, prompt, json: !opts.text, images: opts.images, signal, retry, tick, onWait: opts.onRetry });
+    }
     // OpenAI / OpenRouter: the Responses API, streamed.
-    const res = await fetch(`${BASE[provider]}/responses`, {
+    const res = await watchedFetch(provider)(`${BASE[provider]}/responses`, {
       method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, stream: true, input: opts.images?.length
         ? [{ role: "user", content: [{ type: "input_text", text: prompt }, ...opts.images.map((i) => ({ type: "input_image", image_url: dataUrl(i) }))] }]
@@ -200,6 +205,7 @@ function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thou
           const delta = ev.type === "stream_event" ? ev.event?.delta : null;
           if (delta?.type === "text_delta") tick(delta.text || "");
           else if (delta?.type === "thinking_delta") tick("", delta.thinking || "");
+          if (ev.type === "rate_limit_event") noteClaudeLimit(ev.rate_limit_info);
           if (ev.type === "result") { if (ev.is_error) failed = ev.result || "error"; else result = String(ev.result || ""); }
         } catch { /* not JSON */ }
       }

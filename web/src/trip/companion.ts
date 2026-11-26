@@ -6,6 +6,11 @@
 // the trip (and saved with it).
 // Also the Ideas & notes box: a scratchpad for the travelers that the chat can read, but that isn't sent with a plan.
 // The chat never feeds into generation itself: only an applied change does, as its instruction.
+import { renderTripTitle } from "./title";
+import { renderBookings } from "./bookings";
+import { fillFields } from "./fields";
+import { copyModelMenu } from "../generate/models";
+import { refreshUsageBanner } from "./usage-banner";
 import { moveTo } from "../map/move";
 import type { AgreedStop, GeoHit, ItineraryItem, LegChoice, MustSeeHow } from "../../../shared/types";
 import { stayLoc, stayOn } from "../geo/locate";
@@ -98,11 +103,17 @@ const SMALL_EDITS = ["note", "idea", "booked", "packed", "packAdd", "packRemove"
 const small = (c: PlanChange) => !c.request && (c.stops?.length || 0) + (c.edits?.length || 0) <= 3 && !c.trip?.removeDayTrips?.length && !c.trip?.addDayTrips?.length && !c.trip?.rescaleCosts
   && (c.edits || []).every((e) => SMALL_EDITS.includes(e.op));
 
+/** The setup's fields as they're called on the page. */
+const SET_NAMES: Record<string, string> = {
+  travelers: "Travelers", people: "Names", dailyBudget: "Budget", currency: "Currency", pace: "Pace", fitness: "Fitness",
+  dayStart: "Days start at", breakfast: "Breakfast", getAround: "Getting around", interests: "Interests", wishes: "What you want to see",
+};
+
 /** One edit in words. */
 function editLine(e: EditOp) {
   const v = (x: unknown) => String(x ?? "");
   switch (e.op) {
-    case "set": return `${v(e.field)}: ${v(e.value) || "(none)"}`;
+    case "set": return `${SET_NAMES[v(e.field)] || v(e.field)}: ${v(e.value) || "(none)"}${e.field === "dailyBudget" ? ` ${state.currency} per person a day` : ""}`;
     case "stayNights": return `${v(e.stay)}: ${v(e.nights)} night${Number(e.nights) === 1 ? "" : "s"}`;
     case "stayHotel": return `${v(e.stay)}: staying at ${v(e.value)}`;
     case "stayTravel": return `${v(e.stay)}: getting there by ${v(e.value)}`;
@@ -741,6 +752,8 @@ function applyOps(t: TripOps) {
 function refreshAll() {
   setListPlaces(session.listPlaces);
   save();
+  // The sidebar's own inputs too (travelers, budget, wishes, bookings…): a change from the chat shows there at once.
+  fillFields(); renderBookings(); renderTripTitle();
   renderStays(); renderChips(); renderItinerary(); drawMap({ fit: false }); geocodeItems(); geocodePlaces();
 }
 
@@ -1029,15 +1042,10 @@ async function compact(upTo: number) {
 }
 let compacting = false;
 
-/** The chat's model menu: "Same as planning (…)" and every model the planning menu has (its actions left out). */
+/** The chat's model menu, like the planning one. */
 function syncModels() {
-  const pick = $<HTMLSelectElement>("#cpModel"), main = $<HTMLSelectElement>("#model");
-  const opts = [...main.options].filter((o) => o.value && !o.value.startsWith("__"));
-  const planning = main.selectedOptions[0]?.textContent?.trim() || "the planning model";
-  const want = state.chatModel && opts.some((o) => o.value === state.chatModel) ? state.chatModel : "";
-  const html = `<option value="">Same as planning (${esc(planning)})</option>` + opts.map((o) => `<option value="${esc(o.value)}">${esc(o.textContent?.trim() || o.value)}</option>`).join("");
-  if (pick.dataset.html !== html) { pick.innerHTML = html; pick.dataset.html = html; }
-  pick.value = want;
+  copyModelMenu($<HTMLSelectElement>("#cpModel"), state.chatModel);
+  refreshUsageBanner(chatModel());
 }
 
 /** The model that answers in the chat. */
@@ -1193,7 +1201,9 @@ export function openChat(text?: string) {
 export function initCompanion() {
   $("#chatBtn").onclick = () => (panel().hidden ? openChat() : setOpen(false));
   // The chat's own model (or the planning one); the menu follows the planning menu as models come and go.
-  $<HTMLSelectElement>("#cpModel").onchange = (e) => { state.chatModel = (e.target as HTMLSelectElement).value; save(); };
+  $<HTMLSelectElement>("#cpModel").onchange = (e) => { state.chatModel = (e.target as HTMLSelectElement).value; save(); refreshUsageBanner(chatModel()); };
+  // After each request the counts have changed.
+  window.addEventListener("ai-request-done", () => { refreshUsageBanner(chatModel()); });
   const main = $<HTMLSelectElement>("#model");
   main.addEventListener("change", syncModels);
   new MutationObserver(syncModels).observe(main, { childList: true });

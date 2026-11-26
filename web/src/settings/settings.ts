@@ -1,11 +1,16 @@
-// Settings, in tabs, with a search over all of them: General (how the app opens, theme, start-up and saving, units, what
-// a new trip starts with, where the data is), Map (place names, the maps app, downloading transport lines), Planning
-// (language, detail, how many real places and web lookups, fix rounds, the search engine), API keys (every key in one
-// place: AI providers, Brave, Geoapify, Google), Local models (Ollama: status, the graphics card, models from ollama.com
-// that fit it, a search of the library, installs with download progress, installed models, how they plan, the context
-// size), Phone (the planner on the home network: start/stop, status, the link and its QR code), Updates and Credits.
+// Settings, in tabs grouped in the side bar, with a search over all of them. Each thing has one home.
+// App: General (how the app opens, theme, start-up and saving, units, what a new trip starts with, where the data is),
+//   Map (place names, the maps app, downloading transport lines), Phone (the planner on the home network: start/stop,
+//   status, the link and its QR code).
+// Planning: Plan style (language, detail, how many real places, fix rounds), AI models (a row per provider that opens its
+//   own page: Claude Code, Google Gemini with its tier, usage, limits and guide, Anthropic, OpenAI, OpenRouter), Local
+//   models (Ollama: status, the graphics card, models from ollama.com that fit it, a search of the library, installs with
+//   download progress, installed models, how they plan, the context size), Search & places (the search engine, Brave,
+//   SearXNG, how much is looked up, Geoapify).
+// Your files: Sync (the folders), Photos (where they can come from, the Google API key), Accounts (Google, Dropbox).
+// About: Updates and Credits.
 import qrcode from "qrcode-generator";
-import type { GpuInfo, KeyStatus } from "../../../shared/types";
+import type { CloudProvider, GpuInfo, KeyStatus, ModelsResponse } from "../../../shared/types";
 import { $, $$, api, esc, toast } from "../core/dom";
 import { ext, icon } from "../core/icons";
 import { type AppPrefs, prefs, setPrefs } from "../core/prefs";
@@ -13,7 +18,8 @@ import { CURRENCIES } from "../core/format";
 import { type Choice, choice, setTheme } from "../core/theme";
 import { type UpdateInfo, install } from "../core/update";
 import { engineText, switchWindowMode } from "../core/window-mode";
-import { renderKeyRows } from "../generate/keys";
+import { loadKeys, renderKeyRows } from "../generate/keys";
+import { mountGemini } from "./gemini-panel";
 import { MODELS, suggestion } from "../generate/local-guide";
 import { refreshModels } from "../generate/models";
 import { mountSearxng } from "./searxng-panel";
@@ -22,6 +28,8 @@ import { keyFieldHtml, wireKeyFields } from "./key-field";
 import { clearDownloaded, downloadText, onDownloadChange } from "../map/lines-download";
 import { SEARXNG_LOCAL } from "./searxng-local";
 import { renderSync } from "./sync-tab";
+import { renderAccounts } from "./accounts-tab";
+import { renderPhotos, photosHtml } from "./photos-tab";
 import { loadSyncStatus } from "../saves/sync-client";
 import { askConfirm } from "../core/ask";
 import { markNewSince, setRollback, updateLog } from "./update-log";
@@ -40,12 +48,21 @@ interface Rec { model: string; tag: string; sizeGb: number; context: string; cap
 
 interface UpdateState { info: (UpdateInfo & { checkedAt: number }) | null; error: string; waitUntil: number; auto: boolean; available: boolean; mode?: UpdateInfo["mode"] }
 
-type Tab = "general" | "map" | "planning" | "keys" | "models" | "sync" | "phone" | "updates" | "credits";
-const TABS: [Tab, Parameters<typeof icon>[0], string][] = [
-  ["general", "settings", "General"], ["map", "map", "Map"], ["planning", "sliders", "Planning"], ["keys", "key", "API keys"],
-  ["models", "cpu", "Local models"], ["sync", "cloud", "Sync"], ["phone", "phone", "Phone"], ["updates", "refresh", "Updates"], ["credits", "heart", "Credits"],
+type Tab = "general" | "map" | "phone" | "planning" | "ai" | "models" | "search" | "sync" | "photos" | "accounts" | "updates" | "credits";
+/** The tabs in groups; each group's name shows above its tabs in the side bar. */
+const GROUPS: [string, [Tab, Parameters<typeof icon>[0], string][]][] = [
+  ["App", [["general", "settings", "General"], ["map", "map", "Map"], ["phone", "phone", "Phone"]]],
+  ["Planning", [["planning", "sliders", "Plan style"], ["ai", "sparkles", "AI models"], ["models", "cpu", "Local models"], ["search", "search", "Search & places"]]],
+  ["Your files", [["sync", "cloud", "Sync"], ["photos", "images", "Photos"], ["accounts", "key", "Accounts"]]],
+  ["About", [["updates", "refresh", "Updates"], ["credits", "heart", "Credits"]]],
 ];
+const TABS = GROUPS.flatMap(([, tabs]) => tabs);
 const tabName = (t: Tab) => TABS.find((x) => x[0] === t)![2];
+/** Tabs with keys on them: the search finds them for "key", "api" and "token". */
+const KEY_TABS: Tab[] = ["ai", "search", "photos"];
+/** AI models: the provider whose page is open ("" = the list of them). */
+type Provider = CloudProvider | "claude";
+let aiOpen: Provider | "" = "";
 let tab: Tab = "general", settings: Settings | null = null, ollama: OllamaInfo | null = null, lan: LanStatus | null = null;
 /** The search box's text; while it has some, the page shows the settings that match instead of a tab. */
 let find = "";
@@ -67,10 +84,11 @@ const count = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ?
 const dialog = () => $<HTMLDialogElement>("#settingsDialog");
 
 /** Opens Settings at a tab; onKeyChange runs when it closes, if an AI key was added or removed meanwhile. */
-export async function openSettings(which: Tab = tab, onKeyChange?: () => void) {
-  tab = which; find = "";
+export async function openSettings(which: Tab = tab, onKeyChange?: () => void, provider: Provider | "" = "") {
+  tab = which; find = ""; aiOpen = "";
   updatedFrom = null;
   keysChanged = false; onKeysClosed = onKeyChange || null;
+  aiOpen = provider; aiModels = null;
   if (!dialog().open) dialog().showModal();
   render();
   await load();
@@ -96,7 +114,7 @@ async function load() {
   render();
   if (tab === "models") loadModelsTab();
   if (tab === "updates") loadUpdates();
-  if (tab === "sync") loadSyncStatus().then(renderSyncTab);
+  loadAccountTab();
 }
 
 async function loadUpdates() {
@@ -184,7 +202,7 @@ function render() {
   }
   const input = $<HTMLInputElement>("#setFind");
   if (input.value.trim() !== find) input.value = find;
-  $("#setNav").innerHTML = TABS.map(nav).join("");
+  $("#setNav").innerHTML = GROUPS.map(([name, tabs]) => `<div class="set-group"><span class="set-group-name">${name}</span>${tabs.map(nav).join("")}</div>`).join("");
   $$<HTMLButtonElement>("#setNav [data-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.tab as Tab); });
   if (find) renderFind();
   else if (tab === "general") renderGeneral();
@@ -193,31 +211,61 @@ function render() {
   else if (loadError) $("#setMain").innerHTML = `<p class="hint">${esc(loadError)}</p>`;
   else if (tab === "map") renderMap();
   else if (tab === "planning") renderPlanning();
-  else if (tab === "keys") renderKeys();
+  else if (tab === "ai") renderAi();
+  else if (tab === "search") renderSearch();
   else if (tab === "models") renderModels();
   else if (tab === "updates") renderUpdates();
   else if (tab === "sync") renderSyncTab();
+  else if (tab === "photos") renderPhotosTab();
+  else if (tab === "accounts") renderAccountsTab();
   else renderPhone();
 }
 
+/** Buttons that open another tab (data-to-tab). */
+function wireTabLinks(root: ParentNode) {
+  root.querySelectorAll<HTMLButtonElement>("[data-to-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.toTab as Tab); });
+}
+
+/** The main area, while the tab `t` is the one shown. */
+const mainOf = (t: Tab) => (tab === t && !find ? document.querySelector<HTMLElement>("#setMain") : null);
+
 function renderSyncTab() {
-  const main = document.querySelector<HTMLElement>("#setMain");
-  if (main && tab === "sync" && !find) renderSync(main, renderSyncTab);
+  const main = mainOf("sync");
+  if (main) { renderSync(main, renderSyncTab); wireTabLinks(main); }
+}
+
+function renderAccountsTab() {
+  const main = mainOf("accounts");
+  if (main) renderAccounts(main, renderAccountsTab);
+}
+
+function renderPhotosTab() {
+  const main = mainOf("photos");
+  if (!main) return;
+  renderPhotos(main, serviceKeyField("google", settings?.serviceKeys?.google), renderPhotosTab);
+  wireServiceKeys(main, (s) => { settings = s; renderPhotosTab(); });
+}
+
+/** The tabs that show whether an account is connected: asked fresh each time they're opened. */
+function loadAccountTab() {
+  if (tab === "sync") loadSyncStatus().then(renderSyncTab);
+  if (tab === "accounts") loadSyncStatus().then(renderAccountsTab);
+  if (tab === "photos") loadSyncStatus().then(renderPhotosTab);
 }
 
 function showTab(t: Tab) {
-  tab = t; find = "";
+  tab = t; find = ""; aiOpen = "";
   render();
   $("#setMain").scrollTop = 0;
   if (tab === "models") loadModelsTab();
   if (tab === "updates") loadUpdates();
-  if (tab === "sync") loadSyncStatus().then(renderSyncTab);
+  loadAccountTab();
 }
 
 // ---- Search ----
 
 /** more: the rest of the row's words (its choices, "Miles, °F"), searched but not shown. */
-interface Hit { tab: Tab; title: string; hint: string; more?: string }
+interface Hit { tab: Tab; title: string; hint: string; more?: string; open?: Provider }
 
 /** Settings on the tabs that are drawn from live state (models, phone, updates), so the search finds them too. */
 const LIVE_HITS: Hit[] = [
@@ -227,10 +275,12 @@ const LIVE_HITS: Hit[] = [
   { tab: "models", title: "Recommended", hint: "Models from ollama.com that fit your graphics card." },
   { tab: "models", title: "Find models", hint: "Search the ollama.com library, or install a model by its exact name." },
   { tab: "models", title: "Context size", hint: "How much a local model can read and write at once." },
-  { tab: "sync", title: "Sync", hint: "Keep trips in step between your computers and with friends, through Google Drive folders." },
-  { tab: "sync", title: "Your Google client", hint: "Your own client ID and secret for Google sign-in, with a step-by-step guide." },
-  { tab: "sync", title: "Sign in with Google", hint: "Sign in so trips can sync through your Drive." },
-  { tab: "sync", title: "Sync folders", hint: "The Drive folders trips sync with: your own, or ones friends shared with you." },
+  { tab: "ai", open: "gemini", title: "Tier", hint: "Whether the Gemini key is on Google's free tier or has billing on." },
+  { tab: "ai", open: "gemini", title: "Today", hint: "Gemini requests sent today per model, against their daily limits, and when they reset." },
+  { tab: "ai", open: "gemini", title: "Your project's limits", hint: "Exact limits: read the Gemini key's limits from its Google Cloud project: no test requests spent." },
+  { tab: "sync", title: "Sync folders", hint: "Keep trips in step between your computers and with friends, through folders in Google Drive, Dropbox or on this computer." },
+  { tab: "accounts", title: "Google", hint: "Connect Google for Drive sync, photos from Drive and Gemini's exact limits: your own client, step by step." },
+  { tab: "accounts", title: "Dropbox", hint: "Connect Dropbox to sync trips through its folders: your own app key, step by step." },
   { tab: "phone", title: "Phone access", hint: "Use the planner on your phone over Wi-Fi: a link and a QR code." },
   { tab: "phone", title: "Away from home", hint: "Use the planner anywhere with Tailscale, a free private network." },
   { tab: "updates", title: "Version", hint: "Which version you have, and what's new." },
@@ -247,21 +297,20 @@ function hits(): Hit[] {
   const read = (t: Tab, html: string) => {
     const box = document.createElement("div");
     box.innerHTML = html;
-    // Not the short notes that point to a key on another tab (the key itself is found under API keys).
-    for (const row of $$<HTMLElement>(".set-row:not(.key-note), .kf", box)) {
+    for (const row of $$<HTMLElement>(".set-row, .kf", box)) {
       const title = row.querySelector("b")?.textContent?.trim();
       const hint = row.querySelector(".hint")?.textContent?.trim() || "";
       const more = [...row.querySelectorAll("button, option, label")].map((e) => e.textContent?.trim()).join(" ");
-      if (title && !out.some((h) => h.tab === t && h.title === title)) out.push({ tab: t, title, hint, more });
+      if (title && !out.some((h) => h.tab === t && h.title === title)) out.push({ tab: t, title, hint, more, open: row.dataset.provider as Provider | undefined });
     }
   };
-  read("general", generalHtml()); read("map", mapHtml()); read("planning", planningHtml(true)); read("keys", keysHtml(true)); read("models", localPlanHtml());
+  read("general", generalHtml()); read("map", mapHtml()); read("planning", planningHtml()); read("ai", aiHtml()); read("search", searchHtml(true)); read("photos", photosHtml(serviceKeyField("google", settings.serviceKeys?.google))); read("models", localPlanHtml());
   return [...out, ...LIVE_HITS];
 }
 
 function renderFind() {
   const words = find.toLowerCase().split(/\s+/).filter(Boolean);
-  const head = (h: Hit) => `${h.title} ${tabName(h.tab)}${h.tab === "keys" ? " api key token" : ""}`.toLowerCase();
+  const head = (h: Hit) => `${h.title} ${tabName(h.tab)}${KEY_TABS.includes(h.tab) ? " api key token" : ""}`.toLowerCase();
   const text = (h: Hit) => `${head(h)} ${h.hint} ${h.more || ""}`.toLowerCase();
   // Matches in the title (or the tab's name: every key for "key") first, then the ones only in the description.
   const top = (h: Hit) => Number(words.every((w) => head(h).includes(w)));
@@ -288,6 +337,8 @@ function renderFind() {
 /** Opens the setting's tab and shows it, lit up for a moment. */
 function jumpTo(h: Hit) {
   showTab(h.tab);
+  // Something on a provider's own page (Gemini's tier, usage or limits): open it. A provider's row stays in the list.
+  if (h.open && !PROVIDER_ROWS.some((p) => p.name === h.title)) { aiOpen = h.open; render(); }
   // Some tabs draw after loading: look for the row a few times.
   let tries = 0;
   const look = () => {
@@ -483,20 +534,12 @@ const LANGUAGES = ["", "Deutsch", "Français", "Español", "Italiano", "Portugu�
 
 const tuneOpt = (v: string | number, label: string, now: string | number) => `<option value="${v}"${String(v) === String(now) ? " selected" : ""}>${label}</option>`;
 const tuneSeg = (t: Tune) => (k: keyof Tune, v: string, label: string) => `<button type="button" class="seg${String(t[k]) === v ? " on" : ""}" data-tune="${k}" data-v="${v}">${label}</button>`;
-/** A saved key, briefly, where a setting depends on it (the full field is under API keys). */
-const keyNote = (k: ServiceKey, name: string) => {
-  const s = settings?.serviceKeys?.[k];
-  return `<div class="set-row key-note"><div><b>${icon("key")} ${name}</b><div class="hint">${s?.set ? `Saved, ending in <code>${esc(s.hint.replace("…", ""))}</code>.` : "Not set yet: until it is, research uses the automatic choice."}</div></div>
-    <button type="button" class="btn${s?.set ? "" : " solid"}" data-to-keys="${k}">${s?.set ? "Change in API keys" : `${icon("key")} Add the key`}</button></div>`;
-};
-
-/** Planning: the plan, and researching online. `all`: every row, whatever is chosen (for the search). */
-function planningHtml(all = false) {
+/** Plan style: what the plan itself is like. */
+function planningHtml() {
   const t = settings!.tune, seg = tuneSeg(t), opt = tuneOpt;
   return `
-    <h3>Planning</h3>
+    <h3>Plan style</h3>
     <div class="set-card">
-      <b class="card-title">The plan</b>
       <div class="set-row"><div><b>Language</b><div class="hint">What the plan is written in. Place names stay as they're known locally.</div></div>
         <select id="tuneLang">${LANGUAGES.map((l) => opt(l, l || "English", t.language)).join("")}${t.language && !LANGUAGES.includes(t.language) ? opt(t.language, t.language, t.language) : ""}</select></div>
       <div class="set-row"><div><b>Descriptions</b><div class="hint">How much each stop's description says. Brief is quicker to read and to write (faster with local models).</div></div>
@@ -505,13 +548,20 @@ function planningHtml(all = false) {
         <div class="segs">${seg("places", "fewer", "Fewer")}${seg("places", "normal", "Normal")}${seg("places", "more", "More")}</div></div>
       <div class="set-row"><div><b>Fix rounds</b><div class="hint">With "Fix what the checks find" on: how many times stops in the wrong town or closed at the planned time go back to the model before you see the plan. Each round checks again.</div></div>
         <div class="segs">${seg("fixRounds", "0", "None")}${seg("fixRounds", "1", "1")}${seg("fixRounds", "2", "2")}</div></div>
-    </div>
+    </div>`;
+}
+
+/** Search & places: how plans are researched online, and finding places. `all`: every row (for the search). */
+function searchHtml(all = false) {
+  const t = settings!.tune, seg = tuneSeg(t), opt = tuneOpt, k = settings?.serviceKeys;
+  return `
+    <h3>Search &amp; places</h3>
+    <p class="hint set-intro">Used when the planner searches the web itself: for local models, and for Gemini where Google Search isn't included. Claude and the other cloud models use their own search. Keys here stay on this computer.</p>
     <div class="set-card">
-      <b class="card-title">Researching online</b>
-      <p class="hint set-note">For local models: the planner searches and reads pages for them. Claude and API models use their provider's own web search.</p>
+      <b class="card-title">${icon("search")} Web search</b>
       <div class="set-row"><div><b>Search engine</b><div class="hint">Automatic uses Brave or SearXNG when set up, otherwise DuckDuckGo (which often shows a bot check after a few searches), then Wikipedia and Wikivoyage.</div></div>
         <div class="segs">${seg("search", "auto", "Automatic")}${seg("search", "brave", "Brave")}${seg("search", "searxng", "SearXNG")}</div></div>
-      ${t.search === "brave" || all ? keyNote("brave", "Brave Search API key") : ""}
+      ${t.search !== "searxng" || all ? `<div class="kf-list kf-svc">${serviceKeyField("brave", k?.brave)}</div>` : ""}
       ${t.search === "searxng" || all ? `<div class="set-row sx-row"><div><b>${icon("container")} SearXNG on this computer</b><div class="hint">A free search engine that asks Google, Bing, DuckDuckGo and others at once and combines their results, with no account or key. It runs in Docker, only reachable from this computer; with SearXNG chosen here, the planner starts Docker and it whenever they're needed.</div>
           <div id="sxPanel"></div>
           <details class="sx-own"${settings?.searxngUrl && settings.searxngUrl !== SEARXNG_LOCAL ? " open" : ""}><summary>Use your own SearXNG server instead</summary>
@@ -522,7 +572,10 @@ function planningHtml(all = false) {
       <div class="set-row"><div><b>Opening web pages</b><div class="hint">Which pages the model may read. "Found" ones came up in a search or are linked from a page it read; letting it open pages it knows (an official site it remembers) helps when searches come back thin. Pages on this computer or your home network are never opened.</div></div>
         <select id="tunePages">${opt("found", "Only pages it found", t.pages)}${opt("known", "Found, plus up to 6 it knows", t.pages)}${opt("any", "Any public page", t.pages)}</select></div>
     </div>
-    <p class="hint">How local models think, and their context size, are under <button type="button" class="link-btn" data-to-tab="models">Local models</button>. Keys are under <button type="button" class="link-btn" data-to-tab="keys">API keys</button>.</p>`;
+    <div class="set-card kf-card">
+      <b class="card-title">${icon("pin")} Finding places</b>
+      <div class="kf-list kf-svc">${serviceKeyField("geoapify", k?.geoapify)}</div>
+    </div>`;
 }
 
 /** How local models plan: in one go or step by step, thinking, creativity, how long they stay loaded. */
@@ -558,27 +611,30 @@ function wireTune(redraw: () => void) {
     temp.oninput = () => { $("#tuneTempVal").textContent = Number(temp.value).toFixed(1); };
     temp.onchange = () => saveTune({ temperature: Number(temp.value) });
   }
-  // Links to other tabs ("Add the key" goes to API keys and lights the key up).
-  $$<HTMLButtonElement>("#setMain [data-to-tab]").forEach((b) => { b.onclick = () => showTab(b.dataset.toTab as Tab); });
-  $$<HTMLButtonElement>("#setMain [data-to-keys]").forEach((b) => {
-    b.onclick = () => jumpTo({ tab: "keys", title: SERVICE_KEYS.find((k) => k.id === b.dataset.toKeys)!.name, hint: "" });
-  });
+  wireTabLinks($("#setMain"));
 }
 
 function renderPlanning() {
   if (!settings?.tune) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
   $("#setMain").innerHTML = planningHtml();
   wireTune(renderPlanning);
+}
+
+function renderSearch() {
+  if (!settings?.tune) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
+  $("#setMain").innerHTML = searchHtml();
+  wireTune(renderSearch);
+  wireServiceKeys($("#setMain"), (s) => { settings = s; if (tab === "search" && !find) renderSearch(); });
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", async () => {
     settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }) });
-    toast("Saved the SearXNG address"); renderPlanning();
+    toast("Saved the SearXNG address"); renderSearch();
   });
   // SearXNG chosen: its steps, and Docker and it started if they're set up but stopped (unless research goes to
   // another SearXNG server).
   const sx = document.querySelector<HTMLElement>("#sxPanel");
   if (sx) mountSearxng(sx, {
     autoStart: !settings?.searxngUrl || settings.searxngUrl === SEARXNG_LOCAL,
-    onChange: async () => { settings = await api<Settings>("/api/settings"); if (tab === "planning" && !find) renderPlanning(); },
+    onChange: async () => { settings = await api<Settings>("/api/settings"); if (tab === "search" && !find) renderSearch(); },
   });
 }
 
@@ -586,11 +642,11 @@ function renderPlanning() {
 
 const SERVICE_KEYS: { id: ServiceKey; field: "braveKey" | "geoapifyKey" | "googleKey"; name: string; env: string; url: string; note: string }[] = [
   { id: "brave", field: "braveKey", name: "Brave Search API key", env: "BRAVE_API_KEY", url: "https://brave.com/search/api/",
-    note: "Reliable web search for local models' research; the free plan covers a good number of searches a month. Used when Planning → Search engine is Brave (or Automatic)." },
+    note: "Reliable web search for local models' research; the free plan covers a good number of searches a month. Used when the search engine is Brave (or Automatic)." },
   { id: "geoapify", field: "geoapifyKey", name: "Geoapify key", env: "GEOAPIFY_API_KEY", url: "https://www.geoapify.com/",
     note: "Finding hundreds of saved places takes a while with the free public services (Nominatim and Photon). A free Geoapify key adds a third, faster one that works alongside them (3,000 lookups a day). Without it nothing changes." },
   { id: "google", field: "googleKey", name: "Google API key", env: "GOOGLE_API_KEY", url: "https://console.cloud.google.com/apis/credentials",
-    note: `Shows the photos of a Google Drive folder on the map (Layers → Photos), at the spot each was taken; the folder has to be shared as "Anyone with the link". To get a free key: open the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API page${ext()}</a>, choose or create a project and press <b>Enable</b>; then under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials${ext()}</a> choose <b>Create credentials → API key</b>.` },
+    note: `To get a free key: open the <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">Google Drive API page${ext()}</a>, choose or create a project and press <b>Enable</b>; then under <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Credentials${ext()}</a> choose <b>Create credentials → API key</b>.` },
 ];
 /** A Brave, Geoapify or Google key field; `brief`: without the long explanation (the quick-start guide has its own). */
 export const serviceKeyField = (k: ServiceKey, status?: KeyStatus, brief = false) => {
@@ -605,38 +661,73 @@ export async function saveServiceKey(k: ServiceKey, key: string) {
   return s;
 }
 
-/** API keys: the AI providers' (planning with a paid account), then web search, place lookups and photos. `all`: with
- *  the AI providers' rows written out (for the search; on the page they're filled in after loading). */
-function keysHtml(all = false) {
-  const k = settings?.serviceKeys;
-  const ai = all ? `<div class="kf"><b>Anthropic</b><div class="hint">Claude models with Anthropic's web search.</div></div><div class="kf"><b>OpenAI</b><div class="hint">GPT models with OpenAI's web search.</div></div><div class="kf"><b>OpenRouter</b><div class="hint">One key for many labs' models.</div></div>` : "";
+/** AI models: everything that can write a plan, a row each; a row opens that provider's own page. */
+const PROVIDER_ROWS: { id: Provider; name: string; what: string }[] = [
+  { id: "claude", name: "Claude Code", what: "Claude through Claude Code, on your Claude plan. No key needed." },
+  { id: "gemini", name: "Google Gemini", what: "Gemini models with Google Search. A free key, with daily limits, or pay per use." },
+  { id: "anthropic", name: "Anthropic", what: "Claude models with your own key, pay per use." },
+  { id: "openai", name: "OpenAI", what: "GPT models with your own key, pay per use." },
+  { id: "openrouter", name: "OpenRouter", what: "Many labs' models with one key, pay per use." },
+];
+let aiModels: ModelsResponse | null = null;
+
+function aiHtml() {
+  const m = aiModels;
+  const state = (id: Provider): [string, string] => {
+    if (!m) return ["", "Checking…"];
+    if (id === "claude") return m.claude ? ["ok", "Ready"] : ["off", "Not found"];
+    const k = m.keys[id];
+    if (m.errors?.[id]) return ["warn", "Problem with the key"];
+    return k?.set ? ["ok", `Key ${k.hint}`] : ["off", "Not set up"];
+  };
   return `
-    <h3>API keys</h3>
-    <p class="hint set-intro">Every key in one place. All are optional and stay on this computer: kept in the planner's folder, only ever sent to their own service, and never in saves or exports.</p>
-    <div class="set-card kf-card">
-      <b class="card-title">${icon("sparkles")} AI models</b>
-      <p class="hint">Plan with cloud models that search the web themselves. You pay the provider per use (a long trip with research on a top model can cost a euro or two; smaller models much less; the cost is shown after each plan where known).</p>
-      <div id="aiKeys" class="kf-list">${ai || `<p class="hint">Loading…</p>`}</div>
-    </div>
-    <div class="set-card kf-card">
-      <b class="card-title">${icon("search")} Web search</b>
-      <div class="kf-list kf-svc">${serviceKeyField("brave", k?.brave)}</div>
-    </div>
-    <div class="set-card kf-card">
-      <b class="card-title">${icon("pin")} Finding places</b>
-      <div class="kf-list kf-svc">${serviceKeyField("geoapify", k?.geoapify)}</div>
-    </div>
-    <div class="set-card kf-card">
-      <b class="card-title">${icon("images")} Photos on the map</b>
-      <div class="kf-list kf-svc">${serviceKeyField("google", k?.google)}</div>
-    </div>`;
+    <h3>AI models</h3>
+    <p class="hint set-intro">What writes your plans. Pick one in the Model menu under Planning; open a row here to set it up. Models running on your own graphics card are under <button type="button" class="link-btn" data-to-tab="models">Local models</button>.</p>
+    <div class="set-card ai-list">${PROVIDER_ROWS.map((p) => { const [dot, text] = state(p.id); return `<button type="button" class="set-row ai-row" data-provider="${p.id}">
+      <span><b>${p.name}</b><span class="hint">${p.what}</span></span><span class="ai-state"><span class="dot ${dot}"></span> ${esc(text)}</span><span class="ai-go">${icon("chevronDown")}</span></button>`; }).join("")}</div>`;
 }
 
-function renderKeys() {
-  if (!settings) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
-  $("#setMain").innerHTML = keysHtml();
-  renderKeyRows($("#aiKeys"), () => { keysChanged = true; refreshModels(); });
-  wireServiceKeys($("#setMain"), (s) => { settings = s; if (tab === "keys" && !find) renderKeys(); });
+/** One provider's page, with the way back to the list. */
+function renderProvider(id: Provider) {
+  const main = $("#setMain"), row = PROVIDER_ROWS.find((p) => p.id === id)!;
+  const changed = (keys: ModelsResponse["keys"]) => { if (aiModels) aiModels = { ...aiModels, keys, errors: {} }; keysChanged = true; refreshModels(); };
+  // Breadcrumbs: where this page is, and the way back.
+  main.innerHTML = `<h3 class="crumbs"><button type="button" class="ai-back">AI models</button><span class="crumb-sep" aria-hidden="true">›</span><span aria-current="page">${row.name}</span></h3>
+    <div id="aiPage"></div>`;
+  main.querySelector<HTMLButtonElement>(".ai-back")!.onclick = () => { aiOpen = ""; renderAi(); };
+  const page = $("#aiPage");
+  if (id === "claude") {
+    page.innerHTML = `<div class="set-card"><div class="set-row"><div><b>${aiModels?.claude ? "Claude Code is on this computer" : "Claude Code wasn't found"}</b>
+      <div class="hint">${aiModels?.claude ? "Pick a Claude model in the Model menu. Plans count toward your Claude plan, with no API charges." : "Install it, sign in once by running <code>claude</code> in a terminal, then come back here."}</div></div>
+      ${aiModels?.claude ? "" : `<a class="btn solid" href="https://docs.claude.com/en/docs/claude-code/setup" target="_blank" rel="noopener">How to install${ext()}</a>`}</div></div>`;
+  } else if (id === "gemini") {
+    mountGemini(page, aiModels?.keys.gemini, changed);
+  } else {
+    page.innerHTML = `<p class="hint set-intro">You pay ${row.name} per use (a long trip with research on a top model can cost a euro or two; smaller models much less; the cost is shown after each plan where known). ${esc(aiModels?.errors?.[id] || "")}</p>
+      <div class="set-card kf-card"><div id="aiKeys" class="kf-list"></div></div>
+      <p class="hint">The key stays on this computer: only ever sent to ${row.name}, and never in saves or exports.</p>`;
+    renderKeyRows($("#aiKeys"), changed, aiModels?.keys, [id as CloudProvider]);
+  }
+}
+
+async function renderAi() {
+  if (!mainOf("ai")) return;
+  if (aiOpen && aiModels) return renderProvider(aiOpen);
+  $("#setMain").innerHTML = aiHtml();
+  wireAiList();
+  aiModels = await api<ModelsResponse>("/api/models").catch(() => null);
+  // The server couldn't be asked about models: the keys at least.
+  if (!aiModels) { const keys = await loadKeys(); if (keys) aiModels = { claude: false, local: [], cloud: [], keys, errors: {}, ollama: { installed: false, running: false } }; }
+  if (!mainOf("ai") || !aiModels) return;
+  if (aiOpen) return renderProvider(aiOpen);
+  $("#setMain").innerHTML = aiHtml();
+  wireAiList();
+}
+
+function wireAiList() {
+  const main = $("#setMain");
+  wireTabLinks(main);
+  main.querySelectorAll<HTMLButtonElement>(".ai-row").forEach((b) => { b.onclick = () => { aiOpen = b.dataset.provider as Provider; renderAi(); main.scrollTop = 0; }; });
 }
 
 /** Wires the Brave, Geoapify and Google key fields inside `root` (each in a .kf-svc box); after() gets the settings

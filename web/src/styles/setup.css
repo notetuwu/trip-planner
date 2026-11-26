@@ -296,9 +296,44 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 .credits-list a:hover { color: var(--accent); }
 .credits-what { color: var(--muted); font-size: 12.5px; }
 .credits-lic { font-size: 11px; color: var(--muted); margin-top: 2px; opacity: .85; }
-/* Credits sits at the bottom of the settings tabs, apart from the others (at the end of the row on phones). */
-.set-tab[data-tab="credits"] { margin-top: auto; }
-@media (max-width: 680px) { .set-tab[data-tab="credits"] { margin-top: 0; margin-left: auto; } }
+/* The settings tabs in groups, each under its name; About sits at the bottom. On phones the tabs are one row that
+   scrolls sideways, without the names. */
+.set-group { display: flex; flex-direction: column; gap: 2px; }
+.set-group + .set-group { margin-top: 10px; }
+.set-group:last-child { margin-top: auto; padding-top: 10px; }
+.set-group-name { padding: 2px 12px 3px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); opacity: .8; }
+@media (max-width: 680px) {
+  .set-group { display: contents; }
+  .set-group-name { display: none; }
+}
+
+/* Google Gemini in Settings → AI models: tier, today's requests per model, and what to know before using a free key. */
+.gm-status { display: grid; gap: 2px; margin: 2px 0 6px; }
+.gm-status .set-row b + .fit { margin-left: 6px; }
+.gm-uses { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 6px; }
+.gm-use { display: grid; grid-template-columns: minmax(0, 1.4fr) auto minmax(80px, 1fr); align-items: center; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12.5px; }
+.gm-use code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gm-use.full { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.gm-bar { display: inline-block; height: 6px; min-width: 60px; border-radius: 99px; background: var(--hover); overflow: hidden; vertical-align: middle; }
+.gm-bar i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.gm-use.full .gm-bar i, .gm-q.near .gm-bar i, .gm-q.full .gm-bar i { background: var(--warn); }
+.gm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.gm-chips code { padding: 2px 8px; border-radius: 99px; background: color-mix(in srgb, var(--ok) 12%, transparent); font-size: 12px; }
+.gm-chips.maybe code { background: var(--hover); color: var(--muted); }
+.gm-not { margin: 6px 0 2px; font-size: 12.5px; }
+.gm-not summary { cursor: pointer; color: var(--muted); }
+.gm-not ul { margin: 6px 0; padding-left: 18px; display: grid; gap: 3px; }
+.gm-limited { margin: 6px 0; padding: 8px 12px; border-radius: 8px; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); font-size: 13px; }
+.gm-warn { margin: 0 0 14px; padding: 10px 14px 8px; border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line)); border-left-width: 4px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 7%, transparent); font-size: 13px; }
+.gm-warn > b { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); }
+.gm-warn ul { margin: 6px 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.5; }
+.gm-warn .hint { margin: 4px 0 2px; }
+@media (max-width: 560px) { .gm-use { grid-template-columns: 1fr auto; } .gm-use > :last-child { grid-column: 1 / -1; } }
+/* The line under the Model menu while a Gemini model is picked. */
+.model-quota { margin-top: 2px; }
+.gm-q { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.gm-q .gm-bar { min-width: 48px; width: 64px; }
+.gm-q.full { color: var(--warn); }
 /* Whether the open trip is saved: a word after its name, in a colour. */
 .save-state.ok { color: var(--ok); }
 .save-state.warn { color: var(--warn); }
@@ -519,3 +554,61 @@ textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
 .log-acts { display: flex; justify-content: flex-end; margin: 10px 0 6px; }
 .log-roll { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; text-decoration: none; }
 .log-plain .log-roll { margin-left: auto; }
+
+/* Settings → AI models: a row per provider, opening its page. */
+.ai-list { padding-block: 4px; }
+.ai-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 14px; width: 100%; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; padding-inline: 6px; }
+.ai-row:hover { background: var(--hover); }
+.ai-row > span:first-child { display: grid; gap: 2px; }
+.ai-state { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.ai-go { display: inline-flex; color: var(--muted); transform: rotate(-90deg); }
+.crumbs { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.crumbs button { padding: 0; border: 0; background: none; font: inherit; color: var(--muted); cursor: pointer; }
+.crumbs button:hover { color: var(--accent); text-decoration: underline; }
+.crumb-sep { color: var(--muted); font-weight: 400; }
+@media (max-width: 560px) { .ai-row { grid-template-columns: minmax(0, 1fr) auto; } .ai-state { grid-row: 2; } .ai-go { grid-column: 2; grid-row: 1; } }
+
+/* Settings → Accounts, and folded extras elsewhere. */
+.acc-uses { list-style: none; margin: 4px 0 8px; padding: 0; display: grid; gap: 6px; font-size: 13px; }
+.acc-use { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.acc-use.on { color: var(--ink); }
+.acc-use.on svg.i { color: var(--ok); }
+.acc-off { width: 1em; height: 1em; display: inline-block; border: 1.5px solid var(--line); border-radius: 50%; box-sizing: border-box; }
+.acc-manage { margin: 4px 0 10px; font-size: 13px; }
+.acc-manage summary { cursor: pointer; color: var(--accent); font-weight: 600; }
+.acc-manage .set-inline { margin-top: 8px; flex-wrap: wrap; }
+
+/* The connect window: one step per screen. */
+.wz-dialog { width: min(560px, calc(100vw - 24px)); box-sizing: border-box; }
+.wz-dialog[open] { display: flex; flex-direction: column; gap: 10px; }
+.wz-for { margin: 0; font-size: 12px; color: var(--muted); font-weight: 600; }
+.wz-bar { display: flex; gap: 4px; }
+.wz-dot { flex: 1; height: 6px; padding: 0; border: 0; border-radius: 99px; background: var(--hover); cursor: pointer; }
+.wz-dot.past { background: color-mix(in srgb, var(--accent) 50%, transparent); }
+.wz-dot.on { background: var(--accent); }
+.wz-dialog h3 { margin: 4px 0 0; }
+.wz-body { min-height: 150px; font-size: 14px; line-height: 1.55; overflow: auto; }
+.wz-body p { margin: 0 0 10px; }
+.wz-links, .wz-codes { display: flex; flex-wrap: wrap; gap: 8px; }
+.wz-field { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.wz-field .link-row { margin: 0; min-width: 0; }
+.wz-field code { overflow-wrap: anywhere; }
+.wz-input { display: grid; gap: 4px; margin: 0 0 10px; font-size: 12.5px; font-weight: 600; }
+.wz-input input { width: 100%; box-sizing: border-box; }
+.wz-done { color: var(--ok); }
+.wz-acts { display: flex; align-items: center; gap: 12px; }
+.wz-acts > span { flex: 1; }
+.wz-dialog { position: fixed; }
+.wz-dialog .keys-close { position: absolute; top: 10px; right: 10px; margin: 0; }
+
+/* The usage warning, a part of the chat's message box like the question popup: its top section, over a dividing line. */
+.cp-usage { --usage-bg: #f7e8c9; --usage-ink: #6d4c12; display: flex; align-items: flex-start; gap: 10px; margin: -8px -8px 4px -12px; padding: 12px 10px 11px 14px; border-radius: 17px 17px 0 0; background: var(--usage-bg); border-bottom: 1px solid color-mix(in srgb, var(--usage-ink) 28%, transparent); cursor: default; color: var(--usage-ink); font-size: 12.5px; font-weight: 600; line-height: 1.45; }
+/* The yellow of Claude Code's limit warning. */
+:root[data-theme="dark"] .cp-usage { --usage-bg: #574939; --usage-ink: #e6c28d; }
+.cp-usage[hidden] { display: none; }
+.cp-usage:not([hidden]) ~ .cp-ask { margin-top: -4px; }
+.cp-usage > svg.i { flex: none; margin-top: 2px; font-size: 15px; }
+.cp-usage > span { flex: 1; min-width: 0; }
+.cp-usage a { color: inherit; text-decoration: underline; white-space: nowrap; }
+.cp-usage-x { flex: none; display: inline-flex; padding: 2px; border: 0; background: none; color: inherit; opacity: .75; cursor: pointer; }
+.cp-usage-x:hover { opacity: 1; }

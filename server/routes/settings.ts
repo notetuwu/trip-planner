@@ -24,7 +24,7 @@ const view = () => {
 export async function handleSettings(req: Req, res: Res) {
   if (req.method === "POST") {
     const body = await readJson(req);
-    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx, checkUpdates: body?.checkUpdates, braveKey: body?.braveKey, geoapifyKey: body?.geoapifyKey, googleKey: body?.googleKey, searxngUrl: body?.searxngUrl, quickstartSeen: body?.quickstartSeen, seenVersion: body?.seenVersion, tune: body?.tune && typeof body.tune === "object" ? body.tune : undefined, app: body?.app && typeof body.app === "object" ? body.app : undefined });
+    const s = writeSettings({ window: body?.window, numCtx: body?.numCtx, checkUpdates: body?.checkUpdates, braveKey: body?.braveKey, geoapifyKey: body?.geoapifyKey, googleKey: body?.googleKey, google: body?.google && typeof body.google === "object" ? body.google : undefined, searxngUrl: body?.searxngUrl, quickstartSeen: body?.quickstartSeen, seenVersion: body?.seenVersion, tune: body?.tune && typeof body.tune === "object" ? body.tune : undefined, app: body?.app && typeof body.app === "object" ? body.app : undefined });
     if (body?.reopen && PACKAGED) openWindow(`http://localhost:${PORT}`, ROOT, s.window);
     sendJson(res, 200, view());
     return;

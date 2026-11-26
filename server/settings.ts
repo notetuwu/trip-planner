@@ -6,6 +6,15 @@ import path from "node:path";
 import { ROOT } from "./config";
 
 export type WindowMode = "app" | "browser";
+export interface GoogleUse { sync: boolean; photos: boolean; quotas: boolean; project: string }
+const cleanGoogle = (g: any, now: GoogleUse = { sync: false, photos: false, quotas: false, project: "" }): GoogleUse => ({
+  sync: typeof g?.sync === "boolean" ? g.sync : now.sync,
+  photos: typeof g?.photos === "boolean" ? g.photos : now.photos,
+  quotas: typeof g?.quotas === "boolean" ? g.quotas : now.quotas,
+  // A project ID (letters, digits, hyphens) or number.
+  project: typeof g?.project === "string" && /^([a-z][a-z0-9-]{4,28}[a-z0-9]|\d{6,20}|)$/.test(g.project.trim()) ? g.project.trim() : now.project,
+});
+
 export interface Settings {
   window: WindowMode;
   /** Phone access: the planner also answers on the home network (started with the app when on). */
@@ -16,13 +25,17 @@ export interface Settings {
   numCtx: number;
   /** Look for a new version by itself (every hour); off: only Settings → Updates → Check now asks. */
   checkUpdates: boolean;
-  /** Research for local models: a Brave Search API key, and a SearXNG server's address (see Settings → Planning). */
+  /** Research for local models: a Brave Search API key, and a SearXNG server's address (Settings → Search & places). */
   braveKey: string;
   searxngUrl: string;
-  /** A free Geoapify key: a third, fast service for place lookups (Settings → Planning). */
+  /** A free Geoapify key: a third, fast service for place lookups (Settings → Search & places). */
   geoapifyKey: string;
-  /** A Google API key with the Drive API on: lists the photos of a shared Drive folder for the map (Settings → Planning). */
+  /** A Google API key with the Drive API on: lists the photos of a shared Drive folder for the map (Settings → Photos). */
   googleKey: string;
+  /** What the person's own Google client is used for, set by the Connect steps (Settings → Accounts): sign-in asks
+   *  for read-only Cloud access only with `quotas`), and the Google Cloud project whose Gemini quotas are read (""
+   *  = the client's own project, from the number its ID starts with). */
+  google: GoogleUse;
   /** The quick-start guide was shown (it opens by itself only the first time the app starts). */
   quickstartSeen: boolean;
   /** The newest version whose update log was shown, or that a first start began with ("" = none yet): the first start
@@ -166,6 +179,7 @@ export function readSettings(): Settings {
     searxngUrl: typeof saved.searxngUrl === "string" ? saved.searxngUrl : "",
     geoapifyKey: typeof saved.geoapifyKey === "string" ? saved.geoapifyKey : "",
     googleKey: typeof saved.googleKey === "string" ? saved.googleKey : "",
+    google: cleanGoogle(saved.google),
     quickstartSeen: saved.quickstartSeen === true,
     seenVersion: isVersion(saved.seenVersion) ? saved.seenVersion : "",
     linesDir: typeof saved.linesDir === "string" ? saved.linesDir : "",
@@ -189,6 +203,7 @@ export function writeSettings(next: Partial<Omit<Settings, "tune" | "app">> & { 
     searxngUrl: typeof next.searxngUrl === "string" && (next.searxngUrl === "" || /^https?:\/\/[^\s]+$/.test(next.searxngUrl.trim())) ? next.searxngUrl.trim().replace(/\/+$/, "") : now.searxngUrl,
     geoapifyKey: typeof next.geoapifyKey === "string" ? next.geoapifyKey.trim().slice(0, 100) : now.geoapifyKey,
     googleKey: typeof next.googleKey === "string" ? next.googleKey.trim().slice(0, 100) : now.googleKey,
+    google: next.google ? cleanGoogle(next.google, now.google) : now.google,
     quickstartSeen: typeof next.quickstartSeen === "boolean" ? next.quickstartSeen : now.quickstartSeen,
     seenVersion: isVersion(next.seenVersion) ? next.seenVersion : now.seenVersion,
     // Set only through the lines' own call (it moves what's there first), never from the settings form.

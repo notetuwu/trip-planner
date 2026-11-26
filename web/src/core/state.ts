@@ -33,7 +33,7 @@ export interface Meta {
   perSec?: number;
   engine?: string;
   local?: boolean;
-  billing?: "plan" | "api" | "local";
+  billing?: "plan" | "api" | "free" | "local";
   searches?: number;
   budget?: number;
   currency?: string;
@@ -117,6 +117,8 @@ export interface AppState {
   car?: { fuel: "" | "petrol" | "diesel" | "electric"; per100: number; kwhPrice?: number; prices?: Record<string, number> };
   /** The model that plans routes in "Plan a route" ("" or unset: the planning model). */
   routeModel?: string;
+  /** "Plan a route" for this trip: the route on screen, the chat about it and what was filled in. */
+  routePlan?: { plan: unknown; chat: unknown[]; form: Record<string, string> };
   /** Things already booked (Bookings in the sidebar). */
   bookings?: Booking[];
   /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */

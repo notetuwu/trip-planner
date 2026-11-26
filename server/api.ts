@@ -17,6 +17,8 @@ import { reverseGeocode, searchPlaces } from "./geo/search";
 import { type Box, searchAreaKinds, searchAreaNames } from "./geo/area-search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
+import { checkTier, geminiKeyChanged, geminiStatus } from "./ai/gemini";
+import { usageNotice } from "./ai/usage-notices";
 import { openFolder, openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
@@ -236,7 +238,23 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     else if (method === "PUT" && path.startsWith("/api/keys/")) {
       const provider = path.slice("/api/keys/".length), body = await readJson(req);
       if (!isProvider(provider)) sendJson(res, 404, { error: "Unknown provider" });
-      else { setKey(provider, String(body?.key || "")); sendJson(res, 200, keyStatus()); }
+      else {
+        setKey(provider, String(body?.key || ""));
+        if (provider === "gemini") geminiKeyChanged();
+        sendJson(res, 200, keyStatus());
+      }
+    }
+    // A warning that the model's usage is critical (above the chat's message box).
+    else if (method === "GET" && path === "/api/usage") {
+      sendJson(res, 200, { notice: await usageNotice(new URL(req.url || "", "http://localhost").searchParams.get("model") || "") });
+    }
+    // The Gemini key: its tier, today's requests per model and the limits Google named; check checks the tier again.
+    else if (method === "GET" && path === "/api/gemini") {
+      sendJson(res, 200, await geminiStatus());
+    }
+    else if (method === "POST" && path === "/api/gemini/check") {
+      await checkTier();
+      sendJson(res, 200, await geminiStatus());
     }
     // Overnight stops between two stays on a long drive (route + the selected model).
     else if (method === "POST" && path === "/api/stops") {

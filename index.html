@@ -106,7 +106,7 @@
         </select></div>
     </div>
     <details class="notes-fold wishes-fold" id="wishesFold">
-      <summary><span>Your wishes</span><span class="hint" id="wishesHint"></span></summary>
+      <summary><span class="fold-icon"><i data-icon="heart"></i></span><span class="fold-title">Your wishes</span><span class="hint" id="wishesHint"></span></summary>
       <div class="row" style="--cols:1">
         <div><label for="interests">Interests</label><textarea id="interests" rows="2" placeholder="e.g. food markets, hiking, museums, vegan food, nightlife…"></textarea></div>
         <div><label for="wishes">What you want to see</label><textarea id="wishes" rows="2" placeholder="e.g. the big must-sees plus hidden gems locals love; quiet temples over crowded ones; a castle or two…"></textarea></div>
@@ -124,6 +124,7 @@
           <option value="haiku">Haiku (fast)</option>
         </select></div>
       <div class="hint model-hint" id="modelHint"></div>
+      <div class="hint model-quota" id="modelQuota" hidden></div>
       <div class="plan-switches">
         <label class="mini-check" id="researchRow"><input type="checkbox" id="research"> Research online<span class="hint" id="researchHint" hidden></span></label>
         <label class="mini-check" title="Stops in the wrong town or closed at the planned time go back to the model before you see the plan."><input type="checkbox" id="autoFix"> Fix what the checks find</label>
@@ -132,7 +133,7 @@
     </div>
 
     <details class="notes-fold" id="ideasFold">
-      <summary><span>Ideas &amp; notes</span><span class="edit-slot" data-edit="ideas"></span><span class="hint" id="ideasHint">only for you and the trip chat</span></summary>
+      <summary><span class="fold-icon"><i data-icon="pencil"></i></span><span class="fold-title">Ideas &amp; notes</span><span class="edit-slot" data-edit="ideas"></span><span class="hint" id="ideasHint">only for you and the trip chat</span></summary>
       <textarea id="ideas" class="ideas" rows="3" placeholder="Brainstorm here: places someone recommended, links, things to decide, what to book…"></textarea>
     </details>
 
@@ -166,6 +167,7 @@
     <div id="cpLog" class="rc-log cp-log"></div>
     <form id="cpForm" class="rc-input">
       <div class="cp-box" id="cpBox">
+        <div class="cp-usage" id="cpUsage" role="status" hidden></div>
         <div class="cp-ask" id="cpAsk" hidden></div>
         <div class="cp-attach" id="cpAttach" hidden></div>
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
@@ -201,8 +203,9 @@
       <div><label for="rpDays">Days</label><input id="rpDays" type="number" min="1" max="120" value="10" required></div>
       <div><label for="rpHours">Travel a day, max</label><select id="rpHours">
         <option value="2">2 h</option><option value="3">3 h</option><option value="4">4 h</option><option value="5" selected>5 h</option>
-        <option value="6">6 h</option><option value="8">8 h</option><option value="10">10 h</option></select></div>
+        <option value="6">6 h</option><option value="8">8 h</option><option value="10">10 h</option><option value="0">However long</option></select></div>
     </div>
+    <p class="hint" id="rpAnywhere" hidden>No limit on travel days, with flights where needed. Unless you name places, it's a surprise: anywhere in the world (say what to leave out, e.g. “not the USA”).</p>
     <div class="row" style="--cols:1">
       <div><label for="rpMode">Getting around</label><select id="rpMode">
         <option value="car">By car</option><option value="train">By train</option><option value="bus">By bus</option>
@@ -224,7 +227,8 @@
     <div id="rpChat" class="rc-log cp-log"></div>
     <form id="rpChatForm" class="rc-input">
       <div class="cp-box" id="rpBox">
-        <textarea id="rpWhy" rows="1" maxlength="1500" placeholder="Reply to change the route…" disabled></textarea>
+        <div class="cp-usage" id="rpUsage" role="status" hidden></div>
+        <textarea id="rpWhy" rows="1" maxlength="1500" placeholder="Ask about the route, or say what to change…" disabled></textarea>
         <div class="cp-tools">
           <select id="rpModel" class="cp-model" title="The model that plans the route and answers here"></select>
           <span class="cp-tools-fill"></span>

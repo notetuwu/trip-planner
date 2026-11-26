@@ -71,6 +71,7 @@ const GROUPS: { title: string; ico: IconName; intro: string; items: Credit[] }[]
       { name: "Claude Code and Anthropic", url: "https://www.anthropic.com", what: "Claude, through Claude Code or an Anthropic API key (and the Anthropic SDK)", licence: "SDK: MIT" },
       { name: "OpenAI", url: "https://openai.com", what: "GPT models with your own key" },
       { name: "OpenRouter", url: "https://openrouter.ai", what: "Many labs' models with one key" },
+      { name: "Google Gemini", url: "https://ai.google.dev", what: "Gemini models with Google Search, with your own key (free tier or paid)" },
       { name: "Ollama", url: "https://ollama.com", what: "Local models on your own graphics card, and its model library", licence: "MIT" },
     ],
   },

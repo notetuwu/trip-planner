@@ -56,7 +56,8 @@ under its own privacy policy:
 - Maps, place search, routes, holidays, weather and similar lookups: the services listed in the
   [README](README.md#services-it-uses). They receive things like place names, coordinates and dates.
 - Planning and the trip chat: the AI model you choose. A cloud model's provider receives the trip details needed for the
-  answer (including those of a synced trip you're working on). A local model keeps them on your computer.
+  answer (including those of a synced trip you're working on). A local model keeps them on your computer. On Google
+  Gemini's free tier (a key without billing), Google may use your prompts and the answers to improve its products.
 - Web research, if used: the search engine and the websites that are read.
 - Optional features you switch on or set up, such as Google Drive photo folders and pictures from Wikimedia.
 - Resting the mouse on a photo in the gallery sends where it was taken to OpenStreetMap, to show the place's name.

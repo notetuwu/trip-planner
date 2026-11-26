@@ -2,7 +2,7 @@
 
 A day-by-day trip planner that runs on your own computer. Enter where you're staying, bring in the places you'd like to see, and it plans every day: real places, opening hours, costs, public holidays and routes on a live map. Then change it in a chat, plan it together with others, put your photos on its map, print it, or take it along as one offline file on your phone.
 
-It plans with **Claude** through your own [Claude Code](https://claude.com/claude-code) login, with a **local model** (Ollama, LM Studio and other local servers), or with **Claude, GPT and other cloud models** through your own API key. The planner has no accounts and no server of its own: your trips stay on your computer unless you sync them through a folder.
+It plans with **Claude** through your own [Claude Code](https://claude.com/claude-code) login, with a **local model** (Ollama, LM Studio and other local servers), or with **Gemini, Claude, GPT and other cloud models** through your own API key (a Gemini key is free, with daily limits). The planner has no accounts and no server of its own: your trips stay on your computer unless you sync them through a folder.
 
 ![The planner with a Kyoto and Osaka trip: stays, a day where the group splits in two, each group's route on the map, and the trip chat](docs/screenshot.png)
 
@@ -14,13 +14,14 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 - **Research online.** The model looks up opening hours, prices, events and connections while it plans.
 - **Planned around you.** Budget, pace, fitness, when your days start, breakfast, public transport or car, your wishes and notes, and what you've already booked (tickets, a concert, an expo).
 - **Checked before you see it.** Stops in the wrong town or closed at the planned time (holidays included) go back to the model to be fixed. A review shows the problems, duplicates among them, next to their days.
-- **Plan a route.** Describe the trip ("a road trip through the Alps, lakes and old towns") and get a route of stays, with day trips and stops on the way, on a map; change it in its chat.
+- **Plan a route.** Its chat changes the route or answers questions about it. Set a travel day to *however long* to be surprised: anywhere in the world, with flights, for whatever you don't name. Describe the trip ("a road trip through the Alps, lakes and old towns") and get a route of stays, with day trips and stops on the way, on a map; change it in its chat.
 
 **Your places**
 - **Google Maps lists.** Import lists by share link or Takeout CSV. Tick the lists to show on the map, and switch on **Suggest** for the ones the planner may pick from.
 - **Must-sees and skips.** Star what you must see (for the whole group or some of you), say whether it's on the way or from a stay, and skip what you don't want. The Places window shows everything as a table to sort and filter.
 
 **The trip chat**
+- When the chat model's usage gets critical, a warning shows above the message box: your Claude plan's 5-hour or weekly limit, a Gemini model's daily requests, an OpenRouter key's limit or credit; for Anthropic and OpenAI, whose keys can't be asked, a per-minute limit nearly reached or credit that ran out.
 - Ask anything about the trip: what's on a day, where to eat, what to book. Answers list their sources, and distances and driving times are looked up.
 - Ask for a change ("make day 4 more relaxed", "Hohenwerfen on the way, not as a day trip"). In **Ask** mode it only answers, in **Manual** a change waits for **Apply**, in **Auto** small edits happen straight away. Only the days a change touches are re-planned, **Review** compares before and after, and **Undo** puts everything back.
 - It can change stops, days, stays, travelers and budget, bookings, the packing list, and where a stop really is.
@@ -60,7 +61,7 @@ Trips can sync through shared folders in **Google Drive** or **Dropbox**, or thr
 - Changes to different things are joined. Where two of you changed the same thing, yours stays, theirs is kept, and you can switch to it.
 - Your trip chat and your own settings stay yours. Nothing is ever deleted in a sync folder.
 
-Google Drive and Dropbox use your own free app, set up once with the guide in Settings → Sync ([Google Drive](docs/google-sync.md), [Dropbox](docs/dropbox-sync.md)). Folders on your computer need nothing.
+Google Drive and Dropbox use your own free app, set up once with the step-by-step Connect window in Settings → Accounts ([Google](docs/google-sync.md): the same project and sign-in also serve Drive photos and Gemini's exact limits; [Dropbox](docs/dropbox-sync.md)). Folders on your computer need nothing.
 
 ## Download
 
@@ -85,12 +86,13 @@ On the first start a **Quick start** guide opens (the rocket next to Settings br
 Pick one from the **Model** menu (it only offers Claude when Claude Code is installed). You need one of these:
 
 - **Claude Code**, installed and logged in. Plans count toward your Claude plan, with no API charges.
-- **An API key** from [Anthropic](https://console.anthropic.com/settings/keys), [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys), added in Settings → API keys. You pay the provider per use; the key stays on your computer.
+- **A free Gemini key** from [Google AI Studio](https://aistudio.google.com/apikey), added in Settings → AI models → Google Gemini, which has a step-by-step guide. Without billing it uses Google's free tier: Flash models and a limited number of requests a day per model, and Google may use what you send to improve its products. The Model menu offers only the Gemini models that answer a test request (Google lists them all, also ones the key can't run), and Settings → AI models shows whether the key is free or paid, how many requests the planner sent today per model, the limits Google named and when they reset; the line under the Model menu shows the same for the picked model. With exact limits turned on (your own Google project), the limits are read exactly from Google Cloud, for every model, and no test requests are spent. With **Gemini Auto** picked, plans and chat answers go on with the next Gemini model the key can run when one reaches its limit (a model you pick yourself is stayed on); where the free tier doesn't include Google Search (Gemini 3 and newer), plans research through the planner's own web search instead, as local models do.
+- **An API key** from [Anthropic](https://console.anthropic.com/settings/keys), [OpenAI](https://platform.openai.com/api-keys) or [OpenRouter](https://openrouter.ai/keys), added in Settings → AI models. You pay the provider per use; the key stays on your computer.
 - **A local model.** Settings → Local models installs [Ollama](https://ollama.com) (on Windows; elsewhere it gives you the command), suggests current models that fit your graphics card and installs them with a progress bar. LM Studio, llama.cpp, Jan, KoboldCpp, GPT4All and vLLM are found automatically too.
 
-Local models are free and private but slower and less thorough on long trips; bigger models plan better. The planner helps them along: real places in the prompt, its own web research for them, checks afterwards, and if a model stops part way through a long trip, it keeps the finished days and asks only for the rest. Settings → Planning also has an experimental **step by step** mode for local models (an outline of the days, research for those days, then each day on its own), for when planning in one go gets cut off.
+Local models are free and private but slower and less thorough on long trips; bigger models plan better. The planner helps them along: real places in the prompt, its own web research for them, checks afterwards, and if a model stops part way through a long trip, it keeps the finished days and asks only for the rest. Settings → Plan style also has an experimental **step by step** mode for local models (an outline of the days, research for those days, then each day on its own), for when planning in one go gets cut off.
 
-**Settings → Planning** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, step by step, and remove again; with SearXNG chosen, Docker and it are started with the app), instead of DuckDuckGo and Wikipedia.
+**Settings → Plan style and Search & places** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, step by step, and remove again; with SearXNG chosen, Docker and it are started with the app), instead of DuckDuckGo and Wikipedia.
 
 ## Run from source
 
@@ -111,20 +113,20 @@ Everything has a setting in the app; these environment variables are optional:
 | --- | --- |
 | `PORT` | Port to listen on (default `5173`) |
 | `CLAUDE_BIN` | Path to the `claude` CLI, if it isn't found automatically |
-| `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | API keys (or add them in the app); also read from a `.env` file |
-| `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `OPENROUTER_BASE_URL` | Send API requests through a proxy or compatible endpoint |
+| `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | API keys (or add them in the app); also read from a `.env` file |
+| `ANTHROPIC_BASE_URL`, `OPENAI_BASE_URL`, `OPENROUTER_BASE_URL`, `GEMINI_BASE_URL` | Send API requests through a proxy or compatible endpoint |
 | `OLLAMA_URL` | Ollama's address (default `http://127.0.0.1:11434`) |
 | `LOCAL_LLM_URLS` | More OpenAI-compatible servers to look for, comma-separated |
 | `OLLAMA_NUM_CTX` | The most context Ollama is given (default 128k; Settings → Local models can fix it) |
-| `BRAVE_API_KEY`, `SEARXNG_URL` | Search for local models' research (also in Settings → Planning) |
-| `GOOGLE_API_KEY` | A free Google API key for photo folders in Drive shared by link (also in Settings → API keys) |
-| `GEOAPIFY_API_KEY` | A free Geoapify key: a faster third place search for long lists of saved places (also in Settings → Planning) |
+| `BRAVE_API_KEY`, `SEARXNG_URL` | Search for local models' research (also in Settings → Search & places) |
+| `GOOGLE_API_KEY` | A free Google API key for photo folders in Drive shared by link (also in Settings → Photos) |
+| `GEOAPIFY_API_KEY` | A free Geoapify key: a faster third place search for long lists of saved places (also in Settings → Search & places) |
 | `RESEARCH_MAX_LOOKUPS` | Most searches and page reads in one research round (default 30) |
 | `TRIP_PLANNER_DATA` | Another folder for trips, place lists and caches |
 | `PLACES_CSV` | A CSV of places to import on startup |
 | `TRIP_PLANNER_NO_UPDATES` | `1` turns off the update check |
-| `DROPBOX_APP_KEY` | Your Dropbox app's key for syncing trips through Dropbox (or enter it in Settings → Sync; see [docs/dropbox-sync.md](docs/dropbox-sync.md)) |
-| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your Google client for syncing trips through Drive (or enter it in Settings → Sync; see [docs/google-sync.md](docs/google-sync.md)); also read from a `.env` file |
+| `DROPBOX_APP_KEY` | Your Dropbox app's key for syncing trips through Dropbox (or enter it in Settings → Accounts; see [docs/dropbox-sync.md](docs/dropbox-sync.md)) |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your Google client for syncing trips through Drive, Drive photos and Gemini's exact limits (or enter it in Settings → Accounts; see [docs/google-sync.md](docs/google-sync.md)); also read from a `.env` file |
 
 ## Services it uses
 

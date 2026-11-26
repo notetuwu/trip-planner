@@ -5,6 +5,7 @@ import { runAnthropic } from "../ai/anthropic";
 import { runClaude } from "../ai/claude";
 import { runLocal } from "../ai/local";
 import { runResponses } from "../ai/responses";
+import { runGemini } from "../ai/gemini";
 import { verifyWebsites } from "../ai/verify-links";
 import type { Runner, Trip } from "../ai/types";
 import { errMsg } from "../config";
@@ -29,10 +30,11 @@ function validateTrip(t: Trip | null) {
   return null;
 }
 
-/** Local models, the Anthropic API, OpenAI/OpenRouter, or (by default) Claude Code. */
+/** Local models, the Anthropic API, Google Gemini, OpenAI/OpenRouter, or (by default) Claude Code. */
 function runnerFor(model: string): Runner {
   if (model.startsWith("local|")) return runLocal;
   if (model.startsWith("api|anthropic|")) return runAnthropic;
+  if (model.startsWith("api|gemini|")) return runGemini;
   if (model.startsWith("api|")) return runResponses;
   return runClaude;
 }

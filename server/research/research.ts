@@ -1,5 +1,6 @@
-// Web research for local models: they can't browse, so the planner runs their web_search / fetch_page tool calls
-// and hands back the results. The findings go into the planning prompt.
+// Web research for local models (and Gemini models whose key's tier doesn't include Google Search): they can't
+// browse, so the planner runs their web_search / fetch_page tool calls and hands back the results. The findings go
+// into the planning prompt.
 import type { Place } from "../../shared/types";
 import { serverName } from "../ai/local-models";
 import { tripLine } from "../ai/prompt-sections";
@@ -57,8 +58,9 @@ ${must.length ? `Must-see places: ${must.join(", ")}.` : ""}
 You can make up to ${lookupLimit(trip)} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets; say what you're after with looking_for (e.g. "opening hours in September"), so long pages come back cut to those parts. Short search queries work best. Prefer URLs from search results (including their "Official website" lines) or from the "Links on this page" list of a page you read (follow those links to reach opening-hours or ticket pages); a few official sites you know for sure are fine too. PDFs (timetables, price lists) can be read too. Don't repeat a search in other words: if one finds nothing useful, read a page instead. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets; also list briefly what you couldn't find out. Don't plan the itinerary itself, and don't ask questions or offer to do more: nobody can answer.`;
 }
 
-/** prompt: what to research instead of the usual (step-by-step planning asks about its outlined days). */
-interface ResearchOptions extends Omit<RoundContext, "messages"> { trip: Trip; places: Place[]; onEvent: OnEvent; prompt?: string }
+/** prompt: what to research instead of the usual (step-by-step planning asks about its outlined days); server: who
+ *  answers, for the prompt's note (Google Gemini; otherwise the local server's name). */
+interface ResearchOptions extends Omit<RoundContext, "messages"> { trip: Trip; places: Place[]; onEvent: OnEvent; prompt?: string; server?: string }
 
 /** Runs the research conversation; returns its findings and the pages read. Throws "NO_TOOLS" if the model can't use tools. */
 export async function localResearch(o: ResearchOptions): Promise<{ notes: string; urls: string[] }> {
@@ -67,7 +69,7 @@ export async function localResearch(o: ResearchOptions): Promise<{ notes: string
   const messages: any[] = [{ role: "user", content: o.prompt || researchPrompt(o.trip, o.places) }];
   onEvent({
     type: "prompt", label: "Research prompt",
-    info: `Sent to ${serverName(kind, base)} · model: ${model} · tools: web_search, fetch_page (run by the planner) · temperature 0.3`
+    info: `Sent to ${o.server || serverName(kind, base)} · model: ${model} · tools: web_search, fetch_page (run by the planner) · temperature 0.3`
       + `${kind === "ollama" ? ` · context ${RESEARCH_CTX.toLocaleString()} tokens` : ""} · up to ${limit} lookups. ${kind === "ollama" ? "Ollama adds the model's own system prompt, if it has one." : ""}`,
     text: messages[0].content,
   });

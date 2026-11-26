@@ -24,7 +24,7 @@ export async function handleSync(req: Req, res: Res, path: string) {
     if (method === "GET" && path === "/api/sync/browse") return sendJson(res, 200, await browse(new URL(req.url || "/", "http://x").searchParams.get("in") || "root"));
     // A new folder in the folder browser ("parent": "root" or a folder's id).
     if (method === "POST" && path === "/api/sync/mkdir") { const b = await readJson(req); return sendJson(res, 200, await createFolder(String(b?.name || ""), String(b?.parent || "root"))); }
-    // The person's own Google client, to show and change in Settings → Sync (this computer only; never a phone, see lan.ts).
+    // The person's own Google client, to show and change in Settings → Accounts (this computer only; never a phone, see lan.ts).
     if (method === "GET" && path === "/api/sync/client") return sendJson(res, 200, clientShown());
     // What kind of folder a path on this computer is (a cloud app's, a network drive…), before it's added.
     if (method === "GET" && path === "/api/sync/kind") {

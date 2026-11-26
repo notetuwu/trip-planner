@@ -239,7 +239,38 @@ export interface AgreedStop {
   who?: string[];
 }
 
-export type CloudProvider = "anthropic" | "openai" | "openrouter";
+export type CloudProvider = "anthropic" | "openai" | "openrouter" | "gemini";
+
+/** GET /api/gemini: what's known about the Gemini key's tier and limits, and what this planner sent today. */
+export interface GeminiStatus {
+  set: boolean;
+  /** free: the key's project has no billing (a free-tier quota, or "needs billing", answered); paid: billing is on;
+   *  blocked: no billing and the free tier isn't offered in this region; unknown: couldn't tell. */
+  tier: "free" | "paid" | "blocked" | "unknown";
+  /** Why it's thought so, or why it couldn't be told. */
+  tierNote: string;
+  checkedAt: number;
+  /** Google's quota day (midnight to midnight Pacific time) and when it next starts, in ms. */
+  day: string;
+  resetAt: number;
+  /** Requests and tokens this planner sent today, per model, with the limits Google has told it about. */
+  models: GeminiModelUse[];
+  /** A limit that was hit and is still in effect. */
+  limited: { model: string; perDay: boolean; limit?: number; until: number } | null;
+  /** What each model in Google's catalog answered to a test request: only "ok" ones are offered in the Model menu. */
+  access: GeminiAccess[];
+  /** Exact limits read from the Google Cloud project (Settings → Google), and why they couldn't be ("" = fine, or not
+   *  set up). With them, models' perDay / perMinute are the project's quotas (-1: unlimited). */
+  exact: { project: string; billing: boolean | null } | null;
+  exactError: string;
+}
+/** ok: it answered (usable); billing: none on this key's tier (a quota of 0, or "needs billing"); gone: retired or not
+ *  offered to this key; unknown: some other answer. */
+export interface GeminiAccess { model: string; state: "ok" | "billing" | "gone" | "unknown"; note: string }
+export interface GeminiModelUse { model: string; requests: number; tokens: number; perDay?: number; perMinute?: number }
+
+/** GET /api/usage: a warning that a model's usage is critical (warn: nearly there; out: used up). */
+export interface UsageNotice { level: "warn" | "out"; text: string; resetsAt?: number; url?: string }
 
 /** A model reached with an API key; id is "api|<provider>|<model>". */
 export interface CloudModel {
@@ -287,8 +318,8 @@ export interface RunResult {
   tokens?: number;
   perSec?: number;
   engine: string;
-  /** How the run is paid for: Claude subscription, an API key, or free on this computer. */
-  billing?: "plan" | "api" | "local";
+  /** How the run is paid for: Claude subscription, an API key, an API key on a free tier, or free on this computer. */
+  billing?: "plan" | "api" | "free" | "local";
   searches?: number;
 }
 
@@ -367,6 +398,9 @@ export interface SyncStatus {
   name: string;
   /** Google signed this computer out (the access was removed in the Google account): sign in again. */
   expired?: boolean;
+  /** What the sign-in allows: Drive (sync and photos), and read-only Cloud access (Gemini's exact limits). */
+  drive?: boolean;
+  cloud?: boolean;
   signingIn: boolean;
   signInError: string;
   folders: SyncFolder[];

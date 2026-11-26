@@ -4,6 +4,7 @@ import type { CloudModel, CloudProvider } from "../../shared/types";
 import { errMsg } from "../config";
 import { getKey } from "../keys";
 import { BASE } from "./responses";
+import { AUTO, geminiModels, usableGemini } from "./gemini";
 
 /** Most output tokens each Anthropic model allows, from the Models API (used as max_tokens). */
 export const anthropicMaxTokens = new Map<string, number>();
@@ -53,7 +54,7 @@ async function openrouterModels() {
 }
 
 const LISTERS: Record<CloudProvider, (key: string) => Promise<CloudModel[]>> = {
-  anthropic: anthropicModels, openai: openaiModels, openrouter: () => openrouterModels(),
+  anthropic: anthropicModels, openai: openaiModels, openrouter: () => openrouterModels(), gemini: geminiModels,
 };
 
 const cache = new Map<string, { at: number; models: CloudModel[] }>();
@@ -66,11 +67,19 @@ export async function cloudModels() {
     const key = getKey(p);
     if (!key) return;
     const cacheKey = `${p}|${key.slice(-8)}`, hit = cache.get(cacheKey);
-    if (hit && Date.now() - hit.at < TTL) return models.push(...hit.models);
+    // Gemini's catalog also has models the key can't run: only the ones that answered its test request are offered
+    // (filtered after the cache, so a new check counts at once).
+    const usable = async (list: CloudModel[]) => {
+      if (p !== "gemini") return list;
+      const ok = await usableGemini(list);
+      // First, "Gemini Auto": it picks among the usable ones and moves on when one reaches its limit.
+      return ok.length ? [{ id: `api|gemini|${AUTO}`, name: "Gemini Auto (switches by itself)", provider: "gemini" as const }, ...ok] : ok;
+    };
+    if (hit && Date.now() - hit.at < TTL) return models.push(...await usable(hit.models));
     try {
       const list = await LISTERS[p](key);
       cache.set(cacheKey, { at: Date.now(), models: list });
-      models.push(...list);
+      models.push(...await usable(list));
     } catch (e) { errors[p] = errMsg(e).slice(0, 200); }
   }));
   return { models, errors };

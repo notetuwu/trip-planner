@@ -1,5 +1,6 @@
 // Saved trips, stored as files in saves/ by the server: save, load, start a new trip, delete. Also Export / Import:
 // the trip as a file to share (someone else imports it into their planner) or keep a copy of.
+import { refreshRoutePlanner } from "../trip/route-planner";
 import type { ListSummary, PlaceList, SaveSummary, SyncStatus } from "../../../shared/types";
 import { renderBookings } from "../trip/bookings";
 import { $, api, apiFetch, esc, toast } from "../core/dom";
@@ -133,6 +134,7 @@ async function replace(next: Partial<AppState>) {
   else if (session.selectedDay != null && session.selectedDay >= (state.itinerary?.days.length || 0)) session.selectedDay = null;
   save(); await refreshLists(); renderStays(); renderBookings(); renderTripTitle(); renderItinerary(); geocodeStays(); await loadList({ fit: !sameTrip });
   geocodeItems(); loadWeather(); refreshCompanion(); refreshPhotos(); showCurrent();
+  if (!sameTrip) refreshRoutePlanner();
 }
 
 const FORMAT = "trip-planner-trip";

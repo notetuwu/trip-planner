@@ -5,7 +5,7 @@ import { BROWSER_UA, USER_AGENT, errMsg, sleep } from "../config";
 import { readSettings } from "../settings";
 import { SEARXNG_LOCAL, ensureSearxng } from "../routes/searxng";
 
-/** The Brave key and SearXNG address: from Settings → Planning, or the environment variables. */
+/** The Brave key and SearXNG address: from Settings → Search & places, or the environment variables. */
 const braveKey = () => readSettings().braveKey || process.env.BRAVE_API_KEY || "";
 const searxngUrl = () => readSettings().searxngUrl || process.env.SEARXNG_URL || "";
 
@@ -123,7 +123,7 @@ async function officialSites(titles: string[]): Promise<Map<string, string>> {
 
 const BACKENDS = [brave, searxng, duckduckgo, wikis];
 
-/** The engines to try, in order: the one chosen in Settings → Planning first (then Wikipedia if it fails), or all. */
+/** The engines to try, in order: the one chosen in Settings → Search & places first (then Wikipedia if it fails), or all. */
 function backends() {
   const choice = readSettings().tune.search;
   if (choice === "brave" && brave.enabled()) return [brave, wikis];

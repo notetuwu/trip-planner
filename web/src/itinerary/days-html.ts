@@ -241,6 +241,7 @@ export function extrasHtml(it: Itinerary) {
   if (meta.durationMs) html += `<p class="counts gen-meta" style="margin-top:20px">Generated in ${Math.round(meta.durationMs / 1000)}s${tokenStats}${searches} ${
     billing === "local" ? `by ${esc(meta.engine)}, running on this computer (free)`
     : billing === "api" ? `by ${esc(meta.engine)}, billed to your API key${meta.costUsd != null ? ` (about $${meta.costUsd.toFixed(2)})` : ""}`
+    : billing === "free" ? `by ${esc(meta.engine)}, on your key's free tier (no charge; counts toward its daily limit)`
     : `${meta.engine ? `by ${esc(meta.engine)}` : "via Claude Code"} (counts toward your Claude plan usage, no API charges)`}</p>`;
   return html;
 }

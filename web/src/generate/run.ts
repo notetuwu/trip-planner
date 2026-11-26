@@ -229,5 +229,6 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     return false;
   } finally {
     view.stop(); btn.disabled = false; running = false;
+    window.dispatchEvent(new Event("ai-request-done")); // the quota line under the Model menu counts again
   }
 }

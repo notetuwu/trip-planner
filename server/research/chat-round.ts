@@ -22,6 +22,9 @@ export interface RoundContext {
   abort: AbortSignal;
   onThinking(text: string): void;
   tick(): void;
+  /** Another OpenAI-compatible endpoint (Google Gemini's) instead of `${base}/v1/chat/completions`: it sends the
+   *  request itself (with its key, counting requests and handling its limits) and throws what goes wrong. */
+  endpoint?: { send(body: object, signal: AbortSignal): Promise<Response> };
 }
 
 /** Sends the conversation so far; appends the model's reply to `messages` and returns its text and tool calls.
@@ -59,9 +62,9 @@ export async function chatRound(ctx: RoundContext, allowTools: boolean, noThink 
     messages.push({ role: "assistant", content, ...(calls.length ? { tool_calls: calls.map((c) => ({ function: { name: c.name, arguments: c.args } })) } : {}) });
     return { content, calls };
   }
-  const res = await fetch(`${base}/v1/chat/completions`, {
-    method: "POST", signal: abort, headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model, stream: false, temperature: 0.3, messages, ...(allowTools ? { tools: TOOLS } : {}) }),
+  const body = { model, stream: false, temperature: 0.3, messages, ...(allowTools ? { tools: TOOLS } : {}) };
+  const res = ctx.endpoint ? await ctx.endpoint.send(body, abort) : await fetch(`${base}/v1/chat/completions`, {
+    method: "POST", signal: abort, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   });
   if (!res.ok) {
     if (res.status === 400 || res.status === 422) throw new Error("NO_TOOLS");

@@ -1,4 +1,5 @@
-// Google sign-in and Google Drive, for syncing trips (Settings → Sync).
+// Google sign-in (Settings → Accounts) and Google Drive, for syncing trips (Settings → Sync) and photos; the sign-in also
+// gives read-only Cloud access for Gemini's exact limits when that's ticked (ai/gemini-quotas.ts).
 //
 // Sign-in is Google's flow for desktop apps: the default browser opens Google's page, and Google sends the browser back to
 // a small one-off server on this computer (127.0.0.1, a free port) with a code, which is swapped for a token. PKCE and a
@@ -8,7 +9,7 @@
 //  - The token is kept in the data folder (sync/google-auth.json, readable only by this user where the system allows) and
 //    is never sent to the page, to a phone, into a trip or into a sync folder.
 //  - The app ships with no sign-in ID: each person brings their own (a free OAuth client from the Google Cloud Console),
-//    entered in Settings → Sync and kept in sync/google-client.json, or given as GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
+//    entered in Settings → Accounts and kept in sync/google-client.json, or given as GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 //    (see docs/google-sync.md). So nobody shares anybody else's user limit.
 //  - Drive is only touched in the folders added in Settings → Sync, and nothing is ever deleted there (see sync.ts).
 import crypto from "node:crypto";
@@ -17,6 +18,7 @@ import http from "node:http";
 import path from "node:path";
 import { ROOT, USER_AGENT, errMsg } from "../config";
 import { openInBrowser } from "../launcher";
+import { readSettings } from "../settings";
 
 export const SYNC_DIR = path.join(ROOT, "sync");
 const AUTH_FILE = path.join(SYNC_DIR, "google-auth.json");
@@ -24,6 +26,14 @@ const CLIENT_FILE = path.join(SYNC_DIR, "google-client.json");
 /** Every file in Drive: needed to see trips other people put in a shared folder (a narrower permission only covers
  *  files this app made with the same account). Only the sync folders are ever used. */
 export const SCOPE = "https://www.googleapis.com/auth/drive";
+/** Gemini's exact limits: read-only access to the Google Cloud project (its Gemini quotas) and
+ *  whether billing is on for it. Asked for only when that's ticked. */
+export const CLOUD_SCOPES = ["https://www.googleapis.com/auth/cloud-platform.read-only", "https://www.googleapis.com/auth/cloud-billing.readonly"];
+/** What signing in asks for: Drive for sync and photos, Cloud for Gemini's limits (as ticked in Settings → Accounts). */
+function wantedScopes() {
+  const g = readSettings().google;
+  return [...(g.sync || g.photos || !g.quotas ? [SCOPE] : []), ...(g.quotas ? CLOUD_SCOPES : [])];
+}
 const DRIVE = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 export const FOLDER_TYPE = "application/vnd.google-apps.folder";
@@ -41,7 +51,7 @@ function envClient(): Client | null {
   return id && secret ? { id, secret } : null;
 }
 
-/** The person's own Google sign-in ID and secret: from Settings → Sync, else the environment. */
+/** The person's own Google sign-in ID and secret: from Settings → Accounts, else the environment. */
 export const client = (): Client | null => savedClient() || envClient();
 /** Where it comes from, and the ID (not secret: it shows on Google's sign-in page). The secret never leaves the server. */
 export function clientInfo(): { clientFrom: "app" | "env" | ""; clientId: string } {
@@ -49,7 +59,7 @@ export function clientInfo(): { clientFrom: "app" | "env" | ""; clientId: string
   return { clientFrom: saved ? "app" : c ? "env" : "", clientId: c?.id || "" };
 }
 
-/** The client entered in Settings → Sync, to show and change there (the person's own, on their own computer). */
+/** The client entered in Settings → Accounts, to show and change there (the person's own, on their own computer). */
 export function clientShown(): { id: string; secret: string } {
   const c = savedClient();
   return { id: c?.id || "", secret: c?.secret || "" };
@@ -81,7 +91,13 @@ export async function setClient(next: Client | null) {
   if (before?.id !== client()?.id) await signOut();
 }
 
-interface Auth { refresh: string; email: string; name: string; at: number; expired?: boolean }
+/** scopes: what Google allowed at sign-in (older sign-ins: Drive only). */
+interface Auth { refresh: string; email: string; name: string; at: number; expired?: boolean; scopes?: string[] }
+
+/** Signed in with read-only Cloud access (for Gemini's exact limits). */
+export const hasCloudAccess = () => { const a = readAuth(); return !!a && !a.expired && CLOUD_SCOPES.every((s) => a.scopes?.includes(s)); };
+/** Signed in with Drive access (older sign-ins asked only for Drive). */
+const hasDrive = (a: Auth | null) => !!a && (!a.scopes || a.scopes.includes(SCOPE));
 
 export function readAuth(): Auth | null {
   try {
@@ -119,7 +135,7 @@ const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)
  *  case the browser doesn't open). */
 export async function startSignIn(): Promise<string> {
   const c = client();
-  if (!c) throw new Error("Add your Google client ID and secret first (Settings → Sync).");
+  if (!c) throw new Error("Add your Google client ID and secret first (Settings → Accounts).");
   stopPending();
   signInError = "";
   const state = b64url(crypto.randomBytes(24)), verifier = b64url(crypto.randomBytes(48));
@@ -133,7 +149,7 @@ export async function startSignIn(): Promise<string> {
     if (url.pathname !== "/" || req.method !== "GET") { res.writeHead(404).end(); return; }
     const answer = (status: number, title: string, text: string) => { res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" }); res.end(page(title, text)); };
     // Only the answer to the sign-in started here counts.
-    if (url.searchParams.get("state") !== state) return answer(400, "That didn't work", "This sign-in page is out of date. Start again from Trip Planner (Settings → Sync).");
+    if (url.searchParams.get("state") !== state) return answer(400, "That didn't work", "This sign-in page is out of date. Start again from Trip Planner (Settings → Accounts).");
     const done = (error = "") => { signInError = error; stopPending(); };
     const err = url.searchParams.get("error");
     if (err) {
@@ -153,7 +169,7 @@ export async function startSignIn(): Promise<string> {
   pending = { server, timer: setTimeout(() => { if (pending?.server === server) { signInError = "Signing in took too long. Try again."; stopPending(); } }, 10 * 60_000) };
 
   const url = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-    client_id: c.id, redirect_uri: redirect, response_type: "code", scope: SCOPE, state,
+    client_id: c.id, redirect_uri: redirect, response_type: "code", scope: wantedScopes().join(" "), state,
     code_challenge: challenge, code_challenge_method: "S256",
     // A refresh token, so it stays signed in.
     access_type: "offline", prompt: "consent",
@@ -175,15 +191,21 @@ async function finishSignIn(c: { id: string; secret: string }, code: string, ver
   if (!code) throw new Error("Google sent no sign-in code.");
   const { ok, json } = await token({ code, client_id: c.id, client_secret: c.secret, redirect_uri: redirect, grant_type: "authorization_code", code_verifier: verifier });
   if (!ok || !json.access_token) throw new Error(`Google refused the sign-in: ${json.error_description || json.error || "no token"}`);
-  // Google lets people untick permissions on its page: without Drive there's nothing to sync with.
-  if (!String(json.scope || "").split(" ").includes(SCOPE)) {
+  // Google lets people untick permissions on its page: without what was asked for, the features ticked can't work.
+  const granted = String(json.scope || "").split(" "), missing = wantedScopes().filter((s) => !granted.includes(s));
+  if (missing.length) {
     await revoke(json.refresh_token || json.access_token);
-    throw new Error("Drive access wasn't allowed (it was unticked on Google's page). Sign in again and leave the Drive box ticked.");
+    throw new Error(`${missing.includes(SCOPE) ? "Drive access" : "Read-only access to your Google Cloud project"} wasn't allowed (it was unticked on Google's page). Sign in again and leave every box ticked.`);
   }
   if (!json.refresh_token) throw new Error("Google didn't let the app stay signed in. Sign in again.");
   access = { token: json.access_token, until: Date.now() + (Number(json.expires_in) || 3000) * 1000 };
-  const about: any = await driveJson(`${DRIVE}/about?fields=user(displayName,emailAddress)`);
-  writeAuth({ refresh: json.refresh_token, email: String(about?.user?.emailAddress || ""), name: String(about?.user?.displayName || ""), at: Date.now() });
+  // Who signed in: from Drive when it's allowed, else from Google's user info (the ID token's email needs no scope).
+  let email = "", name = "";
+  if (granted.includes(SCOPE)) {
+    const about: any = await driveJson(`${DRIVE}/about?fields=user(displayName,emailAddress)`);
+    email = String(about?.user?.emailAddress || ""); name = String(about?.user?.displayName || "");
+  }
+  writeAuth({ refresh: json.refresh_token, email, name, at: Date.now(), scopes: granted });
 }
 
 async function revoke(t: string) {
@@ -206,21 +228,29 @@ async function accessToken(): Promise<string> {
   if (access && access.until > Date.now() + 60_000) return access.token;
   const a = readAuth(), c = client();
   if (!a || a.expired) throw new SignedOut("Not signed in to Google.");
-  if (!c) throw new SignedOut("Add your Google client ID and secret in Settings → Sync.");
+  if (!c) throw new SignedOut("Add your Google client ID and secret in Settings → Accounts.");
   const { ok, json } = await token({ refresh_token: a.refresh, client_id: c.id, client_secret: c.secret, grant_type: "refresh_token" });
   if (!ok) {
     // The access was removed (in the Google account, or it expired): sign in again. The token is useless, so it goes.
-    if (json.error === "invalid_grant") { writeAuth({ ...a, refresh: "-", expired: true }); throw new SignedOut("Google signed this computer out. Sign in again in Settings → Sync."); }
+    if (json.error === "invalid_grant") { writeAuth({ ...a, refresh: "-", expired: true }); throw new SignedOut("Google signed this computer out. Sign in again in Settings → Accounts."); }
     throw new Error(`Google: ${json.error_description || json.error || "couldn't sign in"}`);
   }
   access = { token: json.access_token, until: Date.now() + (Number(json.expires_in) || 3000) * 1000 };
   return access.token;
 }
 
-/** Who is signed in ("" when nobody). */
+/** Who is signed in ("" when nobody), and what the sign-in allows: Drive (sync, photos), Cloud (Gemini's limits). */
 export function account() {
   const a = readAuth();
-  return { signedIn: !!a && !a.expired, expired: !!a?.expired, email: a?.email || "", name: a?.name || "" };
+  return { signedIn: !!a && !a.expired, expired: !!a?.expired, email: a?.email || "", name: a?.name || "", drive: hasDrive(a), cloud: hasCloudAccess() };
+}
+
+/** A read-only Google Cloud API (Cloud Quotas, Cloud Billing), with the sign-in's token. Returns status and JSON. */
+export async function cloudGet(url: string, again = true): Promise<{ status: number; json: any }> {
+  const t = await accessToken();
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${t}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(30000) });
+  if (res.status === 401 && again) { access = null; return cloudGet(url, false); }
+  return { status: res.status, json: await res.json().catch(() => ({})) };
 }
 
 // ---- Drive ---------------------------------------------------------------------------------------------------------------
@@ -228,7 +258,7 @@ export function account() {
 function explain(status: number, body: any): string {
   const e = body?.error, reason = e?.errors?.[0]?.reason || "", msg = String(e?.message || "");
   if (/accessNotConfigured|SERVICE_DISABLED/i.test(reason + msg) || /has not been used|is disabled/i.test(msg))
-    return "The Drive API isn't switched on for your Google project (step 2 of the guide in Settings → Sync).";
+    return "The Drive API isn't switched on for your Google project (Settings → Accounts → Google → Change or see the steps).";
   if (status === 403 && /rateLimit|quota/i.test(reason + msg)) return "Google's limit is used up for now. It tries again later.";
   if (status === 404) return "Google can't find it (deleted, or not shared with this account).";
   if (status === 403) return "This account isn't allowed to do that here (ask for edit access in Drive).";
@@ -324,7 +354,8 @@ export async function browse(where: string): Promise<{ entries: DriveEntry[]; mo
 
 /** The signed-in account's access, for other Drive reads (the map's photos): null when nobody is signed in. */
 export async function bearer(): Promise<string | null> {
-  if (!client() || !account().signedIn) return null;
+  // Signed in only for Gemini's limits (no Drive): photos then use the API key instead.
+  if (!client() || !account().signedIn || !account().drive) return null;
   try { return await accessToken(); } catch { return null; }
 }
 
