@@ -1,9 +1,10 @@
-// The "new version available" bar of the packaged app: install it (Windows) or open the download page (macOS, Linux).
+// The "new version available" bar of the packaged app: install it, or open the download page when this copy can't
+// change itself (a macOS app run from where it was downloaded, a folder it may not write to).
 // "Later" hides that version; the bar comes back for the next one.
 import { api, esc } from "./dom";
 import { ext } from "./icons";
 
-export interface UpdateInfo { newer: boolean; current?: string; latest?: string; notesUrl?: string; mode?: "installer" | "portable" | "manual"; error?: string }
+export interface UpdateInfo { newer: boolean; current?: string; latest?: string; notesUrl?: string; mode?: "installer" | "portable" | "mac" | "linux" | "manual"; error?: string }
 interface UpdateStatus { phase: "idle" | "downloading" | "installing" | "error"; received: number; total: number; error?: string }
 
 const DISMISSED = "trip-planner-update-dismissed";
@@ -57,7 +58,7 @@ export async function install(info: UpdateInfo, rollback = false) {
 export async function checkForUpdates() {
   const info = await api<UpdateInfo>("/api/update").catch(() => null);
   if (!info?.newer || !info.latest || localStorage.getItem(DISMISSED) === info.latest) return;
-  const auto = info.mode === "installer" || info.mode === "portable";
+  const auto = !!info.mode && info.mode !== "manual";
   const el = bar(`<span>Trip Planner <b>${esc(info.latest)}</b> is available (you have ${esc(info.current)}).</span>
     <button class="btn solid" data-update>${auto ? "Update now" : "Download"}</button>
     <a href="${esc(info.notesUrl)}" target="_blank" rel="noopener">What's new${ext()}</a>

@@ -1,14 +1,16 @@
-// Installs an update on Windows: downloads it (checked against GitHub's SHA-256), then either runs the new installer
-// silently or swaps the portable exe, and restarts. The open window reloads itself once the new version answers.
-import { spawn } from "node:child_process";
+// Installs an update: downloads it (checked against GitHub's SHA-256), then runs the new installer silently (Windows) or
+// swaps the program for the new one (Windows portable, Linux; on macOS the whole .app), and restarts. The open window
+// reloads itself once the new version answers.
+import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { ROOT, errMsg } from "../config";
+import { extractFromTarGz } from "../util/tar";
 import { extractFromZip } from "../util/zip";
 import { backUpData } from "./backup";
-import { type UpdateInfo, checkForUpdate, findOlderRelease } from "./check";
+import { type UpdateInfo, checkForUpdate, findOlderRelease, macBundle } from "./check";
 
 export interface UpdateStatus { phase: "idle" | "downloading" | "installing" | "error"; received: number; total: number; error?: string }
 export const status: UpdateStatus = { phase: "idle", received: 0, total: 0 };
@@ -70,6 +72,19 @@ async function install(info: UpdateInfo, beforeInstall?: () => void) {
     console.log(`Update: starting the installer for ${info.latest} (its log: ${log}).`);
     await launch(setup, ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/FORCECLOSEAPPLICATIONS", `/LOG=${log}`]);
     await stopServer();
+  } else if (info.mode === "mac") {
+    await swapMacApp(data);
+  } else if (info.mode === "linux") {
+    const exe = extractFromTarGz(data, (name) => name === "trip-planner/trip-planner");
+    if (!exe) throw new Error("The update doesn't contain the trip-planner program.");
+    const current = process.execPath, dir = path.dirname(current), fresh = path.join(dir, "trip-planner.new"), old = path.join(dir, "trip-planner.old");
+    fs.writeFileSync(fresh, exe, { mode: 0o755 });
+    fs.rmSync(old, { force: true });
+    fs.renameSync(current, old); // a running program can be renamed
+    try { fs.renameSync(fresh, current); }
+    catch (e) { try { fs.renameSync(old, current); } catch { /* sorted out on the next start */ } throw new Error(`Couldn't replace the program (${errMsg(e)}).`); }
+    await stopServer();
+    await launch(current, ["--no-window"]);
   } else {
     const exe = extractFromZip(data, (name) => name.endsWith("/Trip Planner.exe") || name === "Trip Planner.exe");
     if (!exe) throw new Error("The update doesn't contain Trip Planner.exe.");
@@ -89,6 +104,32 @@ async function install(info: UpdateInfo, beforeInstall?: () => void) {
   }
   console.log("Update: closing for the new version.");
   setTimeout(() => process.exit(0), 300);
+}
+
+/** macOS: the new .app unpacked next to the running one (same disk, so it can be moved in), the running one moved
+ *  aside, the new one put in its place and started. The old one goes on the next start. */
+async function swapMacApp(zip: Buffer) {
+  const app = macBundle();
+  if (!app) throw new Error("This copy isn't a macOS app.");
+  const dir = path.dirname(app), work = path.join(dir, ".Trip Planner update");
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.mkdirSync(work);
+  try {
+    const file = path.join(work, "update.zip");
+    fs.writeFileSync(file, zip);
+    execFileSync("ditto", ["-x", "-k", file, work]); // keeps the bundle's links, rights and signature
+    const fresh = path.join(work, "Trip Planner.app");
+    if (!fs.existsSync(path.join(fresh, "Contents", "MacOS", "trip-planner"))) throw new Error("The update doesn't contain Trip Planner.app.");
+    // Downloaded by the app itself it isn't marked as from the internet; in case it is, so macOS doesn't stop it.
+    try { execFileSync("xattr", ["-dr", "com.apple.quarantine", fresh]); } catch { /* not marked */ }
+    const old = path.join(dir, "Trip Planner.old.app");
+    fs.rmSync(old, { recursive: true, force: true });
+    fs.renameSync(app, old);
+    try { fs.renameSync(fresh, app); }
+    catch (e) { try { fs.renameSync(old, app); } catch { /* sorted out on the next start */ } throw new Error(`Couldn't replace Trip Planner.app (${errMsg(e)}).`); }
+  } finally { fs.rmSync(work, { recursive: true, force: true }); }
+  await stopServer();
+  await launch(path.join(app, "Contents", "MacOS", "trip-planner"), ["--no-window"]);
 }
 
 /** Starts the update in the background; the page follows along through `status`. */
@@ -118,6 +159,13 @@ export async function startRollback(version: string): Promise<UpdateStatus> {
  *  update cut short could leave this copy as "Trip Planner.new.exe" or ".old.exe" with no "Trip Planner.exe": then it
  *  takes that name again, so shortcuts and the next update work. */
 export function cleanUpAfterUpdate(tries = 5) {
+  // macOS and Linux: the copy the last update moved aside.
+  if (process.platform !== "win32") {
+    const app = macBundle(), aside = app ? path.join(path.dirname(app), "Trip Planner.old.app") : path.join(path.dirname(process.execPath), "trip-planner.old");
+    if (process.platform === "darwin" && !app) return;
+    try { fs.rmSync(aside, { recursive: true, force: true }); } catch { if (tries > 1) setTimeout(() => cleanUpAfterUpdate(tries - 1), 3000).unref(); }
+    return;
+  }
   const dir = path.dirname(process.execPath), main = path.join(dir, "Trip Planner.exe");
   if (process.platform === "win32" && /^Trip Planner\.(new|old)\.exe$/i.test(path.basename(process.execPath)) && !fs.existsSync(main)) {
     try { fs.renameSync(process.execPath, main); } catch { /* keep running under this name */ }

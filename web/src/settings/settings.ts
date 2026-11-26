@@ -659,7 +659,7 @@ function renderUpdates() {
     : info?.newer ? `<span class="dot ok"></span> Trip Planner <b>${esc(info.latest)}</b> is available`
     : info ? `<span class="dot ok"></span> Up to date`
     : `<span class="dot"></span> Not checked yet`;
-  const auto = info?.newer && (info.mode === "installer" || info.mode === "portable");
+  const auto = info?.newer && !!info.mode && info.mode !== "manual";
   main.innerHTML = `
     <h3>Updates</h3>
     ${updatedFrom === null ? "" : `<div class="log-hero"><span class="log-hero-icon">${icon("sparkles")}</span><div><b>Updated to ${esc(__APP_VERSION__)}</b>
@@ -676,8 +676,8 @@ function renderUpdates() {
       ${u?.available ? `<div class="set-row"><div><label class="inline-check"><input type="checkbox" id="updAuto" ${u.auto ? "checked" : ""}> <b>Check automatically</b></label>
         <div class="hint">Every hour while the app runs (and when it starts), a bar at the top offers a new version. It backs off when GitHub says to wait, so your home connection never gets blocked.</div></div></div>` : ""}
     </div>
-    <p class="hint">On Windows, Update now downloads the new version (checked against GitHub's checksum), installs it and restarts; your data stays where it is. On macOS and Linux it opens the download page.</p>`;
-  setRollback(!u?.available ? null : u.mode === "installer" || u.mode === "portable" ? "install" : "download");
+    <p class="hint">Update now downloads the new version (checked against GitHub's checksum), installs it and restarts; your data stays where it is. Where the app can't change itself (on a Mac, when it wasn't moved out of Downloads, or a folder it may not write to), it opens the download page instead.</p>`;
+  setRollback(!u?.available ? null : u.mode !== "manual" ? "install" : "download");
   // The same element each time, so what's unfolded in it stays so when the status above redraws.
   main.append(updateLog());
   document.querySelector<HTMLButtonElement>("#updCheck")?.addEventListener("click", async () => {

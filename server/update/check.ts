@@ -12,8 +12,9 @@ import { readSettings } from "../settings";
 
 export const REPO = "notetuwu/trip-planner";
 
-/** installer: Windows, installed with the setup; portable: Windows zip; manual: download it yourself (macOS, Linux). */
-export type UpdateMode = "installer" | "portable" | "manual";
+/** installer: Windows, installed with the setup; portable: Windows zip; mac: the .app swapped for the new one; linux: the
+ *  program swapped for the new one; manual: download it yourself (it can't change where it's installed). */
+export type UpdateMode = "installer" | "portable" | "mac" | "linux" | "manual";
 
 export interface UpdateInfo {
   current: string;
@@ -47,7 +48,21 @@ const newerThan = (a: string, b: string) => {
   return false;
 };
 
+/** The .app the running macOS app is ("…/Trip Planner.app"), or null. */
+export function macBundle(exe = process.execPath) {
+  const m = exe.match(/^(.*\.app)\/Contents\/MacOS\/[^/]+$/);
+  return m ? m[1] : null;
+}
+
+const writable = (dir: string) => { try { fs.accessSync(dir, fs.constants.W_OK); return true; } catch { return false; } };
+
 export function updateMode(): UpdateMode {
+  if (process.platform === "darwin") {
+    // Started from where it was downloaded without moving it, macOS runs a read-only copy (App Translocation).
+    const app = macBundle();
+    return app && !app.includes("/AppTranslocation/") && writable(path.dirname(app)) && writable(app) ? "mac" : "manual";
+  }
+  if (process.platform === "linux") return writable(path.dirname(process.execPath)) ? "linux" : "manual";
   if (process.platform !== "win32") return "manual";
   const dir = path.dirname(process.execPath);
   if (fs.existsSync(path.join(dir, "unins000.exe"))) return "installer"; // Inno Setup's uninstaller sits next to it
@@ -76,7 +91,9 @@ function checkRefused(res: Response) {
 
 /** The file of a release that this copy installs (none: it's downloaded by hand). */
 function assetFor(rel: Release, mode: UpdateMode) {
-  const suffix = mode === "installer" ? "-windows-x64-setup.exe" : mode === "portable" ? "-windows-x64-portable.zip" : null;
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const suffix = mode === "installer" ? "-windows-x64-setup.exe" : mode === "portable" ? "-windows-x64-portable.zip"
+    : mode === "mac" ? `-macos-${arch}.zip` : mode === "linux" ? `-linux-${arch}.tar.gz` : null;
   return suffix ? rel.assets.find((x) => x.name.endsWith(suffix)) : undefined;
 }
 
@@ -109,7 +126,7 @@ async function fromReleasesPage(): Promise<Release> {
   const tag = (res.headers.get("location") || "").match(/\/tag\/([^/?#]+)/)?.[1];
   if (!tag) throw new Error(`GitHub releases page: HTTP ${res.status}`);
   const v = tag.replace(/^v/, ""), file = (suffix: string) => `Trip-Planner-${v}${suffix}`;
-  const assets = ["-windows-x64-setup.exe", "-windows-x64-portable.zip"].map((suffix) => ({
+  const assets = ["-windows-x64-setup.exe", "-windows-x64-portable.zip", "-macos-arm64.zip", "-macos-x64.zip", "-linux-x64.tar.gz"].map((suffix) => ({
     name: file(suffix), url: `https://github.com/${REPO}/releases/download/${tag}/${file(suffix)}`, size: 0,
   }));
   return { tag, url: `https://github.com/${REPO}/releases/tag/${tag}`, assets };

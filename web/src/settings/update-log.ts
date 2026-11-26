@@ -15,8 +15,8 @@ let log: Release[] | null = null, box: HTMLElement | null = null;
 /** The version updated from, while its newer ones are marked: null = no update, "" = not known (only this one is new). */
 let since: string | null = null;
 
-/** How this copy can go back to an older version: it installs it ("install", the Windows app), the version is
- *  downloaded by hand ("download", the macOS and Linux app), or it can't (null: running from the source, or a phone). */
+/** How this copy can go back to an older version: it installs it ("install"), the version is
+ *  downloaded by hand ("download": a copy that can't change itself), or it can't (null: running from the source, or a phone). */
 export type Rollback = "install" | "download" | null;
 let rollback: Rollback = null;
 
