@@ -1,10 +1,10 @@
-// Dropbox, for syncing trips (Settings → Accounts), like Google Drive (google.ts): each person registers their own free
+// Dropbox, for syncing trips and showing photos (geo/dropbox-photos.ts), set up in Settings → Accounts, like Google Drive (google.ts): each person registers their own free
 // Dropbox app and enters its app key; signing in uses Dropbox's flow for desktop apps (PKCE, so no secret), and the
 // browser comes back to a small one-off server on this computer at a fixed address (Dropbox only accepts the exact
 // redirect address registered with the app: http://localhost:47618/).
 //
 // Safety: the token is kept in the data folder (sync/dropbox-auth.json) and never sent to the page, a phone, a trip or a
-// folder. Only the sync folders are used, and nothing is ever deleted.
+// folder. Only the sync and photo folders are used, and nothing is ever deleted.
 // Ids: a Dropbox item is "dropbox:" and its Dropbox id ("dropbox:id:a4ayc_80_OEAAAAAAAAAXw").
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -160,7 +160,7 @@ function explain(status: number, body: any): string {
 
 async function call(url: string, init: RequestInit, again = true): Promise<Response> {
   const t = await accessToken();
-  const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${t}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(60000) });
+  const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${t}`, "User-Agent": USER_AGENT }, signal: init.signal || AbortSignal.timeout(60000) });
   if (res.status === 401 && again) { access = null; return call(url, init, false); }
   return res;
 }
@@ -256,6 +256,49 @@ export async function upload(o: { id?: string; folder?: string; name: string; te
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(explain(res.status, json));
   return asFile(json);
+}
+
+// ---- Photos (only reading) ----------------------------------------------------------------------------------------------
+/** What's directly in a folder; `version` changes when a file's content does. */
+export async function folderEntries(id: string): Promise<{ id: string; name: string; folder: boolean; version: string; modified: string; size: number }[]> {
+  if (!isDropboxId(id)) throw new Error("Not a Dropbox folder.");
+  return (await listAll(raw(id))).filter((m) => m[".tag"] !== "deleted").map((m) => ({ id: PREFIX + m.id, name: m.name, folder: m[".tag"] === "folder", version: m.content_hash || m.rev || "", modified: m.server_modified || "", size: Number(m.size) || 0 }));
+}
+
+/** A file as Dropbox sends it, whole or the part in `range` ("bytes=0-99"). */
+export async function fileResponse(id: string, range = "", signal?: AbortSignal): Promise<Response> {
+  const res = await call(`${CONTENT}/2/files/download`, { method: "POST", headers: { "Dropbox-API-Arg": headerArg({ path: raw(id) }), ...(range ? { Range: range } : {}) }, signal });
+  if ((res.ok || res.status === 206) && res.body) return res;
+  const e = new Error(explain(res.status, await res.json().catch(() => ({})))) as Error & { retryAfter?: number };
+  if (res.status === 429) e.retryAfter = Number(res.headers.get("retry-after")) || 5;
+  throw e;
+}
+
+/** `len` bytes of a file from `start` (fewer at its end; null past it). */
+export async function readRange(id: string, start: number, len: number): Promise<Buffer | null> {
+  let res: Response;
+  try { res = await fileResponse(id, `bytes=${start}-${start + len - 1}`); }
+  catch (e) { if (/answered 416/.test((e as Error).message)) return null; throw e; }
+  // A whole file sent instead: only what's asked for is read, then the rest is dropped.
+  const chunks: Buffer[] = [], skip = res.status === 206 ? 0 : start;
+  let got = 0;
+  const reader = res.body!.getReader();
+  while (got < skip + len) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    chunks.push(Buffer.from(value)); got += value.length;
+  }
+  await reader.cancel().catch(() => {});
+  const out = Buffer.concat(chunks).subarray(skip, skip + len);
+  return out.length ? out : null;
+}
+
+/** A picture's thumbnail (JPEG) at a size like "w256h256"; null when Dropbox can't make one of it. */
+export async function thumbnail(id: string, size: string): Promise<Response | null> {
+  const res = await call(`${CONTENT}/2/files/get_thumbnail_v2`, { method: "POST", headers: { "Dropbox-API-Arg": headerArg({ resource: { ".tag": "path", path: raw(id) }, format: "jpeg", size, mode: "bestfit" }) } });
+  if (res.ok && res.body) return res;
+  await res.body?.cancel().catch(() => {});
+  return null;
 }
 
 // ---- The folder browser -----------------------------------------------------------------------------------------------------

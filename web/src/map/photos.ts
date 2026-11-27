@@ -124,7 +124,7 @@ export function photosState() {
     const l = loaded.get(f.link), photos = l?.list?.photos || [];
     let shown = 0, guessed = 0, noSpot = 0;
     for (const p of placedByHand(f.link)) { if (p.lat != null) shown++; else if (!p.skipped && p.t && spot(p.t)) guessed++; else noSpot++; }
-    return { link: f.link, local: isLocalFolder(f.link), skipped: l?.list?.skipped || 0, off: hidden.has(f.link), pending: l?.list?.pending || 0, videos: photos.filter((p) => p.video).length, name: l?.list?.name || "", loading: !!l?.loading, error: l?.error || "", total: l?.list?.total || 0, shown, guessed, noSpot, truncated: !!l?.list?.truncated };
+    return { link: f.link, local: isLocalFolder(f.link), dropbox: isDropboxFolder(f.link), skipped: l?.list?.skipped || 0, off: hidden.has(f.link), pending: l?.list?.pending || 0, videos: photos.filter((p) => p.video).length, name: l?.list?.name || "", loading: !!l?.loading, error: l?.error || "", total: l?.list?.total || 0, shown, guessed, noSpot, truncated: !!l?.list?.truncated };
   });
   const live = rows.filter((r) => !r.off), sum = (k: "shown" | "guessed" | "noSpot") => live.reduce((n, r) => n + r[k], 0);
   return { on, guess, rows, shown: sum("shown"), guessed: sum("guessed"), noSpot: sum("noSpot"), loading: rows.some((r) => r.loading) };
@@ -140,6 +140,9 @@ export function setPhotosOn(yes: boolean) {
 /** A folder on this computer is kept in the trip as "local:<path>", so it sits in the same list as the Drive folders. */
 export const isLocalFolder = (link: string) => /^local:/i.test(link);
 const samePath = (a: string, b: string) => a.replace(/^local:/i, "").replace(/[\\/]+$/, "").replace(/\\/g, "/").toLowerCase() === b.replace(/^local:/i, "").replace(/[\\/]+$/, "").replace(/\\/g, "/").toLowerCase();
+
+/** A Dropbox folder is kept as "dropbox:<id>". */
+export const isDropboxFolder = (link: string) => /^dropbox:/i.test(link);
 
 /** A pasted link, as the folder's id (so the same folder pasted twice, in different forms, is one). */
 const idOf = (link: string) => link.match(/\/folders\/([\w-]{10,})/)?.[1] || link.match(/[?&]id=([\w-]{10,})/)?.[1] || link.trim().match(/^([\w-]{10,})$/)?.[1] || "";
@@ -165,6 +168,18 @@ export function addLocalFolder(path: string): string {
   if (!/^([a-z]:[\\/]|\\\\|\/)/i.test(path)) return "Give the folder's full path, like D:\\Photos\\Italy, or press Choose folder.";
   if (folders().some((f) => isLocalFolder(f.link) && samePath(f.link, path))) return "That folder is already in the list.";
   state.photoFolders = [...folders(), { link: `local:${path}` }];
+  save();
+  loadMissing(); changed();
+  return "";
+}
+
+/** Adds a Dropbox folder (as chosen, or a pasted shared link) to the trip; the reason when it can't be ("" when added). */
+export async function addDropboxFolder(chosen: string): Promise<string> {
+  let link: string;
+  try { ({ link } = await api<{ link: string }>("/api/photos/dropbox-folder", { method: "POST", body: JSON.stringify({ link: chosen }) })); }
+  catch (e) { return (e as Error).message; }
+  if (folders().some((f) => f.link === link)) return "That folder is already in the list.";
+  state.photoFolders = [...folders(), { link }];
   save();
   loadMissing(); changed();
   return "";
@@ -218,7 +233,7 @@ async function loadFolder(link: string, refresh: boolean, quiet = false) {
     // Taken off the list meanwhile: that answer isn't wanted.
     if (folders().some((f) => f.link === link)) {
       loaded.set(link, { list: got, loading: false, error: "" });
-      // Videos whose header the server is still reading get their place and time soon: ask again.
+      // Files the server is still reading (Drive videos, Dropbox files) get their place and time soon: ask again.
       if (got.pending) setTimeout(() => { if (folders().some((f) => f.link === link)) loadFolder(link, false, true); }, 6000);
     }
   } catch (e) { if (folders().some((f) => f.link === link)) loaded.set(link, { list: null, loading: false, error: (e as Error).message }); }
@@ -255,7 +270,7 @@ export type Placed = Photo & {
 };
 
 /** The folder a photo is from (with the folder inside it, if any). */
-export const folderOf = (p: Placed) => [p.folderName || p.folder.replace(/^local:/i, "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "", p.dir].filter(Boolean).join(" / ");
+export const folderOf = (p: Placed) => [p.folderName || (isDropboxFolder(p.folder) ? "Dropbox folder" : "") || p.folder.replace(/^local:/i, "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "", p.dir].filter(Boolean).join(" / ");
 /** Where a photo came from: its folder, and who uploaded it when Drive says. */
 export const sourceOf = (p: Placed) => [folderOf(p), p.by ? `uploaded by ${p.by}` : ""].filter(Boolean).join(" · ");
 
@@ -266,7 +281,7 @@ export const viewItem = (p: Placed): ViewItem => ({
   ...(p.video
     ? {
       video: apiUrl(`/api/photos/image?folder=${encodeURIComponent(p.folder)}&id=${encodeURIComponent(p.id)}`),
-      ...(isLocalFolder(p.folder) ? {} : { open: `https://drive.google.com/file/d/${encodeURIComponent(p.id)}/view`, embed: `https://drive.google.com/file/d/${encodeURIComponent(p.id)}/preview` }),
+      ...(isLocalFolder(p.folder) || isDropboxFolder(p.folder) ? {} : { open: `https://drive.google.com/file/d/${encodeURIComponent(p.id)}/view`, embed: `https://drive.google.com/file/d/${encodeURIComponent(p.id)}/preview` }),
     }
     // From this computer the big picture already is the file: nothing to swap in.
     : isLocalFolder(p.folder) ? {} : { full: apiUrl(`/api/photos/image?folder=${encodeURIComponent(p.folder)}&id=${encodeURIComponent(p.id)}`) }),

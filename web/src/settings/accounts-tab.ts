@@ -34,7 +34,8 @@ function html(s: SyncStatus) {
   const d = s.dropbox;
   const box = card({
     id: "dropbox", name: "Dropbox", ico: "box", configured: !!d?.configured, signedIn: !!d?.signedIn, expired: !!d?.expired, who: d?.name || d?.email || "", email: d?.email || "", error: d?.signInError || "",
-    uses: use(!!d?.signedIn, "Sync trips through Dropbox folders", "dropbox") + `<li class="acc-use na"><span class="acc-off"></span><span>Photos from Dropbox aren't supported</span></li>`,
+    uses: use(!!d?.signedIn, "Sync trips through Dropbox folders", "dropbox")
+      + use(!!d?.signedIn, "Photos from your Dropbox on the map", "dropbox"),
     manage: `<p class="hint">${d?.keyFrom === "env" ? "The app key is set by the DROPBOX_APP_KEY environment variable." : "The app key is saved on this computer. On another computer, paste the same one."}</p>
       <div class="set-inline"><button type="button" class="btn" data-setup="dropbox" data-at="key">${icon("pencil")} Change or see the steps</button>
       ${d?.keyFrom === "app" ? `<button type="button" class="btn" data-remove="dropbox">Remove</button>` : ""}</div>`,

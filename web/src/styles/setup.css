@@ -647,6 +647,31 @@ textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
 .wz-input { display: grid; gap: 4px; margin: 0 0 10px; font-size: 12.5px; font-weight: 600; }
 .wz-input input { width: 100%; box-sizing: border-box; }
 .wz-done { color: var(--ok); }
+.wz-options { display: grid; gap: 8px; }
+.wz-option { display: grid; gap: 2px; padding: 12px 14px; text-align: left; font: inherit; color: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.wz-option:hover { border-color: var(--accent); background: var(--hover); }
+.wz-option span { font-size: 13px; color: var(--muted); }
+.wz-explain { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.wz-explain dt { font-size: 12px; font-weight: 700; color: var(--muted); }
+.wz-explain dd { margin: 0 0 8px; }
+.wz-explain dd:last-child { margin: 0; }
+.wz-body ul, .wz-how, .wz-list { margin: 0 0 10px; padding-left: 20px; }
+.wz-body li { margin-bottom: 6px; }
+.wz-body .wz-list > li { margin-bottom: 14px; }
+.wz-list p { margin: 2px 0 6px; }
+.wz-form { margin: 0 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.wz-form h4 { margin: 0 0 8px; font-size: 13px; }
+.wz-form h4 ~ h4 { margin-top: 14px; }
+.wz-box { display: grid; gap: 3px; margin-bottom: 8px; font-size: 12.5px; }
+.wz-box:last-child { margin-bottom: 0; }
+.wz-box .link-row, .wz-box > i { margin: 0; min-width: 0; padding: 5px 8px; border: 1px dashed var(--line); border-radius: 8px; }
+.wz-box > i { color: var(--muted); }
+.wz-box code { flex: 1; overflow-wrap: anywhere; }
+.wz-warn { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 12%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.wz-warn > svg.i { flex: none; margin-top: 3px; color: var(--warn); font-size: 16px; }
+.wz-help { margin-bottom: 10px; }
+.wz-help summary { cursor: pointer; font-weight: 600; }
+.wz-help ul { margin-top: 8px; }
 .wz-acts { display: flex; align-items: center; gap: 12px; }
 .wz-acts > span { flex: 1; }
 .wz-dialog { position: fixed; }

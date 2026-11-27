@@ -186,7 +186,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
       // My Drive itself can't be shared, only what's in it.
       d.querySelector<HTMLButtonElement>("[data-access]")!.hidden = !(driveOk && spot.provider === "drive" && t && t.id !== "root");
       d.querySelector(".dp-sel")!.innerHTML = t
-        ? `${icon(spot.provider === "local" ? "folder" : "drive")}<span class="dp-sel-name" title="${esc(spot.provider === "local" ? t.id : t.name)}">${esc(spot.provider === "local" ? t.id : t.name)}</span>${t.canWrite ? "" : `<span class="dp-tag">view only</span>`}`
+        ? `${icon(spot.provider === "local" ? "folder" : spot.provider === "dropbox" ? "box" : "drive")}<span class="dp-sel-name" title="${esc(spot.provider === "local" ? t.id : t.name)}">${esc(spot.provider === "local" ? t.id : t.name)}</span>${t.canWrite ? "" : `<span class="dp-tag">view only</span>`}`
         : `<span class="hint">Select a folder, or open one and choose it.</span>`;
     };
 

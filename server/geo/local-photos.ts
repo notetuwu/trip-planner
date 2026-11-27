@@ -159,7 +159,7 @@ export async function localFile(link: string, id: string, res: Res, range = ""):
 }
 
 /** A grey card with a play sign, for a video (a frame can't be taken from it here). */
-const VIDEO_CARD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120"><rect width="160" height="120" fill="#3a3f47"/><circle cx="80" cy="60" r="24" fill="#000" fill-opacity=".45" stroke="#fff" stroke-width="3"/><path d="M72 46 L96 60 L72 74 Z" fill="#fff"/></svg>`;
+export const VIDEO_CARD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120"><rect width="160" height="120" fill="#3a3f47"/><circle cx="80" cy="60" r="24" fill="#000" fill-opacity=".45" stroke="#fff" stroke-width="3"/><path d="M72 46 L96 60 L72 74 Z" fill="#fff"/></svg>`;
 
 /**
  * A picture at a small size: the preview stored inside the JPEG (instant), else the file itself for the browser to

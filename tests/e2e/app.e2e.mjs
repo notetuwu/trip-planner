@@ -680,10 +680,12 @@ test("settings group their tabs; AI models opens a page per provider; Gemini's h
   await page.waitFor(`document.querySelectorAll("#setMain [data-account]").length === 2`, 10000, "Google and Dropbox");
   // Connect opens the steps, one at a time.
   await page.eval(`document.querySelector('[data-account="google"] [data-connect]').click()`);
-  await page.waitFor(`/step 1 of/.test(document.querySelector(".wz-dialog .wz-for")?.textContent || "")`, 10000, "the first step");
+  await page.waitFor(`!!document.querySelector('.wz-dialog [data-mode="guided"]')`, 10000, "the two ways through");
+  await page.eval(`document.querySelector('.wz-dialog [data-mode="guided"]').click()`);
+  await page.waitFor(`/step 1 of/.test(document.querySelector(".wz-dialog .wz-for")?.textContent || "")`, 5000, "the first step");
   await page.eval(`document.querySelector(".wz-dialog [data-next]").click()`);
   await page.waitFor(`/step 2 of/.test(document.querySelector(".wz-dialog .wz-for").textContent)`, 5000, "the next step");
-  await page.eval(`document.querySelector(".wz-dialog").close(); localStorage.removeItem("trip-planner-connect-drive")`);
+  await page.eval(`document.querySelector(".wz-dialog").close(); localStorage.removeItem("trip-planner-connect-drive"); localStorage.removeItem("trip-planner-connect-mode")`);
   // The search finds Gemini on its tab.
   await page.eval(`(() => { const i = document.querySelector("#setFind"); i.value = "gemini"; i.dispatchEvent(new Event("input")); })()`);
   assert.match(await page.eval(`document.querySelector("#setMain .set-hit")?.textContent || ""`), /AI models.*Google Gemini/s);

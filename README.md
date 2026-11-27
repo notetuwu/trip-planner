@@ -42,7 +42,7 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 - Hide any of the columns, give the map the whole window, or use it on a phone one section at a time.
 
 **Photos**
-- Show the photos and videos of folders on your computer or in Google Drive on the map, where each was taken, and in a gallery by day of the trip, coloured and filtered by stay.
+- Show the photos and videos of folders on your computer, in Google Drive or in Dropbox on the map, where each was taken, and in a gallery by day of the trip, coloured and filtered by stay.
 - Photos without a location are placed by their time, or by hand: drag them onto the map. Your files aren't changed.
 - Delete a photo from the gallery where you're allowed to: it goes to the Drive trash or your Recycle Bin, after you confirm. Someone else's photo in your Drive folder can only be removed from the folder, where Drive allows it.
 - **Preview** shows the trip in pictures, day by day, with a slideshow.
@@ -125,7 +125,7 @@ Everything has a setting in the app; these environment variables are optional:
 | `TRIP_PLANNER_DATA` | Another folder for trips, place lists and caches |
 | `PLACES_CSV` | A CSV of places to import on startup |
 | `TRIP_PLANNER_NO_UPDATES` | `1` turns off the update check |
-| `DROPBOX_APP_KEY` | Your Dropbox app's key for syncing trips through Dropbox (or enter it in Settings → Accounts; see [docs/dropbox-sync.md](docs/dropbox-sync.md)) |
+| `DROPBOX_APP_KEY` | Your Dropbox app's key for Dropbox sync and photos (or enter it in Settings → Accounts; see [docs/dropbox-sync.md](docs/dropbox-sync.md)) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Your Google client for syncing trips through Drive, Drive photos and Gemini's exact limits (or enter it in Settings → Accounts; see [docs/google-sync.md](docs/google-sync.md)); also read from a `.env` file |
 
 ## Services it uses
@@ -137,7 +137,7 @@ The app runs locally but calls these public services, free or with your own free
 - [OpenStreetMap](https://www.openstreetmap.org) and [OpenFreeMap](https://openfreemap.org) tiles; Esri World Street Map in the phone file.
 - [Nager.Date](https://date.nager.at): public holidays. [Open-Meteo](https://open-meteo.com): weather. [Wikipedia, Wikivoyage and Wikidata](https://www.wikimedia.org): research when no web search is set up.
 - [Frankfurter](https://frankfurter.dev): exchange rates. [fuel-prices.eu](https://www.fuel-prices.eu), [Natural Resources Canada](https://natural-resources.canada.ca), the [Australian Institute of Petroleum](https://aip.com.au) and the [US EIA](https://www.eia.gov): fuel prices.
-- Optional: [Geoapify](https://www.geoapify.com) (faster place search), Google Drive and Dropbox (sync; Drive also for photo folders), [Wikimedia Commons](https://commons.wikimedia.org) (pictures in the preview).
+- Optional: [Geoapify](https://www.geoapify.com) (faster place search), Google Drive and Dropbox (sync and photo folders), [Wikimedia Commons](https://commons.wikimedia.org) (pictures in the preview).
 
 Map data © OpenStreetMap contributors. The Google Maps list import uses the same unofficial endpoint as a list's share page and can break when Google changes it; lists imported by link come with exact locations, while a [Takeout](https://takeout.google.com) CSV always works but needs every place looked up.
 

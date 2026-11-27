@@ -39,6 +39,16 @@ function fake(answers: Record<string, (body: any, headers: Record<string, string
   }));
 }
 const token = () => json({ access_token: "A1", expires_in: 14400 });
+/** The start of a JPEG whose EXIF block says when it was taken ("2027:09:11 08:00:00"). */
+function jpegTaken(when: string) {
+  // A TIFF block with one entry, DateTime (0x0132), its text right after the directory.
+  const tiff = Buffer.alloc(8 + 2 + 12 + 4 + 20);
+  tiff.write("II"); tiff.writeUInt16LE(42, 2); tiff.writeUInt32LE(8, 4); tiff.writeUInt16LE(1, 8);
+  tiff.writeUInt16LE(0x0132, 10); tiff.writeUInt16LE(2, 12); tiff.writeUInt32LE(20, 14); tiff.writeUInt32LE(26, 18);
+  tiff.write(`${when}\0`, 26);
+  const body = Buffer.concat([Buffer.from("Exif\0\0", "latin1"), tiff]);
+  return Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0, body.length + 2]), body, Buffer.from([0xff, 0xd9])]);
+}
 
 describe("Dropbox", () => {
   it("renews the sign-in with the app key alone, and lists a folder's trip files page by page", async () => {
@@ -95,6 +105,30 @@ describe("Dropbox", () => {
       "/2/files/get_metadata": () => json({ ".tag": "folder", id: "id:alex01", name: "Alex" }),
     });
     expect(await box.resolveFolder("dropbox:mount:222")).toBe("dropbox:id:alex01");
+  });
+
+  it("lists a folder's photos, reads when each was taken from the start of the file, and deletes nothing", async () => {
+    const photos = await import("../server/geo/photos");
+    fake({
+      "/2/files/get_metadata": () => json({ ".tag": "folder", id: "id:photos01", name: "Holiday" }),
+      "/2/files/list_folder": () => json({ entries: [
+        { ".tag": "file", id: "id:picture1", name: "a.jpg", content_hash: "p1", size: 9, server_modified: "2026-01-02T10:00:00Z" },
+        { ".tag": "file", id: "id:picture2", name: "IMG_20270910_094103.png", content_hash: "p2", size: 9 },
+        { ".tag": "file", id: "id:picture3", name: "b.heic", content_hash: "p3" },
+        { ".tag": "file", id: "id:picture4", name: "notes.txt", content_hash: "p4" },
+      ], has_more: false }),
+      "/2/files/download": () => new Response(jpegTaken("2027:09:11 08:00:00"), { status: 206 }),
+    });
+    const first = await photos.folderPhotos("dropbox:id:photos01");
+    expect(first).toMatchObject({ name: "Holiday", total: 3, skipped: 1, pending: 1 });
+    expect(first.photos.map((p) => [p.name, p.t, p.del])).toEqual([["IMG_20270910_094103.png", "2027-09-10T09:41:03", undefined], ["a.jpg", "", undefined]]);
+    await vi.waitFor(async () => expect((await photos.folderPhotos("dropbox:id:photos01")).pending).toBeUndefined());
+    const read = (await photos.folderPhotos("dropbox:id:photos01")).photos[1];
+    expect([read.t, read.up]).toEqual(["2027-09-11T08:00:00", undefined]);
+    // Only the start of the one JPEG was asked for, once.
+    const downloads = calls.filter((c) => c.url.endsWith("/files/download"));
+    expect(downloads.map((c) => c.headers.Range)).toEqual(["bytes=0-131071"]);
+    await expect(photos.deletePhoto("dropbox:id:photos01", "dropbox:id:picture1", "trash")).rejects.toThrow(/doesn't delete/);
   });
 
   it("is a folder kind of its own for the sync", () => {

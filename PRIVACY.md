@@ -29,19 +29,22 @@ Sync is off unless you set it up with your own Google client ID and secret and s
 
 Data from your Google account is not sold, used for advertising, or sent to the developer.
 
-## Dropbox sync (optional)
+## Dropbox sync and photos (optional)
 
-Sync with Dropbox is off unless you set it up with your own Dropbox app key and sign in to Dropbox.
+Dropbox is off unless you set it up with your own Dropbox app key and sign in to Dropbox.
 
 - **Access:** the app asks for "Full Dropbox" access, because that is what it takes to see folders other people shared
-  with you. It only uses the folders you add in Settings → Sync: it reads their names and trip files, writes the trips
-  you choose to sync, makes a new folder when you ask it to, and adds a folder shared with you to your Dropbox when you
-  choose it. It never deletes anything in your Dropbox.
+  with you. It only uses the folders you add for sync or photos: in sync folders it reads their names and trip files,
+  writes the trips you choose to sync and makes a new folder when you ask it to. It adds a folder shared with you to your
+  Dropbox when you choose it. It never deletes anything in your Dropbox.
+- **Photos:** in a photo folder it reads the file list, thumbnails, the photos and videos you view, and the start of each
+  JPEG and video to learn where and when it was taken. These stay on your computer (a list and what was read are kept in
+  the app's data folder); photos are only read, never changed.
 - **Your account:** your name and email address are read to show who is signed in and to record who shared a trip.
   Profile pictures of you and a shared folder's members are shown as described for Google Drive above.
 - **Shared trips** and **storage** work as for Google Drive above: the token and app key stay in the app's data folder and
   are sent only to Dropbox.
-- **Removing it:** sign out in Settings → Sync, or remove the app at <https://www.dropbox.com/account/connected_apps>.
+- **Removing it:** sign out in Settings → Accounts, or remove the app at <https://www.dropbox.com/account/connected_apps>.
 
 ## Folders on your computer (optional)
 

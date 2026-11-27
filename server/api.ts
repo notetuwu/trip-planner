@@ -9,6 +9,7 @@ import { geocodeBatch, geocodeStatus } from "./geo/geocode";
 import { routeBatch } from "./geo/routing";
 import { cellStatus, clearLines, linesFor, linesLocation, linesOnDisk, linesProgress, prefetchLines, cancelLines, localLine, routeStops, routesStops, setLinesDir } from "./geo/transit-lines";
 import { localThumb } from "./geo/local-photos";
+import { dropboxPhotoFolder } from "./geo/dropbox-photos";
 import { deletePhoto, driveThumb, folderPhotos, photoFile } from "./geo/photos";
 import { placePictures } from "./geo/wiki-photos";
 import { pickFolder } from "./util/pick-folder";
@@ -115,6 +116,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       }
       catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
     }
+    // A Dropbox folder chosen or pasted for photos, as what the trip keeps ("dropbox:<id>"): { link }.
+    else if (method === "POST" && path === "/api/photos/dropbox-folder") {
+      const body = await readJson(req);
+      try { sendJson(res, 200, { link: await dropboxPhotoFolder(String(body?.link || "")) }); }
+      catch (e) { sendJson(res, 400, { error: errMsg(e) }); }
+    }
     // Deletes a photo's file, or removes it from its folder: { folder, id, how } (how: what was agreed to).
     else if (method === "POST" && path === "/api/photos/delete") {
       const body = await readJson(req);
@@ -130,7 +137,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     // A small picture of a photo or video from a folder on this computer: "?folder=local:<path>&id=<file>&px=s220".
     else if (method === "GET" && path === "/api/photos/thumb") {
       const folder = url.searchParams.get("folder") || "";
-      // A Drive photo read as the signed-in account (its thumbnail only shows for that account).
+      // A Dropbox photo, or a Drive one read as the signed-in account (its thumbnail only shows for that account).
       if (!/^local:/i.test(folder)) { try { await driveThumb(folder, url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); } catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); } }
       else try { await localThumb(url.searchParams.get("folder") || "", url.searchParams.get("id") || "", Number((url.searchParams.get("px") || "").replace(/^s/, "")) || 220, res); }
       catch (e) { if (!res.headersSent) sendJson(res, 502, { error: errMsg(e) }); else res.destroy(); }

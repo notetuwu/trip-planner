@@ -8,8 +8,10 @@ One Google project and sign-in of your own serves everything Google can add to t
   Usage API), the same numbers AI Studio shows, so it knows which models the key can run without spending test requests.
 
 To sign in, the app needs a Google "OAuth client": an ID and a secret that tell Google which app is asking. The app ships
-without one. You make your own, free, once, in about 5–10 minutes. The app walks through the same steps one at a time (Settings → Accounts → Connect, or the
-Connect button of the feature), showing only the ones that feature needs.
+without one. You make your own, free, once, in about 5–10 minutes. The app takes you through the same steps (Settings →
+Accounts → Connect, or the Connect button of the feature), showing only the ones that feature needs. It first asks how:
+**I'm new to this** explains each page and why it's needed, one step at a time; **I know the Google Cloud Console** puts
+every link and value on one checklist.
 
 This is **not** the same thing as a Google API key (or a Gemini key), but it comes from the same place, and should be in
 the same project as your Gemini key.
@@ -20,7 +22,8 @@ the same project as your Gemini key.
    belongs to: AI Studio made one with your first key, called "Default Gemini Project", whose ID starts with
    `gen-lang-client-` ([AI Studio → API keys](https://aistudio.google.com/apikey) shows each key's project). Gemini's
    limits are read from the project the client is made in. No Gemini key? Any project will do, or make one (**New
-   project**, any name). No payment details are needed.
+   project**, any name; it isn't selected by itself, so once the notification at the top right says it's made, press
+   **Select project** there). No payment details are needed.
 2. Switch on the APIs for what you want, by opening each and pressing **Enable** (if it says **Manage**, it's on already):
 
    | API | For |
@@ -33,8 +36,9 @@ the same project as your Gemini key.
    project already has a sign-in screen). App name "Trip Planner", your email as support email, audience **External**,
    your contact email, agree, **Create**.
 
-   Then on **Branding**, under **App domain**, fill in these and press **Save** (without them **Publish app** sends you
-   back to this page; the terms of service link can stay empty):
+   Then scroll down the same **Branding** page, fill in these boxes (**Authorized domains** has a **+ Add domain**
+   button; only `github.com` goes in it, without `https://`) and press **Save** at the bottom. Without them **Publish
+   app** sends you back to this page; the terms of service link stays empty.
 
    | Field | Value |
    | --- | --- |
@@ -44,15 +48,6 @@ the same project as your Gemini key.
 
 4. [Audience](https://console.cloud.google.com/auth/audience): **Publish app** and confirm, so the status is **In
    production**. In "Testing", Google signs you out every 7 days. Don't submit it for verification.
-   Then [Data access](https://console.cloud.google.com/auth/scopes) → **Add or remove scopes** → paste the permissions
-   for what you want under **Manually add scopes** → **Add to table** → **Update** → **Save**:
-
-   | Permission | For |
-   | --- | --- |
-   | `https://www.googleapis.com/auth/drive` | Sync, photos from Drive |
-   | `https://www.googleapis.com/auth/cloud-platform.read-only` | Gemini's exact limits (reading the project's quotas) |
-   | `https://www.googleapis.com/auth/cloud-billing.readonly` | Gemini's exact limits (whether billing is on) |
-
 5. [Clients](https://console.cloud.google.com/auth/clients) → **Create client** → application type **Desktop app** →
    **Create**. Copy the **Client ID** and **Client secret** now, or download the JSON: Google shows the secret only
    once. (Lost it? Create another client.)
@@ -63,8 +58,8 @@ the same project as your Gemini key.
    If it says **"Access blocked: … has not completed the Google verification process"** instead, the app is still in
    Testing: do step 4 (**Publish app**) and sign in again.
 
-Adding a feature later? Switch on its API and add its permission (steps 2 and 4), then sign in again: the app's steps
-show just those. Read-only Cloud access is asked for only when Gemini's exact limits are on.
+Adding a feature later? Switch on its API (step 2), then sign in again: the app's steps show just that. Read-only
+Cloud access is asked for only when Gemini's exact limits are on.
 
 Menu names in Google's console change now and then; the links should still lead to the right pages.
 

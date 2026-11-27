@@ -10,7 +10,7 @@ import { session, state } from "../core/state";
 import { showPane } from "../core/layout";
 import { map } from "../map/map";
 import {
-  type Placed, addLocalFolder, addPhotosFolder, allPhotos, deletePhoto, duration, folderOf, folders, isLocalFolder, isPhotosGuess, isPhotosOn, loadMissing, onPhotosChange,
+  type Placed, addDropboxFolder, addLocalFolder, addPhotosFolder, allPhotos, deletePhoto, duration, folderOf, folders, isLocalFolder, isPhotosGuess, isPhotosOn, loadMissing, onPhotosChange,
   photosState, removePhotosFolder, setPhotosFolderShown, setPhotosGuess, setPhotosOn, thumbTag, viewItem,
 } from "../map/photos";
 import { showGallery } from "../core/lightbox";
@@ -186,8 +186,8 @@ const rowNote = (r: Row) =>
   r.off ? "Hidden" : r.loading ? "Loading…" : r.error ? r.error
     : !r.total ? "No photos in it"
       : `${r.shown + r.guessed} on the map${r.guessed ? ` (${r.guessed} by time)` : ""}${r.noSpot ? `, ${r.noSpot} not placed` : ""}${r.truncated ? ` (the first ${r.shown + r.guessed + r.noSpot} of ${r.total})` : ""}`
-        + `${r.pending ? ` · reading ${r.pending} video${r.pending === 1 ? "" : "s"} for place and time…` : ""}${r.skipped ? ` · ${r.skipped} HEIC skipped` : ""}`;
-const shortName = (l: string) => l.replace(/^local:/i, "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || l;
+        + `${r.pending ? ` · reading ${r.pending} ${r.dropbox ? "file" : "video"}${r.pending === 1 ? "" : "s"} for place and time…` : ""}${r.skipped ? ` · ${r.skipped} HEIC skipped` : ""}`;
+const shortName = (l: string) => /^dropbox:/i.test(l) ? "Dropbox folder" : l.replace(/^local:/i, "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || l;
 
 /** The left panel's changing parts: the sources and the switches. The two fields for adding stay as they are (what's typed in them is kept). */
 function renderSide() {
@@ -196,7 +196,7 @@ function renderSide() {
   list.innerHTML = s.rows.length ? s.rows.map((r, i) => `<li class="${r.off ? "off" : ""}${r.error ? " bad" : ""}">
       <input type="checkbox" data-src-show="${i}" ${r.off ? "" : "checked"} title="Show this source's photos">
       <span class="ph-src"><b title="${esc(r.link.replace(/^local:/i, ""))}">${esc(r.name || shortName(r.link))}</b>
-        <span class="ph-kind">${r.local ? "This computer" : "Google Drive"}</span><span class="hint" data-src-note="${i}">${esc(rowNote(r))}</span></span>
+        <span class="ph-kind">${r.local ? "This computer" : r.dropbox ? "Dropbox" : "Google Drive"}</span><span class="hint" data-src-note="${i}">${esc(rowNote(r))}</span></span>
       <button type="button" class="icon-btn" data-src-del="${i}" title="Take this folder off the trip">${icon("x")}</button></li>`).join("")
     : `<li class="empty">No folders yet. Add one below.</li>`;
   const rows = s.rows;
@@ -206,6 +206,7 @@ function renderSide() {
   on.checked = isPhotosOn(); guess.checked = isPhotosGuess();
   // With no folders yet it's open: it's where one is added.
   dlg.querySelector<HTMLDetailsElement>("[data-ph-folders]")!.open = !rows.length || !view.foldersShut;
+  dlg.querySelector<HTMLElement>("[data-ph-dropbox]")!.hidden = !rows.some((r) => r.dropbox && !r.off);
   dlg.querySelector<HTMLElement>("[data-ph-heic]")!.hidden = !rows.some((r) => r.skipped && !r.off);
 }
 
@@ -279,14 +280,15 @@ const SIDE = () => `<aside class="ph-side">
   <section>
     <details data-ph-folders open>
     <summary><h4>${icon("folder")} Photo folders ${icon("chevronDown")}</h4></summary>
-    <p class="hint">The photos and videos of this trip. Each can be a Google Drive folder or a folder on this computer.</p>
+    <p class="hint">The photos and videos of this trip. Each can be a Google Drive folder, a Dropbox folder or a folder on this computer.</p>
     <ul class="ph-sources" data-ph-sources></ul>
     <div class="drive-add">
-      <button type="button" class="drive-tile" data-ph-add><span class="dt-ic">${icon("plus")}</span><span class="dt-text"><b>Add a folder</b><span>From this computer or your Google Drive</span></span></button>
+      <button type="button" class="drive-tile" data-ph-add><span class="dt-ic">${icon("plus")}</span><span class="dt-text"><b>Add a folder</b><span>From this computer, Google Drive or Dropbox</span></span></button>
       <button type="button" class="link-btn drive-paste-btn" data-ph-paste>${icon("link")} Or paste a link or path</button>
     </div>
     <p class="hint" data-ph-how>Photos and videos in it and its folders. From this computer they're read from the disk; nothing is uploaded.</p>
     <p class="hint ph-err" data-ph-err hidden></p>
+    <p class="hint" data-ph-dropbox hidden><b>Dropbox photos:</b> Dropbox doesn't say where or when a photo was taken, so the planner reads that from the start of each file. The first time, a big folder's photos find their place on the map bit by bit.</p>
     <p class="hint" data-ph-heic hidden>iPhone HEIC pictures can't be shown by browsers, so they're skipped. Export them as JPEG to include them.</p>
     </details>
   </section>
@@ -303,23 +305,23 @@ const SIDE = () => `<aside class="ph-side">
 function wireSide(d: HTMLDialogElement) {
   const q = <T extends HTMLElement>(sel: string) => d.querySelector<T>(sel)!;
   const say = (sel: string, text: string) => { const el = q(sel); el.textContent = text; el.hidden = !text; };
-  /** Adds what was chosen or pasted: a folder on this computer, or a Google Drive folder (its link). */
-  const add = (link: string) => {
+  /** Adds what was chosen or pasted: a folder on this computer, a Google Drive folder (its link) or a Dropbox one. */
+  const add = async (link: string) => {
+    if (/^dropbox:|^https?:\/\/(www\.)?dropbox\.com\//i.test(link)) return say("[data-ph-err]", await addDropboxFolder(link));
     const local = link.replace(/^local:/i, "");
     say("[data-ph-err]", /^local:/i.test(link) || /^([a-z]:[\\/]|\\\\|\/|~)/i.test(local) ? addLocalFolder(local) : addPhotosFolder(link));
   };
   q<HTMLButtonElement>("[data-ph-add]").onclick = async () => {
-    const f = await pickFolder({ providers: ["local", "drive"], title: "Choose a folder with photos", note: "Its photos and videos show on the map, with those in its folders (two levels down)." });
+    const f = await pickFolder({ providers: ["local", "drive", "dropbox"], title: "Choose a folder with photos", note: "Its photos and videos show on the map, with those in its folders (two levels down)." });
     if (f) add(f.link);
   };
   q<HTMLButtonElement>("[data-ph-paste]").onclick = async () => {
-    const text = await askText({ title: "Paste a link or path", text: "A Google Drive folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  D:\\Photos\\Japan", ok: "Add", required: true });
+    const text = await askText({ title: "Paste a link or path", text: "A Google Drive or Dropbox folder's link (Share → Copy link), or a folder's path on this computer or a network drive.", placeholder: "https://drive.google.com/drive/folders/…  or  D:\\Photos\\Japan", ok: "Add", required: true });
     if (!text) return;
     const c = classifyLink(text);
-    if (c.kind === "dropbox") return void tell({ title: "Dropbox photo folders aren't supported yet", text: "If the Dropbox app keeps the folder on this computer, add it from there: Add a folder → This computer." });
     if (c.kind === "cloud") return void tell({ title: `${c.name} links can't be opened here yet`, text: `If the ${c.name} app keeps the folder on this computer, add it from there: Add a folder → This computer.` });
     if (c.kind === "unknown") return say("[data-ph-err]", "That isn't a Google Drive link or a folder's path.");
-    add(c.kind === "local" ? `local:${c.path}` : text);
+    add(c.kind === "local" ? `local:${c.path}` : c.kind === "dropbox" ? c.url : text);
   };
   // Signed in with Google (Settings → Sync): Drive folders work without sharing them publicly.
   loadSyncStatus().then((s) => { if (s?.signedIn) q("[data-ph-how]").textContent = "Photos and videos in it and its folders. You're signed in with Google, so your own Drive folders work without sharing them. From this computer they're read from the disk; nothing is uploaded."; });

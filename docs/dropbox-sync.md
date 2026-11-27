@@ -40,4 +40,13 @@ under **This computer** instead (Settings → Sync → Add a folder), and Dropbo
   <https://www.dropbox.com/account/connected_apps>.
 - Nothing is ever deleted in Dropbox. A trip is written as a new version only over the version the app last read; if
   someone saved it meanwhile, the next sync joins the two (see Settings → Sync → Good to know).
-- Photo folders in Dropbox aren't read yet: use the Dropbox app's folder under This computer for those.
+
+## Photos from Dropbox
+
+The same sign-in shows photos and videos from Dropbox folders: Photos → **Add a folder** → Dropbox, or paste a folder's
+shared link. Folders inside it are included, two levels down.
+
+- Dropbox's folder listing doesn't say where or when a photo was taken, so the planner reads that from the start of each
+  file (not the whole file) and keeps it. The first time, a big folder's photos find their place on the map bit by bit.
+- Nothing is deleted or changed. iPhone HEIC pictures are skipped.
+- A folder added to a trip is shared along with it. Others need to be signed in to Dropbox with access to that folder.

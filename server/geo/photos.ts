@@ -9,6 +9,7 @@ import { USER_AGENT, errMsg } from "../config";
 import { readSettings } from "../settings";
 import { diskCache } from "../util/disk-cache";
 import { type Res, sendJson } from "../util/http";
+import { dropboxFile, dropboxThumb, isDropboxFolder, listDropbox } from "./dropbox-photos";
 import { isLocal, listLocal, localDelete, localFile } from "./local-photos";
 import { bearer } from "../sync/google";
 import { readVideoHeader, timeFromName } from "./video-header";
@@ -163,6 +164,7 @@ async function folderName(id: string, a: Access) {
 export async function folderPhotos(link: string, refresh = false): Promise<PhotoList> {
   // A folder on this computer: read from the disk (no key, no Google).
   if (isLocal(link)) return listLocal(link);
+  if (isDropboxFolder(link)) return listDropbox(link, refresh);
   const id = folderId(link);
   if (!id) throw new Error("That doesn't look like a Google Drive folder link. Open the folder in Drive, press Share and copy the link.");
   const a = await access();
@@ -195,6 +197,7 @@ function videoType(id: string, list: PhotoList, upstream: string | null) {
  */
 export async function photoFile(link: string, photoId: string, res: Res, range = ""): Promise<void> {
   if (isLocal(link)) return localFile(link, photoId, res, range);
+  if (isDropboxFolder(link)) return dropboxFile(link, photoId, res, range);
   const folder = folderId(link), hit = cache.data[folder];
   if (!hit || !hit.photos.some((p) => p.id === photoId)) return sendJson(res, 404, { error: "That photo isn't in the folder." });
   const a = await access();
@@ -223,6 +226,7 @@ export async function photoFile(link: string, photoId: string, res: Res, range =
  *  this computer as localDelete says. */
 export async function deletePhoto(link: string, photoId: string, how: RemoveKind): Promise<void> {
   if (isLocal(link)) return localDelete(link, photoId, how === "permanent");
+  if (isDropboxFolder(link)) throw new Error("The planner doesn't delete anything in Dropbox.");
   const hit = cache.data[folderId(link)];
   if (!hit?.photos.some((p) => p.id === photoId)) throw new Error("That photo isn't in the folder.");
   const token = await bearer();
@@ -250,8 +254,10 @@ export async function deletePhoto(link: string, photoId: string, how: RemoveKind
   cache.save();
 }
 
-/** A thumbnail of a photo read as the signed-in account, at `px` pixels (only photos of a folder listed before). */
+/** A thumbnail of a photo from Dropbox, or from Drive read as the signed-in account, at `px` pixels (only photos of a
+ *  folder listed before). */
 export async function driveThumb(link: string, photoId: string, px: number, res: Res): Promise<void> {
+  if (isDropboxFolder(link)) return dropboxThumb(link, photoId, px, res);
   const folder = folderId(link), hit = cache.data[folder], src = thumbLinks.data[photoId];
   if (!hit || !src || !hit.photos.some((p) => p.id === photoId)) return sendJson(res, 404, { error: "That photo isn't in the folder." });
   const token = await bearer();
