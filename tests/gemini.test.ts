@@ -10,7 +10,7 @@ import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Trip } from "../server/ai/types";
 
-let server: http.Server, mode: "ok" | "minute" | "day" = "ok", liteDay = false;
+let server: http.Server, mode: "ok" | "minute" | "day" | "bare" = "ok", liteDay = false, bareSearch = false;
 const seen: string[] = [], bodies: { url: string; body: string }[] = [];
 let gemini: typeof import("../server/ai/gemini"), ask: typeof import("../server/ai/ask");
 
@@ -48,6 +48,8 @@ beforeAll(async () => {
       }
       if (req.url === "/models/gemini-9-flash-lite:streamGenerateContent?alt=sse") {
         if (liteDay) { res.writeHead(429); res.end(quota(true, 500, "gemini-9-flash-lite")); return; }
+        // As Google really answers on the free tier: a 429 naming no quota at all.
+        if (bareSearch && body.includes("google_search")) { res.writeHead(429); res.end(JSON.stringify({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "You exceeded your current quota, please check your plan and billing details.", details: [{ "@type": "type.googleapis.com/google.rpc.Help" }] } })); return; }
         if (body.includes("google_search")) { res.writeHead(429); res.end(quota(true, 0, "gemini-9-flash-lite").replace(/GenerateRequestsPerDayPerProjectPerModel-FreeTier/, "SearchGroundingRequestsPerDayPerProjectPerModel-FreeTier")); return; }
         res.writeHead(200, { "Content-Type": "text/event-stream" });
         const plan = body.includes("Kinkaku-ji")
@@ -80,6 +82,7 @@ beforeAll(async () => {
         res.end(JSON.stringify({ candidates: [{ content: { parts: [{ text: "H" }] }, finishReason: "MAX_TOKENS" }] })); return;
       }
       if (req.url === "/models/gemini-9-flash:streamGenerateContent?alt=sse") {
+        if (mode === "bare") { res.writeHead(429); res.end(JSON.stringify({ error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "Resource has been exhausted (e.g. check quota).", details: [{ "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "1s" }] } })); return; }
         if (mode === "day") { res.writeHead(429); res.end(quota(true, 20, "gemini-9-flash")); return; }
         if (mode === "minute" && !minuteHit) { minuteHit = true; res.writeHead(429); res.end(quota(false, 5, "gemini-9-flash")); return; }
         res.writeHead(200, { "Content-Type": "text/event-stream" });
@@ -166,6 +169,18 @@ describe("Google Gemini", () => {
     expect((await gemini.geminiStatus()).models.find((m) => m.model === "gemini-9-flash")?.perMinute).toBe(5);
   }, 10000);
 
+  it("passes on a 429 that names no limit in Google's words, after two more tries", async () => {
+    mode = "bare";
+    const waits: string[] = [], before = seen.length;
+    await expect(ask.askModel("api|gemini|gemini-9-flash", "Plan", () => {}, { onRetry: (m) => waits.push(m) }))
+      .rejects.toThrow(/without naming a limit\. It said: "Resource has been exhausted/);
+    expect(seen.length - before).toBe(3);
+    expect(waits).toHaveLength(2);
+    expect(waits[0]).toMatch(/Google refused .*Resource has been exhausted.* trying again in 1 seconds/);
+    expect(waits.join()).not.toMatch(/per-minute/);
+    mode = "ok";
+  }, 10000);
+
   it("without Google Search on this tier, researches with the planner's own search tools, then plans with the findings", async () => {
     const trip = {
       dailyBudget: 150, currency: "EUR", travelers: 2, pace: "balanced", model: "api|gemini|gemini-9-flash-lite", interests: "", notes: "", list: "",
@@ -189,6 +204,23 @@ describe("Google Gemini", () => {
     const before = bodies.length;
     await gemini.runGemini(trip, [], () => {}, new AbortController().signal);
     expect(bodies.slice(before).some((b) => b.body.includes("google_search"))).toBe(false);
+  });
+
+  it("takes a free-tier 429 naming no limit, only with Google Search, as search not being included", async () => {
+    const file = path.join(process.env.TRIP_PLANNER_DATA!, "gemini-usage.json"), u = JSON.parse(fs.readFileSync(file, "utf8"));
+    fs.writeFileSync(file, JSON.stringify({ ...u, noSearch: {} }));
+    bareSearch = true;
+    const trip = {
+      dailyBudget: 150, currency: "EUR", travelers: 2, pace: "balanced", model: "api|gemini|gemini-9-flash-lite", interests: "", notes: "", list: "",
+      extraPlaces: [], research: true, mustSee: [], mustSeeWho: {}, skip: [],
+      stays: [{ city: "Kyoto", start: "2026-04-01", nights: 2, hotel: "" }],
+    } as unknown as Trip;
+    const events: any[] = [], before = bodies.length;
+    const result = await gemini.runGemini(trip, [], (e) => events.push(e), new AbortController().signal);
+    expect(bodies.slice(before).filter((b) => b.body.includes("google_search"))).toHaveLength(1);
+    expect(events.some((e) => e.type === "status" && /trying again/.test(e.text))).toBe(false);
+    expect(result.engine).toMatch(/researched through the planner/);
+    bareSearch = false;
   });
 
   it("stays on a picked model: its used-up daily limit is an error, not another model", async () => {

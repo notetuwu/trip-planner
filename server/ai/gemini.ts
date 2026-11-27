@@ -7,7 +7,8 @@
 // - the tier is found by asking a Pro model one tiny question, which free keys aren't allowed to use: a quota error
 //   whose quota id ends in "FreeTier" means free, an answer means billing is on;
 // - the planner counts its own requests per model per quota day (midnight to midnight Pacific time, as Google's are);
-// - the limits come from Google's own quota errors (429 with a QuotaFailure naming the quota and its value).
+// - the limits come from Google's own quota errors (429 with a QuotaFailure naming the quota and its value). A 429 that
+//   names none (e.g. a bare "Resource has been exhausted") is passed on in Google's words, not read as a limit.
 import fs from "node:fs";
 import path from "node:path";
 import type { CloudModel, GeminiAccess, GeminiModelUse, GeminiStatus, RunResult, UsageNotice } from "../../shared/types";
@@ -77,8 +78,9 @@ export async function usableGemini(models: CloudModel[]): Promise<CloudModel[]> 
 
 // ---- Errors and quotas ----
 
-/** grounding: the quota is Google Search's (search grounding), not the model's. */
-interface QuotaHit { perDay: boolean; limit?: number; model?: string; freeTier: boolean; retrySec?: number; grounding: boolean }
+/** grounding: the quota is Google Search's (search grounding), not the model's. named: Google said which limit it is
+ *  (a quota, its value or "per minute / day"); a 429 can also come without any of that, and then only `said` is known. */
+interface QuotaHit { perDay: boolean; limit?: number; model?: string; freeTier: boolean; retrySec?: number; grounding: boolean; named: boolean; said: string }
 /** keyProblem: the key itself was refused; region: the free tier isn't offered where you are (billing needed); billing:
  *  the model needs a paid (billing) setup. Region and billing come as 400 INVALID_ARGUMENT / FAILED_PRECONDITION or
  *  403 PERMISSION_DENIED, so a 403 alone doesn't mean a bad key. */
@@ -110,6 +112,8 @@ export function readError(status: number, body: string): GeminiError {
       freeTier: violations.some((x) => /free_?tier/i.test(`${x.quotaId} ${x.quotaMetric}`)) || /free_tier/i.test(message),
       retrySec: parseFloat(retry || message.match(/retry in ([\d.]+)s/i)?.[1] || "") || undefined,
       grounding: violations.some((x) => /ground|search/i.test(`${x.quotaId} ${x.quotaMetric}`)) || /grounding|google search/i.test(message),
+      named: violations.length > 0 || /per ?(minute|day)|daily|limit: \d+/i.test(message),
+      said: message,
     };
     // The per-minute limit is learned too when Google names both.
     for (const x of violations) learnLimit(x.quotaDimensions?.model || quota.model, /PerDay/i.test(x.quotaId || ""), Number(x.quotaValue));
@@ -121,6 +125,10 @@ const clock = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-dig
 
 /** A quota error in words, with what to do about it. */
 function quotaMessage(model: string, q: QuotaHit) {
+  if (!q.named) {
+    return `Google refused the request to ${model} (429) without naming a limit. It said: "${q.said}" `
+      + `Try again later, or pick "Gemini Auto" or another model. Your usage: ${STUDIO_USAGE}`;
+  }
   const tier = q.freeTier ? "Gemini's free tier" : "Your Gemini key";
   if (q.perDay) {
     if (q.limit === 0) return `${model} isn't included in Gemini's free tier. Pick a Flash model, or set up billing for the key's project in Google AI Studio.`;
@@ -262,6 +270,7 @@ async function probeModel(key: string, model: string): Promise<Probe> {
   if (!e) { countRequest(model); return { model, state: "ok", note: "Answered the test request." }; }
   const q = e.quota;
   if (q?.perDay && q.limit === 0) return { model, state: "billing", note: q.freeTier ? "None on the free tier (a quota of 0): needs billing." : "A quota of 0 for this key.", freeTier: q.freeTier };
+  if (q && !q.named) return { model, state: "unknown", note: `Google refused the test request (429): ${q.said}` };
   if (q) return { model, state: "ok", note: `Usable, but at its ${q.perDay ? "daily" : "per-minute"} limit${q.limit != null ? ` of ${q.limit}` : ""} right now.`, freeTier: q.freeTier, paidQuota: !q.freeTier };
   if (e.region) return { model, state: "unknown", note: e.message, region: e.message };
   if (e.billing) return { model, state: "billing", note: `Needs a paid billing setup (Google: ${e.message})`, freeTier: true };
@@ -371,11 +380,22 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, 
   signal?.addEventListener("abort", () => { clearTimeout(t); reject(signal.reason || new Error("Cancelled")); }, { once: true });
 });
 
+/** The wait before asking again after a 429 that waiting may clear (a per-minute limit, or one Google didn't name),
+ *  and the status line for it; null once it has been waited for often enough. An unnamed one gets two tries. */
+function retryWait(model: string, q: QuotaHit, waited: number, waits: number) {
+  if (q.perDay || waited >= (q.named ? waits : 2)) return null;
+  const s = Math.ceil(q.retrySec || (q.named ? 30 : 10 * (waited + 1)));
+  if (s > 65) return null;
+  return { s, text: q.named
+    ? `Gemini's per-minute limit for ${model} is reached: waiting ${s} seconds`
+    : `Google refused the request to ${model} ("${q.said.slice(0, 160)}"): trying again in ${s} seconds` };
+}
+
 /** The model can't answer now (its daily limit, its per-minute limit even after waiting, or it needs billing); another
  *  Gemini model the key can run may. `short` says so in a few words, for the switch's status line. */
 class SwitchableError extends Error { constructor(message: string, public short: string) { super(message); } }
-/** Google Search was refused for this model on this key (a search-grounding quota of 0: the free tier doesn't include
- *  it for Gemini 3 and newer). */
+/** Google Search was refused for this model on this key (the free tier doesn't include it for Gemini 3 and newer:
+ *  a search-grounding quota of 0, or a 429 naming no limit). */
 class NoSearchError extends Error {}
 
 /** The models the key can run, in the order to switch to: the ones the test requests found, newest first, the full
@@ -389,13 +409,14 @@ const noSearch = (model: string) => !!readUsage().noSearch?.[model];
 
 /**
  * One request to one model, with bodies tried in order while Google rejects one as invalid (400: e.g. the schema next
- * to the search tool, or thinking on a model without it). A per-minute limit is waited out once (onWait says so).
+ * to the search tool, or thinking on a model without it). A per-minute limit is waited out (`waits` times; onWait says
+ * so), and a refusal without a named limit is tried again twice.
  * Successful requests are counted for today.
  */
 async function requestModel(model: string, method: string, bodies: object[], signal: AbortSignal, searching: boolean, onWait?: (text: string) => void, onBody?: (i: number) => void, waits = 1) {
   const key = getKey("gemini");
   if (!key) throw new Error("No Google Gemini API key. Add one under Settings → AI models, or set GEMINI_API_KEY.");
-  let waited = 0;
+  let waited = 0, refused = 0;
   for (let i = 0; i < bodies.length;) {
     onBody?.(i);
     const res = await fetch(`${GEMINI_BASE}/models/${model}:${method}`, {
@@ -407,20 +428,22 @@ async function requestModel(model: string, method: string, bodies: object[], sig
     if (e.quota) {
       const q = e.quota;
       if (q.freeTier) changeUsage((u) => { if (u.tier?.kind !== "free") u.tier = { kind: "free", note: "Free tier: Google named a free-tier quota when a limit was reached.", at: Date.now() }; });
-      // Searching, and a quota of 0 from a model that answers without the search tool (or a quota named for search
-      // grounding): it's Google Search that isn't included, not the model.
-      if (searching && (q.grounding || (q.limit === 0 && readUsage().access?.[model]?.state === "ok"))) throw new NoSearchError(e.message);
+      // Searching, and a model that answers without the search tool gets a quota of 0, or on the free tier a refusal
+      // naming no limit (how Google answers there), or the quota is named for search grounding: it's Google Search that
+      // isn't included, not the model.
+      const u = readUsage(), answers = u.access?.[model]?.state === "ok";
+      if (searching && (q.grounding || (answers && (q.limit === 0 || (!q.named && u.tier?.kind === "free"))))) throw new NoSearchError(e.message);
       if (q.perDay) changeUsage((u) => { u.limited = { model, perDay: true, limit: q.limit, until: quotaDay().resetAt }; u.exhausted = [...new Set([...(u.exhausted || []), model])]; });
-      if (!q.perDay && waited < waits && (q.retrySec || 30) <= 65 && onWait) {
-        waited++;
-        const s = Math.ceil(q.retrySec || 30);
-        onWait(`Gemini's per-minute limit for ${model} is reached: waiting ${s} seconds, then going on…`);
-        await sleep(s * 1000 + 500, signal);
+      const wait = onWait && retryWait(model, q, q.named ? waited : refused, waits);
+      if (wait) {
+        if (q.named) waited++; else refused++;
+        onWait(`${wait.text}, then going on…`);
+        await sleep(wait.s * 1000 + 500, signal);
         continue;
       }
       throw new SwitchableError(quotaMessage(model, q), q.perDay
         ? q.limit === 0 ? `${model} isn't included in this key's tier.` : `${model} has used today's${q.limit != null ? ` ${q.limit}` : ""} requests.`
-        : `${model} is still at its per-minute limit.`);
+        : q.named ? `${model} is still at its per-minute limit.` : `Google keeps refusing requests to ${model}.`);
     }
     if (e.region) {
       changeUsage((u) => { u.tier = { kind: "blocked", note: `Google says: ${e.message} The free tier isn't offered where you are: set up billing to use the key.`, at: Date.now() }; });
@@ -480,7 +503,7 @@ async function geminiFetch(o: FetchOptions): Promise<{ res: Response; model: str
       }
       if (!(e instanceof SwitchableError) || !auto) throw e;
       const next = nextModel(tried);
-      if (!next) throw new Error(`${e.message}${tried.size > 1 ? `\n\nThe other Gemini models this key can run (${[...tried].slice(0, -1).join(", ")}) are at their limits too.` : "\n\nNo other Gemini model this key can run has requests left."}`);
+      if (!next) throw new Error(`${e.message}${tried.size > 1 ? `\n\nThe other Gemini models this key can run (${[...tried].slice(0, -1).join(", ")}) couldn't answer either.` : "\n\nNo other Gemini model this key can run has requests left."}`);
       o.onStatus?.(`${e.short} Going on with ${next}…`);
       switched.push(`${model} → ${next}`);
       model = next;
@@ -519,22 +542,22 @@ function researchModel(planModel: string, auto: boolean) {
 /**
  * Researches the trip the way local models do: the planner runs the model's web_search / fetch_page calls (Brave,
  * SearXNG, DuckDuckGo, Wikipedia, as set in Settings → Search & places), through Gemini's OpenAI-compatible endpoint, which
- * takes tools. Requests are counted, and a per-minute limit is waited out once.
+ * takes tools. Requests are counted; a per-minute limit is waited out once, an unnamed refusal tried again twice.
  */
 async function plannerResearch(trip: Trip, places: Place[], onEvent: OnEvent, abort: AbortSignal, output: ReturnType<typeof localOutput>, planModel: string, auto: boolean) {
   const key = getKey("gemini"), model = researchModel(planModel, auto);
   const send = async (body: object, signal: AbortSignal) => {
-    for (let waited = false; ;) {
+    for (let waited = 0; ;) {
       const res = await fetch(`${GEMINI_BASE}/openai/chat/completions`, {
         method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` }, body: JSON.stringify(body),
       });
       if (res.ok) { countRequest(model); return res; }
       const e = readError(res.status, await res.text());
-      if (e.quota && !e.quota.perDay && !waited && (e.quota.retrySec || 30) <= 65) {
-        waited = true;
-        const s = Math.ceil(e.quota.retrySec || 30);
-        onEvent({ type: "status", text: `Gemini's per-minute limit for ${model} is reached: waiting ${s} seconds, then researching on…` });
-        await sleep(s * 1000 + 500, signal);
+      const wait = e.quota && retryWait(model, e.quota, waited, 1);
+      if (wait) {
+        waited++;
+        onEvent({ type: "status", text: `${wait.text}, then researching on…` });
+        await sleep(wait.s * 1000 + 500, signal);
         continue;
       }
       if (e.quota?.perDay) changeUsage((u) => { u.exhausted = [...new Set([...(u.exhausted || []), model])]; });
