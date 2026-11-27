@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses a push that would publish personal data (see scripts/check-private.mjs).
+exec node "$(git rev-parse --show-toplevel)/scripts/check-private.mjs"

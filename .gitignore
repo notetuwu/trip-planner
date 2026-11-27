@@ -27,3 +27,6 @@ Thumbs.db
 /release/
 
 current-trip.json
+
+# Words that must never be pushed (see scripts/check-private.mjs).
+/.private-terms
