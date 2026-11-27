@@ -6,9 +6,12 @@ import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const drive = vi.hoisted(() => ({
-  files: new Map<string, { id: string; name: string; folder: string; text: string; md5: string; by: string; byEmail: string; canEdit: boolean }>(),
+  files: new Map<string, { id: string; name: string; folder: string; text: string; md5: string; by: string; byEmail: string; canEdit: boolean; sub?: string }>(),
   me: { email: "me@example.com", name: "Me" },
   canWrite: true,
+  /** Folders inside the sync folder, and who can open each folder (by id; none listed: the owner only). */
+  folders: [] as { id: string; name: string; canWrite: boolean }[],
+  people: {} as Record<string, string[]>,
   uploads: 0,
   n: 0,
 }));
@@ -17,7 +20,7 @@ vi.mock("../server/sync/google", async () => {
   const crypto = await import("node:crypto");
   const nodePath = await import("node:path");
   const md5 = (t: string) => crypto.createHash("md5").update(t).digest("hex");
-  const meta = (f: any) => ({ id: f.id, name: f.name, md5Checksum: f.md5, modifiedTime: "2026-11-25T10:00:00Z", lastModifyingUser: { displayName: f.by, emailAddress: f.byEmail }, capabilities: { canEdit: f.canEdit } });
+  const meta = (f: any) => ({ id: f.id, name: f.name, md5Checksum: f.md5, modifiedTime: "2026-11-25T10:00:00Z", lastModifyingUser: { displayName: f.by, emailAddress: f.byEmail }, capabilities: { canEdit: f.canEdit }, ...(f.sub ? { sub: f.sub, subId: `sub-${f.sub}` } : {}) });
   return {
     SYNC_DIR: nodePath.join(process.env.TRIP_PLANNER_DATA!, "sync"),
     TRIP_SUFFIX: ".trip.json",
@@ -28,20 +31,31 @@ vi.mock("../server/sync/google", async () => {
     signInState: () => ({ signingIn: false, signInError: "" }),
     isDriveId: (id: unknown) => typeof id === "string" && /^[\w-]{10,200}$/.test(id),
     folderInfo: async (id: string) => ({ id, name: `Drive ${id}`, canWrite: drive.canWrite }),
-    createFolder: async (name: string) => ({ id: `folder${++drive.n}xxxxxx`, name, canWrite: true }),
-    listTripFiles: async (folder: string) => [...drive.files.values()].filter((f) => f.folder === folder).map(meta),
+    createFolder: async (name: string, parent?: string) => {
+      const made = { id: parent ? `sub-${name}` : `folder${++drive.n}xxxxxx`, name, canWrite: true };
+      if (parent) drive.folders.push(made);
+      return made;
+    },
+    listFolders: async () => drive.folders,
+    listTripFiles: async (folder: string, deep = false) => [...drive.files.values()].filter((f) => f.folder === folder && (deep || !f.sub)).map(meta),
     fileMeta: async (id: string) => meta(drive.files.get(id)),
     download: async (id: string) => drive.files.get(id)!.text,
     upload: async (o: { id?: string; folder?: string; name: string; text: string }) => {
       drive.uploads++;
       const was = o.id ? drive.files.get(o.id)! : undefined;
-      const f = { id: o.id || `file${++drive.n}xxxxxxxx`, name: o.name, folder: was?.folder || o.folder!, text: o.text, md5: md5(o.text), by: drive.me.name, byEmail: drive.me.email, canEdit: true };
+      const inner = drive.folders.find((x) => x.id === o.folder)?.name;
+      const f = { id: o.id || `file${++drive.n}xxxxxxxx`, name: o.name, folder: was?.folder || (inner ? "folderAAAAAAAAAA" : o.folder!), sub: was?.sub || inner, text: o.text, md5: md5(o.text), by: drive.me.name, byEmail: drive.me.email, canEdit: true };
       drive.files.set(f.id, f);
       return meta(f);
     },
     signOut: async () => {},
   };
 });
+
+vi.mock("../server/sync/google-access", () => ({
+  folderAccess: async (id: string) => ({ people: ["me@example.com", ...(drive.people[id] || [])].map((email) => ({ type: "user", email, id: email })) }),
+  setLimited: async (id: string) => { if (id.includes("Stuck")) throw new Error("Not allowed."); },
+}));
 
 // What kind of folder a path is asks the system (on Windows by starting PowerShell, which alone can outlast the test's
 // time limit on a build machine).
@@ -61,7 +75,7 @@ beforeAll(async () => {
 beforeEach(() => {
   fs.rmSync(root, { recursive: true, force: true });
   fs.mkdirSync(saves, { recursive: true });
-  drive.files.clear(); drive.uploads = 0; drive.canWrite = true;
+  drive.files.clear(); drive.uploads = 0; drive.canWrite = true; drive.folders = []; drive.people = {};
   drive.me = { email: "me@example.com", name: "Me" };
   sync.resetForTests(true);
 });
@@ -491,5 +505,105 @@ describe("folder links", () => {
     expect(sync.folderIdOf("https://drive.google.com/open?id=1AbC-def_ghiJKL")).toBe("1AbC-def_ghiJKL");
     expect(sync.folderIdOf("1AbC-def_ghiJKL")).toBe("1AbC-def_ghiJKL");
     expect(sync.folderIdOf("x' or name contains '")).toBe("");
+  });
+});
+
+describe("a folder with one folder per trip", () => {
+  const put = (id: string, name: string, sub: string, tripId: string) => {
+    const text = JSON.stringify({ format: "trip-planner-trip", trip: trip({ sync: { id: tripId, owner: "friend@example.com", mode: "edit" } }), lists: [] });
+    drive.files.set(id, { id, name, folder: FOLDER, text, md5: `md5-${id}`, by: "Friend", byEmail: "friend@example.com", canEdit: true, sub });
+  };
+
+  it("finds the trips inside only when ticked, naming a trip.json after its folder", async () => {
+    put("fileJapanxxxxx", "trip.json", "Japan 2027", "trip-japan-0001");
+    put("fileItalyxxxxx", "Rome.trip.json", "Italy", "trip-italy-0001");
+    await sync.addFolder(FOLDER, "Trips");
+    await round();
+    expect(sync.remoteTrips()).toEqual([]);
+    sync.setDiscover(FOLDER, true);
+    await round();
+    expect(sync.remoteTrips().map((r) => sync.remoteName(r.file)).sort()).toEqual(["Japan 2027", "Rome"]);
+    expect((await sync.openRemote(FOLDER, "fileJapanxxxxx")).name).toBe("Japan 2027");
+    // A sync folder added again keeps the tick.
+    await sync.addFolder(FOLDER, "Trips");
+    expect(sync.status().folders[0].discover).toBe(true);
+    // Unticked: the trip stops syncing there, quietly, and the file stays.
+    sync.setDiscover(FOLDER, false);
+    await round();
+    expect(sync.status().trips["Japan 2027"]).toBeUndefined();
+    expect(sync.status().notices).toEqual([]);
+    expect(drive.files.size).toBe(2);
+  });
+
+  it("follows a trip file moved where nobody new can open it, and asks otherwise", async () => {
+    await shareTrip();
+    sync.setDiscover(FOLDER, true);
+    const was = onlyFile();
+    const moveTo = (name: string) => { const f = onlyFile(); drive.files.clear(); drive.files.set(f.id, { ...f, name: "trip.json", sub: name }); };
+    drive.files.clear();
+    drive.files.set("filemovedxxxxx", { ...was, id: "filemovedxxxxx", name: "trip.json", sub: "Kyoto" });
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "after the move" });
+    await round();
+    expect(onlyFile()).toMatchObject({ id: "filemovedxxxxx", sub: "Kyoto" });
+    expect(JSON.parse(onlyFile().text).trip.notes).toBe("after the move");
+    // Someone new can open where it went: nothing is written until the person says.
+    drive.people["sub-Other"] = ["stranger@example.com"];
+    moveTo("Other");
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "private" });
+    await round();
+    expect(sync.status().trips.Kyoto.moved).toEqual([{ folder: FOLDER, at: "sub-Other", where: "Other" }]);
+    expect(onlyFile().text).not.toContain("private");
+    await expect(sync.followMove("Kyoto", FOLDER, "sub-Elsewhere", true)).rejects.toThrow(/moved again/);
+    await sync.followMove("Kyoto", FOLDER, "sub-Other", true);
+    await round();
+    expect(onlyFile().text).toContain("private");
+    expect(sync.status().trips.Kyoto.moved).toEqual([]);
+  });
+
+  const add = async (place?: Parameters<typeof sync.setTripSync>[3]) => { await sync.setTripSync("Kyoto", [FOLDER], undefined, place); await round(); };
+  const ready = async () => { writeSave("Kyoto", trip()); await sync.addFolder(FOLDER, "Trips"); sync.setDiscover(FOLDER, true); await round(); };
+
+  it("uploads a new trip only where it's chosen", async () => {
+    await ready();
+    drive.folders = [{ id: "sub-Kyoto", name: "Kyoto", canWrite: true }];
+    await expect(add()).rejects.toThrow(/Choose where/);
+    await expect(add({ [FOLDER]: { sub: "sub-Gone" } })).rejects.toThrow(/isn't in/);
+    expect(drive.files.size).toBe(0);
+    expect(sync.status().trips.Kyoto).toBeUndefined();
+    // Only the trip's folder lets this account write, the top one doesn't.
+    drive.canWrite = false;
+    await add({ [FOLDER]: { sub: "sub-Kyoto" } });
+    expect(onlyFile()).toMatchObject({ name: "trip.json", sub: "Kyoto" });
+    expect(sync.status().trips.Kyoto.inside).toEqual({ [FOLDER]: "Kyoto" });
+    writeSave("Kyoto", { ...readSave("Kyoto"), notes: "edited" });
+    await round();
+    expect(onlyFile().text).toContain("edited");
+    // Added again later: only onto the copy that's there.
+    await sync.setTripSync("Kyoto", []);
+    await expect(add({ [FOLDER]: { create: "Another", limit: true } })).rejects.toThrow(/already has this trip/);
+    await add({ [FOLDER]: { file: onlyFile().id } });
+    expect(drive.files.size).toBe(1);
+    expect(sync.status().trips.Kyoto.folders).toEqual([FOLDER]);
+  });
+
+  it("saves nothing in a new folder whose access couldn't be limited", async () => {
+    await ready();
+    await expect(add({ [FOLDER]: { create: "Stuck", limit: true } })).rejects.toThrow(/couldn't be limited/);
+    await round();
+    expect(drive.files.size).toBe(0);
+    await add({ [FOLDER]: { create: "Japan", limit: true } });
+    expect(onlyFile().sub).toBe("Japan");
+  });
+});
+
+describe("a trip a folder holds without syncing there", () => {
+  it("is reported as found, so the panel can tick it", async () => {
+    await shareTrip();
+    expect(sync.status().trips.Kyoto).toMatchObject({ folders: [FOLDER], found: [] });
+    // The folder is removed in Settings and added again: the file is there, the connection isn't.
+    sync.removeFolder(FOLDER);
+    await sync.addFolder(FOLDER, "Friends");
+    await round();
+    expect(sync.status().trips.Kyoto).toMatchObject({ folders: [], found: [FOLDER] });
   });
 });

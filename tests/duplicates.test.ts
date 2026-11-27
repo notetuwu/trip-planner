@@ -36,6 +36,18 @@ describe("findDuplicates", () => {
     expect(findDuplicates(it2, new Set(["lake lucerne walk"]))).toEqual([{ first: [0, 0], again: [1, 0], key: "case mazzanti" }]);
   });
 
+  it("only compares days of the same town's stays", () => {
+    const stays = [{ city: "Copenhagen", start: "2027-07-01", nights: 2 }, { city: "Gdansk", start: "2027-07-03", nights: 2 }, { city: "Copenhagen, Denmark", start: "2027-07-05", nights: 1 }];
+    const it2 = plan(
+      day("2027-07-01", ["Waterfront walk"]),
+      // The travel day: before the ride still Copenhagen, after it Gdansk.
+      day("2027-07-03", ["Round Tower", { place: "Copenhagen → Gdansk", kind: "transfer" }, "Old Crane"]),
+      day("2027-07-04", ["Waterfront walk", "Round Tower"]),
+      day("2027-07-05", [{ place: "Gdansk → Copenhagen", kind: "transfer" }, "Waterfront walk"]),
+    );
+    expect(findDuplicates(it2, new Set(), stays)).toEqual([{ first: [0, 0], again: [3, 1], key: "waterfront walk" }]);
+  });
+
   it("leaves the same place twice on one day to the day's own tidy-up", () => {
     expect(findDuplicates(plan(day("2027-09-14", ["Castelvecchio", "Castelvecchio"])))).toEqual([]);
   });

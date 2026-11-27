@@ -51,9 +51,9 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
   const must = isMustSee(x), listed = x.fromList || byTitle.has(x.place);
   // Transfers ("Rigi Kulm → Vitznau") have no single spot until they set where it ends; anything else placed only
   // roughly gets its "Set location" button highlighted.
-  const transfer = isTransfer(x), where = onMap(x) ? itemLoc(x, d, byTitle) : null;
+  const transfer = isTransfer(x), where = onMap(x, d) ? itemLoc(x, d, byTitle) : null;
   const pinGuess = !transfer && !x.pinned && (!where || !!where.approx);
-  const pinTitle = transfer ? (x.pinned ? "Change where this leg ends on the map" : "Set where this leg ends, to draw it on the map (like the foot of the mountain)")
+  const pinTitle = transfer ? (x.pinned || where ? "Change where this leg ends on the map" : "Set where this leg ends, to draw it on the map (like the foot of the mountain)")
     : pinGuess ? "The location is only estimated: set where it really is" : "Set where this stop is";
   return `
     <li class="item${must ? " must" : listed ? " listed" : ""}" data-k="${di}-${xi}">

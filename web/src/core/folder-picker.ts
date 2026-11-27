@@ -3,18 +3,20 @@
 // keep in step here, the drives, network drives included) and Google Drive (My Drive, Shared with me, shared drives;
 // with the sign-in of Settings → Sync). The path along the top with Back and Up, what's in the folder as a list (folders
 // first, files greyed). Click selects a folder, double-click (or its arrow, or Enter) opens it. "New folder" makes one
-// where you are. "Paste a link or path" takes a Google Drive link or a path and works out which it is.
+// where you are. "Paste a link or path" takes a Google Drive link or a path and works out which it is. "Access" (Drive
+// only) shows who the folder is shared with, and changes it where this account may (folder-access.ts).
 import { $$, api, closeOnBackdrop, esc, toast } from "./dom";
 import { askText, tell } from "./ask";
 import { icon } from "./icons";
 import { fmtBytes } from "./format";
+import { manageAccess } from "./folder-access";
 import { loadSyncStatus } from "../saves/sync-client";
 import { classifyLink } from "../../../shared/folder-link";
 
 export { classifyLink };
 
 type Provider = "local" | "drive" | "dropbox";
-interface Entry { id: string; name: string; folder: boolean; canWrite: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file"; place?: string }
+interface Entry { id: string; name: string; folder: boolean; canWrite: boolean; noAccess?: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file"; place?: string }
 /** A folder chosen: where it is, its id (a Drive id, or the path), and what the app stores for it ("local:<path>", or
  *  the Drive link). */
 export interface PickedFolder { provider: Provider; id: string; name: string; canWrite: boolean; link: string }
@@ -93,7 +95,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
           else { const r = await api<{ entries: Entry[]; more: boolean }>(`/api/fs/list?path=${encodeURIComponent(h.id)}`); if (mine === seq) { entries = r.entries; more = r.more; } }
         } else {
           const r = await api<{ entries: Entry[]; more: boolean }>(`/api/sync/${spot.provider === "dropbox" ? "dropbox/" : ""}browse?in=${encodeURIComponent(here()?.id || spot.top)}`);
-          if (mine === seq) { entries = r.entries; more = r.more; }
+          if (mine === seq) { entries = r.entries.filter((e) => !e.noAccess); more = r.more; } // (not the ones this account can't open)
         }
       } catch (e) { if (mine === seq) error = (e as Error).message; }
       if (mine === seq) drawList();
@@ -126,7 +128,7 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
           <div class="dp-list" tabindex="0"></div>
         </div>
       </div>
-      <div class="dp-foot"><span class="dp-sel"></span><span class="dp-acts"><button type="button" class="btn" data-cancel>Cancel</button><button type="button" class="btn solid" data-choose>${icon("check")} Choose this folder</button></span></div>`;
+      <div class="dp-foot"><span class="dp-sel"></span><span class="dp-acts"><button type="button" class="btn" data-access title="Who has access to this folder" hidden>${icon("users")} Access</button><button type="button" class="btn" data-cancel>Cancel</button><button type="button" class="btn solid" data-choose>${icon("check")} Choose this folder</button></span></div>`;
 
     const list = d.querySelector<HTMLElement>(".dp-list")!;
     const drawSide = () => {
@@ -181,6 +183,8 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
     const footer = () => {
       const t = target();
       d.querySelector<HTMLButtonElement>("[data-choose]")!.disabled = !t;
+      // My Drive itself can't be shared, only what's in it.
+      d.querySelector<HTMLButtonElement>("[data-access]")!.hidden = !(driveOk && spot.provider === "drive" && t && t.id !== "root");
       d.querySelector(".dp-sel")!.innerHTML = t
         ? `${icon(spot.provider === "local" ? "folder" : "drive")}<span class="dp-sel-name" title="${esc(spot.provider === "local" ? t.id : t.name)}">${esc(spot.provider === "local" ? t.id : t.name)}</span>${t.canWrite ? "" : `<span class="dp-tag">view only</span>`}`
         : `<span class="hint">Select a folder, or open one and choose it.</span>`;
@@ -190,6 +194,14 @@ export function pickFolder(o: { title: string; note?: string; start?: Provider; 
     d.querySelector<HTMLButtonElement>("[data-up]")!.onclick = () => { if (here()) go({ ...spot, trail: spot.trail.slice(0, -1) }); };
     d.querySelector<HTMLButtonElement>("[data-cancel]")!.onclick = () => finish(null);
     d.querySelector<HTMLButtonElement>("[data-choose]")!.onclick = () => { const t = target(); if (t) finish(picked(t)); };
+    d.querySelector<HTMLButtonElement>("[data-access]")!.onclick = async () => {
+      const t = target();
+      if (!t || !(await manageAccess(t.id, t.name))) return;
+      // Your own access may have changed ("view only", or the folder is gone from the list).
+      const keep = selected;
+      await load();
+      if (entries?.some((e) => e.id === keep)) select(keep);
+    };
     d.querySelector<HTMLButtonElement>("[data-new]")!.onclick = async () => {
       const h = here();
       if (!h) return;

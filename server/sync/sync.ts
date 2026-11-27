@@ -13,6 +13,11 @@
 //    last: each file notes the versions it was made from (`lineage`), and a computer that finds its own last upload
 //    saved over without having been seen joins its changes back in (from what the file held before that upload).
 //
+// A folder with "discover" ticked is also looked through one level down (a folder per trip, often shared with different
+// people). A trip added to it goes only where the person chose (never to its top by itself), edit rights follow that
+// folder's file, and a trip file moved to another folder is followed only when nobody new can open it there; otherwise it
+// waits for the person.
+//
 // What it never does: delete or trash anything in Drive (a trip deleted here, or a folder removed in Settings, only stops
 // syncing; the file stays in the folder), touch files outside the sync folders, or send this computer's details along
 // (photo folders on this disk, place lists' file paths, the prompt and the model's thinking are left out of the file),
@@ -20,13 +25,14 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import type { SyncFolder, SyncStatus, TripShare, TripSyncInfo } from "../../shared/types";
+import type { SyncFolder, SyncPlace, SyncPlaces, SyncStatus, TripShare, TripSyncInfo } from "../../shared/types";
 import { SAVES_DIR, VERSION, cleanName, errMsg } from "../config";
 import { isLocal } from "../geo/local-photos";
 import { cleanBundledList, readList, writeList } from "../lists/store";
 import { keepVersion, keepVersionText, stable } from "../util/versions";
 import { PERSONAL, mergeTrip, partOfPath } from "../../shared/edits";
 import * as g from "./google";
+import { folderAccess, setLimited } from "./google-access";
 import { knownPictures, pictureOf, refreshPeople, remember } from "./people";
 import * as store from "./store";
 import * as box from "./dropbox";
@@ -87,9 +93,19 @@ interface Link {
   conflict?: { md5: string; by: string; at: string };
   /** The version agreed on (md5) was uploaded from here: a newer one that wasn't made from it lost this computer's changes. */
   ours?: boolean;
+  /** The folder inside the sync folder the file is in (its id; none: at the top). */
+  at?: string;
+  /** That folder's name, for until the file shows in a look at the sync folder. */
+  atName?: string;
+  /** In a folder with a folder per trip, until the first round: where the person chose to put it (see SyncPlace). */
+  pick?: string;
+  into?: { id: string; name: string };
+  top?: boolean;
+  /** The file is in another folder now; waiting for the person (see followMove). */
+  moved?: { fileId: string; at: string; name: string };
 }
 interface Tracked { folders: Record<string, Link>; /** The trip's share as Drive last had it (who shared it, edit or view). */ share?: TripShare | null; error?: string }
-interface RemoteFile { id: string; name: string; md5: string; at: string; by: string; byEmail: string; canEdit: boolean; tripId: string }
+interface RemoteFile { id: string; name: string; md5: string; at: string; by: string; byEmail: string; canEdit: boolean; tripId: string; sub?: string; subId?: string }
 interface SyncState {
   folders: SyncFolder[];
   trips: Record<string, Tracked>;
@@ -127,6 +143,8 @@ const sameEmail = (a?: string, b?: string) => !!a && !!b && a.trim().toLowerCase
 export const fileName = (saveName: string) => `${saveName}${g.TRIP_SUFFIX}`;
 /** A trip's name from its file's: without ".trip.json" or ".json". */
 export const tripName = (file: string) => file.replace(/(\.trip)?\.json$/i, "");
+/** What a trip found in a folder is called: a "trip.json" in a folder of its own goes by that folder's name. */
+export const remoteName = (f: { name: string; sub?: string }) => (f.sub && tripName(f.name).toLowerCase() === "trip" ? f.sub : tripName(f.name));
 
 export function cleanShare(s: any): TripShare | null {
   if (!s || typeof s !== "object" || typeof s.id !== "string" || !/^[\w-]{8,64}$/.test(s.id)) return null;
@@ -261,13 +279,13 @@ async function refreshFolder(f: SyncFolder): Promise<RemoteFile[] | null> {
     const info = await store.folderInfo(f.id);
     f.name = info.name; f.canWrite = info.canWrite;
     const out: RemoteFile[] = [];
-    for (const d of await store.listTripFiles(f.id)) {
+    for (const d of await store.listTripFiles(f.id, !!f.discover)) {
       remember([{ email: d.lastModifyingUser?.emailAddress, url: d.lastModifyingUser?.photoLink }]);
       const md5 = d.md5Checksum || "";
       let tripId = d.properties?.tripPlannerId || "";
       try { const c = await content(d.id, md5); const data = JSON.parse(c.text); tripId = cleanShare((data?.format === FORMAT ? data.trip : data)?.sync)?.id || tripId; }
       catch { /* unreadable: listed, but it can't be opened */ }
-      out.push({ id: d.id, name: d.name, md5, at: d.modifiedTime || "", by: d.lastModifyingUser?.displayName || d.lastModifyingUser?.emailAddress || "", byEmail: d.lastModifyingUser?.emailAddress || "", canEdit: d.capabilities?.canEdit !== false, tripId });
+      out.push({ id: d.id, name: d.name, md5, at: d.modifiedTime || "", by: d.lastModifyingUser?.displayName || d.lastModifyingUser?.emailAddress || "", byEmail: d.lastModifyingUser?.emailAddress || "", canEdit: d.capabilities?.canEdit !== false, tripId, ...(d.subId ? { sub: d.sub || "", subId: d.subId } : {}) });
     }
     if (p !== "local") await refreshPeople(f.id, p);
     f.error = undefined;
@@ -298,7 +316,7 @@ export async function newFolder(name: string, label: string): Promise<SyncFolder
 async function putFolder(info: { id: string; name: string; canWrite: boolean }, label: string) {
   const s = state(), was = s.folders.find((f) => f.id === info.id);
   const kind = store.isLocalId(info.id) ? KIND_LABEL[await folderKind(info.id.slice(6))] : undefined;
-  const f: SyncFolder = { id: info.id, name: info.name, label: String(label || "").trim().slice(0, 60) || was?.label || info.name, canWrite: info.canWrite, ...(kind ? { kind } : {}) };
+  const f: SyncFolder = { id: info.id, name: info.name, label: String(label || "").trim().slice(0, 60) || was?.label || info.name, canWrite: info.canWrite, ...(kind ? { kind } : {}), ...(was?.discover ? { discover: true } : {}) };
   s.folders = was ? s.folders.map((x) => (x.id === f.id ? f : x)) : [...s.folders, f];
   save();
   runSync();
@@ -307,6 +325,26 @@ async function putFolder(info: { id: string; name: string; canWrite: boolean }, 
 export function renameFolder(id: string, label: string) {
   const f = state().folders.find((x) => x.id === id);
   if (f && label.trim()) { f.label = label.trim().slice(0, 60); save(); }
+}
+/** Whether trips are also looked for in the folders inside a sync folder. Turned off, trips whose file is in one of those
+ *  stop syncing there (the files stay). */
+export function setDiscover(id: string, on: boolean) {
+  const s = state(), f = s.folders.find((x) => x.id === id);
+  if (!f || !!f.discover === on) return;
+  if (on) f.discover = true;
+  else {
+    delete f.discover;
+    const seen = s.remote[id], inside = new Set(seen?.files.filter((x) => x.subId).map((x) => x.id));
+    for (const [trip, t] of Object.entries(s.trips)) {
+      const l = t.folders[id];
+      if (!l || !(l.at || l.into || l.moved || inside.has(l.fileId || l.pick || ""))) continue;
+      delete t.folders[id];
+      if (!Object.keys(t.folders).length) delete s.trips[trip];
+    }
+    if (seen) seen.files = seen.files.filter((x) => !x.subId);
+  }
+  save();
+  runSync();
 }
 /** Stops using a folder here: its trips stop syncing to it. Nothing in Drive changes. */
 export function removeFolder(id: string) {
@@ -377,27 +415,73 @@ async function round() {
   }
 }
 
+/** Whether a file may be changed: in a folder inside the sync folder that's up to that file's own sharing (someone who may
+ *  only view the top folder can be an editor of one trip's folder). */
+const mayWrite = (folder: SyncFolder, f: RemoteFile) => f.canEdit && (!!f.subId || folder.canWrite);
+
+/** The link now points at this file, in this folder inside the sync folder. */
+function adopt(link: Link, fileId: string, at: string) {
+  if (link.fileId && link.fileId !== fileId) { const base = readBase(link.fileId); if (base) setBase(fileId, base); }
+  link.fileId = fileId;
+  if (at) link.at = at; else delete link.at;
+}
+
+/** Whether everyone who can open folder `to` could open `from` too. Only Drive says who that is: elsewhere, or when it
+ *  can't be told, the answer is no (the person is asked). */
+async function noNewPeople(syncFolder: string, to: string, from: string): Promise<boolean> {
+  if (!store.isDriveFolder(syncFolder)) return false;
+  try {
+    const [a, b] = await Promise.all([folderAccess(to), folderAccess(from)]);
+    if (!a.people || !b.people) return false;
+    const who = (list: typeof a.people) => list!.filter((p) => !p.shutOut).map((p) => (p.type === "anyone" ? "anyone" : `${p.type}:${(p.email || p.domain || p.id).toLowerCase()}`));
+    const before = new Set(who(b.people));
+    return who(a.people).every((p) => before.has(p));
+  } catch { return false; }
+}
+
 async function syncLink(id: string, t: Tracked, folderId: string, link: Link, local: Local, files: RemoteFile[]): Promise<Local> {
   const s = state(), folder = s.folders.find((f) => f.id === folderId)!;
   const { mine, share, editable } = rights(t, local);
   if (!share) return local;
   const localHash = key(local.text);
   let remote = link.fileId ? files.find((f) => f.id === link.fileId) : undefined;
+  const drop = (why: string) => { delete t.folders[folderId]; notice(why); return local; };
 
-  if (!remote) {
-    if (link.fileId) {
-      // Removed from the folder in Drive (or moved): it isn't put back.
-      delete t.folders[folderId];
-      notice(`"${local.name}" was removed from "${folder.label}" in Drive, so it doesn't sync there anymore.`);
-      return local;
+  if (link.fileId) {
+    if (!remote) {
+      // Moved within what's looked at (into a trip's own folder, say; on this computer that gives it another id): only
+      // followed when there's no doubt which file it is.
+      const found = files.filter((f) => f.tripId === id);
+      // Removed from the folder: it isn't put back.
+      if (!found.length) return drop(`"${local.name}" was removed from "${folder.label}" in Drive, so it doesn't sync there anymore.`);
+      if (found.length > 1) return drop(`"${local.name}" is now in several places in "${folder.label}", so it doesn't sync there anymore. Tick the folder again in Your trips to choose one.`);
+      remote = found[0];
     }
-    const there = files.find((f) => f.tripId === id);
+    const from = link.at || "", to = remote.subId || "";
+    if (from !== to) {
+      if (!await noNewPeople(folderId, to || folderId, from || folderId)) { link.moved = { fileId: remote.id, at: to, name: remote.sub || "" }; return local; }
+      notice(`"${local.name}" moved to ${to ? `"${remote.sub}" in` : "the top of"} "${folder.label}" and keeps syncing there.`);
+    }
+    adopt(link, remote.id, to);
+    delete link.moved;
+  } else {
+    let there: RemoteFile | undefined;
+    if (folder.discover) {
+      there = link.pick ? files.find((f) => f.id === link.pick)
+        : link.into ? files.find((f) => f.tripId === id && f.subId === link.into!.id)
+          : link.top ? files.find((f) => f.tripId === id && !f.subId) : undefined;
+      // Nothing chosen, the chosen copy gone, or the trip turned up elsewhere meanwhile: the person chooses (again).
+      if (!there && (link.pick || !(link.into || link.top) || files.some((f) => f.tripId === id)))
+        return drop(`"${local.name}" wasn't added to "${folder.label}". Tick the folder again in Your trips and choose where it goes.`);
+    } else there = files.find((f) => f.tripId === id);
     if (there) {
       // The folder already has this trip (it was put there from elsewhere): this computer's version goes up, Drive's is
       // kept as a version here first. If it may not be changed from here, Drive's comes down instead.
       link.fileId = there.id; link.md5 = there.md5; link.local = ""; link.ours = false;
+      adopt(link, there.id, there.subId || "");
+      delete link.pick; delete link.into; delete link.top;
       remote = there;
-      if (editable && folder.canWrite && there.canEdit) {
+      if (editable && mayWrite(folder, there)) {
         try {
           const c = await content(there.id, there.md5);
           setBase(there.id, c.text);
@@ -405,14 +489,19 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
         } catch { /* unreadable: Drive keeps its versions too */ }
       } else return applyRemote(id, t, link, local, remote);
     } else {
-      if (!editable || !folder.canWrite) {
-        delete t.folders[folderId];
-        notice(`"${local.name}" can't be added to "${folder.label}": ${!folder.canWrite ? "you can only view that folder in Drive" : "it's shared with you as view only"}.`);
-        return local;
-      }
+      const into = link.into;
+      // (Looked at again just before: a folder trashed or moved away since takes nothing.)
+      const target = into ? (await store.listFolders(folderId)).find((f) => f.id === into.id) : undefined;
+      if (into && !target) return drop(`"${local.name}" wasn't added: the folder "${into.name}" isn't in "${folder.label}" anymore.`);
+      const writable = target ? target.canWrite : folder.canWrite;
+      if (!editable || !writable) return drop(`"${local.name}" can't be added to "${into?.name || folder.label}": ${!writable ? "you can only view that folder in Drive" : "it's shared with you as view only"}.`);
       const text = toSharedText(local.trip, share);
-      const up = await store.upload({ folder: folderId, name: fileName(local.name), text, properties: { tripPlannerId: id } });
+      // In a folder of its own it's "trip.json" (unless something else there is already a .json).
+      const name = into && !files.some((f) => f.subId === into.id) ? "trip.json" : fileName(local.name);
+      const up = await store.upload({ folder: into?.id || folderId, name, text, properties: { tripPlannerId: id } });
       link.fileId = up.id; link.md5 = up.md5Checksum || ""; link.local = localHash; link.ours = true;
+      if (into) { link.at = into.id; link.atName = into.name; }
+      delete link.into; delete link.top;
       setBase(up.id, text);
       return local;
     }
@@ -425,7 +514,7 @@ async function syncLink(id: string, t: Tracked, folderId: string, link: Link, lo
     return local;
   }
   if (!remoteChanged && !localChanged) return local;
-  const canUpload = editable && folder.canWrite && remote.canEdit;
+  const canUpload = editable && mayWrite(folder, remote);
   // Someone saved over this computer's last upload without having seen it (two saves at nearly the same moment: Drive keeps
   // the last one whole, it can't refuse it). This computer's changes aren't lost: they're joined with theirs again, from
   // what the file held before that upload; when that isn't known or they clash, the person picks (both are kept).
@@ -517,13 +606,14 @@ async function applyRemote(id: string, t: Tracked, link: Link, local: Local, rem
 
 // ---- What the page asks ----------------------------------------------------------------------------------------------------
 /** Which folders a trip syncs to, and (for the person who shared it) edit or view. Folders are only added for a trip that
- *  may be changed from here; unticking one stops syncing there (the file stays in Drive). Returns the trip's share, which
- *  the page puts into the open trip. */
-export async function setTripSync(name: string, folderIds: string[], mode?: "edit" | "view"): Promise<{ sync: TripShare | null }> {
+ *  may be changed from here; unticking one stops syncing there (the file stays in Drive). A folder with a folder per trip
+ *  needs `places`: where in it the trip goes. Returns the trip's share, which the page puts into the open trip, and the
+ *  folders made for it with limited access (nobody is on those yet). */
+export async function setTripSync(name: string, folderIds: string[], mode?: "edit" | "view", places: Record<string, SyncPlace> = {}): Promise<{ sync: TripShare | null; created: { id: string; name: string }[] }> {
   const me = store.me();
   const off = folderIds.map((id) => store.providerOf(id)).find((p) => !store.ready(p));
   if (off) throw new Error(off === "drive" ? "Sign in with Google first (Settings → Accounts) to sync with a Google Drive folder." : store.notReady(off));
-  const local = readLocal(name);
+  let local = readLocal(name);
   if (!local) throw new Error("Save the trip first.");
   const s = state();
   let share = cleanShare(local.trip.sync);
@@ -531,14 +621,85 @@ export async function setTripSync(name: string, folderIds: string[], mode?: "edi
   if (!share) share = { id: crypto.randomUUID(), owner: me.id, ...(me.name ? { ownerName: me.name } : {}), mode: mode === "view" ? "view" : "edit" };
   else if (mine && mode) share = { ...share, mode, ...(share.owner ? {} : { owner: me.id }) };
   const wanted = folderIds.filter((id) => s.folders.some((f) => f.id === id));
+  // Where the new ones go is settled first: when that fails, nothing changes.
+  const chosen = new Map<string, Partial<Link>>(), created: { id: string; name: string }[] = [];
+  for (const id of wanted) {
+    if (!editable || s.trips[share.id]?.folders[id]) continue;
+    const f = s.folders.find((x) => x.id === id)!;
+    chosen.set(id, f.discover ? await placeIn(f, share.id, places[id], created) : {});
+  }
+  // (Read again: the page may have saved while the folders were being looked at.)
+  local = readLocal(name) || local;
   const t = s.trips[share.id] || (s.trips[share.id] = { folders: {} });
   for (const id of Object.keys(t.folders)) if (!wanted.includes(id)) delete t.folders[id];
-  for (const id of wanted) if (!t.folders[id] && editable) t.folders[id] = { fileId: "", md5: "", local: "" };
+  for (const [id, where] of chosen) t.folders[id] ||= { fileId: "", md5: "", local: "", ...where };
   if (!Object.keys(t.folders).length) delete s.trips[share.id];
   if (stable(cleanShare(local.trip.sync)) !== stable(share)) writeLocal(local.name, { ...local.trip, sync: share }, { keep: "spaced", fromDrive: false });
   save();
   runSync();
-  return { sync: share };
+  return { sync: share, created };
+}
+
+/** The person's choice of where a trip goes in a folder with a folder per trip, checked (and its new folder made). */
+async function placeIn(f: SyncFolder, tripId: string, place: SyncPlace | undefined, created: { id: string; name: string }[]): Promise<Partial<Link>> {
+  const files = await refreshFolder(f);
+  if (!files) throw new Error(`“${f.label}” couldn't be read: ${f.error || "try again"}`);
+  const matches = files.filter((x) => x.tripId === tripId);
+  const p = (place || {}) as { file?: string; sub?: string; create?: string; limit?: boolean; top?: boolean };
+  if (matches.length) {
+    if (!matches.some((x) => x.id === p.file)) throw new Error(`“${f.label}” already has this trip. Choose which copy to sync with.`);
+    return { pick: p.file };
+  }
+  if (p.sub) {
+    const into = (await store.listFolders(f.id)).find((x) => x.id === p.sub);
+    if (!into) throw new Error(`That folder isn't in “${f.label}” anymore.`);
+    if (!into.canWrite) throw new Error(`You can only view “${into.name}”.`);
+    return { into: { id: into.id, name: into.name } };
+  }
+  if (typeof p.create === "string" && p.create.trim()) {
+    if (!f.canWrite) throw new Error(`You can't make folders in “${f.label}”.`);
+    const made = await store.createFolder(f.id, p.create.trim().slice(0, 100));
+    if (p.limit && store.isDriveFolder(f.id)) {
+      try { await setLimited(made.id, true); }
+      catch (e) { throw new Error(`The folder “${made.name}” was made, but its access couldn't be limited, so nothing was saved there. ${errMsg(e)}`); }
+    }
+    if (p.limit && store.isDriveFolder(f.id)) created.push({ id: made.id, name: made.name });
+    return { into: { id: made.id, name: made.name } };
+  }
+  if (p.top === true) {
+    if (!f.canWrite) throw new Error(`You can only view “${f.label}”.`);
+    return { top: true };
+  }
+  throw new Error(`Choose where in “${f.label}” the trip goes.`);
+}
+
+/** The choices for adding a saved trip to a folder with a folder per trip. */
+export async function tripPlaces(name: string, folderId: string): Promise<SyncPlaces> {
+  const f = state().folders.find((x) => x.id === folderId);
+  if (!f?.discover) throw new Error("No such folder.");
+  const files = await refreshFolder(f);
+  if (!files) throw new Error(f.error || "The folder couldn't be read.");
+  const id = cleanShare(readLocal(name)?.trip?.sync)?.id;
+  return {
+    topWrite: f.canWrite,
+    folders: (await store.listFolders(f.id)).map((d) => ({ ...d, trips: files.filter((x) => x.subId === d.id && x.tripId).map((x) => x.name) })),
+    matches: files.filter((x) => !!id && x.tripId === id).map((x) => ({ fileId: x.id, name: x.name, sub: x.sub || "", subId: x.subId || "" })),
+  };
+}
+
+/** A trip whose file moved to a folder more people may open: keep syncing there, or stop. `at`: the folder the person saw. */
+export async function followMove(name: string, folderId: string, at: string, keep: boolean) {
+  const id = cleanShare(readLocal(name)?.trip?.sync)?.id;
+  const t = id ? state().trips[id] : undefined, link = t?.folders[folderId];
+  if (!id || !t || !link?.moved) throw new Error("There's nothing to decide for this trip.");
+  if (!keep) { delete t.folders[folderId]; if (!Object.keys(t.folders).length) delete state().trips[id]; }
+  else {
+    if (link.moved.at !== at) throw new Error("The file moved again. Look at where it is now.");
+    adopt(link, link.moved.fileId, link.moved.at);
+    delete link.moved;
+  }
+  save();
+  await runSync();
 }
 
 /** A clash: keep this computer's version (it goes to Drive; Drive's is kept as a version here) or Drive's (it becomes the
@@ -582,14 +743,14 @@ export async function openRemote(folderId: string, fileId: string): Promise<{ na
   const t = s.trips[share.id] || (s.trips[share.id] = { folders: {}, share });
   if (!t.share) t.share = share;
   if (have) {
-    if (!t.folders[folderId]) { t.folders[folderId] = { fileId, md5: rf.md5, local: key(have.text) }; setBase(fileId, c.text); }
+    if (!t.folders[folderId]) { t.folders[folderId] = { fileId, md5: rf.md5, local: key(have.text), ...(rf.subId ? { at: rf.subId } : {}) }; setBase(fileId, c.text); }
     save();
     return { name: have.name };
   }
-  const name = freeName(tripName(rf.name));
+  const name = freeName(remoteName(rf));
   const trip = { ...fromSharedText(c.text, null, name), sync: share };
   const text = writeLocal(name, trip, { keep: false });
-  t.folders[folderId] = { fileId, md5: rf.md5, local: key(text) };
+  t.folders[folderId] = { fileId, md5: rf.md5, local: key(text), ...(rf.subId ? { at: rf.subId } : {}) };
   setBase(fileId, c.text);
   save();
   return { name };
@@ -615,14 +776,20 @@ export function remoteTrips(): { folder: string; file: RemoteFile; trip: any }[]
 
 export function status(): SyncStatus {
   const s = state(), acc = g.account(), locals = localsById(), trips: Record<string, TripSyncInfo> = {};
-  for (const [id, t] of Object.entries(s.trips)) {
-    const local = locals.get(id);
-    if (!local) continue;
+  for (const [id, local] of locals) {
+    const t = s.trips[id], linked = Object.keys(t?.folders || {});
+    const found = s.folders.filter((f) => !linked.includes(f.id) && s.remote[f.id]?.files.some((x) => x.tripId === id)).map((f) => f.id);
+    if (!t && !found.length) continue;
     const { mine, share, editable } = rights(t, local);
     trips[local.name] = {
-      folders: Object.keys(t.folders), share: share || null, mine, canEdit: editable,
-      conflicts: Object.entries(t.folders).filter(([, l]) => l.conflict).map(([folder, l]) => ({ folder, by: l.conflict!.by, at: l.conflict!.at })),
-      ...(t.error ? { error: t.error } : {}),
+      folders: linked, found,
+      inside: Object.fromEntries(Object.entries(t?.folders || {}).flatMap(([folder, l]) => {
+        const file = s.remote[folder]?.files.find((x) => x.id === l.fileId), inner = file ? file.sub : l.into?.name || (l.at ? l.atName : "");
+        return inner ? [[folder, inner]] : [];
+      })), share: share || null, mine, canEdit: editable,
+      conflicts: Object.entries(t?.folders || {}).filter(([, l]) => l.conflict).map(([folder, l]) => ({ folder, by: l.conflict!.by, at: l.conflict!.at })),
+      moved: Object.entries(t?.folders || {}).filter(([, l]) => l.moved).map(([folder, l]) => ({ folder, at: l.moved!.at, where: l.moved!.name })),
+      ...(t?.error ? { error: t.error } : {}),
     };
   }
   return {
@@ -685,6 +852,7 @@ export async function checkTrip(name: string): Promise<{ changed: boolean }> {
   const id = cleanShare(readLocal(name)?.trip?.sync)?.id, t = id ? state().trips[id] : undefined;
   if (!t) return { changed: false };
   for (const link of Object.values(t.folders)) {
+    if (link.moved) continue;
     if (!link.fileId) return runSync().then(() => ({ changed: true }));
     const meta = await store.fileMeta(link.fileId).catch(() => null);
     if (meta && (meta.md5Checksum || "") !== link.md5) { await runSync(); return { changed: true }; }

@@ -9,7 +9,7 @@ const DISMISSED = "trip-planner-usage-dismissed";
 const asked = new Map<string, number>();
 
 /** "resets 18:00", or with the day when it isn't today ("resets Tue, 1 Dec, 18:00"). */
-function resets(at: number) {
+export function resets(at: number) {
   const d = new Date(at), today = d.toDateString() === new Date().toDateString();
   return `resets ${d.toLocaleString([], today ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
 }

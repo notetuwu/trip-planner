@@ -3,7 +3,7 @@
 // into the planning prompt.
 import type { Place } from "../../shared/types";
 import { serverName } from "../ai/local-models";
-import { tripLine } from "../ai/prompt-sections";
+import { researchPlaces } from "../ai/prompt-sections";
 import type { OnEvent, Trip } from "../ai/types";
 import { addDays } from "../config";
 import { MAX_LOOKUPS, RESEARCH_CTX, type RoundContext, type ToolCall, chatRound } from "./chat-round";
@@ -36,7 +36,7 @@ function dayResearchPrompt(trip: Trip, limit: number) {
   const stay = trip.stays.filter((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0)).at(-1);
   return `You are researching one day of a trip before it gets re-planned: ${d.date} in ${d.city}${stay ? ` (staying in ${stay.city})` : ""}.
 ${request ? `The travelers ask: ${request}\n` : ""}Currently planned that day: ${d.items.map((x) => x.place).join("; ") || "nothing"}.
-Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}.
+Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}` : ""}
 
 Look up only what this day needs: opening hours and closing days on ${d.date} of places they might visit that day, events that day in ${d.city}, and getting around. Don't research other days or cities.
 You can make up to ${limit} tool calls. Prefer official websites. Short search queries work best. Prefer URLs from search results (including their "Official website" lines) or from the "Links on this page" list of a page you read; a few official sites you know for sure are fine too. Say what you're after with looking_for. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets. Don't plan the day itself, and don't ask questions or offer to do more: nobody can answer.`;
@@ -51,8 +51,9 @@ function researchPrompt(trip: Trip, places: Place[]) {
 - how to get between the cities (train/bus options, travel times, prices)
 - anything else date-dependent for the travelers' interests
 
-Trip: ${tripLine(trip)}.
-Travelers: ${trip.travelers}. Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}.` : ""} Notes: ${trip.notes || "none"}.
+Places and dates: ${researchPlaces(trip)}.
+Interests: ${trip.interests || "none given"}.${trip.wishes ? `
+What they want to see: ${trip.wishes}` : ""}
 ${must.length ? `Must-see places: ${must.join(", ")}.` : ""}
 
 You can make up to ${lookupLimit(trip)} tool calls, so be thorough: when you come across places or events worth including, look those up too. Prefer official websites, and read the most useful pages with fetch_page instead of relying on snippets; say what you're after with looking_for (e.g. "opening hours in September"), so long pages come back cut to those parts. Short search queries work best. Prefer URLs from search results (including their "Official website" lines) or from the "Links on this page" list of a page you read (follow those links to reach opening-hours or ticket pages); a few official sites you know for sure are fine too. PDFs (timetables, price lists) can be read too. Don't repeat a search in other words: if one finds nothing useful, read a page instead. When you are done, reply with a concise summary of your findings as "- " bullet points, each ending with its source URL in brackets; also list briefly what you couldn't find out. Don't plan the itinerary itself, and don't ask questions or offer to do more: nobody can answer.`;

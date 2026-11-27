@@ -10,7 +10,7 @@ import { byTitleMap, itemLoc } from "../geo/item-loc";
 import { stayLoc, stayOn } from "../geo/locate";
 import { cleanStop } from "../trip/modes";
 import { type DayStops, type PhotoSpot, type Spot, anchorsOf, spotByTime, spotKey, withSpot } from "./photo-spot";
-import { onMap } from "./travel-day";
+import { isTransfer } from "./travel-day";
 import { editLine } from "../saves/collab";
 
 interface Photo { id: string; name: string; lat?: number; lng?: number; t: string; up?: string; dir?: string; thumb: string; w?: number; h?: number; video?: true; dur?: number; rot?: number; /** Who uploaded it to Drive. */ by?: string; /** Their profile picture. */ byPic?: string; /** Who the file says took it. */ author?: string; /** Bytes. */ size?: number; /** May be deleted (or only removed from its folder), and how. */ del?: "trash" | "permanent" | "remove" }
@@ -103,7 +103,8 @@ export function planDays(): DayStops[] {
     const stops: DayStops["stops"] = [];
     for (const x of d.items) {
       const tm = /^(\d{1,2}):(\d{2})/.exec(x.time || "");
-      if (!tm || !onMap(x)) continue;
+      // (A transfer's time is when it leaves, its spot where it arrives: only one they set counts.)
+      if (!tm || (isTransfer(x) && !x.pinned)) continue;
       const loc = itemLoc(x, d, byTitle);
       if (loc && !loc.elsewhere) stops.push({ min: +tm[1] * 60 + +tm[2], lat: loc.lat, lng: loc.lng, name: cleanStop(x.place) });
     }

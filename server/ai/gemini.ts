@@ -65,15 +65,18 @@ export async function geminiModels(key: string): Promise<CloudModel[]> {
   return out.slice(0, 40).map((m) => ({ id: `api|gemini|${m.id}`, name: m.name, provider: "gemini" }));
 }
 
+/** A test request Google was too busy for (a timeout or a server error) says nothing against the model. */
+const busy = (a: { state: GeminiAccess["state"]; note: string }) => a.state === "unknown" && /^(Didn't answer in time|5\d\d:)/.test(a.note);
+
 /**
  * The catalog lists every public model, also ones this key can't run (none on the free tier, or retired for new
- * users). Only the models that answered the test request (checkTier) are offered; if the models haven't been tried
- * for this key yet, they're tried first.
+ * users). The models that answered the test request (checkTier) are offered, and those Google was too busy to answer
+ * it for; if the models haven't been tried for this key yet, they're tried first.
  */
 export async function usableGemini(models: CloudModel[]): Promise<CloudModel[]> {
   if (!readUsage().access) await checkTier().catch(() => {});
   const access = readUsage().access || {};
-  return models.filter((m) => access[modelOf(m.id)]?.state === "ok");
+  return models.filter((m) => { const a = access[modelOf(m.id)]; return !!a && (a.state === "ok" || busy(a)); });
 }
 
 // ---- Errors and quotas ----
@@ -187,7 +190,11 @@ function learnLimit(model: string | undefined, perDay: boolean, value: number) {
   if (!model || !Number.isFinite(value)) return;
   changeUsage((u) => { const l = (u.limits[model] ||= {}); if (perDay) l.day = value; else l.minute = value; });
 }
-const countRequest = (model: string) => changeUsage((u) => { u.requests[model] = (u.requests[model] || 0) + 1; });
+/** A successful request; it also settles a model whose test request got no answer. */
+const countRequest = (model: string) => changeUsage((u) => {
+  u.requests[model] = (u.requests[model] || 0) + 1;
+  if (u.access?.[model]?.state === "unknown") u.access[model] = { state: "ok", note: "Answered a request." };
+});
 const countTokens = (model: string, n: number) => { if (n) changeUsage((u) => { u.tokens[model] = (u.tokens[model] || 0) + n; }); };
 
 /** What's known about the key: tier, today's requests per model and the limits Google named. */
@@ -399,11 +406,13 @@ class SwitchableError extends Error { constructor(message: string, public short:
 class NoSearchError extends Error {}
 
 /** The models the key can run, in the order to switch to: the ones the test requests found, newest first, the full
- *  models before the Lite ones; not the ones already tried or used up today. */
+ *  models before the Lite ones, then the ones Google was too busy to answer for; not the ones already tried or used up
+ *  today. */
 function nextModel(tried: Set<string>): string | undefined {
   const u = readUsage(), out = new Set(u.exhausted || []);
-  const ok = Object.entries(u.access || {}).filter(([m, a]) => a.state === "ok" && !tried.has(m) && !out.has(m)).map(([m]) => m);
-  return [...ok.filter((m) => !/lite/.test(m)), ...ok.filter((m) => /lite/.test(m))][0];
+  const left = Object.entries(u.access || {}).filter(([m]) => !tried.has(m) && !out.has(m));
+  const ok = left.filter(([, a]) => a.state === "ok").map(([m]) => m);
+  return [...ok.filter((m) => !/lite/.test(m)), ...ok.filter((m) => /lite/.test(m)), ...left.filter(([, a]) => busy(a)).map(([m]) => m)][0];
 }
 const noSearch = (model: string) => !!readUsage().noSearch?.[model];
 
@@ -428,11 +437,11 @@ async function requestModel(model: string, method: string, bodies: object[], sig
     if (e.quota) {
       const q = e.quota;
       if (q.freeTier) changeUsage((u) => { if (u.tier?.kind !== "free") u.tier = { kind: "free", note: "Free tier: Google named a free-tier quota when a limit was reached.", at: Date.now() }; });
-      // Searching, and a model that answers without the search tool gets a quota of 0, or on the free tier a refusal
-      // naming no limit (how Google answers there), or the quota is named for search grounding: it's Google Search that
-      // isn't included, not the model.
+      // Searching, and the quota is named for search grounding, or a model that answers without the search tool gets a
+      // quota of 0, or on the free tier the refusal names no limit (how Google answers there, also for models whose test
+      // request got no answer): it's Google Search that isn't included, not the model. Without search it's asked again.
       const u = readUsage(), answers = u.access?.[model]?.state === "ok";
-      if (searching && (q.grounding || (answers && (q.limit === 0 || (!q.named && u.tier?.kind === "free"))))) throw new NoSearchError(e.message);
+      if (searching && (q.grounding || (q.limit === 0 && answers) || (!q.named && u.tier?.kind === "free"))) throw new NoSearchError(e.message);
       if (q.perDay) changeUsage((u) => { u.limited = { model, perDay: true, limit: q.limit, until: quotaDay().resetAt }; u.exhausted = [...new Set([...(u.exhausted || []), model])]; });
       const wait = onWait && retryWait(model, q, q.named ? waited : refused, waits);
       if (wait) {
@@ -530,11 +539,12 @@ const STOP_ERRORS: Record<string, string> = {
 
 // ---- Research through the planner (when Google Search isn't included) ----
 
-/** The model that researches: on the free tier a Flash Lite model the key can run (research is a request per round,
- *  and Lite models have many more a day); otherwise, or without one, the planning model. */
-function researchModel(planModel: string, auto: boolean) {
+/** The model that researches: on the free tier a Flash Lite model the key can run, also when another model is picked
+ *  to plan (research is a request per search, and Lite models have many more a day); otherwise, or without one, the
+ *  planning model. */
+function researchModel(planModel: string) {
   const u = readUsage();
-  if (!auto || u.tier?.kind !== "free") return planModel;
+  if (u.tier?.kind !== "free" || /lite/.test(planModel)) return planModel;
   const out = new Set(u.exhausted || []);
   return Object.entries(u.access || {}).find(([m, a]) => a.state === "ok" && /lite/.test(m) && !out.has(m))?.[0] || planModel;
 }
@@ -542,10 +552,12 @@ function researchModel(planModel: string, auto: boolean) {
 /**
  * Researches the trip the way local models do: the planner runs the model's web_search / fetch_page calls (Brave,
  * SearXNG, DuckDuckGo, Wikipedia, as set in Settings → Search & places), through Gemini's OpenAI-compatible endpoint, which
- * takes tools. Requests are counted; a per-minute limit is waited out once, an unnamed refusal tried again twice.
+ * takes tools. Requests are counted; a per-minute limit is waited out up to five times (research asks many times in a
+ * row), an unnamed refusal tried again twice. `why`: said in the prompt's note about the model.
  */
-async function plannerResearch(trip: Trip, places: Place[], onEvent: OnEvent, abort: AbortSignal, output: ReturnType<typeof localOutput>, planModel: string, auto: boolean) {
-  const key = getKey("gemini"), model = researchModel(planModel, auto);
+async function plannerResearch(trip: Trip, places: Place[], onEvent: OnEvent, abort: AbortSignal, output: ReturnType<typeof localOutput>, model: string, why: string) {
+  const key = getKey("gemini");
+  if (!key) throw new Error("No Google Gemini API key");
   const send = async (body: object, signal: AbortSignal) => {
     for (let waited = 0; ;) {
       const res = await fetch(`${GEMINI_BASE}/openai/chat/completions`, {
@@ -553,7 +565,7 @@ async function plannerResearch(trip: Trip, places: Place[], onEvent: OnEvent, ab
       });
       if (res.ok) { countRequest(model); return res; }
       const e = readError(res.status, await res.text());
-      const wait = e.quota && retryWait(model, e.quota, waited, 1);
+      const wait = e.quota && retryWait(model, e.quota, waited, 5);
       if (wait) {
         waited++;
         onEvent({ type: "status", text: `${wait.text}, then researching on…` });
@@ -568,9 +580,21 @@ async function plannerResearch(trip: Trip, places: Place[], onEvent: OnEvent, ab
   const count: OnEvent = (ev) => { if (ev.type === "search") searches++; onEvent(ev); };
   const found = await localResearch({
     kind: "openai", base: GEMINI_BASE, model, trip, places, onEvent: count, abort, onThinking: output.onThinking, tick: output.tick,
-    endpoint: { send }, server: `Google Gemini (OpenAI-compatible endpoint; ${model === planModel ? "the planning model" : "a Flash Lite model, for its larger daily limit"})`,
+    endpoint: { send }, server: `Google Gemini (OpenAI-compatible endpoint; ${why})`,
   });
   return { ...found, model, searches };
+}
+
+/** Research with the Gemini model chosen for it ("Gemini Auto": picked like the one that researches for a plan). */
+export async function geminiResearch(id: string, trip: Trip, places: Place[], onEvent: OnEvent, abort: AbortSignal, output: ReturnType<typeof localOutput>) {
+  let model = modelOf(id);
+  if (model === AUTO) {
+    if (!readUsage().access) await checkTier().catch(() => {});
+    const first = nextModel(new Set());
+    if (!first) throw new Error("No Gemini model this key can run has requests left today");
+    model = researchModel(first);
+  }
+  return plannerResearch(trip, places, onEvent, abort, output, model, "the research model");
 }
 
 // ---- Planning ----
@@ -587,7 +611,8 @@ export const runGemini: Runner = async (trip, places, onEvent, abort): Promise<R
     if (researchTried || !trip.research) return;
     researchTried = true;
     try {
-      researched = await plannerResearch(trip, places, onEvent, abort, output, model, modelOf(trip.model) === AUTO);
+      const by = researchModel(model);
+      researched = await plannerResearch(trip, places, onEvent, abort, output, by, by === model ? "the planning model" : "a Flash Lite model, for its larger daily limit");
       if (researched.notes) onEvent({ type: "notes", text: `**Research findings**\n\n${researched.notes}` });
     } catch (e) {
       if (abort.aborted) throw e;
@@ -599,7 +624,7 @@ export const runGemini: Runner = async (trip, places, onEvent, abort): Promise<R
 
   // The prompt tells the model it can search only when it can (otherwise it gets the research findings);
   // enforced schema first, then the schema in the prompt.
-  const prompt = (search: boolean, schemaInPrompt: boolean) => buildPrompt(search ? trip : { ...trip, researchNotes: researched?.notes }, places, { notes: "json", webTools: search, schema: schemaInPrompt });
+  const prompt = (search: boolean, schemaInPrompt: boolean) => buildPrompt(search ? trip : { ...trip, researchNotes: researched?.notes ?? trip.researchNotes }, places, { notes: "json", webTools: search, schema: schemaInPrompt });
   const text = (p: string) => ({ contents: [{ role: "user", parts: [{ text: p }] }] });
   const bodies = (model: string, search: boolean) => {
     const tools = search ? { tools: [{ google_search: {} }] } : {};

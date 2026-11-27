@@ -157,7 +157,8 @@ export function renderItinerary(error?: string) {
   // The group's budget a day: day costs are for everyone.
   const budget = meta.budget || groupBudget();
   const byTitle = byTitleMap();
-  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
+  const unfixed = meta.unfixed ? `<div class="fix-bar"><span class="fix-msg">${icon("warn")}<span>${esc(meta.unfixed)}</span></span></div>` : "";
+  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + unfixed + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
   wire(out);
   initSplitTabs(out);
   showDuplicates(it);

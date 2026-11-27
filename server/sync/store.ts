@@ -18,7 +18,11 @@ export const notReady = (p: Provider) => (p === "dropbox" ? "Sign in to Dropbox 
 
 const pick = <T>(id: string | undefined, f: { local: () => T; dropbox: () => T; drive: () => T }) => f[providerOf(id)]();
 export const folderInfo = (id: string) => pick(id, { local: () => Promise.resolve(local.folderInfo(id)), dropbox: () => box.folderInfo(id), drive: () => g.folderInfo(id) });
-export const listTripFiles = (id: string) => pick(id, { local: () => Promise.resolve(local.listTripFiles(id)), dropbox: () => box.listTripFiles(id), drive: () => g.listTripFiles(id) });
+export const listTripFiles = (id: string, deep = false) => pick(id, { local: () => Promise.resolve(local.listTripFiles(id, deep)), dropbox: () => box.listTripFiles(id, deep), drive: () => g.listTripFiles(id, deep) });
+export const listFolders = (id: string): Promise<{ id: string; name: string; canWrite: boolean; limited?: boolean; noAccess?: boolean }[]> =>
+  pick(id, { local: () => Promise.resolve(local.listFolders(id)), dropbox: () => box.listFolders(id), drive: () => g.listFolders(id) });
+export const createFolder = (parent: string, name: string): Promise<{ id: string; name: string }> =>
+  pick(parent, { local: () => Promise.resolve(local.createFolder(parent, name)), dropbox: () => box.createFolder(name, parent), drive: () => g.createFolder(name, parent) });
 export const fileMeta = (id: string) => pick(id, { local: () => Promise.resolve(local.fileMeta(id)), dropbox: () => box.fileMeta(id), drive: () => g.fileMeta(id) });
 export const download = (id: string) => pick(id, { local: () => Promise.resolve(local.download(id)), dropbox: () => box.download(id), drive: () => g.download(id) });
 export const upload = (o: { id?: string; folder?: string; name: string; text: string; properties?: Record<string, string> }) =>

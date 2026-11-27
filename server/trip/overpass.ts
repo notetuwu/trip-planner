@@ -21,9 +21,13 @@ export const OVERPASS = [
 async function overpassAround(lat: number, lng: number): Promise<OsmElement[]> {
   // Sights and food are capped separately, so a big city's hundreds of restaurants can't crowd out its sights.
   const q = `[out:json][timeout:55];
+    (nwr(around:7000,${lat},${lng})["wikipedia"]["tourism"~"^(attraction|museum|viewpoint|gallery|zoo|theme_park|aquarium)$"]["name"];
+     nwr(around:7000,${lat},${lng})["wikipedia"]["historic"]["name"];
+     nwr(around:7000,${lat},${lng})["wikipedia"]["building"~"^(cathedral|church|palace|castle)$"]["name"];)->.famous;
     nwr(around:2500,${lat},${lng})["amenity"~"^(restaurant|cafe|biergarten|ice_cream|fast_food|bar|pub)$"]["name"]->.food;
     (nwr(around:7000,${lat},${lng})["tourism"~"^(attraction|museum|viewpoint|gallery|zoo|theme_park|aquarium)$"]["name"];
      nwr(around:7000,${lat},${lng})["historic"~"^(castle|monument|ruins|fort|palace|church|city_gate|archaeological_site)$"]["name"];)->.sights;
+    .famous out center tags 300;
     .sights out center tags 400;
     .food out center tags 300;`;
   // Two rounds over all servers: busy servers often answer a little later.
@@ -49,7 +53,8 @@ const inflight = new Map<string, Promise<OsmElement[]>>();
 export async function nearbyElements(city: string, cc?: string, onStatus: (s: string) => void = () => {}): Promise<OsmElement[] | null> {
   const town = await locateTown(city, cc);
   if (!town) return null;
-  const key = `${town.lat.toFixed(3)},${town.lng.toFixed(3)}`;
+  // "+": lists fetched with the famous sights (older cached ones lack them).
+  const key = `${town.lat.toFixed(3)},${town.lng.toFixed(3)}+`;
   const hit = nearbyCache.data[key];
   if (hit && Date.now() - hit.at < 30 * 864e5) return hit.elements;
   onStatus(`Finding real places around ${city}…`);
@@ -61,7 +66,11 @@ export async function nearbyElements(city: string, cc?: string, onStatus: (s: st
       return elements;
     }).finally(() => inflight.delete(key)));
   }
-  return inflight.get(key)!;
+  // A list fetched before (older than 30 days, or without the famous sights) stands in when the servers are slow or
+  // down; the new one is fetched on and used next time.
+  const old = hit || nearbyCache.data[key.slice(0, -1)];
+  if (!old) return inflight.get(key)!;
+  return Promise.race([inflight.get(key)!.catch(() => old.elements), sleep(30000).then(() => old.elements)]);
 }
 
 /** Runs fn over items, at most `limit` at a time. */

@@ -69,7 +69,7 @@ function accessHtml(s: GeminiStatus) {
   const not = s.access.filter((a) => a.state === "billing" || a.state === "gone");
   const why = { billing: "needs billing", gone: "retired, or not offered to this key", unknown: "", ok: "" };
   return `<div class="set-row"><div><b>Models this key can run</b> <span class="fit ${ok.length ? "ok" : "warn"}">${ok.length} of ${s.access.length}</span>
-      <div class="hint">Google's catalog lists every model, also ones a key can't use, so each was sent one test request. Only the ones that answered are in the Model menu.${maybe.length ? ` ${maybe.length} didn't answer (Google may have been busy): <i>Check again</i> tries them again.` : ""}</div>
+      <div class="hint">Google's catalog lists every model, also ones a key can't use, so each was sent one test request. The ones that answered are in the Model menu, and so are ones Google was too busy to answer.${maybe.length ? ` ${maybe.length} didn't answer: <i>Check again</i> tries them again.` : ""}</div>
       ${ok.length ? `<div class="gm-chips">${ok.map((a) => `<code title="${esc(a.note)}">${esc(a.model)}</code>`).join("")}</div>` : ""}
       ${maybe.length ? `<div class="gm-chips maybe">${maybe.map((a) => `<code title="${esc(a.note)}">${esc(a.model)} · no answer</code>`).join("")}</div>` : ""}
       ${not.length ? `<details class="gm-not"><summary>${not.length} more listed, but not usable with this key</summary>

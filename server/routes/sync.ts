@@ -1,12 +1,13 @@
 // /api/sync: signing in with Google, the sync folders, which folders each trip syncs to, clashes, and the trips in the
 // folders (for Your trips). Only for this computer: a phone on the home network can't reach it (lan.ts), and the Google
 // token never leaves the server.
-import type { RemoteTripCard } from "../../shared/types";
+import type { RemoteTripCard, SyncPlace } from "../../shared/types";
 import { errMsg } from "../config";
 import { placesByName, tripCard } from "./trips";
 import * as box from "../sync/dropbox";
 import { browse, clientShown, createFolder, parseClient, setClient, startSignIn } from "../sync/google";
-import { addFolder, checkTrip, dismissNotices, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setTripSync, signOut, status, tripName } from "../sync/sync";
+import { addPerson, folderAccess, removeAccess, setLimited, setLinkAccess, setRole } from "../sync/google-access";
+import { addFolder, checkTrip, dismissNotices, followMove, tripPlaces, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setDiscover, setTripSync, signOut, status, remoteName } from "../sync/sync";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 import { fsCheck } from "../util/fs-browse";
 import { KIND_LABEL, folderKind } from "../util/folder-kind";
@@ -20,10 +21,26 @@ export async function handleSync(req: Req, res: Res, path: string) {
     // Look at the folders now (Your trips opened, or "Sync now"); answers when it's done.
     if (method === "POST" && path === "/api/sync/now") { await runSync(); return sendJson(res, 200, status()); }
     if (method === "GET" && path === "/api/sync/check") return sendJson(res, 200, await checkTrip(new URL(req.url || "/", "http://x").searchParams.get("name") || ""));
+    // Where a trip can go in a folder with a folder per trip.
+    if (method === "GET" && path === "/api/sync/places") { const q = new URL(req.url || "/", "http://x").searchParams; return sendJson(res, 200, await tripPlaces(q.get("name") || "", q.get("folder") || "")); }
     // The Drive folders to pick from: "?in=root" (My Drive), "shared" (shared with me), "drives" (shared drives) or a folder's id.
     if (method === "GET" && path === "/api/sync/browse") return sendJson(res, 200, await browse(new URL(req.url || "/", "http://x").searchParams.get("in") || "root"));
     // A new folder in the folder browser ("parent": "root" or a folder's id).
     if (method === "POST" && path === "/api/sync/mkdir") { const b = await readJson(req); return sendJson(res, 200, await createFolder(String(b?.name || ""), String(b?.parent || "root"))); }
+    // Who has access to a Drive folder (this computer only, like the rest of /api/sync).
+    if (method === "GET" && path === "/api/sync/access") return sendJson(res, 200, await folderAccess(new URL(req.url || "/", "http://x").searchParams.get("id") || ""));
+    if (method === "POST" && path.startsWith("/api/sync/access/")) {
+      const b = await readJson(req), id = String(b?.id || ""), role = String(b?.role || ""), permission = String(b?.permission || "");
+      const what = path.slice("/api/sync/access/".length);
+      if (what === "add") await addPerson(id, String(b?.email || ""), role, b?.notify !== false);
+      else if (what === "role") await setRole(id, permission, role);
+      else if (what === "remove") await removeAccess(id, permission);
+      else if (what === "link") await setLinkAccess(id, role);
+      else if (what === "limit" && typeof b?.limited === "boolean") await setLimited(id, b.limited);
+      else return sendJson(res, 404, { error: "Not found" });
+      // The list as it is now; null when the change took away this account's own view of it.
+      return sendJson(res, 200, { access: await folderAccess(id).catch(() => null) });
+    }
     // The person's own Google client, to show and change in Settings → Accounts (this computer only; never a phone, see lan.ts).
     if (method === "GET" && path === "/api/sync/client") return sendJson(res, 200, clientShown());
     // What kind of folder a path on this computer is (a cloud app's, a network drive…), before it's added.
@@ -47,8 +64,8 @@ export async function handleSync(req: Req, res: Res, path: string) {
     if (method === "GET" && path === "/api/sync/remote") {
       const where = placesByName();
       const cards: RemoteTripCard[] = remoteTrips().map(({ folder, file, trip }) => ({
-        ...tripCard(tripName(file.name), file.at || new Date(0).toISOString(), trip, where),
-        folder, fileId: file.id, by: file.by,
+        ...tripCard(remoteName(file), file.at || new Date(0).toISOString(), trip, where),
+        folder, fileId: file.id, by: file.by, ...(file.sub ? { inner: file.sub } : {}),
         share: trip?.sync && typeof trip.sync === "object" ? { id: String(trip.sync.id || ""), owner: String(trip.sync.owner || ""), ownerName: String(trip.sync.ownerName || ""), mode: trip.sync.mode === "view" ? "view" : "edit" } : null,
       }));
       return sendJson(res, 200, cards);
@@ -63,10 +80,16 @@ export async function handleSync(req: Req, res: Res, path: string) {
     }
     if (method === "POST" && path === "/api/sync/folders/rename") { renameFolder(String(body?.id || ""), String(body?.label || "")); return sendJson(res, 200, status()); }
     if (method === "POST" && path === "/api/sync/folders/remove") { removeFolder(String(body?.id || "")); return sendJson(res, 200, status()); }
+    if (method === "POST" && path === "/api/sync/folders/discover") { setDiscover(String(body?.id || ""), body?.on === true); return sendJson(res, 200, status()); }
     if (method === "POST" && path === "/api/sync/trip") {
       const mode = body?.mode === "view" || body?.mode === "edit" ? body.mode : undefined;
-      const r = await setTripSync(String(body?.name || ""), Array.isArray(body?.folders) ? body.folders.map(String) : [], mode);
+      const places = body?.places && typeof body.places === "object" ? body.places as Record<string, SyncPlace> : {};
+      const r = await setTripSync(String(body?.name || ""), Array.isArray(body?.folders) ? body.folders.map(String) : [], mode, places);
       return sendJson(res, 200, { ...r, status: status() });
+    }
+    if (method === "POST" && path === "/api/sync/moved") {
+      await followMove(String(body?.name || ""), String(body?.folder || ""), String(body?.at || ""), body?.keep === true);
+      return sendJson(res, 200, status());
     }
     if (method === "POST" && path === "/api/sync/resolve") {
       if (body?.keep !== "mine" && body?.keep !== "theirs") return sendJson(res, 400, { error: "Keep which?" });

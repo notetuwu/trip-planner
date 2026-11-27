@@ -42,6 +42,8 @@ export interface Meta {
   travelers?: number;
   /** The stays the plan was made for (town, arrival, nights), to tell when they've changed since. */
   staysKey?: string;
+  /** Why what the checks found in a new plan couldn't be fixed (said above the days until it is). */
+  unfixed?: string;
 }
 
 export type Mark = "must" | "skip";

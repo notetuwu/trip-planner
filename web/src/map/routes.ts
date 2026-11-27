@@ -4,7 +4,7 @@ import { api } from "../core/dom";
 import { type ByTitle, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc, stayOn } from "../geo/locate";
 import { state } from "../core/state";
-import { byWho, chosenMode, cleanStop, legGroup, modeOf, onWayOf, splitGroup, stopCompany } from "../trip/modes";
+import { byWho, chosenMode, cleanStop, legGroup, modeOf, onWayOf, splitGroup, stopCompany, transferEnds } from "../trip/modes";
 import { setMapStatus } from "./status";
 import { DRIVE_KM, arrivalStay, isTransfer, journeyOf, onMap, ownsJourney, viaStops } from "./travel-day";
 
@@ -122,10 +122,11 @@ function viaPoints(d: Day, byTitle: ByTitle, text: string, ends: number[], from:
   if (!text) return [];
   const cands: { name: string; at: LatLng }[] = [];
   d.items.forEach((y, yi) => {
-    if (ends.includes(yi) || !onMap(y)) return;
+    if (ends.includes(yi) || !onMap(y, d)) return;
     const loc = itemLoc(y, d, byTitle);
     if (!loc) return;
-    const name = cleanStop(y.place), first = name.split(/\s+/)[0];
+    // A transfer's point is where it arrives.
+    const name = transferEnds(y)?.[1] || cleanStop(y.place), first = name.split(/\s+/)[0];
     cands.push(...[name, ...(NOT_VIA.test(first) ? [] : [first])].filter((n) => n.length >= 4 && /^\p{Lu}/u.test(n)).map((n) => ({ name: n, at: [loc.lat, loc.lng] as LatLng })));
   });
   for (const s of state.stays) {
@@ -157,7 +158,7 @@ function viaPoints(d: Day, byTitle: ByTitle, text: string, ends: number[], from:
 export function dayLegs(d: Day, byTitle: ByTitle): Leg[] {
   // Transfers are movements, not places; on a travel day the long legs are the drive between the stays, drawn as one
   // line with the stays (see travel-day.ts), and other legs follow the mode picked for that drive.
-  const pts = d.items.map((x, xi) => ({ x, xi, loc: onMap(x) ? itemLoc(x, d, byTitle) : null })).filter((p) => p.loc);
+  const pts = d.items.map((x, xi) => ({ x, xi, loc: onMap(x, d) ? itemLoc(x, d, byTitle) : null })).filter((p) => p.loc);
   const arrive = arrivalStay(d);
   // A travel day that spells out its own journey (its rides are stops) is drawn leg by leg, from the last stay's hotel;
   // otherwise the stays' own line is the journey, and the day's long legs aren't drawn again on top of it.

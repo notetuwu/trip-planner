@@ -25,9 +25,33 @@ function meta(file: string): DriveFile {
   return { id: LOCAL + file, name: path.basename(file), md5Checksum: md5(fs.readFileSync(file)), modifiedTime: st.mtime.toISOString(), size: String(st.size), capabilities: { canEdit: writable(file) } };
 }
 
-/** The trip files in the folder (only there, not in folders inside it). */
-export function listTripFiles(folder: string): DriveFile[] {
+/** The trip files in the folder; `deep`: also in the folders directly inside it (not further down). */
+export function listTripFiles(folder: string, deep = false): DriveFile[] {
+  const p = pathOf(folder), out = jsonFiles(p);
+  if (!deep) return out;
+  const inside = dirsIn(p);
+  for (const d of inside) {
+    try { out.push(...jsonFiles(path.join(p, d.name)).map((f) => ({ ...f, sub: d.name, subId: LOCAL + path.join(p, d.name) }))); }
+    // A folder this user may not open holds none of their trips. Anything else (a drive gone): the whole look fails, so
+    // no trip is taken for removed.
+    catch (e) { if (!["EACCES", "EPERM"].includes((e as NodeJS.ErrnoException).code || "")) throw e; }
+  }
+  return out;
+}
+const dirsIn = (p: string) => fs.readdirSync(p, { withFileTypes: true }).filter((d) => d.isDirectory() && !/^[.$]/.test(d.name)).slice(0, 200);
+export function listFolders(folder: string): { id: string; name: string; canWrite: boolean }[] {
   const p = pathOf(folder);
+  return dirsIn(p).map((d) => ({ id: LOCAL + path.join(p, d.name), name: d.name, canWrite: writable(path.join(p, d.name)) }));
+}
+export function createFolder(parent: string, name: string): { id: string; name: string } {
+  const clean = name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/[. ]+$/, "").trim();
+  if (!clean || /^[.$]/.test(clean)) throw new Error("Give the folder another name.");
+  const dir = path.join(pathOf(parent), clean);
+  if (fs.existsSync(dir)) throw new Error(`There's already a folder “${clean}”. Choose it from the list.`);
+  fs.mkdirSync(dir);
+  return { id: LOCAL + dir, name: clean };
+}
+function jsonFiles(p: string): DriveFile[] {
   return fs.readdirSync(p).filter((f) => /\.json$/i.test(f)).map((f) => path.join(p, f))
     .filter((f) => { try { const st = fs.statSync(f); return st.isFile() && st.size <= MAX_TRIP_BYTES; } catch { return false; } })
     .map(meta);
@@ -52,8 +76,9 @@ export function upload(o: { id?: string; folder?: string; name: string; text: st
   if (o.id) file = pathOf(o.id);
   else {
     const dir = pathOf(o.folder!), base = o.name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "").replace(/(\.trip)?\.json$/i, "") || "Trip";
-    file = path.join(dir, `${base}.trip.json`);
-    for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${base} ${n}.trip.json`);
+    const ext = o.name === "trip.json" ? ".json" : ".trip.json";
+    file = path.join(dir, `${base}${ext}`);
+    for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${base} ${n}${ext}`);
   }
   const tmp = `${file}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, o.text);

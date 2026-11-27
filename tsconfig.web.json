@@ -4,5 +4,5 @@
     "lib": ["es2023", "dom", "dom.iterable"],
     "types": ["vite/client"]
   },
-  "include": ["web/src", "shared", "tests/formats.test.ts"]
+  "include": ["web/src", "shared", "tests/formats.test.ts", "tests/transfer-spot.test.ts"]
 }

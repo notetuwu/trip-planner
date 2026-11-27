@@ -88,6 +88,37 @@ with Google's token counter (`countTokens`), which spends none of the key's requ
 - Different clients can sync through the same folder: access depends on each Google account and on how the folder is
   shared in Drive.
 
+## Who has access to a folder
+
+In the folder browser, select a Drive folder (or open one) and click **Access**. It lists who the folder is shared with.
+If your account may share it, you can add people or Google groups by email address, change what they may do, remove
+them, and turn "anyone with the link" on or off. Otherwise the list is only shown, or, where Google doesn't tell you who
+else is on it, nothing but that. Access that comes from a folder further up is changed on that folder. Ownership can't
+be handed over here.
+
+To share a folder but not one inside it, select the inner folder, click **Access**, then **Limit access** (Google's
+"limited access"). After that only the owner (in a shared drive, its managers) and people added to that folder itself can
+open it. Others with access above still see its name, and are listed under "Can't open this folder"; **Let in** adds one
+of them back. The button shows only when Google says your account may change it. Single files can't be limited.
+
+## One folder per trip
+
+In Settings → Sync, tick **Also find trips in the folders inside it** on the folder that holds your trips' folders. Only
+the folders directly inside it are looked through. A file named `trip.json` goes by its folder's name.
+
+To let people see just the trips they're on:
+
+1. Share the top folder with them as **Viewer**.
+2. Limit access on **every** trip's folder, and add that trip's people to it as editors.
+3. They add the top folder as their sync folder and tick the same box.
+
+They see the names of all the folders inside, but only open the ones they're added to. A folder that isn't limited, and
+any file directly in the top folder, is open to everyone on the top folder.
+
+Adding a trip (Your trips → the cloud on it) asks where it goes and shows who can open that place; nothing goes to the
+top unless you choose it. A new folder can be made there, limited from the start. If a trip's file is later moved to a
+folder where someone new could open it (or Google can't tell), syncing pauses until you confirm.
+
 ## Why the whole of Drive?
 
 The narrower permission (`drive.file`) only covers files an app created with the same account, so you couldn't see trips

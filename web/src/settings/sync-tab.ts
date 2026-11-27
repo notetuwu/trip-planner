@@ -46,6 +46,7 @@ export function syncHtml(s: SyncStatus | null) {
         <li>Every save of a synced trip goes to its folders a few seconds later, and the app looks for changes from others every few minutes (and when you open Your trips). Without internet, changes wait and go when it's back.</li>
         <li>Changed here and somewhere else since the last sync? Changes to different things are joined; only when both changed the same thing does Your trips ask which version to keep, and the other one stays in Recover….</li>
         <li>Per trip, the person who shares it decides whether others can <b>edit</b> it or only <b>view</b> it.</li>
+        <li>One folder per trip? Add the folder that holds them and tick <b>Also find trips in the folders inside it</b>. A file named trip.json goes by its folder's name. Adding a trip to it asks which folder inside it goes in. Edit rights follow each trip's folder, so you can share the top folder as view only and add people to their trips' folders (in Drive: with <b>Limit access</b> on each).</li>
         <li>Nothing is ever deleted in a sync folder. Deleting a trip here, unticking a folder or removing a folder below only stops syncing there.</li>
         <li>A folder on this computer can be a network drive or a folder a cloud app keeps in step (OneDrive, iCloud Drive, or Dropbox's app): the trips go wherever that folder goes.</li>
         <li>Your Google sign-in stays on this computer. It's never in a trip, a folder or on a phone. Photo folders on this computer and the prompts sent to the AI aren't shared either.</li>
@@ -58,7 +59,8 @@ function folderRow(f: SyncFolder) {
   const local = f.id.startsWith("local:"), dbx = f.id.startsWith("dropbox:");
   const where = local ? `${f.kind ? `${f.kind} · ` : ""}${f.id.slice(6)}` : `“${f.name}” in ${dbx ? "Dropbox" : "Google Drive"}`;
   return `<div class="set-row sync-folder-row" data-id="${esc(f.id)}"><div><b>${icon(local ? "monitor" : dbx ? "box" : "drive")} ${esc(f.label)}</b>
-      <div class="hint" title="${esc(where)}">${esc(where)} · ${f.canWrite ? "you can add trips" : "you can only open its trips, not add or change them"}</div>
+      <div class="hint" title="${esc(where)}">${esc(where)} · ${f.canWrite ? "you can add trips" : f.discover ? "each trip's folder decides what you can change" : "you can only open its trips, not add or change them"}</div>
+      <label class="sync-discover" title="For a folder that holds one folder per trip. Only one level down is looked at."><input type="checkbox" data-discover${f.discover ? " checked" : ""}> Also find trips in the folders inside it</label>
       ${f.error ? `<div class="error-text">${icon("warn")} ${esc(f.error)}</div>` : ""}</div>
     <span class="set-inline">${local || dbx ? "" : `<a class="icon-btn" href="https://drive.google.com/drive/folders/${encodeURIComponent(f.id)}" target="_blank" rel="noopener" title="Open in Drive">${icon("external")}</a>`}
       <button type="button" class="icon-btn" data-rename title="Rename">${icon("pencil")}</button><button type="button" class="icon-btn" data-remove title="Stop syncing with this folder">${icon("trash")}</button></span></div>`;
@@ -100,6 +102,13 @@ function wire(main: HTMLElement, again: () => void) {
       const label = await askText({ title: "Rename folder", text: "Its name in the app (in Drive it stays as it is).", value: f?.label || "", ok: "Rename", required: true });
       if (!label) return;
       setSyncStatus(await post("/api/sync/folders/rename", { id, label })); again();
+    };
+    const discover = row.querySelector<HTMLInputElement>("[data-discover]")!;
+    discover.onchange = async () => {
+      const on = discover.checked;
+      if (!on && !await askConfirm({ title: "Stop looking in the folders inside?", text: `Trips whose file is in a folder inside “${f?.label}” stop syncing there. The files and the copies on this computer stay.`, ok: "Stop looking" })) { discover.checked = true; return; }
+      try { setSyncStatus(await post("/api/sync/folders/discover", { id, on })); } catch (e) { toast((e as Error).message); }
+      again();
     };
     row.querySelector<HTMLButtonElement>("[data-remove]")!.onclick = async () => {
       if (!await askConfirm({ title: `Stop syncing with “${f?.label}”?`, text: "Its trips stay in the folder in Drive, and the copies on this computer stay too: they just stop syncing there.", ok: "Stop syncing", danger: true })) return;

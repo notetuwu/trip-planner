@@ -63,7 +63,7 @@ export function planProblems(it: Itinerary): Problem[] {
 }
 
 /** Places on more than one day, leaving out those the travelers marked fine to repeat. */
-export const planDuplicates = (it: Itinerary) => findDuplicates(it, new Set((state.okRepeats || []).map((r) => r.key)));
+export const planDuplicates = (it: Itinerary) => findDuplicates(it, new Set((state.okRepeats || []).map((r) => r.key)), state.stays);
 
 /** Marks a repeated place as fine ("name" as shown to them) or, with ok false, as a duplicate again. */
 export function setRepeatOk(key: string, name: string, ok: boolean) {

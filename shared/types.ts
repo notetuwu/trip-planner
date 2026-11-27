@@ -271,6 +271,23 @@ export interface GeminiModelUse { model: string; requests: number; tokens: numbe
 
 /** GET /api/usage: a warning that a model's usage is critical (warn: nearly there; out: used up). */
 export interface UsageNotice { level: "warn" | "out"; text: string; resetsAt?: number; url?: string }
+/** One limit and how much of it is used (percent, 0-100). model: it only counts for that model ("opus"); near: the
+ *  service itself calls it close. */
+export interface UsageLimit { name: string; percent: number; resetsAt?: number; model?: string; near?: boolean }
+/** GET /api/usage: the warning, and for Claude (plan or API key) the limits shown under the Model menu. */
+export interface UsageInfo {
+  notice: UsageNotice | null;
+  limits?: {
+    /** "Pro plan", "Anthropic API, per minute at the last request". */
+    title: string;
+    list: UsageLimit[];
+    /** Paid usage beyond the plan: money spent of the monthly cap. */
+    extra?: { used: number; cap: number; currency: string };
+    /** Said instead of a list when nothing is known yet. */
+    note?: string;
+    url: string;
+  };
+}
 
 /** A model reached with an API key; id is "api|<provider>|<model>". */
 export interface CloudModel {
@@ -369,6 +386,8 @@ export interface SyncFolder {
   name: string;
   /** The account may add and change files in it (otherwise trips there can only be opened). */
   canWrite: boolean;
+  /** Also look for trip files in the folders directly inside it (one folder per trip). Off unless ticked. */
+  discover?: boolean;
   /** For a folder on this computer: what carries it elsewhere ("OneDrive", "Network drive"…, or "Only on this computer"). */
   kind?: string;
   error?: string;
@@ -377,6 +396,10 @@ export interface SyncFolder {
 /** How a saved trip syncs, for Your trips. */
 export interface TripSyncInfo {
   folders: string[];
+  /** By sync folder: the folder inside it that the trip's file is in (none for one at its top). */
+  inside: Record<string, string>;
+  /** Sync folders that hold this trip's file without it syncing there (offered again in its sync panel). */
+  found: string[];
   share: TripShare | null;
   /** The signed-in account shared it (or it isn't shared yet). */
   mine: boolean;
@@ -384,7 +407,59 @@ export interface TripSyncInfo {
   canEdit: boolean;
   /** Changed here and in Drive since the last sync: the person picks which to keep. */
   conflicts: { folder: string; by: string; at: string }[];
+  /** The trip's file went into another folder inside a sync folder, which more people may open: paused until the person
+   *  says. at: that folder's id ("" the sync folder's top), where: its name. */
+  moved?: { folder: string; at: string; where: string }[];
   error?: string;
+}
+
+/** Where in a sync folder with a folder per trip a newly added trip goes: onto the copy already there, into a folder
+ *  inside it, into a new one (limit: Drive's limited access), or at its top. Always the person's choice. */
+export type SyncPlace = { file: string } | { sub: string } | { create: string; limit: boolean } | { top: true };
+/** The choices for one such folder. */
+export interface SyncPlaces {
+  /** The account may add to the top folder (and so make folders there). */
+  topWrite: boolean;
+  /** limited: Drive only. trips: the trip files already in it. */
+  folders: { id: string; name: string; canWrite: boolean; limited?: boolean; /** Seen, but this account can't open it. */ noAccess?: boolean; trips: string[] }[];
+  /** Copies of this trip already there ("" sub: at the top); with any, one of them has to be chosen. */
+  matches: { fileId: string; name: string; sub: string; subId: string }[];
+}
+
+/** What someone may do in a Drive folder. "fileOrganizer" (content manager) and "organizer" (manager) are shared drives'. */
+export type AccessRole = "reader" | "commenter" | "writer" | "fileOrganizer" | "organizer";
+/** One person, group, organisation or "anyone with the link" on a Drive folder. */
+export interface AccessEntry {
+  id: string;
+  type: "user" | "group" | "domain" | "anyone";
+  role: AccessRole | "owner";
+  name: string;
+  email: string;
+  domain: string;
+  /** The signed-in account. */
+  me: boolean;
+  /** Only comes from a folder further up (or the shared drive): changed there. */
+  inherited: boolean;
+  /** On a folder with limited access: they have it above, but here only see that the folder exists. */
+  shutOut: boolean;
+  /** When it ends, if Google set an end. */
+  until?: string;
+}
+/** Who has access to a Drive folder, and what this account may do about it. */
+export interface FolderAccess {
+  id: string;
+  name: string;
+  canManage: boolean;
+  sharedDrive: boolean;
+  driveRoot: boolean;
+  /** Limited access: access from the folders above doesn't open this one. */
+  limited: boolean;
+  /** This account may turn that on or off. */
+  canLimit: boolean;
+  /** The roles that can be given here. */
+  roles: AccessRole[];
+  /** null: this account isn't told who else has access. */
+  people: AccessEntry[] | null;
 }
 
 export interface SyncStatus {
@@ -423,6 +498,8 @@ export interface SyncStatus {
 
 /** A trip in a sync folder that isn't on this computer yet. */
 export interface RemoteTripCard extends TripCard {
+  /** The folder inside the sync folder it's in, if it's not at its top. */
+  inner?: string;
   folder: string;
   fileId: string;
   by: string;

@@ -1,7 +1,11 @@
 // The chat's usage warnings: Claude Code's plan limits from its rate_limit_event, OpenRouter's key limit and credit,
 // and what Anthropic's and OpenAI's answers say (a per-minute limit nearly used, credit run out).
-import { describe, expect, it } from "vitest";
-import { noteClaudeLimit, noteResponse, openRouterUsage, usageNotice } from "../server/ai/usage-notices";
+import { describe, expect, it, vi } from "vitest";
+import { readPlanUsage } from "../server/ai/claude-usage";
+import { noteClaudeLimit, noteResponse, openRouterUsage, planNotice, usageInfo, usageNotice } from "../server/ai/usage-notices";
+
+// The installed CLI isn't asked here: only what it reports while answering is known.
+vi.mock("../server/ai/claude-usage", async (original) => ({ ...await original<object>(), claudePlanUsage: async () => null }));
 
 describe("usage warnings", () => {
   it("warns about a Claude plan limit once it's critical, and stops when it's fine again", async () => {
@@ -16,6 +20,32 @@ describe("usage warnings", () => {
     noteClaudeLimit({ status: "allowed", rateLimitType: "seven_day" });
     expect(await usageNotice("sonnet")).toBeNull();
     expect(await usageNotice("local|ollama|http://x|m")).toBeNull();
+  });
+
+  it("reads the plan's limits as the CLI answers them, and warns about the fullest one that counts", () => {
+    const answer = (weekly: number, extra?: object) => ({ subscription_type: "pro", rate_limits_available: true, rate_limits: {
+      limits: [
+        { kind: "session", group: "session", percent: 29, severity: "normal", resets_at: "2027-01-01T10:00:00.043896+00:00" },
+        { kind: "weekly_all", group: "weekly", percent: weekly, severity: "normal", resets_at: "2027-01-05T17:00:00.043920+00:00" },
+        { kind: "weekly_scoped", group: "weekly", percent: 99, severity: "critical", scope: { model: { display_name: "Opus" } } },
+      ],
+      extra_usage: extra,
+    } });
+    const u = readPlanUsage(answer(94))!;
+    expect(u.limits[1]).toEqual({ name: "weekly limit", percent: 94, resetsAt: Date.parse("2027-01-05T17:00:00Z") });
+    expect(planNotice(u, "sonnet")?.text).toBe("You've used 94% of your Claude weekly limit");
+    expect(planNotice(u, "default")?.text).toBe("You've used 99% of your Claude weekly Opus limit");
+    expect(planNotice(readPlanUsage(answer(40))!, "sonnet")).toBeNull();
+    expect(planNotice(readPlanUsage(answer(100))!, "sonnet")?.level).toBe("out");
+    const paid = readPlanUsage(answer(100, { is_enabled: true, monthly_limit: 8500, used_credits: 1883, decimal_places: 2, currency: "EUR" }))!;
+    expect(planNotice(paid, "sonnet")).toMatchObject({ level: "warn", text: "You've reached your Claude weekly limit; now on extra usage (€18.83 of €85.00 spent)" });
+    expect(readPlanUsage({ rate_limits_available: false, rate_limits: null })).toBeNull();
+  });
+
+  it("shows Anthropic's per-minute limits from its last answer", async () => {
+    const h = (what: string, left: number) => ({ [`anthropic-ratelimit-${what}-limit`]: "100", [`anthropic-ratelimit-${what}-remaining`]: String(left) });
+    await noteResponse("anthropic", new Response("{}", { headers: { ...h("requests", 98), ...h("tokens", 60), ...h("input-tokens", 70), ...h("output-tokens", 90) } }));
+    expect((await usageInfo("api|anthropic|claude")).limits?.list).toEqual([{ name: "requests", percent: 2 }, { name: "input tokens", percent: 30 }, { name: "output tokens", percent: 10 }]);
   });
 
   it("warns about an OpenRouter key's limit or low credit", () => {

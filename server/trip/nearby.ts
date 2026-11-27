@@ -9,19 +9,40 @@ export interface NearbyList { city: string; sights: NearbyPlace[]; food: NearbyP
 
 const FOOD = ["restaurant", "cafe", "biergarten", "ice_cream", "fast_food", "bar", "pub"];
 
-/** The most useful places: well-known sights first; for food, places matching the travelers' diet if they mention one. */
-function rankNearby(elements: OsmElement[], interests: string) {
+/** Tags that make a place a sight, whatever else it's filed as (a famous church is also a "place of worship"). */
+const SIGHT_KINDS = ["museum", "castle", "palace", "attraction", "zoo", "aquarium"];
+const SIGHTS = 30;
+
+/** How well known a place is: famous ones carry their name in many languages. */
+const names = (t: Record<string, string>) => Object.keys(t).filter((k) => k.startsWith("name:")).length;
+
+/**
+ * Two well-known sights, then a lesser-known one (no Wikipedia article, known in few languages), and so on, so the
+ * landmarks and the hidden gems both make a list however long it's cut. Where one kind runs out the other fills up.
+ */
+function mixed<T extends { known: boolean }>(ranked: T[], n: number) {
+  const known = ranked.filter((p) => p.known), gems = ranked.filter((p) => !p.known), out: T[] = [];
+  while (out.length < n && (known.length || gems.length)) {
+    const from = (out.length % 3 === 2 ? gems.length : !known.length) ? gems : known;
+    out.push(from.shift()!);
+  }
+  return out;
+}
+
+/** The most useful places: well-known sights and hidden gems; for food, places matching the travelers' diet if they
+ *  mention one. */
+export function rankNearby(elements: OsmElement[], interests: string) {
   const diet = /vegan/i.test(interests) ? "diet:vegan" : /vegetarian/i.test(interests) ? "diet:vegetarian" : null;
   const gf = /gluten/i.test(interests);
-  const seen = new Set<string>(), sights: (NearbyPlace & { score: number })[] = [], food: typeof sights = [];
+  const seen = new Set<string>(), sights: (NearbyPlace & { score: number; fame: number; known: boolean })[] = [], food: typeof sights = [];
   for (const e of elements) {
     const t = e.tags || {}, c = e.center || e;
     // Some names carry the height ("Scheidegger Wasserfälle (695m)"), which reads like a distance in the plan.
     const name = String(t.name || "").replace(/\s*\(\s*\d[\d.,]*\s*m\s*\)\s*$/i, "").trim();
     if (!name || c.lat == null || seen.has(name)) continue;
     seen.add(name);
-    const kind = t.amenity || t.tourism || t.historic || t.leisure || "place";
     const isFood = FOOD.includes(t.amenity);
+    const kind = (!isFood && [t.tourism, t.historic].find((k) => SIGHT_KINDS.includes(k))) || t.amenity || t.tourism || t.historic || t.leisure || "place";
     const extras = [
       t.cuisine && t.cuisine.replace(/;/g, ", "),
       diet && /yes|only/.test(t[diet] || "") && (t[diet] === "only" ? "fully vegan/vegetarian" : "vegan/vegetarian options"),
@@ -29,15 +50,20 @@ function rankNearby(elements: OsmElement[], interests: string) {
     ].filter((x): x is string => !!x);
     let score = (t.wikidata || t.wikipedia ? 4 : 0) + (t.website ? 1 : 0) + (t.opening_hours ? 1 : 0);
     if (isFood) score += (t.amenity === "restaurant" || t.amenity === "cafe" ? 1 : 0) + (extras.some((x) => /options|fully/.test(x)) ? 5 : 0);
-    else score += ["museum", "castle", "palace", "attraction", "zoo", "aquarium"].includes(kind) ? 2 : 0;
+    else score += SIGHT_KINDS.includes(kind) ? 2 : 0;
+    const fame = names(t);
     (isFood ? food : sights).push({
-      name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score,
+      name, kind: kind.replace(/_/g, " "), extras, lat: +c.lat.toFixed(5), lng: +(c.lon ?? 0).toFixed(5), score, fame,
+      known: !!t.wikipedia || fame >= 8,
       ...(t.opening_hours ? { hours: String(t.opening_hours).slice(0, 120) } : {}),
       ...(/^https?:\/\//.test(t.website || t["contact:website"] || "") ? { website: String(t.website || t["contact:website"]).split(";")[0].trim() } : {}),
     });
   }
-  const top = (arr: typeof sights, n: number) => arr.sort((a, b) => b.score - a.score).slice(0, n).map(({ score: _, ...p }) => p);
-  return { sights: top(sights, 30), food: top(food, 30) };
+  const plain = (arr: typeof sights) => arr.map(({ score: _, fame: __, known: ___, ...p }) => p);
+  // Sights: among the well-known the most famous first; among the others the best described.
+  sights.sort((a, b) => Number(b.known) - Number(a.known) || (a.known ? b.fame - a.fame : 0) || b.score - a.score);
+  food.sort((a, b) => b.score - a.score);
+  return { sights: plain(mixed(sights, SIGHTS)), food: plain(food.slice(0, 30)) };
 }
 
 /** For each stay: { city, sights, food }. */

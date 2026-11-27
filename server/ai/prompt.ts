@@ -155,7 +155,7 @@ ${nearby}
 - Never write "MUST SEE" (or "[MUST SEE]") into a stop's name or description: the page marks must-sees itself.
 - "time": the start time in 24-hour "HH:MM" only, nothing else. Items in chronological order with realistic durations, travel time between them and opening hours respected.
 - "transport": how to get there from the previous stop, with mode or line and minutes, e.g. "Tram 1 from Hauptbahnhof, 12 min" or "Walk, 5 min".
-- "where": when a stop's name isn't the place itself (an exhibition, event, show or tour, a shop or restaurant inside a mall or station), the venue's real name and area, as you'd search it on a map, e.g. "Shibuya BEAM, Udagawachō, Shibuya" for "Studio Retro exhibition". The map finds the stop by it. Leave it out when the name is the place.
+- "where": when a stop's name isn't the place itself (an exhibition, event, show or tour, a shop or restaurant inside a mall or station), the venue's real name and area, as you'd search it on a map, e.g. "Shibuya BEAM, Udagawachō, Shibuya" for "Studio Retro exhibition". The map finds the stop by it. Leave it out when the name is the place. On every transfer, give it too: the station, port, terminal, airport or town it arrives at, e.g. "Visby hamnterminal, Visby" for "Nynäshamn → Visby (ferry)".
 - "cost": on every item, for the whole group (0 if free): tickets, meals, fares. The day's "estimatedCost" is the sum of its item costs. Don't pad days to reach the budget. "costPer": "person" when the cost grows with the number of travelers (tickets, meals, fares), "group" when it doesn't (the car, parking, fuel, a taxi, a private tour).
 - "description": ${DETAIL[t.detail]}
 - "kind" on every item: sight, activity, meal, transfer or other. A scenic ride that is an attraction in itself (a cog railway or cable car up a mountain, a boat tour) is an activity, not a transfer.
@@ -221,11 +221,11 @@ ${others}
 ## Days to fix
 ${days.map((i) => JSON.stringify(itinerary.days[i])).join("\n")}
 
-## Problems found by checking the plan against OpenStreetMap
+## Problems found by checking the plan
 ${problems.map((p) => `- ${itinerary.days[p.day]?.date}: ${p.text}`).join("\n")}
 
 ## Fix only these problems
-For each problem, change only that stop: replace a place that isn't where the day is with a real place near that day's town (from the lists above if possible), and move a stop that's closed at the planned time to a time it's open, or swap it with another stop or a similar place. Keep everything else on those days as it is, including where they sleep and any transfer. If a must-see can't be moved to an open time on its day, keep it and say so in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only the ${days.length} day(s) to fix (${days.map((i) => itinerary.days[i].date).join(", ")}), each complete. "summary" is one sentence on what you fixed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly list what you changed.`;
+For each problem, change only that stop: replace a place that isn't where the day is with a real place near that day's town (from the lists above if possible), and move a stop that's closed at the planned time to a time it's open, or swap it with another stop or a similar place. Where something is missing (a meal, too little on a full day), add it with real places near that day's town that aren't in the trip yet. Keep everything else on those days as it is, including where they sleep and any transfer. If a must-see can't be moved to an open time on its day, keep it and say so in the day's notes. This overrides the rule about one entry per calendar day: return the itinerary with "days" containing only the ${days.length} day(s) to fix (${days.map((i) => itinerary.days[i].date).join(", ")}), each complete. "summary" is one sentence on what you fixed; leave out "tips", "holidaysAndEvents" and "unused". Your planning notes briefly list what you changed.`;
 }
 
 /** A change the travelers asked for, to some days only: the other days as context (names only), those days in full,

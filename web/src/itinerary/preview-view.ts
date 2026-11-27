@@ -55,7 +55,7 @@ function parts(): Part[] {
     }
     const stops: Stop[] = [];
     day.items.forEach((x, xi) => {
-      if (x.kind === "transfer" || !onMap(x)) return;
+      if (x.kind === "transfer" || !onMap(x, day)) return;
       const loc = itemLoc(x, day, byTitle), name = cleanStop(x.place);
       if (!loc || loc.elsewhere || NO_PLACE.test(name)) return;
       const key = `${di}-${xi}`;

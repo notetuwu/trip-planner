@@ -21,7 +21,7 @@ import { engineText, switchWindowMode } from "../core/window-mode";
 import { loadKeys, renderKeyRows } from "../generate/keys";
 import { mountGemini } from "./gemini-panel";
 import { MODELS, suggestion } from "../generate/local-guide";
-import { refreshModels } from "../generate/models";
+import { copyModelMenu, refreshModels } from "../generate/models";
 import { mountSearxng } from "./searxng-panel";
 import { creditsHtml } from "./credits";
 import { keyFieldHtml, wireKeyFields } from "./key-field";
@@ -34,7 +34,7 @@ import { loadSyncStatus } from "../saves/sync-client";
 import { askConfirm } from "../core/ask";
 import { markNewSince, setRollback, updateLog } from "./update-log";
 
-interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string }
+interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string; researchModel: string }
 export type ServiceKey = "brave" | "geoapify" | "google";
 interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; serviceKeys?: Record<ServiceKey, KeyStatus>; braveKeySet: boolean; geoapifyKeySet: boolean; googleKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
@@ -546,7 +546,7 @@ function planningHtml() {
         <div class="segs">${seg("detail", "brief", "Brief")}${seg("detail", "normal", "Normal")}${seg("detail", "detailed", "Detailed")}</div></div>
       <div class="set-row"><div><b>Real places per stay</b><div class="hint">How many sights and restaurants from OpenStreetMap the model gets for each stay. Fewer makes a shorter prompt (faster, fits small models); more gives more choice.</div></div>
         <div class="segs">${seg("places", "fewer", "Fewer")}${seg("places", "normal", "Normal")}${seg("places", "more", "More")}</div></div>
-      <div class="set-row"><div><b>Fix rounds</b><div class="hint">With "Fix what the checks find" on: how many times stops in the wrong town or closed at the planned time go back to the model before you see the plan. Each round checks again.</div></div>
+      <div class="set-row"><div><b>Fix rounds</b><div class="hint">With "Fix what the checks find" on: how many times stops in the wrong town or closed at the planned time, repeats, missing meals and thin days go back to the model before you see the plan. Each round checks again.</div></div>
         <div class="segs">${seg("fixRounds", "0", "None")}${seg("fixRounds", "1", "1")}${seg("fixRounds", "2", "2")}</div></div>
     </div>`;
 }
@@ -556,9 +556,11 @@ function searchHtml(all = false) {
   const t = settings!.tune, seg = tuneSeg(t), opt = tuneOpt, k = settings?.serviceKeys;
   return `
     <h3>Search &amp; places</h3>
-    <p class="hint set-intro">Used when the planner searches the web itself: for local models, and for Gemini where Google Search isn't included. Claude and the other cloud models use their own search. Keys here stay on this computer.</p>
+    <p class="hint set-intro">Used when the planner searches the web itself: for a research model chosen here, for local models, and for Gemini where Google Search isn't included. Otherwise Claude and the other cloud models use their own search. Keys here stay on this computer.</p>
     <div class="set-card">
       <b class="card-title">${icon("search")} Web search</b>
+      <div class="set-row"><div><b>Research model</b><div class="hint">Which model looks things up before a plan, with "Research online" on. It gets the towns, dates, must-sees, interests and what you want to see, not your notes, names or start address; the planning model gets what it found. Automatic: the planning model researches (on Gemini's free tier, a Flash Lite model does it for Gemini).</div></div>
+        <select id="tuneResearch"></select></div>
       <div class="set-row"><div><b>Search engine</b><div class="hint">Automatic uses Brave or SearXNG when set up, otherwise DuckDuckGo (which often shows a bot check after a few searches), then Wikipedia and Wikivoyage.</div></div>
         <div class="segs">${seg("search", "auto", "Automatic")}${seg("search", "brave", "Brave")}${seg("search", "searxng", "SearXNG")}</div></div>
       ${t.search !== "searxng" || all ? `<div class="kf-list kf-svc">${serviceKeyField("brave", k?.brave)}</div>` : ""}
@@ -620,10 +622,26 @@ function renderPlanning() {
   wireTune(renderPlanning);
 }
 
+/** The Gemini and local models of the planning menu, which can research for any planning model. */
+function fillResearchModels() {
+  const pick = document.querySelector<HTMLSelectElement>("#tuneResearch");
+  if (!pick) return;
+  const now = settings!.tune.researchModel;
+  copyModelMenu(pick, now);
+  pick.querySelectorAll("option").forEach((o) => { if (o.value && !/^(api\|gemini\||local\|)/.test(o.value)) o.remove(); });
+  pick.querySelectorAll("optgroup").forEach((g) => { if (!g.children.length) g.remove(); });
+  pick.options[0].textContent = "Automatic";
+  // A chosen model that isn't offered right now (its server isn't running) stays chosen.
+  if (now && pick.value !== now) { pick.add(new Option(`${now.split("|").at(-1)} (not available now)`, now)); pick.value = now; }
+  delete pick.dataset.html;
+  pick.onchange = () => saveTune({ researchModel: pick.value });
+}
+
 function renderSearch() {
   if (!settings?.tune) { $("#setMain").innerHTML = `<p class="hint">Loading…</p>`; return; }
   $("#setMain").innerHTML = searchHtml();
   wireTune(renderSearch);
+  fillResearchModels();
   wireServiceKeys($("#setMain"), (s) => { settings = s; if (tab === "search" && !find) renderSearch(); });
   document.querySelector<HTMLButtonElement>("#searxngSave")?.addEventListener("click", async () => {
     settings = await api<Settings>("/api/settings", { method: "POST", body: JSON.stringify({ searxngUrl: $<HTMLInputElement>("#searxngUrl").value.trim() }) });

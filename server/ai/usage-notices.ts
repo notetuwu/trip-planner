@@ -1,14 +1,15 @@
 // Warnings that a model's usage is getting critical, shown above the trip chat's message box (GET /api/usage). Only
 // what each service tells is known:
-//  - Claude Code: the CLI reports the plan's limits as it answers (rate_limit_event): how much of the 5-hour or weekly
-//    limit is used, and when it resets.
+//  - Claude Code: the plan's limits, as its /usage shows them (claude-usage.ts); where the CLI can't be asked, what it
+//    reports as it answers (rate_limit_event).
 //  - Google Gemini: today's requests against the model's daily limit (gemini.ts).
 //  - OpenRouter: the key's own spending limit and the account's credit (asked, at most once a minute).
 //  - Anthropic and OpenAI have no way to ask a normal key for its credit or spending: what their answers say is noted,
-//    a per-minute limit almost used up (headers), and credit that ran out (the error).
+//    the per-minute limits (headers), and credit that ran out (the error).
 // Local models have no limits.
-import type { CloudProvider, UsageNotice } from "../../shared/types";
+import type { CloudProvider, UsageInfo, UsageLimit, UsageNotice } from "../../shared/types";
 import { getKey, PROVIDERS } from "../keys";
+import { type PlanUsage, claudePlanUsage, forgetPlanUsage } from "./claude-usage";
 import { geminiNotice } from "./gemini";
 
 /** From this share of a limit used, it's worth saying. */
@@ -24,10 +25,26 @@ const LIMIT_NAMES: Record<string, string> = {
   five_hour: "5-hour limit", seven_day: "weekly limit", seven_day_opus: "weekly Opus limit", seven_day_sonnet: "weekly Sonnet limit", overage: "extra usage",
 };
 const claude = new Map<string, UsageNotice>();
+const CLAUDE_USAGE = "https://claude.ai/settings/usage";
+const money = (n: number, currency = "USD") => new Intl.NumberFormat("en", { style: "currency", currency }).format(Math.max(0, n));
+
+/** The warning from the plan's limits: the fullest one that counts for this model, once it's critical. */
+export function planNotice(u: PlanUsage, model: string): UsageNotice | null {
+  // "default" could be any model; a limit of another model doesn't concern "opus" or "sonnet".
+  const mine = u.limits.filter((l) => !l.model || model === "default" || l.model.includes(model));
+  const critical = mine.filter((l) => l.near || l.percent >= CRITICAL * 100).sort((a, b) => b.percent - a.percent);
+  const l = critical[0];
+  if (!l) return null;
+  if (l.percent < 100) return { level: "warn", text: `You've used ${Math.floor(l.percent)}% of your Claude ${l.name}`, resetsAt: l.resetsAt, url: CLAUDE_USAGE };
+  // Used up, but extra usage carries on where it's on and has money left.
+  const x = u.extra && !u.extra.reached && u.extra.used < u.extra.cap ? u.extra : null;
+  return { level: x ? "warn" : "out", text: `You've reached your Claude ${l.name}${x ? `; now on extra usage (${money(x.used, x.currency)} of ${money(x.cap, x.currency)} spent)` : ""}`, resetsAt: l.resetsAt, url: CLAUDE_USAGE };
+}
 
 /** A "rate_limit_event" line of the Claude Code CLI's stream. */
 export function noteClaudeLimit(info: any) {
   if (!info || typeof info !== "object") return;
+  forgetPlanUsage();
   const type = String(info.rateLimitType || "plan"), name = LIMIT_NAMES[type] || "plan limit";
   // A share (0-1), or a percentage.
   const raw = Number(info.utilization), used = Number.isFinite(raw) ? (raw > 1 ? raw / 100 : raw) : undefined;
@@ -37,7 +54,7 @@ export function noteClaudeLimit(info: any) {
   claude.set(type, {
     level: out ? "out" : "warn", resetsAt: Number.isFinite(at) && at > 0 ? (at < 1e12 ? at * 1000 : at) : undefined,
     text: out ? `You've reached your Claude ${name}` : used != null ? `You've used ${Math.round(used * 100)}% of your Claude ${name}` : `You're close to your Claude ${name}`,
-    url: "https://claude.ai/settings/usage",
+    url: CLAUDE_USAGE,
   });
 }
 function claudeNotice(): UsageNotice | null {
@@ -50,6 +67,8 @@ function claudeNotice(): UsageNotice | null {
 
 const outOfCredit = new Map<CloudProvider, UsageNotice>();
 const nearMinute = new Map<CloudProvider, UsageNotice>();
+/** Anthropic's per-minute limits as its last answer gave them. */
+let anthropicMinute: UsageLimit[] = [];
 
 /** "6m0s", "1.2s", "450ms" or a date: when, in ms from now on. */
 function resetTime(text: string | null): number {
@@ -70,12 +89,18 @@ export async function noteResponse(provider: CloudProvider, res: Response) {
       outOfCredit.set(provider, { level: "out", text: `Your ${name} credit or spending limit is used up`, url });
     }
   }
-  for (const what of ["requests", "tokens"]) {
+  const minute: UsageLimit[] = [];
+  for (const what of provider === "anthropic" ? ["requests", "tokens", "input-tokens", "output-tokens"] : ["requests", "tokens"]) {
     const h = (kind: string) => res.headers.get(provider === "anthropic" ? `anthropic-ratelimit-${what}-${kind}` : `x-ratelimit-${kind}-${what}`);
     const limit = Number(h("limit")), left = h("remaining");
-    if (!limit || left == null || Number(left) / limit > 1 - CRITICAL) continue;
-    nearMinute.set(provider, { level: "warn", text: `${name}: ${Math.round((1 - Number(left) / limit) * 100)}% of your ${what} per minute used`, resetsAt: resetTime(h("reset")) });
+    if (!limit || left == null) continue;
+    const label = what.replace("-", " "), percent = Math.round((1 - Number(left) / limit) * 100);
+    minute.push({ name: label, percent });
+    if (Number(left) / limit > 1 - CRITICAL) continue;
+    nearMinute.set(provider, { level: "warn", text: `${name}: ${percent}% of your ${label} per minute used`, resetsAt: resetTime(h("reset")) });
   }
+  // (The total "tokens" repeats the input and output ones where those are given.)
+  if (provider === "anthropic" && minute.length) anthropicMinute = minute.some((l) => l.name === "input tokens") ? minute.filter((l) => l.name !== "tokens") : minute;
 }
 
 /** fetch that notes what the provider's answer says about its limits. */
@@ -88,7 +113,6 @@ export const watchedFetch = (provider: CloudProvider) => async (input: string | 
 // ---- OpenRouter's key and credit ----
 
 let router: { at: number; key: string; notice: UsageNotice | null } | null = null;
-const money = (n: number) => `$${Math.max(0, n).toFixed(2)}`;
 
 /** The key's spending limit, then the account's credit (where the key may read it), whichever is critical. */
 export function openRouterUsage(keyInfo: any, credits: any): UsageNotice | null {
@@ -122,7 +146,10 @@ async function openRouterNotice(): Promise<UsageNotice | null> {
 /** The warning for a model's id (as in the Model menu), or null while nothing is critical. */
 export async function usageNotice(modelId: string): Promise<UsageNotice | null> {
   if (modelId.startsWith("local|")) return null;
-  if (!modelId.startsWith("api|")) return claudeNotice();
+  if (!modelId.startsWith("api|")) {
+    const plan = await claudePlanUsage();
+    return plan ? planNotice(plan, modelId) : claudeNotice();
+  }
   const [, provider, ...rest] = modelId.split("|") as [string, CloudProvider, ...string[]];
   if (provider === "gemini") return geminiNotice(rest.join("|"));
   const out = outOfCredit.get(provider);
@@ -132,4 +159,18 @@ export async function usageNotice(modelId: string): Promise<UsageNotice | null> 
   const near = nearMinute.get(provider);
   if (near && near.resetsAt! <= Date.now()) { nearMinute.delete(provider); return null; }
   return near || null;
+}
+
+/** The warning, and what's known of Claude's limits (for the lines under the Model menu). */
+export async function usageInfo(modelId: string): Promise<UsageInfo> {
+  const notice = await usageNotice(modelId);
+  if (modelId.startsWith("api|anthropic|")) {
+    return { notice, limits: { title: "Anthropic API, per minute at the last request", list: anthropicMinute, url: BILLING.anthropic!,
+      ...(anthropicMinute.length ? {} : { note: "limits show after the first request" }) } };
+  }
+  if (modelId.startsWith("api|") || modelId.startsWith("local|")) return { notice };
+  const plan = await claudePlanUsage();
+  if (!plan) return { notice };
+  const name = plan.plan ? `${plan.plan[0].toUpperCase()}${plan.plan.slice(1)} plan` : "Claude plan";
+  return { notice, limits: { title: name, list: plan.limits, ...(plan.extra ? { extra: plan.extra } : {}), url: CLAUDE_USAGE } };
 }

@@ -4,6 +4,9 @@ import { apiFetch } from "./dom";
 
 export interface Live { status: string; tokens: number; seconds: number; reasoning: string; thinking?: string }
 
+/** Gemini's count can't be read while it answers, so none is shown for it. */
+export const liveTokens = (model: unknown) => !String(model || "").startsWith("api|gemini|");
+
 /** `signal` cancels it (the server notices the closed connection and stops too). */
 export async function streamRequest<T>(url: string, body: unknown, onUpdate: (live: Live) => void, signal?: AbortSignal): Promise<T> {
   const live: Live = { status: "Starting…", tokens: 0, seconds: 0, reasoning: "" };
@@ -27,7 +30,7 @@ export async function streamRequest<T>(url: string, body: unknown, onUpdate: (li
         if (ev.type === "error") throw new Error(ev.error);
         if (ev.type === "done") return ev.result as T;
         if (ev.type === "status") live.status = ev.text;
-        if (ev.type === "tokens") live.tokens = ev.n;
+        if (ev.type === "tokens" && liveTokens((body as { model?: unknown })?.model)) live.tokens = ev.n;
         if (ev.type === "reasoning") live.reasoning = ev.text;
         if (ev.type === "thinking") live.thinking = ev.text;
         onUpdate(live);

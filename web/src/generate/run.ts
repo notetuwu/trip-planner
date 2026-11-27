@@ -13,7 +13,8 @@ import { drawMap } from "../map/draw";
 import { renderTripTitle } from "../trip/title";
 import { setMapStatus } from "../map/status";
 import { type Problem, checksSettled, planProblems, quickFixes } from "./autofix";
-import { streamRequest } from "../core/progress";
+import { planGaps } from "../itinerary/gaps";
+import { liveTokens, streamRequest } from "../core/progress";
 import { byTitleMap, daySegments, exactPoi } from "../geo/item-loc";
 import { addDays } from "../core/format";
 import { isLocal, modelLabel } from "./models";
@@ -59,7 +60,7 @@ function spliceFixed(current: Itinerary, data: RunResult, view: ProgressView, co
   }
   current.totalEstimatedCost = current.days.reduce((n, d) => n + (Number(d.estimatedCost) || 0), 0);
   const meta = state.meta || {};
-  const what = label || `Fixed ${count} problem${count > 1 ? "s" : ""} the map checks found`;
+  const what = label || `Fixed ${count} problem${count > 1 ? "s" : ""} the checks found`;
   const notes = `\n\n**${what}${data.itinerary.summary ? `:** ${data.itinerary.summary}` : ":**"}`
     + (data.reasoning ? `\n\n${data.reasoning}` : "");
   state.meta = { ...meta, reasoning: (meta.reasoning || "") + notes, pois: [...(meta.pois || []), ...view.collected.pois],
@@ -75,28 +76,83 @@ async function request(trip: TripRequest, view: ProgressView, signal: AbortSigna
   return data;
 }
 
-/** Before a fresh plan is shown: check it against the map and opening hours, and have the model fix what the checks
- *  find (one round), so the plan you get is already fixed. Anything left shows the Fix bar, which runs only on a click. */
+/** Gemini's bigger models have only a few requests a day (on the free tier), so everything to fix goes in one. */
+const fewRequests = (model: string) => /^api\|gemini\|(?!.*lite)/.test(model);
+/** The most days sent back to a model at once, so a long trip's fixes don't outgrow a small model's answer. */
+const fixDays = (model: string) => (fewRequests(model) ? Infinity : 7);
+
+/** A fix request to the planning model; when a Gemini model can't take it (its requests used up, say), once more with
+ *  Gemini Auto, which picks a model that has requests left. */
+async function requestFix(trip: TripRequest, view: ProgressView, signal: AbortSignal) {
+  try { return await request(trip, view, signal); }
+  catch (e) {
+    const model = String(trip.model);
+    if ((e as Error).name === "AbortError" || !model.startsWith("api|gemini|") || model === "api|gemini|auto") throw e;
+    view.onEvent({ type: "status", text: `${modelLabel(model)} couldn't fix it; trying another Gemini model…` });
+    return request({ ...trip, model: "api|gemini|auto" }, view, signal);
+  }
+}
+
+/** Sends the problems' days back to the model, a few days at a time; false when it couldn't (the plan stays as it was
+ *  from there on, and says so above the days). */
+async function fixProblems(it: Itinerary, problems: Problem[], view: ProgressView, signal: AbortSignal, status: string) {
+  const days = [...new Set(problems.map((p) => p.day))].sort((a, b) => a - b);
+  const most = fixDays(state.model);
+  if (state.meta) delete state.meta.unfixed;
+  for (let i = 0; i < days.length; i += most) {
+    if (signal.aborted) return false;
+    const these = new Set(days.slice(i, i + most)), batch = problems.filter((p) => these.has(p.day));
+    const part = days.length > most ? ` (${i / most + 1} of ${Math.ceil(days.length / most)})` : "";
+    view.onEvent({ type: "status", text: `${status}${part}…` });
+    const trip = { ...tripRequest({ fix: { itinerary: it, problems: batch } }), research: false };
+    try { spliceFixed(it, await requestFix(trip, view, signal), view, batch.length); }
+    catch (e) {
+      if ((e as Error).name === "AbortError") throw e;
+      const left = problems.filter((p) => days.indexOf(p.day) >= i).length;
+      state.meta = { ...state.meta, unfixed: `This plan isn't finished: ${left} problem${left > 1 ? "s" : ""} the checks found (closed places, repeats, missing meals or thin days) couldn't be fixed. ${(e as Error).message.split("\n")[0].slice(0, 300)}` };
+      return false;
+    }
+  }
+  return true;
+}
+
+/** Meals and full days the plan came back without. */
+const gaps = (it: Itinerary): Problem[] => planGaps(it, state.stays, state.pace || "");
+
+/** Looks the plan's stops up and returns what's wrong or missing; null when cancelled or the plan changed. */
+async function checkPlan(it: Itinerary, view: ProgressView, signal: AbortSignal, status: string) {
+  view.onEvent({ type: "status", text: status });
+  geocodeItems();
+  const settled = await checksSettled(it, 120_000);
+  setMapStatus("");
+  if (!settled || signal.aborted) return null;
+  // A stop just before it opens moves to the opening time by itself; only what's left goes to the model.
+  if (quickFixes(it)) { save(); await checksSettled(it, 30_000); }
+  return [...planProblems(it), ...gaps(it)];
+}
+
+/** Before a fresh plan is shown: check it against the map and opening hours, and for missing meals, thin days and
+ *  repeats, and have the model fix what the checks find, so the plan you get is already fixed. Wrong or closed places
+ *  and repeats that are left show the Fix bar, which runs only on a click. */
 async function fixBeforeShowing(it: Itinerary, view: ProgressView, signal: AbortSignal) {
   if (state.autoFix === false) return;
   // Settings → Planning: how many rounds (each checks again what the last fix changed).
   const rounds = prefs.fixRounds;
   for (let round = 1; round <= rounds; round++) {
-    view.onEvent({ type: "status", text: `Checking the plan against the map and opening hours${round > 1 ? " again" : ""}…` });
-    geocodeItems();
-    const settled = await checksSettled(it, 120_000);
-    setMapStatus("");
-    if (!settled || signal.aborted) return;
-    // A stop just before it opens moves to the opening time by itself; only what's left goes to the model.
-    if (quickFixes(it)) { save(); await checksSettled(it, 30_000); }
-    const problems = planProblems(it);
+    const problems = await checkPlan(it, view, signal, `Checking the plan against the map and opening hours${round > 1 ? " again" : ""}…`);
+    if (!problems) return;
     if (!problems.length) break;
-    view.onEvent({ type: "status", text: `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found (wrong town or closed)${rounds > 1 ? `, round ${round} of ${rounds}` : ""}…` });
-    const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
-    try { spliceFixed(it, await request(trip, view, signal), view, problems.length); }
-    catch (e) { if ((e as Error).name === "AbortError") throw e; break; /* keep the plan as it was; the Fix bar offers it again */ }
+    const status = `Fixing ${problems.length} problem${problems.length > 1 ? "s" : ""} the checks found${rounds > 1 ? `, round ${round} of ${rounds}` : ""}`;
+    if (!await fixProblems(it, problems, view, signal, status)) break; // the Fix bar offers it again
   }
-  if (state.hoursOnline && !signal.aborted) await checkHoursOnline(it, view, signal);
+  if (!state.hoursOnline || signal.aborted) return;
+  await checkHoursOnline(it, view, signal);
+  if (signal.aborted) return;
+  // The days rewritten for their opening hours can hold a new closed place, a repeat or lack a meal: everything is
+  // checked once more.
+  const again = await checkPlan(it, view, signal, "Checking the rewritten days again…");
+  if (again && !again.length) delete state.meta?.unfixed;
+  if (again?.length) await fixProblems(it, again, view, signal, `Fixing ${again.length} problem${again.length > 1 ? "s" : ""} left after the opening hours`);
 }
 
 /** Stops worth checking online: real places (not transfers, the hotel or "Lunch in town") whose opening hours
@@ -138,6 +194,12 @@ async function checkHoursOnline(it: Itinerary, view: ProgressView, signal: Abort
     list.push({ day: s.di, text: `"${s.place}" at ${x.time || "?"} on ${weekday}: found online: ${found[i]}. If it's closed at that time on that weekday, move it to when it's open (or swap it with another stop that day, or a similar place that's open); if it's open or the results don't say, leave it exactly as it is.` });
     byStay.set(stayOf(d.date), list);
   });
+  // A model with few requests a day gets every stay's days at once.
+  if (fewRequests(state.model) && byStay.size > 1) {
+    const all = [...byStay.values()].flat();
+    byStay.clear();
+    byStay.set(-1, all);
+  }
   let k = 0;
   for (const [si, problems] of byStay) {
     if (signal.aborted) return;
@@ -145,7 +207,7 @@ async function checkHoursOnline(it: Itinerary, view: ProgressView, signal: Abort
     const where = state.stays[si]?.city || "the trip";
     view.onEvent({ type: "status", text: `Checking ${where}'s days against the opening hours found online (${k} of ${byStay.size})…` });
     const trip = { ...tripRequest({ fix: { itinerary: it, problems } }), research: false };
-    try { spliceFixed(it, await request(trip, view, signal), view, problems.length, `Checked ${where} against opening hours found online`); }
+    try { spliceFixed(it, await requestFix(trip, view, signal), view, problems.length, `Checked ${where} against opening hours found online`); }
     catch (e) { if ((e as Error).name === "AbortError") throw e; }
   }
 }
@@ -174,16 +236,16 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     box.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   const view = showProgress({ into: box,
-    who: modelLabel(state.model), local: isLocal(state.model), onCancel: () => abort.abort(),
+    who: modelLabel(state.model), local: isLocal(state.model), tokens: liveTokens(state.model), onCancel: () => abort.abort(),
     doing: redo ? `re-planning ${fmtDate(redo.itinerary.days[redo.day]?.date || "")}` : edit ? `changing ${editWhat}`
-      : fix ? `fixing ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""} the map checks found (wrong town or closed)` : change.revise ? "revising your trip" : "planning your trip",
+      : fix ? `fixing ${fix.problems.length} problem${fix.problems.length > 1 ? "s" : ""} the checks found` : change.revise ? "revising your trip" : "planning your trip",
     expectedDays: redo ? 1 : edit ? editDays.length : fix ? new Set(fix.problems.map((p) => p.day)).size : change.revise ? change.revise.itinerary.days.length : state.stays.reduce((n, s) => n + (+s.nights || 0), 0) + 1,
   });
   try {
     const data = await request(trip, view, abort.signal);
     setInlineProgress(null);
     if (redo && state.itinerary) spliceDay(state.itinerary, redo.day, data, view);
-    else if (fix && state.itinerary) spliceFixed(state.itinerary, data, view, fix.problems.length);
+    else if (fix && state.itinerary) { spliceFixed(state.itinerary, data, view, fix.problems.length); delete state.meta?.unfixed; }
     // Only the changed days come back; every other day stays exactly as it was.
     else if (edit && state.itinerary) {
       // What they agreed on with the chat is what they get: stops the planner left out (or tidied away) go back in.

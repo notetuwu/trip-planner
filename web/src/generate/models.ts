@@ -1,6 +1,7 @@
 // The Model menu: Claude via Claude Code, models reached with an API key (Anthropic, OpenAI, OpenRouter), any local
 // model servers that are running, and the research toggle.
 import type { CloudModel, CloudProvider, LocalModel, ModelsResponse } from "../../../shared/types";
+import { claudeLines } from "./claude-limits";
 import { $, api, esc } from "../core/dom";
 import { save, state } from "../core/state";
 import { openKeys } from "./keys";
@@ -15,9 +16,14 @@ export const isApi = (id: string) => String(id).startsWith("api|");
 const PROVIDER_NAME: Record<CloudProvider, string> = { gemini: "Google Gemini", anthropic: "Anthropic API", openai: "OpenAI API", openrouter: "OpenRouter" };
 const isGemini = (id: string) => String(id).startsWith("api|gemini|");
 
-/** The usage line under the Model menu while a Gemini model is picked (fetched again after each request). */
+/** The usage lines under the Model menu for a Gemini or Claude model (fetched again after each request). */
 export async function refreshQuota() {
   const id = state.model;
+  if (id.startsWith("api|anthropic|") ? lastModels?.keys?.anthropic?.set : isClaudeCode(id) && lastModels?.claude) {
+    const html = await claudeLines(id);
+    if (state.model === id) { const el = $("#modelQuota"); el.innerHTML = html; el.hidden = !html; }
+    return;
+  }
   if (!isGemini(id) || !lastModels?.keys?.gemini?.set) { setQuotaLines("#modelQuota", null); return; }
   await loadGemini();
   if (state.model === id) setQuotaLines("#modelQuota", id.split("|").slice(2).join("|"));

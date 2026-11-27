@@ -208,7 +208,8 @@ Only this JSON:
   const outlineLines = outline.days.map((d) => `- ${withDay(d.date)} ${d.city}: ${d.title || ""}${d.places?.length ? ` (${d.places.join("; ")})` : ""}${d.groups?.length ? ` · split: ${d.groups.map((g) => `${g.group} ${g.where || ""} (${(g.places || []).join("; ")})`).join(" / ")}` : ""}`).join("\n");
 
   // --- 3. Research for exactly these days ---
-  let research: { notes: string; urls: string[] } | null = null;
+  // Findings of a research model of its own (Settings → Search & places) are used as they are.
+  let research: { notes: string; urls: string[] } | null = trip.researchNotes ? { notes: trip.researchNotes, urls: [] } : null;
   if (trip.research) {
     onEvent({ type: "status", text: "Step 3 of 4: researching the planned days online…" });
     const prompt = `You are researching a trip whose days are already outlined, before each day gets written in detail. Use the web_search and fetch_page tools to check, for these days and places:

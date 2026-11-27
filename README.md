@@ -13,7 +13,7 @@ It plans with **Claude** through your own [Claude Code](https://claude.com/claud
 - **Real places, not invented ones.** Sights and restaurants around each stay come from OpenStreetMap and go into the plan with their exact location.
 - **Research online.** The model looks up opening hours, prices, events and connections while it plans.
 - **Planned around you.** Budget, pace, fitness, when your days start, breakfast, public transport or car, your wishes and notes, and what you've already booked (tickets, a concert, an expo).
-- **Checked before you see it.** Stops in the wrong town or closed at the planned time (holidays included) go back to the model to be fixed. A review shows the problems, duplicates among them, next to their days.
+- **Checked before you see it.** Stops in the wrong town or closed at the planned time (holidays included), places planned twice, missing meals and thin days go back to the model to be fixed. A review shows the problems, duplicates among them, next to their days.
 - **Plan a route.** Its chat changes the route or answers questions about it. Set a travel day to *however long* to be surprised: anywhere in the world, with flights, for whatever you don't name. Describe the trip ("a road trip through the Alps, lakes and old towns") and get a route of stays, with day trips and stops on the way, on a map; change it in its chat.
 
 **Your places**
@@ -92,7 +92,7 @@ Pick one from the **Model** menu (it only offers Claude when Claude Code is inst
 
 Local models are free and private but slower and less thorough on long trips; bigger models plan better. The planner helps them along: real places in the prompt, its own web research for them, checks afterwards, and if a model stops part way through a long trip, it keeps the finished days and asks only for the rest. Settings → Plan style also has an experimental **step by step** mode for local models (an outline of the days, research for those days, then each day on its own), for when planning in one go gets cut off.
 
-**Settings → Plan style and Search & places** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, step by step, and remove again; with SearXNG chosen, Docker and it are started with the app), instead of DuckDuckGo and Wikipedia.
+**Settings → Plan style and Search & places** fine-tunes how plans are made: the language, how much the descriptions say, how many real places go into the prompt, the number of web lookups, a research model of its own (a Gemini or local model that looks things up for whichever model plans, told only the towns, dates, must-sees, interests and what you want to see), fix rounds, and for local models thinking, creativity and how long the model stays loaded. Local models' research can use [Brave Search](https://brave.com/search/api/) (free plan, most reliable) or your own [SearXNG](https://docs.searxng.org) (which the app can set up for you in Docker, step by step, and remove again; with SearXNG chosen, Docker and it are started with the app), instead of DuckDuckGo and Wikipedia.
 
 ## Run from source
 

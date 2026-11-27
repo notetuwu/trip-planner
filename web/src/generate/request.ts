@@ -4,12 +4,14 @@ import { groupSize, keptElsewhere, listSuggest, state, tickedLists, whoFor } fro
 import { stayLoc } from "../geo/locate";
 import { mustSeeRoutes } from "../places/route";
 import { fieldValues } from "../trip/fields";
+import { legModes } from "../trip/leg-default";
 
 /** What to change: a revision of the whole plan, or a fresh plan for one day. */
 export type Change = Pick<TripRequest, "revise" | "redoDay" | "fix" | "edit">;
 
 export function tripRequest(change: Change = {}): TripRequest {
   const marked = (m: string) => Object.keys(state.marks).filter((t) => state.marks[t] === m);
+  const modes = legModes(state.stays, state.getAround);
   return {
     ...fieldValues(),
     budgetPer: "person",
@@ -21,10 +23,10 @@ export function tripRequest(change: Change = {}): TripRequest {
       // Must-sees from lists that aren't suggested to the planner (hidden, or suggestions off).
       ...keptElsewhere().map(({ title, note, tags, comment, address, lat, lng }) => ({ title, note, tags, comment, address, lat, lng })),
     ],
-    stays: state.stays.map((s) => ({
+    stays: state.stays.map((s, i) => ({
       city: s.city, start: s.start, nights: s.nights, hotel: s.hotel, country: stayLoc(s)?.country, cc: stayLoc(s)?.cc,
       lat: stayLoc(s)?.lat, lng: stayLoc(s)?.lng,
-      travel: s.travel || "", dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "", people: t.people })),
+      travel: modes[i], dayTrips: (s.dayTrips || []).filter((t) => t.place).map((t) => ({ place: t.place, mode: t.mode || "", people: t.people })),
     })),
     ...(state.people?.length ? { people: state.people } : {}),
     research: state.research !== false,

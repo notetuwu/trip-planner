@@ -214,10 +214,19 @@ async function listAll(pathArg: string): Promise<Meta[]> {
   return out;
 }
 
-/** The trip files (.json) in a folder, not in folders inside it. */
-export async function listTripFiles(folder: string): Promise<DriveFile[]> {
+/** The trip files (.json) in a folder; `deep`: also in the folders directly inside it (not further down). */
+export async function listTripFiles(folder: string, deep = false): Promise<DriveFile[]> {
   if (!isDropboxId(folder)) throw new Error("Not a Dropbox folder.");
-  return (await listAll(raw(folder))).filter((m) => m[".tag"] === "file" && /\.json$/i.test(m.name) && !(Number(m.size) > MAX_TRIP_BYTES)).map(asFile);
+  const jsonIn = (all: Meta[]) => all.filter((m) => m[".tag"] === "file" && /\.json$/i.test(m.name) && !(Number(m.size) > MAX_TRIP_BYTES)).map(asFile);
+  const top = await listAll(raw(folder)), out = jsonIn(top);
+  if (!deep) return out;
+  for (const d of top.filter((m) => m[".tag"] === "folder").slice(0, 200)) out.push(...jsonIn(await listAll(raw(PREFIX + d.id))).map((f) => ({ ...f, sub: d.name, subId: PREFIX + d.id })));
+  return out;
+}
+
+export async function listFolders(folder: string): Promise<{ id: string; name: string; canWrite: boolean }[]> {
+  if (!isDropboxId(folder)) throw new Error("Not a Dropbox folder.");
+  return (await listAll(raw(folder))).filter((m) => m[".tag"] === "folder").slice(0, 200).map((m) => ({ id: PREFIX + m.id, name: m.name, canWrite: !m.sharing_info?.read_only }));
 }
 
 export async function fileMeta(id: string): Promise<DriveFile & { trashed?: boolean }> {

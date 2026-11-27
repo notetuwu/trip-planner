@@ -1,5 +1,7 @@
 // POST /api/itinerary: gathers holidays and real places, then plans with Claude or a local model, streaming
 // progress as newline-delimited JSON (one "done" or "error" line at the end).
+import { researchWith } from "../research/research-model";
+import { tune } from "../settings";
 import type { Place, StreamEvent } from "../../shared/types";
 import { runAnthropic } from "../ai/anthropic";
 import { runClaude } from "../ai/claude";
@@ -150,8 +152,31 @@ export async function handleItinerary(req: Req, res: Res) {
     if (scope) places = scopeTrip(trip, places, scope);
     // The page uses these to put stops on the map at their exact spot.
     send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
+    // A research model of its own looks things up first; the planning model then doesn't search itself. If it can't,
+    // the planning model researches as it would without one.
+    let researched: Awaited<ReturnType<typeof researchWith>> | null = null;
+    const researcher = tune().researchModel;
+    if (trip.research && researcher) {
+      try {
+        researched = await researchWith(researcher, trip, places, send, abort.signal);
+        if (!researched.notes) throw new Error("it found nothing");
+        send({ type: "notes", text: `**Research findings**\n\n${researched.notes}` });
+        trip.researchNotes = researched.notes;
+        trip.research = false;
+      } catch (e) {
+        if (abort.signal.aborted) throw e;
+        researched = null;
+        send({ type: "status", text: `The research model didn't work (${errMsg(e).slice(0, 160)}), so the planning model researches…` });
+      }
+    }
     const run = runnerFor(String(trip.model || ""));
     const result = await run(trip, places, send, abort.signal);
+    if (researched) {
+      result.reasoning = [`${researched.model} researched online first.`, result.reasoning].filter(Boolean).join("\n\n");
+      result.searches = (result.searches || 0) + researched.searches;
+      const cited = [...researched.urls, ...(researched.notes.match(/https?:\/\/[^\s\])>]+/g) || [])];
+      if (!result.itinerary.sources?.length && cited.length) result.itinerary.sources = [...new Set(cited)];
+    }
     dropBookedAgain(result.itinerary, trip.notes); // things they already booked aren't "book ahead"
     ensureBookings(result.itinerary, trip.bookings); // and their bookings are on their days
     await verifyWebsites(result.itinerary, (text) => send({ type: "status", text }));

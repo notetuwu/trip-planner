@@ -3,16 +3,16 @@
 // drawn again on top of it.
 import type { Day, ItineraryItem, LatLng } from "../../../shared/types";
 import { state } from "../core/state";
-import { type ByTitle, itemLoc } from "../geo/item-loc";
+import { type ByTitle, arrivalSpot, itemLoc } from "../geo/item-loc";
 import { distKm, stayLoc } from "../geo/locate";
 import { chosenMode, modeOf, transferEnds } from "../trip/modes";
 import { type JourneyRun, journeyRuns, namesRide } from "../itinerary/journey-model";
 
 /** Movements ("Lucerne → Feldkirch", "Drive to the hotel") aren't places to pin. */
 export const isTransfer = (x: ItineraryItem) => x.kind === "transfer" || !!transferEnds(x);
-/** On the map as a point: every stop, and a transfer ("Rigi Kulm → Vitznau") once they've set where it ends (then it's
- *  a point the way goes through, like the foot of the mountain). */
-export const onMap = (x: ItineraryItem) => !isTransfer(x) || !!x.pinned;
+/** On the map as a point: every stop, and a transfer ("Rigi Kulm → Vitznau") once where it ends is known, found by name
+ *  or set by them (then it's a point the way goes through, like the foot of the mountain). */
+export const onMap = (x: ItineraryItem, d: Day) => !isTransfer(x) || !!x.pinned || !!arrivalSpot(x, d);
 
 /** The stay a day arrives at (index > 0), when the day is a travel day. */
 export function arrivalStay(d: Day): number {

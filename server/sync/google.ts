@@ -11,7 +11,8 @@
 //  - The app ships with no sign-in ID: each person brings their own (a free OAuth client from the Google Cloud Console),
 //    entered in Settings → Accounts and kept in sync/google-client.json, or given as GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET
 //    (see docs/google-sync.md). So nobody shares anybody else's user limit.
-//  - Drive is only touched in the folders added in Settings → Sync, and nothing is ever deleted there (see sync.ts).
+//  - Drive is only touched in the folders added in Settings → Sync, and no file is ever deleted there (see sync.ts).
+//    Who has access to a folder changes only when the person does that in its Access window (google-access.ts).
 import crypto from "node:crypto";
 import fs from "node:fs";
 import http from "node:http";
@@ -34,7 +35,7 @@ function wantedScopes() {
   const g = readSettings().google;
   return [...(g.sync || g.photos || !g.quotas ? [SCOPE] : []), ...(g.quotas ? CLOUD_SCOPES : [])];
 }
-const DRIVE = "https://www.googleapis.com/drive/v3";
+export const DRIVE = "https://www.googleapis.com/drive/v3";
 const UPLOAD = "https://www.googleapis.com/upload/drive/v3";
 export const FOLDER_TYPE = "application/vnd.google-apps.folder";
 
@@ -265,7 +266,7 @@ function explain(status: number, body: any): string {
   return `Google answered ${status}${msg ? `: ${msg.slice(0, 160)}` : ""}`;
 }
 
-async function drive(url: string, init: RequestInit = {}, again = true): Promise<Response> {
+export async function drive(url: string, init: RequestInit = {}, again = true): Promise<Response> {
   const t = await accessToken();
   const res = await fetch(url, { ...init, headers: { ...(init.headers as Record<string, string>), Authorization: `Bearer ${t}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(60000) });
   if (res.status === 401 && again) { access = null; return drive(url, init, false); }
@@ -290,6 +291,9 @@ export interface DriveFile {
   lastModifyingUser?: { displayName?: string; emailAddress?: string; photoLink?: string };
   capabilities?: { canEdit?: boolean };
   properties?: Record<string, string>;
+  /** The folder inside the sync folder it's in (its name and id), when found there. */
+  sub?: string;
+  subId?: string;
 }
 const FILE_FIELDS = "id,name,md5Checksum,modifiedTime,size,lastModifyingUser(displayName,emailAddress,photoLink),capabilities(canEdit),properties";
 
@@ -315,7 +319,7 @@ export async function folderInfo(id: string): Promise<{ id: string; name: string
 }
 
 /** One entry of a folder, for the folder browser (Settings → Sync, the Photos window). */
-export interface DriveEntry { id: string; name: string; folder: boolean; canWrite: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file" }
+export interface DriveEntry { id: string; name: string; folder: boolean; canWrite: boolean; /** A folder seen but not open to this account (limited access). */ noAccess?: boolean; owner?: string; modified?: string; size?: number; kind?: "image" | "video" | "trip" | "file" }
 
 /** What's in a place in Drive: My Drive ("root"), shared with me ("shared"), the shared drives ("drives"), or a folder
  *  (its id). Folders first, then the files (at most a few hundred: enough to see what a folder holds). */
@@ -333,7 +337,7 @@ export async function browse(where: string): Promise<{ entries: DriveEntry[]; mo
   do {
     const p = new URLSearchParams({
       q, orderBy: "folder,name_natural", pageSize: "300",
-      fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,capabilities(canAddChildren),owners(displayName,me))",
+      fields: "nextPageToken,files(id,name,mimeType,modifiedTime,size,capabilities(canAddChildren,canListChildren),owners(displayName,me))",
       supportsAllDrives: "true", includeItemsFromAllDrives: "true", ...(where === "shared" ? {} : { corpora: "allDrives" }), ...(pageToken ? { pageToken } : {}),
     });
     const j = await driveJson(`${DRIVE}/files?${p}`);
@@ -341,6 +345,7 @@ export async function browse(where: string): Promise<{ entries: DriveEntry[]; mo
       const folder = f.mimeType === FOLDER_TYPE, type = String(f.mimeType || ""), name = String(f.name || "");
       out.push({
         id: f.id, name, folder, canWrite: !!f.capabilities?.canAddChildren,
+        ...(folder && f.capabilities?.canListChildren === false ? { noAccess: true } : {}),
         ...(f.owners?.[0] && !f.owners[0].me ? { owner: String(f.owners[0].displayName || "") } : {}),
         ...(f.modifiedTime ? { modified: String(f.modifiedTime) } : {}), ...(f.size ? { size: Number(f.size) } : {}),
         ...(folder ? {} : { kind: type.startsWith("image/") ? "image" as const : type.startsWith("video/") ? "video" as const : /\.json$/i.test(name) ? "trip" as const : "file" as const }),
@@ -371,17 +376,50 @@ export async function createFolder(name: string, parent = "root") {
 }
 
 export const TRIP_SUFFIX = ".trip.json";
+export const MAX_SUBFOLDERS = 200;
 
 /** The files in a folder that can hold a trip: any .json (an export, or a saved trip's file put there by hand; what's
- *  inside decides). Only in the folder itself, not in folders inside it. */
-export async function listTripFiles(folder: string): Promise<DriveFile[]> {
+ *  inside decides). Only in the folder itself; `deep`: also in the folders directly inside it (not further down). */
+export async function listTripFiles(folder: string, deep = false): Promise<DriveFile[]> {
   if (!isDriveId(folder)) throw new Error("Not a folder id");
-  const out: DriveFile[] = [];
+  const out: DriveFile[] = await jsonFiles([folder]);
+  if (!deep) return out;
+  const inside = new Map((await listFolders(folder)).filter((f) => !f.noAccess).map((f) => [f.id, f.name]));
+  // Several folders per question, so a folder of many trips doesn't take one request each.
+  const ids = [...inside.keys()];
+  for (let i = 0; i < ids.length; i += 25) {
+    for (const f of await jsonFiles(ids.slice(i, i + 25))) {
+      const subId = f.parents?.find((p) => inside.has(p));
+      if (subId) out.push({ ...f, sub: inside.get(subId)!, subId });
+    }
+  }
+  return out;
+}
+/** The folders directly inside a folder. limited: Drive's limited access is on. */
+export async function listFolders(folder: string): Promise<{ id: string; name: string; canWrite: boolean; limited?: boolean; noAccess?: boolean }[]> {
+  if (!isDriveId(folder)) throw new Error("Not a folder id");
+  const out: { id: string; name: string; canWrite: boolean; limited?: boolean; noAccess?: boolean }[] = [];
   let pageToken = "";
   do {
     const q = new URLSearchParams({
-      q: `'${folder}' in parents and trashed = false and mimeType != '${FOLDER_TYPE}'`,
-      fields: `nextPageToken,files(${FILE_FIELDS})`, pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+      q: `'${folder}' in parents and trashed = false and mimeType = '${FOLDER_TYPE}'`, orderBy: "name_natural",
+      fields: "nextPageToken,files(id,name,inheritedPermissionsDisabled,capabilities(canAddChildren,canListChildren))", pageSize: "200", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+      ...(pageToken ? { pageToken } : {}),
+    });
+    const json = await driveJson(`${DRIVE}/files?${q}`);
+    for (const f of json.files || []) if (isDriveId(f.id)) out.push({ id: f.id, name: String(f.name || ""), canWrite: !!f.capabilities?.canAddChildren, limited: !!f.inheritedPermissionsDisabled, ...(f.capabilities?.canListChildren === false ? { noAccess: true } : {}) });
+    pageToken = json.nextPageToken || "";
+  } while (pageToken && out.length < MAX_SUBFOLDERS);
+  return out;
+}
+async function jsonFiles(folders: string[]): Promise<(DriveFile & { parents?: string[] })[]> {
+  const out: (DriveFile & { parents?: string[] })[] = [];
+  const within = folders.map((id) => `'${id}' in parents`).join(" or ");
+  let pageToken = "";
+  do {
+    const q = new URLSearchParams({
+      q: `(${within}) and trashed = false and mimeType != '${FOLDER_TYPE}'`,
+      fields: `nextPageToken,files(${FILE_FIELDS},parents)`, pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
       ...(pageToken ? { pageToken } : {}),
     });
     const json = await driveJson(`${DRIVE}/files?${q}`);

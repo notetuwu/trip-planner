@@ -39,7 +39,7 @@ export const runLocal: Runner = async (trip, places, onEvent, abort): Promise<Ru
     onEvent({ type: "status", text: "Planning the itinerary…" });
   }
 
-  const prompt = buildPrompt({ ...trip, researchNotes: research?.notes }, places, { notes: "json", schema: true, compact: true });
+  const prompt = buildPrompt({ ...trip, researchNotes: research?.notes ?? trip.researchNotes }, places, { notes: "json", schema: true, compact: true });
   // Local servers send nothing while they read the prompt, which on a big trip can take minutes; say so until the first token.
   onEvent({ type: "status", text: `Reading the prompt (about ${(Math.round(prompt.length / 4 / 1000) || 1).toLocaleString()}k tokens)… on big trips this can take a few minutes` });
   const tick = output.tick;

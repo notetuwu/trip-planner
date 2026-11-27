@@ -11,7 +11,7 @@ export interface ProgressView {
   stop(): void;
 }
 
-export function showProgress(o: { who: string; doing: string; local: boolean; expectedDays: number; onCancel(): void; into?: HTMLElement }): ProgressView {
+export function showProgress(o: { who: string; doing: string; local: boolean; expectedDays: number; tokens?: boolean; onCancel(): void; into?: HTMLElement }): ProgressView {
   // Built once and then updated in place, so an opened reasoning panel stays open. `into`: inside one day (or the fix
   // bar) instead of replacing the whole itinerary.
   const out = o.into || $("#output");
@@ -69,7 +69,7 @@ export function showProgress(o: { who: string; doing: string; local: boolean; ex
 
   function onEvent(ev: StreamEvent) {
     switch (ev.type) {
-      case "thinking": status(`Thinking… ~${ev.tokens >= 1000 ? (ev.tokens / 1000).toFixed(1) + "k" : ev.tokens} tokens`); break;
+      case "thinking": status(o.tokens === false ? "Thinking…" : `Thinking… ~${ev.tokens >= 1000 ? (ev.tokens / 1000).toFixed(1) + "k" : ev.tokens} tokens`); break;
       // Claude streams its notes piece by piece; local models stream real thinking, then the notes field as it grows.
       case "text": notes += ev.text; status("Writing planning notes…"); renderNotes(); break;
       case "notes": notes = ev.text; status("Writing planning notes…"); renderNotes(); break;
@@ -83,6 +83,7 @@ export function showProgress(o: { who: string; doing: string; local: boolean; ex
         el("prompt-body").insertAdjacentHTML("beforeend", promptBody([collected.prompt.at(-1)!]));
         break;
       case "tokens":
+        if (o.tokens === false) break;
         tokens = ev.count; estimated = ev.estimated; finalRate = ev.perSec || 0;
         samples.push({ t: Date.now(), n: ev.count });
         showTokens();

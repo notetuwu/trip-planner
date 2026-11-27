@@ -4,7 +4,7 @@ import type { Day, GeoHit, ItineraryItem, Place, Poi } from "../../../shared/typ
 import { session, state } from "../core/state";
 import { geo, geoKey, geocode } from "./geocode";
 import { addDays } from "../core/format";
-import { type Loc, countryCodes, distKm, placeLoc, stayLoc, stayOn } from "./locate";
+import { type Loc, countryCodes, distKm, placeLoc, sameName as plainName, stayLoc, stayOn } from "./locate";
 import { onWayOf, splitGroup, transferEnds } from "../trip/modes";
 import { activityTown } from "./stop-text";
 import { namesRide } from "../itinerary/journey-model";
@@ -238,6 +238,37 @@ const otherTowns = (d: Day, town: Town) => townList(d).filter((t) => bare(t.name
 /** Settlements and districts: what an activity's town lookup may land on (not a bar called "Sunset"). */
 const SETTLEMENT = /^(city|town|village|hamlet|suburb|quarter|neighbourhood|isolated_dwelling|locality|administrative|municipality|borough|district)$/;
 
+/** Destinations that are no spot of their own: where they sleep is the stay's business. */
+const LODGING = /\b(hotel|hostel|accommodation|apartment|airbnb|ryokan|guest ?house|home)\b/i;
+/** What to look up a transfer's "where" (the station or port it arrives at) as, around its destination. */
+function arrivalQueries(x: ItineraryItem, d: Day) {
+  const ends = transferEnds(x);
+  if (!ends) return [];
+  const dest = cleanDest(ends[1]), town = townHit(dest, d);
+  const cc = town ? stopCc({ name: dest, loc: town }) : countryCodes(), near = town ? nearOf(town) : undefined;
+  return whereQueries(x, d, dest).map((q) => ({ q, cc, near, first: true, stop: true }));
+}
+
+/** Where a transfer ("Stockholm → Nynäshamn (car)") arrives, when that can be told for sure: its "where" (the station or
+ *  port) as found near the destination; else the stay it goes to, or the destination looked up by name. Null when
+ *  neither is found, or it's far from everywhere the day goes (the flight home). */
+export function arrivalSpot(x: ItineraryItem, d: Day): Loc | null {
+  const ends = transferEnds(x);
+  if (!ends) return null;
+  const dest = cleanDest(ends[1]), town = townHit(dest, d);
+  const near = (l: Loc) => (farFromDay(l, d) ? null : l);
+  for (const query of arrivalQueries(x, d)) {
+    const g = geo[geoKey(query.q, query.cc, query.near, true)];
+    if (g && (!town || distKm(g, town) < 60)) return near(g);
+  }
+  if (LODGING.test(dest)) return null;
+  const stay = state.stays.find((s) => s.start && d.date >= s.start && d.date <= addDays(s.start, Number(s.nights) || 0) && plainName(s.city) === plainName(dest));
+  const at = stay && stayLoc(stay);
+  if (at) return at;
+  // A town, or something that really has that name (not whatever the search came up with instead).
+  return town && (SETTLEMENT.test(town.kind || "") || sameName(dest, town, { ...d, city: "" })) ? near(town) : null;
+}
+
 /** The best lookup result for a stop: one with its name if any, else the first plausible one (fuzzy). */
 function stopHit(x: ItineraryItem, d: Day): { g: GeoHit; same: boolean; town?: boolean } | null {
   const town = itemTown(x, d), home = town?.loc;
@@ -304,6 +335,9 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
     if (near?.same) return near.g;
     return { lat: ref.lat, lng: ref.lng, approx: true, elsewhere: `${at.lat.toFixed(3)}, ${at.lng.toFixed(3)}` };
   }
+  // A transfer is where it arrives.
+  const arrival = arrivalSpot(x, day);
+  if (arrival) return arrival;
   // Where it says it is (the venue of an exhibition, the mall a shop is in).
   const where = x.where ? whereHit(x, day) : null;
   if (where) return where;
@@ -367,7 +401,9 @@ export function geocodeItems() {
     for (const x of d.items) {
       const town = itemTown(x, d);
       if (!town) continue;
-      for (const q of whereQueries(x, d, town.name)) qs.push({ q, cc: stopCc(town), near: nearOf(town.loc), first: true, stop: true });
+      // A transfer's "where" is at its destination, not in the town the stop is in.
+      if (transferEnds(x)) qs.push(...arrivalQueries(x, d));
+      else for (const q of whereQueries(x, d, town.name)) qs.push({ q, cc: stopCc(town), near: nearOf(town.loc), first: true, stop: true });
       const listed = byTitle.get(x.place);
       const known = poiFor(x.place, d) || (listed && placeLoc(listed));
       // Paid places are looked up even when their spot is known, for their website (ticket links).

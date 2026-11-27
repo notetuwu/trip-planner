@@ -13,6 +13,7 @@ import { clearTripMaps, showTripMaps } from "./trip-maps";
 import { folderLabel, isOwner, loadSyncStatus, onSyncStatus, ownerName, setSyncStatus, syncNow, syncReady, syncStatus } from "./sync-client";
 import { openSyncPanel } from "./sync-panel";
 import { askConfirm, askText } from "../core/ask";
+import { manageAccess } from "../core/folder-access";
 
 const VIEW_KEY = "trip-planner-trips-view";
 let cards: TripCard[] | null = null, loadError = "";
@@ -69,36 +70,47 @@ function cardHtml(c: TripCard, i: number) {
   </article>`;
 }
 
+/** How a trip syncs, when it does (not one only seen in a folder, or since unticked everywhere). */
+const syncedInfo = (name: string) => { const info = syncStatus?.trips[name]; return info?.folders.length ? info : undefined; };
+
+/** Where a synced trip's file is: by the folder it's directly in, and the whole way there (for the tooltip). */
+const whereIn = (info: NonNullable<ReturnType<typeof syncedInfo>>) => ({
+  short: info.folders.map((f) => info.inside[f] || folderLabel(f)).join(", "),
+  full: info.folders.map((f) => [folderLabel(f), info.inside[f]].filter(Boolean).join(" › ")).join(", "),
+});
+
 /** The Sync button on a trip: a filled cloud when it syncs, an outline when it doesn't (yet). */
 function syncButton(name: string, cls: string) {
-  const info = syncStatus?.trips[name];
-  const title = info ? `Synced with ${info.folders.map(folderLabel).join(", ")}: change where it syncs` : "Sync with Google Drive folders";
+  const info = syncedInfo(name);
+  const title = info ? `Synced with ${whereIn(info).full}: change where it syncs` : "Sync with Google Drive folders";
   return `<button type="button" class="${cls}${info ? " synced" : ""}" data-sync title="${esc(title)}">${icon("cloud")}</button>`;
 }
 
 /** A synced trip's mark in the card's corner: the cloud and its folders. */
 function cloudBadge(name: string) {
-  const info = syncStatus?.trips[name];
+  const info = syncedInfo(name);
   if (!info) return "";
-  const where = info.folders.map(folderLabel).join(", ");
-  return `<span class="tc-cloud" title="In Google Drive: ${esc(where)}">${icon("cloud")} ${esc(where)}</span>`;
+  const { short, full } = whereIn(info);
+  return `<span class="tc-cloud" title="Synced with ${esc(full)}">${icon("cloud")} ${esc(short)}</span>`;
 }
 
 /** How a trip syncs: who shared it (and edit or view), and a clash to decide. */
 function syncLine(name: string) {
-  const info = syncStatus?.trips[name];
+  const info = syncedInfo(name);
   if (!info) return "";
   const who = info.share && !info.mine ? `Shared by ${esc(ownerName(info.share))}` : "Shared by you";
   const mode = info.share?.mode === "view" ? (info.mine ? " · others can only view" : ` · <span class="tc-view">${icon("eye")} view only</span>`) : "";
   const clashes = info.conflicts.map((x) => `<div class="tc-clash">${icon("warn")} Changed here and in ${esc(folderLabel(x.folder))}${x.by ? ` by ${esc(x.by)}` : ""}${x.at ? ` (${esc(new Date(x.at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }))})` : ""}. Keep which?
       <span><button type="button" class="btn" data-keep="mine" data-folder="${esc(x.folder)}">This computer's</button><button type="button" class="btn" data-keep="theirs" data-folder="${esc(x.folder)}">Drive's</button></span></div>`).join("");
-  return `<div class="tc-sync">${icon("users")} ${who}${mode}${info.error ? ` <span class="bad" title="${esc(info.error)}">${icon("warn")}</span>` : ""}</div>${clashes}`;
+  const moved = (info.moved || []).map((x) => `<div class="tc-clash">${icon("warn")} Paused: the trip's file in ${esc(folderLabel(x.folder))} is now ${x.where ? `in “${esc(x.where)}”` : "at the top"}, which others may be able to open.
+      <span>${x.folder.startsWith("local:") || x.folder.startsWith("dropbox:") ? "" : `<button type="button" class="btn" data-who="${esc(x.at || x.folder)}" data-label="${esc(x.where || folderLabel(x.folder))}">Who can open it</button>`}<button type="button" class="btn" data-moved="keep" data-folder="${esc(x.folder)}" data-at="${esc(x.at)}">Keep syncing there</button><button type="button" class="btn" data-moved="stop" data-folder="${esc(x.folder)}" data-at="${esc(x.at)}">Stop syncing</button></span></div>`).join("");
+  return `<div class="tc-sync">${icon("users")} ${who}${mode}${info.error ? ` <span class="bad" title="${esc(info.error)}">${icon("warn")}</span>` : ""}</div>${clashes}${moved}`;
 }
 
 /** Where a trip is, for the filters: its folders, whether it's on this computer, and who shared it. */
 function placeOf(c: TripCard | RemoteTripCard) {
   if ("fileId" in c) return { local: false, synced: true, folders: [c.folder], owner: c.share?.owner || "", mine: isOwner(c.share) && !!c.share?.owner };
-  const info = syncStatus?.trips[c.name];
+  const info = syncedInfo(c.name);
   return { local: true, synced: !!info, folders: info?.folders || [], owner: info?.share?.owner || "", mine: !!info?.mine };
 }
 function passes(c: TripCard | RemoteTripCard) {
@@ -149,7 +161,7 @@ async function syncAll(button: HTMLButtonElement) {
 function remoteHtml(c: RemoteTripCard, i: number) {
   return `<article class="trip-card remote" data-remote="${esc(c.fileId)}" data-folder="${esc(c.folder)}" tabindex="0" style="--h:${hueOf(c.name)};--i:${Math.min(i, 14)}">
     <div class="tc-preview">${previewSvg(c)}${c.route.length || c.dots.length ? `<div class="tc-map" data-map="${esc(mapKey(c))}"></div>` : ""}<span class="tc-when">${icon(whenOf(c, today()) === "past" ? "history" : "calendar")} ${esc(whenLabel(c, today()))}</span>
-      <span class="tc-cloud remote" title="In Google Drive (${esc(folderLabel(c.folder))}), not on this computer yet">${icon("cloud")} ${esc(folderLabel(c.folder))}</span></div>
+      <span class="tc-cloud remote" title="In ${esc([folderLabel(c.folder), c.inner].filter(Boolean).join(" › "))}, not on this computer yet">${icon("cloud")} ${esc(c.inner || folderLabel(c.folder))}</span></div>
     <div class="tc-body">
       <h4>${esc(c.name)}</h4>
       <div class="tc-cities">${cityLine(c) || `<span class="hint">No stays yet</span>`}</div>
@@ -183,7 +195,7 @@ function whereCell(c: TripCard | RemoteTripCard) {
   const p = placeOf(c);
   if (!p.synced) return `<span class="hint">This computer</span>`;
   const owner = "fileId" in c ? c.share : syncStatus?.trips[c.name]?.share;
-  return `<span class="tt-where">${icon("cloud")} ${esc(p.folders.map(folderLabel).join(", "))}</span><div class="hint">${p.local ? "" : "Not downloaded · "}${owner?.owner ? (isOwner(owner) ? "by you" : `by ${esc(ownerName(owner))}`) : ""}${owner?.mode === "view" && !isOwner(owner) ? " · view only" : ""}</div>`;
+  return `<span class="tt-where">${icon("cloud")} ${esc("fileId" in c ? c.inner || folderLabel(c.folder) : whereIn(syncedInfo(c.name)!).short)}</span><div class="hint">${p.local ? "" : "Not downloaded · "}${owner?.owner ? (isOwner(owner) ? "by you" : `by ${esc(ownerName(owner))}`) : ""}${owner?.mode === "view" && !isOwner(owner) ? " · view only" : ""}</div>`;
 }
 
 function tableHtml(list: (TripCard | RemoteTripCard)[]) {
@@ -246,6 +258,15 @@ function wire(body: HTMLElement) {
     el.querySelector<HTMLButtonElement>("[data-rename]")!.onclick = () => rename(name);
     el.querySelector<HTMLButtonElement>("[data-copy]")!.onclick = () => copyTrip(name);
     el.querySelector<HTMLButtonElement>("[data-delete]")!.onclick = () => remove(name);
+    $$<HTMLButtonElement>("[data-who]", el).forEach((b) => { b.onclick = () => manageAccess(b.dataset.who!, b.dataset.label!); });
+    $$<HTMLButtonElement>("[data-moved]", el).forEach((b) => {
+      b.onclick = async () => {
+        try {
+          setSyncStatus(await api<SyncStatus>("/api/sync/moved", { method: "POST", body: JSON.stringify({ name, folder: b.dataset.folder, at: b.dataset.at, keep: b.dataset.moved === "keep" }) }));
+          await load();
+        } catch (e) { toast((e as Error).message); await loadSyncStatus(); await load(); }
+      };
+    });
     el.querySelector<HTMLButtonElement>("[data-sync]")?.addEventListener("click", () => openSyncPanel(name, () => load()));
     $$<HTMLButtonElement>("[data-keep]", el).forEach((b) => { b.onclick = () => decide(name, b.dataset.folder!, b.dataset.keep as "mine" | "theirs"); });
   }

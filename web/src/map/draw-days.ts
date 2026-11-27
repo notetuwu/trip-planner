@@ -26,7 +26,7 @@ import { icon } from "../core/icons";
 function drawStops(d: Day, di: number, byTitle: ByTitle, bounds: LatLng[]) {
   d.items.forEach((x, xi) => {
     const color = colorFor(x, di);
-    const loc = onMap(x) ? itemLoc(x, d, byTitle) : null;
+    const loc = onMap(x, d) ? itemLoc(x, d, byTitle) : null;
     if (!loc) return;
     const note = loc.elsewhere ? ` · ${icon("warn")} the known place of this name is in ${esc(loc.elsewhere)}` : loc.approx ? " · approximate location (the model's estimate)" : "";
     const m = L.marker([loc.lat, loc.lng], {

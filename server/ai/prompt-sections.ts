@@ -120,6 +120,16 @@ export function nearbySection(trip: Trip, compact = false) {
 }
 
 /** One-line trip description for the research prompt. */
+/** What research needs to know of the trip: the towns and day trips with their dates and how they're reached. The
+ *  start and end (a first or last stay without a night, often a home address) are left out. */
+export function researchPlaces(trip: Trip) {
+  return trip.stays.map((s, i) => {
+    if (!(Number(s.nights) > 0) && (i === 0 || i === trip.stays.length - 1)) return "";
+    const trips = (s.dayTrips || []).filter((t) => t.place).map((t) => `, day trip to ${t.place}${MODE_TEXT[t.mode] ? ` ${MODE_TEXT[t.mode]}` : ""}`).join("");
+    return `${s.city}${s.country ? ` (${s.country})` : ""} from ${withDay(s.start)}, ${s.nights} night(s)${i && s.travel && MODE_TEXT[s.travel] ? `, arriving ${MODE_TEXT[s.travel]}` : ""}${trips}`;
+  }).filter(Boolean).join("; ");
+}
+
 export function tripLine(trip: Trip) {
   return trip.stays.map((s, i) => `${s.city}${s.country ? ` (${s.country})` : ""} from ${withDay(s.start)}, ${s.nights} night(s)`
     + `${i && s.travel && MODE_TEXT[s.travel] ? `, arriving ${MODE_TEXT[s.travel]}${driveNote(trip, i) ? ` (${driveNote(trip, i)})` : ""}` : ""}`

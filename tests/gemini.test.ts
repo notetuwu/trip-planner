@@ -145,6 +145,15 @@ describe("Google Gemini", () => {
     expect(usable.map((m) => m.id)).toEqual(["api|gemini|gemini-9-flash", "api|gemini|gemini-9-flash-lite"]);
   });
 
+  it("offers a model Google was too busy to answer the test request for", async () => {
+    const file = path.join(process.env.TRIP_PLANNER_DATA!, "gemini-usage.json"), before = fs.readFileSync(file, "utf8"), u = JSON.parse(before);
+    u.access["gemini-8-flash"] = { state: "unknown", note: "Didn't answer in time (Google busy?). Check again tries it again." };
+    fs.writeFileSync(file, JSON.stringify(u));
+    const usable = await gemini.usableGemini(await gemini.geminiModels("test-key"));
+    expect(usable.map((m) => m.id)).toContain("api|gemini|gemini-8-flash");
+    fs.writeFileSync(file, before);
+  });
+
   it("tells a paid key: every available model answers, Pro included", () => {
     // (The free-tier quota is what tells them apart; a 429 with a paid quota still counts as usable.)
     const paid = gemini.readError(429, quota(true, 1000, "gemini-9-pro").replace(/-FreeTier/g, "").replace(/_free_tier/g, ""));
@@ -220,7 +229,21 @@ describe("Google Gemini", () => {
     expect(bodies.slice(before).filter((b) => b.body.includes("google_search"))).toHaveLength(1);
     expect(events.some((e) => e.type === "status" && /trying again/.test(e.text))).toBe(false);
     expect(result.engine).toMatch(/researched through the planner/);
+    // Also for a model whose test request got no answer.
+    const now = JSON.parse(fs.readFileSync(file, "utf8"));
+    now.access["gemini-9-flash-lite"] = { state: "unknown", note: "Didn't answer in time (Google busy?)." };
+    fs.writeFileSync(file, JSON.stringify({ ...now, noSearch: {} }));
+    const again: any[] = [];
+    await gemini.runGemini(trip, [], (e) => again.push(e), new AbortController().signal);
+    expect(again.some((e) => e.type === "status" && /Google Search isn't included/.test(e.text))).toBe(true);
+    expect(again.some((e) => e.type === "status" && /trying again/.test(e.text))).toBe(false);
     bareSearch = false;
+  });
+
+  it("researches with a Lite model on the free tier, also when another model is picked to plan", async () => {
+    const before = bodies.length;
+    await gemini.geminiResearch("api|gemini|auto", { stays: [{ city: "Kyoto", start: "2026-04-01", nights: 2 }], mustSee: [] } as unknown as Trip, [], () => {}, new AbortController().signal, { onThinking: () => {}, tick: () => {} } as never);
+    expect(JSON.parse(bodies.slice(before).find((b) => b.url === "/openai/chat/completions")!.body).model).toBe("gemini-9-flash-lite");
   });
 
   it("stays on a picked model: its used-up daily limit is an error, not another model", async () => {

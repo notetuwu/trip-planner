@@ -18,7 +18,7 @@ import { type Box, searchAreaKinds, searchAreaNames } from "./geo/area-search";
 import { adoptCsvFiles, listSummaries } from "./lists/store";
 import { isProvider, keyStatus, loadEnvFile, setKey } from "./keys";
 import { checkTier, geminiKeyChanged, geminiStatus } from "./ai/gemini";
-import { usageNotice } from "./ai/usage-notices";
+import { usageInfo } from "./ai/usage-notices";
 import { openFolder, openInBrowser } from "./launcher";
 import { handleItinerary } from "./routes/itinerary";
 import { handleLists } from "./routes/lists";
@@ -244,9 +244,9 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
         sendJson(res, 200, keyStatus());
       }
     }
-    // A warning that the model's usage is critical (above the chat's message box).
+    // A warning that the model's usage is critical (above the chat's message box), and Claude's limits.
     else if (method === "GET" && path === "/api/usage") {
-      sendJson(res, 200, { notice: await usageNotice(new URL(req.url || "", "http://localhost").searchParams.get("model") || "") });
+      sendJson(res, 200, await usageInfo(new URL(req.url || "", "http://localhost").searchParams.get("model") || ""));
     }
     // The Gemini key: its tier, today's requests per model and the limits Google named; check checks the tier again.
     else if (method === "GET" && path === "/api/gemini") {
