@@ -43,7 +43,7 @@ const dateRange = (c: TripCard) => {
   return `${f(c.start, { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) })} – ${f(c.end || c.start, { month: "short", day: "numeric", year: "numeric" })}`;
 };
 const cityLine = (c: TripCard, max = 4) => {
-  // The home address at both ends ("Home"): shown once, at the start.
+  // A round trip from home has the same place at both ends: shown once, at the start.
   const towns = c.cities.filter((t, i) => !(i === c.cities.length - 1 && t === c.cities[0] && c.cities.length > 2));
   return esc(towns.slice(0, max).join(" → ")) + (towns.length > max ? ` <span class="tc-more">+${towns.length - max}</span>` : "");
 };
