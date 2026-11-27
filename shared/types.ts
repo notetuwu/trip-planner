@@ -527,6 +527,8 @@ export interface TripCard {
   route: [number, number][];
   /** Some of the plan's stops, for texture. */
   dots: [number, number][];
+  /** Some stays are still being looked up: the route isn't complete yet. */
+  locating?: boolean;
   bookings: number;
   mustSees: number;
 }

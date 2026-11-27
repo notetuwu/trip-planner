@@ -378,14 +378,31 @@ async function remove(name: string) {
   toast(`Deleted "${name}"`);
 }
 
+const fetchCards = () => Promise.all([api<TripCard[]>("/api/trips"), syncReady() ? api<RemoteTripCard[]>("/api/sync/remote").catch(() => []) : Promise.resolve([])]);
+
 export async function load() {
   try {
-    [cards, remote] = await Promise.all([api<TripCard[]>("/api/trips"), syncReady() ? api<RemoteTripCard[]>("/api/sync/remote").catch(() => []) : Promise.resolve([])]);
+    [cards, remote] = await fetchCards();
     loadError = "";
   }
   catch (e) { loadError = (e as Error).message; }
   if (dialog().open) render();
+  awaitPlaces();
   return cards;
+}
+
+let placesTimer: number | undefined;
+/** While stays are still being looked up, asks again (for a few minutes at most) and redraws once all are in, so the
+ *  maps aren't redrawn for every town. */
+function awaitPlaces(tries = 60) {
+  clearTimeout(placesTimer);
+  if (!tries || !dialog().open || ![...(cards || []), ...remote].some((c) => c.locating)) return;
+  placesTimer = window.setTimeout(async () => {
+    const got = await fetchCards().catch(() => null);
+    if (!got || got.flat().some((c) => c.locating)) return awaitPlaces(tries - 1);
+    [cards, remote] = got;
+    if (dialog().open) render();
+  }, 2500);
 }
 
 export function openTrips() {

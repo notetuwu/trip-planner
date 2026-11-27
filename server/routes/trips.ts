@@ -1,10 +1,11 @@
 // GET /api/trips: the saved trips as cards for the trip picker (Your trips): where and when, how long, who, whether
-// there's a plan, and a rough route to draw (the stays' positions from the geocode cache, the plan's stops as dots).
+// there's a plan, and a rough route to draw (the stays where they were set on the map or as looked up, the plan's stops
+// as dots). Stays never looked up on this computer (a trip from a sync folder) are looked up when the cards are asked for.
 import fs from "node:fs";
 import path from "node:path";
 import type { TripCard } from "../../shared/types";
 import { SAVES_DIR } from "../config";
-import { geoCache } from "../geo/geocode";
+import { geoCache, geocodeBatch } from "../geo/geocode";
 
 const addDays = (iso: string, n: number) => {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -26,13 +27,23 @@ export function placesByName() {
   return out;
 }
 
+const staysOf = (trip: any): any[] => (Array.isArray(trip?.stays) ? trip.stays.filter((s: any) => s && typeof s.city === "string" && s.city.trim()) : []);
+const pinOf = (s: any) => (typeof s.pin?.lat === "number" && typeof s.pin?.lng === "number" ? s.pin as { lat: number; lng: number } : null);
+const nameOf = (s: any) => String(s.city).trim().toLowerCase();
+
+/** Queues a lookup for the stays not looked up here (for their position and country); true while any is still to come. */
+export function lookUpStays(trip: unknown, where: ReturnType<typeof placesByName>) {
+  const missing = staysOf(trip).filter((s) => !where.has(nameOf(s)));
+  return missing.length > 0 && geocodeBatch(missing.map((s) => ({ q: String(s.city), first: true }))).pending > 0;
+}
+
 export function tripCard(name: string, savedAt: string, trip: any, where: ReturnType<typeof placesByName>): TripCard {
-  const stays: any[] = Array.isArray(trip?.stays) ? trip.stays.filter((s: any) => s && typeof s.city === "string" && s.city.trim()) : [];
+  const stays = staysOf(trip);
   const dated = stays.filter((s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s.start || "")));
   const start = dated.map((s) => s.start).sort()[0] || "";
   const end = dated.map((s) => addDays(s.start, Number(s.nights) || 0)).sort().at(-1) || "";
-  const located = stays.map((s) => ({ s, at: where.get(String(s.city).trim().toLowerCase()) }));
-  const route = located.filter((x) => x.at).map((x) => [round(x.at!.lat), round(x.at!.lng)] as [number, number]);
+  const located = stays.map((s) => ({ s, at: where.get(nameOf(s)) }));
+  const route = located.map((x) => pinOf(x.s) || x.at).filter((at) => !!at).map((at) => [round(at.lat), round(at.lng)] as [number, number]);
   const countries = new Map<string, string>();
   for (const x of located) if (x.at?.cc) countries.set(x.at.cc, x.at.country || x.at.cc.toUpperCase());
   const days: any[] = Array.isArray(trip?.itinerary?.days) ? trip.itinerary.days : [];
@@ -65,7 +76,9 @@ export function tripCards(): TripCard[] {
   return fs.readdirSync(SAVES_DIR).filter((f) => f.endsWith(".json")).flatMap((f) => {
     const file = path.join(SAVES_DIR, f);
     try {
-      return [tripCard(f.slice(0, -5), fs.statSync(file).mtime.toISOString(), JSON.parse(fs.readFileSync(file, "utf8")), where)];
+      const trip = JSON.parse(fs.readFileSync(file, "utf8"));
+      const card = tripCard(f.slice(0, -5), fs.statSync(file).mtime.toISOString(), trip, where);
+      return [lookUpStays(trip, where) ? { ...card, locating: true } : card];
     } catch { return []; } // not readable: left out rather than breaking the list
   });
 }

@@ -3,7 +3,7 @@
 // token never leaves the server.
 import type { RemoteTripCard, SyncPlace } from "../../shared/types";
 import { errMsg } from "../config";
-import { placesByName, tripCard } from "./trips";
+import { lookUpStays, placesByName, tripCard } from "./trips";
 import * as box from "../sync/dropbox";
 import { browse, clientShown, createFolder, parseClient, setClient, startSignIn } from "../sync/google";
 import { addPerson, folderAccess, removeAccess, setLimited, setLinkAccess, setRole } from "../sync/google-access";
@@ -65,6 +65,7 @@ export async function handleSync(req: Req, res: Res, path: string) {
       const where = placesByName();
       const cards: RemoteTripCard[] = remoteTrips().map(({ folder, file, trip }) => ({
         ...tripCard(remoteName(file), file.at || new Date(0).toISOString(), trip, where),
+        ...(lookUpStays(trip, where) ? { locating: true } : {}),
         folder, fileId: file.id, by: file.by, ...(file.sub ? { inner: file.sub } : {}),
         share: trip?.sync && typeof trip.sync === "object" ? { id: String(trip.sync.id || ""), owner: String(trip.sync.owner || ""), ownerName: String(trip.sync.ownerName || ""), mode: trip.sync.mode === "view" ? "view" : "edit" } : null,
       }));

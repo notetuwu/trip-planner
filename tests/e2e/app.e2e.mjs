@@ -146,7 +146,12 @@ test("with automatic fixing on, the plan comes back already fixed", async () => 
         day("2027-09-17", "Milano", [stop("13:00", "Caffe Pedrocchi")])] }`);
   await page.eval(`window.__seen = []; new MutationObserver(() => { if (document.querySelector("#output .day")) window.__seen.push([...document.querySelectorAll("#output .item .name")].map((e) => e.textContent.trim()).join()); }).observe(document.querySelector("#output"), { childList: true, subtree: true }); document.querySelector("#generate").click()`);
   await page.waitFor(`window.__e2e.requests.length === 2 && planner.state().itinerary?.days[1].items[0].place === "Luini" && !!document.querySelector("#output .day")`, 30000, "the fixed plan");
-  assert.ok(await page.eval(`window.__e2e.requests[1].fix.problems.length === 1`));
+  // The wrong town, and what this short plan leaves out (meals, a thin full day), all in one round.
+  const texts = await page.eval(`window.__e2e.requests[1].fix.problems.map((p) => p.text)`);
+  const wrong = texts.filter((t) => !t.startsWith("Something is missing"));
+  assert.equal(wrong.length, 1);
+  assert.match(wrong[0], /Caffe Pedrocchi/);
+  assert.ok(texts.length > wrong.length, "the missing meals go along");
   assert.equal(await page.eval(`window.__seen.some((t) => t.includes("Caffe Pedrocchi"))`), false, "the unfixed plan was never shown");
   await page.sleep(1500);
   assert.equal(await page.eval(`window.__e2e.requests.length`), 2, "no extra fix round after showing it");
@@ -388,7 +393,7 @@ test("re-planning a stay shows its progress in the stay (unfolded), not up in th
   assert.equal(await page.eval(`window.__e2e.requests[0].edit.days.join()`), "0,1");
 });
 
-test("a travel day draws the drive once: no transfer pins, no long day legs", async () => {
+test("a travel day draws the drive once: a pin only where a transfer's arrival is known, no long day legs", async () => {
   await trip({
     stays: [{ city: "Lucerne", start: "2027-09-18", nights: 2, hotel: "" }, { city: "Bregenz", start: "2027-09-20", nights: 3, hotel: "", travel: "car" }],
     list: "", listChosen: true, autoFix: false,
@@ -402,8 +407,9 @@ test("a travel day draws the drive once: no transfer pins, no long day legs", as
       stop("13:30", "Schattenburg", { transport: "Walk from the parking area, 5 min" }), stop("16:00", "Feldkirch → Bregenz"), stop("18:00", "Seebuehne", { transport: "Walk" })]) ] } })`);
   await page.waitFor(`document.querySelectorAll(".num-pin").length > 0`);
   const legs = await page.eval(`planner.dayLegs(planner.state().itinerary.days[0], planner.byTitleMap()).map((l) => [l.fromXi, l.xi, l.mode])`);
-  assert.deepEqual(legs, [], "the drive (and the walk between stops on the way) isn't drawn as day legs");
-  assert.equal(await page.eval(`document.querySelectorAll(".num-pin").length`), 4, "transfers have no pins");
+  assert.deepEqual(legs, [[4, 5, "foot"]], "only the walk on from where the drive arrives; the drive and the walk between stops on the way aren't day legs");
+  // The four stops, and the transfer arriving in Bregenz (a stay); where "Gaflei" is as a destination isn't known.
+  assert.equal(await page.eval(`document.querySelectorAll(".num-pin").length`), 5);
 });
 
 test("a travel day's rides are one journey card; without them, the stays' way is offered and Use this adds it", async () => {

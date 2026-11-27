@@ -53,4 +53,10 @@ describe("Your trips", () => {
     expect(c.route).toEqual([[45.4, 11.88], [47.05, 8.31]]); // "Nowhere" was never found: left out
     expect(c.dots).toEqual([[45.41, 11.87]]);
   });
+  it("the server's card puts a stay set on the map there, looked up or not", () => {
+    const pin = { lat: 57.638, lng: 18.298 };
+    const c = tripCard("Trip", "2026-01-01T00:00:00Z", { stays: [{ city: "Padua", nights: 1, pin }, { city: "Visby", nights: 1, pin }] },
+      new Map([["padua", { lat: 45.4, lng: 11.88 }]]));
+    expect(c.route).toEqual([[57.638, 18.298], [57.638, 18.298]]);
+  });
 });
