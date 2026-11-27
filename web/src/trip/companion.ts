@@ -42,6 +42,8 @@ import { splitGroup } from "./modes";
 import { cleanNames, company } from "../../../shared/people";
 import { dayKey, removedStops } from "../../../shared/edits";
 import { showNames } from "./fields";
+import { openGmail } from "./gmail-picker";
+import { type ChatDocs, ATTACHABLE, docsCard, filesData, holdFiles, heldFiles, linkDocs, wireDocs } from "./chat-docs";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
@@ -53,7 +55,7 @@ interface EditOp { op: string; [k: string]: string | number | boolean | undefine
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string; agreed?: AgreedStop[] }
 type Source = ChatSource;
 /** revises: their message is an edit to the change offered just before it (sent back from its card). */
-type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean };
+type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean; files?: string[]; filesKey?: string; docs?: ChatDocs };
 /** A question the chat asked, with answers to pick from, and what they answered (once they have). */
 
 /** The chat's modes, in the order Shift+Tab goes through them. */
@@ -123,7 +125,7 @@ function editLine(e: EditOp) {
     case "moveStop": return `${v(e.place)}: day ${v(e.day)} → day ${v(e.toDay)}${e.time ? ` at ${v(e.time)}` : ""}`;
     case "swapDays": return `Swap days ${v(e.day)} and ${v(e.toDay)}`;
     case "setCost": return `Day ${v(e.day)}, ${v(e.place)}: costs ${v(e.value)} ${state.currency}`;
-    case "addBooking": return `Booked: ${v(e.name)} on ${v(e.date)}${e.from ? ` ${v(e.from)}${e.to ? `-${v(e.to)}` : ""}` : ""}`;
+    case "addBooking": return `Booked: ${v(e.name)} on ${v(e.date)}${e.until ? ` (valid until ${v(e.until)})` : ""}${e.from ? ` ${v(e.from)}${e.to ? `-${v(e.to)}` : ""}` : ""}${e.where ? `, at ${v(e.where)}` : ""}${e.cost !== undefined && e.cost !== "" ? `, ${v(e.cost)} ${state.currency}${e.paid ? " (paid)" : ""}` : ""}`;
     case "removeBooking": return `Remove the booking ${v(e.name)}`;
     case "booked": return `Book ahead: ${v(e.item || `day ${v(e.day)}, ${v(e.place)}`)} ${e.done === false ? "not booked yet" : "ticked off as booked"}`;
     case "packed": return `Packing: ${v(e.item)} ${e.done === false ? "not packed yet" : "packed"}`;
@@ -192,7 +194,13 @@ function applyEdits(edits: EditOp[]) {
       const d = dayAt(e.day), x = d?.items.find((y) => samePlace(y.place, String(e.place)));
       if (d && x && Number(e.value) >= 0) { x.cost = Number(e.value); sumDay(d); }
     } else if (e.op === "addBooking" && e.name && /^\d{4}-\d{2}-\d{2}$/.test(String(e.date))) {
-      state.bookings = [...(state.bookings || []), { name: String(e.name), date: String(e.date), ...(e.from ? { from: String(e.from) } : {}), ...(e.to ? { to: String(e.to) } : {}) } as never];
+      const time = (v: unknown) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
+      const cost = e.cost === undefined || e.cost === "" ? NaN : Number(e.cost);
+      state.bookings = [...(state.bookings || []), { name: String(e.name), date: String(e.date),
+        ...(/^\d{4}-\d{2}-\d{2}$/.test(String(e.until)) && String(e.until) > String(e.date) ? { until: String(e.until) } : {}),
+        ...(time(e.from) ? { from: time(e.from) } : {}), ...(time(e.to) ? { to: time(e.to) } : {}),
+        ...(e.where ? { where: String(e.where) } : {}), ...(typeof e.lat === "number" && typeof e.lng === "number" ? { lat: e.lat, lng: e.lng } : {}),
+        ...(cost >= 0 ? { cost, countCost: !(e.paid === true || e.paid === "true") } : {}) }];
     } else if (e.op === "removeBooking") state.bookings = (state.bookings || []).filter((b) => !samePlace(b.name, String(e.name)));
     else if (e.op === "booked" && it) {
       // By the entry's words in the list, or (older form) by day and stop.
@@ -297,8 +305,11 @@ function sourcesHtml(list?: Source[]) {
   return `<details class="cp-sources"><summary>${icon("globe")} Sources (${list.length})</summary><ol>${list.map((s) => `<li>${item(s)}</li>`).join("")}</ol></details>`;
 }
 /** Pictures attached to the next message: what's sent (shrunk to at most 1600 px) and a small copy kept with the chat. */
-interface Picture { type: string; data: string; thumb: string }
+interface Picture { type: string; data: string; thumb: string; file?: File }
 let pictures: Picture[] = [];
+/** Other files attached to the next message (a booking confirmation). */
+let documents: File[] = [];
+const attached = () => pictures.length + documents.length;
 /** The full-size picture behind each small copy shown in the chat (only while the page is open). */
 const fullSize = new Map<string, string>();
 
@@ -490,13 +501,15 @@ function openQuestion(): Ask | null {
 function answer() {
   const a = openQuestion();
   if (!a || picks.ask !== a) return;
-  const own = picks.other ? box().value.trim() : "", sent = picks.other ? pictures : [];
+  const own = picks.other ? box().value.trim() : "", sent = picks.other ? pictures : [], docs = picks.other ? documents : [];
   const text = [...a.options.filter((o) => picks.chosen.has(o)), ...(own ? [own] : [])].join(", ");
-  if (!text && !sent.length) return;
-  a.answered = text || "A picture";
-  if (picks.other) { box().value = ""; pictures = []; renderPictures(); fit(); }
+  if (!text && !sent.length && !docs.length) return;
+  a.answered = text || (docs.length ? "A file" : "A picture");
+  if (picks.other) { box().value = ""; pictures = []; documents = []; renderPictures(); fit(); }
   save();
-  ask({ text, pictures: sent });
+  // The files the question was about go along with the answer, so they can still be read.
+  const before = heldFiles([...chat()].reverse().find((t) => t.role === "me")?.filesKey);
+  ask({ text, pictures: sent, files: docs.length ? docs : before.filter((f) => ATTACHABLE.test(f.name)) });
 }
 
 /** Enter or the send button: the open question's answer, else the message. */
@@ -555,7 +568,7 @@ function revise(k: number, text: string) {
   t.change.status = "revised";
   revising = null; reviseDraft = "";
   save();
-  ask({ text: text.trim(), pictures: [], revise: true });
+  ask({ text: text.trim(), pictures: [], files: [], revise: true });
 }
 
 /** The model's thinking above its answer, folded like Claude's: "Thought for 12s" (open and live while it thinks). */
@@ -631,7 +644,8 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
   const covered = state.chatSummarized || 0;
   const marker = (k: number) => (state.chatSummary && k === covered - 1
     ? `<details class="cp-summary"><summary>${icon("file")} Earlier messages summarized</summary><div class="cp-think-body">${mdLite(state.chatSummary)}</div></details>` : "");
-  const pics = (t: Turn) => (t.images?.length ? `<div class="cp-pics">${t.images.map((src) => `<img src="${esc(src)}" alt="" data-zoom title="Click to see it big">`).join("")}</div>` : "");
+  const pics = (t: Turn) => (t.images?.length ? `<div class="cp-pics">${t.images.map((src) => `<img src="${esc(src)}" alt="" data-zoom title="Click to see it big">`).join("")}</div>` : "")
+    + (t.files?.length ? `<div class="cp-pics">${t.files.map((n) => `<span class="cp-file">${icon("file")}<span>${esc(n)}</span></span>`).join("")}</div>` : "");
   // Where the answering model changed: a wavy line with its name.
   const switched = (k: number) => {
     const t = turns[k];
@@ -641,7 +655,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     return j >= 0 && turns[j].modelName !== t.modelName ? `<div class="cp-switch"><span>${icon("sparkles")} Switched to ${esc(t.modelName)}</span></div>` : "";
   };
   const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${t.revises ? `<span class="cp-revise-tag">${icon("pencil")} Change to the proposal</span>` : ""}${esc(t.text)}</div>` : ""}${marker(k)}`
-    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.ask ? withoutClosingQuestion(t.text) : t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.ask && !(k === last && pending == null && !t.ask.answered) ? askCard(t.ask) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
+    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.ask ? withoutClosingQuestion(t.text) : t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.docs ? docsCard(t.docs, k) : ""}${t.ask && !(k === last && pending == null && !t.ask.answered) ? askCard(t.ask) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["Check my plan", "What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
@@ -685,6 +699,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     };
   });
   linkPlaces(log);
+  wireDocs(log, (k) => chat()[k], () => { save(); renderBookings(); render(); });
   if (pending) patchLive(pending);
   for (const { d, key } of foldKeys(log)) if (folds.has(key)) d.open = folds.get(key)!;
   // The live thinking scrolls to its newest line (unless they scrolled up in it); then the log.
@@ -779,6 +794,8 @@ async function apply(k: number) {
     if (!ok && (c.trip || c.edits?.length || c.stops?.length)) { Object.assign(state, now); refreshAll(); }
   }
   if (ok) chain = { snap, cards: [...(chain?.cards || []), k] };
+  // The files kept with the trip are linked from the bookings they're about.
+  if (ok) { linkDocs(chat()[k]); renderBookings(); }
   setStatus(k, ok ? "applied" : "failed");
 }
 
@@ -978,12 +995,23 @@ async function shrink(file: File, max: number, quality: number) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+/** Attaches files to the next message: pictures, and booking confirmations as PDF, email or text (4 of each). */
+function addFiles(files: File[]) {
+  const other = files.filter((f) => !f.type.startsWith("image/"));
+  for (const f of other) {
+    if (!ATTACHABLE.test(f.name)) setNotice(esc(`The chat can't read ${f.name}. Attach a picture, a PDF, an email (.eml) or a text file.`));
+    else if (f.size > 10_000_000) setNotice(esc(`${f.name} is too big (10 MB at most).`));
+    else if (documents.length < 4) documents.push(f);
+  }
+  addPictures(files.filter((f) => f.type.startsWith("image/")));
+}
+
 /** Attaches pictures to the next message (at most 4). */
 async function addPictures(files: File[]) {
   for (const f of files.slice(0, 4 - pictures.length)) {
     try {
       const [big, small] = await Promise.all([shrink(f, 1600, 0.85), shrink(f, 240, 0.7)]);
-      pictures.push({ type: "image/jpeg", data: big.data, thumb: small.dataUrl });
+      pictures.push({ type: "image/jpeg", data: big.data, thumb: small.dataUrl, file: f });
       fullSize.set(small.dataUrl, big.dataUrl);
     } catch { setNotice(esc(`Couldn't read ${f.name} as a picture.`)); }
   }
@@ -993,15 +1021,16 @@ async function addPictures(files: File[]) {
 
 function renderPictures() {
   const el = $("#cpAttach");
-  el.hidden = !pictures.length;
-  el.innerHTML = pictures.map((p, k) => `<span class="cp-thumb"><img src="${p.thumb}" alt="" data-zoom title="Click to see it big"><button type="button" data-unpic="${k}" title="Remove">${icon("x")}</button></span>`).join("");
-  // A picture added (or the last taken off) answers an open question like writing does.
-  picks.write(!!box().value.trim() || !!pictures.length);
+  el.hidden = !attached();
+  el.innerHTML = pictures.map((p, k) => `<span class="cp-thumb"><img src="${p.thumb}" alt="" data-zoom title="Click to see it big"><button type="button" data-unpic="${k}" title="Remove">${icon("x")}</button></span>`).join("")
+    + documents.map((f, k) => `<span class="cp-file">${icon("file")}<span>${esc(f.name)}</span><button type="button" data-unfile="${k}" title="Remove">${icon("x")}</button></span>`).join("");
+  // Something added (or the last taken off) answers an open question like writing does.
+  picks.write(!!box().value.trim() || !!attached());
   idle();
 }
 
 /** A message as the model gets it: changes with how they went. */
-const turnText = (t: Turn) => ({ role: t.role, text: `${t.revises ? "(Sent the proposed change back with this edit) " : ""}${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
+const turnText = (t: Turn) => ({ role: t.role, text: `${t.revises ? "(Sent the proposed change back with this edit) " : ""}${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.files?.length ? `(attached ${t.files.join(", ")}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
 
 /** About how many tokens some text is (a token is roughly 4 characters). */
 const tokensIn = (text: string) => Math.round(text.length / 4);
@@ -1060,7 +1089,7 @@ function idle() {
     send.title = busy ? "Stop" : "Send (Enter) · new line with Shift+Enter";
   }
   // A question waiting: only an answer goes (one picked, or their own, which writing here picks).
-  const asking = openQuestion(), wrote = !!box().value.trim() || !!pictures.length;
+  const asking = openQuestion(), wrote = !!box().value.trim() || !!attached();
   box().placeholder = !asking ? "Ask anything, or ask for a change…" : picks.other ? "Your answer…" : "Pick an answer, or write your own…";
   send.disabled = !busy && (asking ? !(picks.chosen.size || (picks.other && wrote)) : !wrote);
   const ring = $<HTMLButtonElement>("#cpCompact"), use = contextUse();
@@ -1095,27 +1124,32 @@ function retry() {
     const src = fullSize.get(thumb) || thumb;
     return { type: "image/jpeg", data: src.split(",")[1] || "", thumb };
   }).filter((p) => p.data);
+  const files = heldFiles(me.filesKey).filter((f) => ATTACHABLE.test(f.name));
+  if (me.files?.length && !files.length) { setNotice(esc("The attached files aren't here any more (the page was reloaded). Attach them again.")); return; }
   state.chat = turns.slice(0, u);
   if (chain && chain.cards.some((k) => k >= u)) chain = null;
-  ask({ text: me.text, pictures: pics, revise: me.revises });
+  ask({ text: me.text, pictures: pics, files, revise: me.revises });
 }
 
-async function ask(again?: { text: string; pictures: Picture[]; revise?: boolean }) {
+async function ask(again?: { text: string; pictures: Picture[]; files: File[]; revise?: boolean }) {
   const typed = again ? again.text : box().value.trim();
-  const sent = again ? again.pictures : pictures;
+  const sent = again ? again.pictures : pictures, files = again ? again.files : documents;
   // Sent back from a change's card: the chat makes their edit to that proposal and offers all of it again.
   const question = again?.revise && typed
     ? `I'm sending your last proposed change back with this edit (nothing has been applied): ${typed}
 Make exactly this edit to that proposal and offer the whole revised change again, with its CHANGE line; keep everything else in it as it was.`
-    : typed || (sent.length ? "What is this place?" : "");
+    : typed || (files.length ? "Add this booking to the trip." : sent.length ? "What is this? If it's a booking, add it to the trip; if it's a place, which one?" : "");
   if (!question || running || compacting) return;
-  if (!again) { pictures = []; renderPictures(); }
+  if (!again) { pictures = []; documents = []; renderPictures(); }
   notice = ""; revising = null;
   // A long chat is compacted first: the older messages summarized (the most recent few stay as they are).
   if (contextUse().fill >= 1) await compact(chat().length - KEEP_RECENT);
   // What came before (after the summary), with the changes and how they went, so "undo that" or "and day 4 too" make sense.
   const history = chat().slice(Math.max(state.chatSummarized || 0, chat().length - COMPACT_MESSAGES)).map(turnText);
-  state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}), ...(again?.revise ? { revises: true } : {}) }];
+  // The files themselves are only held while the page is open (they're too big to keep with the chat).
+  const originals = [...sent.flatMap((p) => (p.file ? [p.file] : [])), ...files];
+  const filesKey = originals.length ? holdFiles(originals) : "";
+  state.chat = [...chat(), { role: "me" as const, text: typed || (sent.length || files.length ? "" : question), ...(sent.length ? { images: sent.map((p) => p.thumb) } : {}), ...(files.length ? { files: files.map((f) => f.name) } : {}), ...(filesKey ? { filesKey } : {}), ...(again?.revise ? { revises: true } : {}) }];
   save();
   jumpToEnd = true;
   if (!again) { box().value = ""; fit(); }
@@ -1124,9 +1158,10 @@ Make exactly this edit to that proposal and offer the whole revised change again
   livePending = pending; liveTouched = false;
   render(pending);
   try {
+    const data = await filesData(files);
     const { answer, change, thinking, thoughtSecs, sources, question: asked } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number; sources?: Source[]; question?: Ask }>("/api/companion", {
       model: chatModel(), mode: mode(), data: appData(),
-      dayAt: Object.fromEntries((state.itinerary?.days || []).map((d, i) => [i + 1, stayOn(d) && stayLoc(stayOn(d)!)]).filter(([, l]) => l).map(([k, l]) => [k, [(l as { lat: number }).lat, (l as { lng: number }).lng]])), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
+      dayAt: Object.fromEntries((state.itinerary?.days || []).map((d, i) => [i + 1, stayOn(d) && stayLoc(stayOn(d)!)]).filter(([, l]) => l).map(([k, l]) => [k, [(l as { lat: number }).lat, (l as { lng: number }).lng]])), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), files: data, context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
       towns: state.stays.filter((s) => s.city).map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => ({ name: s.city, lat: l!.lat, lng: l!.lng })),
     }, (l) => {
       const status = `${l.status}${l.tokens ? ` · ${l.tokens} tokens` : ""} · ${l.seconds} s`;
@@ -1135,7 +1170,10 @@ Make exactly this edit to that proposal and offer the whole revised change again
       if (l.reasoning && l.reasoning !== pending.text) { if (!pending.answering) pending.until = Date.now(); pending.answering = true; pending.text = l.reasoning; renderLive(pending); }
     }, running.signal);
     const modelName = ($<HTMLSelectElement>("#cpModel").selectedOptions[0]?.textContent || chatModel()).trim();
-    state.chat = [...chat(), { role: "ai" as const, text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}) }];
+    // A confirmation (a file, or anything that became a booking or a hotel): offer to keep it with the trip.
+    const booking = change?.edits?.some((e) => e.op === "addBooking" || e.op === "stayHotel");
+    const keep: ChatDocs | undefined = originals.length && !asked && (files.length || booking) ? { key: filesKey, names: originals.map((f) => f.name) } : undefined;
+    state.chat = [...chat(), { role: "ai" as const, ...(keep ? { docs: keep } : {}), text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}) }];
     // A stop added far from the day's other stops can't just be slotted in: the planner re-plans that day around it.
     const got = chat()[chat().length - 1].change;
     if (got?.stops?.length) farStops(got);
@@ -1143,7 +1181,8 @@ Make exactly this edit to that proposal and offer the whole revised change again
     const added = chat()[chat().length - 1].change;
     if (added && direct(added)) { try { const w = wouldBe(added); added.impact = impactLine(w.before, w.after); } catch { /* shown without it */ } }
     // Auto mode: a small change happens straight away (Undo is on its card); anything bigger waits for Apply.
-    if (change && mode() === "auto" && small(change)) autoApply = chat().length - 1;
+    // (Never from an attached file or picture: what's in it isn't theirs, so they confirm it.)
+    if (change && !originals.length && mode() === "auto" && small(change)) autoApply = chat().length - 1;
   } catch (e) {
     const err = e as Error;
     notice = `${esc(err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`)} <button type="button" class="link-btn" data-retry>${icon("refresh")} Retry</button>`;
@@ -1209,7 +1248,7 @@ export function initCompanion() {
   new MutationObserver(syncModels).observe(main, { childList: true });
   $("#cpClose").onclick = () => setOpen(false);
   $<HTMLFormElement>("#cpForm").onsubmit = (e) => { e.preventDefault(); if (running) running.abort(); else submit(); };
-  box().addEventListener("input", () => { picks.write(!!box().value.trim() || !!pictures.length); fit(); idle(); });
+  box().addEventListener("input", () => { picks.write(!!box().value.trim() || !!attached()); fit(); idle(); });
   box().addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
     // Writing their own answer: Escape goes back to the answers to pick from.
@@ -1228,22 +1267,25 @@ export function initCompanion() {
   document.querySelector<HTMLButtonElement>("#cpMode")?.addEventListener("click", () => renderMode(!document.querySelector("#cpModeMenu")));
   renderMode();
   $("#cpBox").onclick = (e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("cp-tools-fill")) box().focus(); };
-  // Pictures: the button, pasting one into the box, or dropping one on the chat.
+  // Pictures and files: the button, pasting into the box, or dropping them on the chat.
+  $("#cpGmail").onclick = () => openGmail(addFiles);
   const file = $<HTMLInputElement>("#cpImage");
-  file.onchange = () => { addPictures([...(file.files || [])]); file.value = ""; };
+  file.onchange = () => { addFiles([...(file.files || [])]); file.value = ""; };
   box().addEventListener("paste", (e) => {
-    const imgs = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith("image/"));
-    if (imgs.length) { e.preventDefault(); addPictures(imgs); }
+    const files = [...(e.clipboardData?.files || [])];
+    if (files.length) { e.preventDefault(); addFiles(files); }
   });
   panel().addEventListener("dragover", (e) => { if (e.dataTransfer?.types.includes("Files")) { e.preventDefault(); $("#cpBox").classList.add("over"); } });
   panel().addEventListener("dragleave", (e) => { if (e.target === panel()) $("#cpBox").classList.remove("over"); });
   panel().addEventListener("drop", (e) => {
     e.preventDefault(); $("#cpBox").classList.remove("over");
-    addPictures([...(e.dataTransfer?.files || [])].filter((f) => f.type.startsWith("image/")));
+    addFiles([...(e.dataTransfer?.files || [])]);
   });
   $("#cpAttach").onclick = (e) => {
     const k = (e.target as HTMLElement).closest<HTMLElement>("[data-unpic]")?.dataset.unpic;
     if (k != null) { pictures.splice(+k, 1); renderPictures(); return; }
+    const f = (e.target as HTMLElement).closest<HTMLElement>("[data-unfile]")?.dataset.unfile;
+    if (f != null) { documents.splice(+f, 1); renderPictures(); return; }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
     if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   };

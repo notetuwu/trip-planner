@@ -22,7 +22,7 @@ show what a change does before it happens.
       still isn't backed up is marked "Not verified" in the answer and for the planner.
 - [x] The chat sees the routed drives between stays (as the map has them), so it needn't guess those.
 - [x] The chat is told to call hours, prices and timetables it didn't look up unverified.
-- [ ] Labels in the plan itself on what can't be verified from here (ticket prices from the model, hours from
+- [x] Labels in the plan itself on what can't be verified from here (ticket prices from the model, hours from
       OpenStreetMap).
 
 ## Phase 2: see the whole trip

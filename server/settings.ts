@@ -76,12 +76,14 @@ export interface AppPrefs {
   linesDownload: boolean;
   linesRadius: number;
   /** What a new trip starts with. */
+  /** What prices are shown in, unless a trip says otherwise: "" the trip's currency, "local" the local one, or a currency. */
+  displayCurrency: string;
   newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
 }
 
 export const APP_DEFAULTS: AppPrefs = {
   units: "km", temp: "c", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
-  transitLines: false, linesDownload: true, linesRadius: 10,
+  transitLines: false, linesDownload: true, linesRadius: 10, displayCurrency: "",
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 const PACES = ["relaxed (2-3 main stops per day, late starts)", "balanced (3-5 stops per day)", "packed (as much as possible, early starts)"];
@@ -105,6 +107,7 @@ function cleanApp(a: Partial<AppPrefs> = {}, base: AppPrefs = APP_DEFAULTS): App
     transitLines: pick("transitLines", (v) => typeof v === "boolean"),
     linesDownload: pick("linesDownload", (v) => typeof v === "boolean"),
     linesRadius: Number(pick("linesRadius", (v) => [5, 10, 20].includes(Number(v)))),
+    displayCurrency: pick("displayCurrency", (v) => v === "" || v === "local" || (typeof v === "string" && /^[A-Z]{3}$/.test(v))),
     newTrip: {
       currency: typeof t.currency === "string" && /^[A-Z]{3}$/.test(t.currency) ? t.currency : base.newTrip.currency,
       travelers: Number.isInteger(Number(t.travelers)) && Number(t.travelers) >= 1 && Number(t.travelers) <= 30 ? Number(t.travelers) : base.newTrip.travelers,

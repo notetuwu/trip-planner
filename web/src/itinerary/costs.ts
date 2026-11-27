@@ -3,7 +3,7 @@
 // (the same for each stay's accommodation and the bookings). Expenses and Who owes: see costs-spent.ts.
 import { type Expense, backBy, coveredBy, inTrip, KINDS, ownBy, spending, standOf } from "../../../shared/expenses";
 import { $, $$, downloadFile, esc } from "../core/dom";
-import { fmtDate, fmtTime, money } from "../core/format";
+import { currencySymbol, fmtDate, fmtTime, money } from "../core/format";
 import { icon } from "../core/icons";
 import { fold } from "../core/pick-list";
 import { groupBudget, state } from "../core/state";
@@ -11,8 +11,8 @@ import { splitGroup } from "../trip/modes";
 import { fuelHtml, loadFuelData, wireFuel } from "./fuel";
 import { renderItinerary } from "./render";
 import {
-  amountText, bookingLink, changed, clearUndo, defaultPayer, dropExpense, fx, kindOf, last, linked, loadFx, people, putExpense, resetChanged,
-  readStands, ro, rows, setRedraw, standPicker, stayLink, step, stopLink, takeUndo, touched,
+  amountText, bookingLink, changed, clearUndo, defaultPayer, dropExpense, fx, fxReady, kindOf, last, linked, loadFx, people, putExpense, resetChanged,
+  readStands, ro, rows, setRedraw, standPicker, stayLink, step, stopLink, takeUndo, touched, shown, displayPicker, pickDisplayCurrency,
 } from "./costs-data";
 import { editExpense, oweHtml, setViewRedraw, spentHtml, wireOwe, wireSpent } from "./costs-spent";
 
@@ -36,10 +36,10 @@ function overviewHtml() {
   const maxDay = Math.max(1, perDay, ...days.flatMap((d) => [Number(d.estimatedCost) || 0, sum.byDay[d.date] || 0]));
   const spentAny = sum.total > 0;
   return `<div class="stats cb-stats">
-      <div class="stat"><b>${money(est, cur)}</b><span>the plan's estimate${n > 1 ? ` · ${money(est / n, cur)} each` : ""}</span></div>
-      <div class="stat"><b>${money(sum.total, cur)}</b><span>really spent${n > 1 && spentAny ? ` · ${money(sum.total / n, cur)} each` : ""}</span><button type="button" class="link-btn" data-cx-go="spent">${spentAny ? "See all" : "Add what you paid"}</button></div>
-      ${perDay ? `<div class="stat ${diff < 0 ? "over" : ""}"><b>${money(Math.abs(diff), cur)}</b><span>${diff < 0 ? "over" : "under"} the budget of ${money(budget, cur)} (${money(perDay, cur)} a day)</span></div>` : ""}
-      ${paidBookings ? `<div class="stat"><b>${money(paidBookings, cur)}</b><span>bookings already paid (not in the estimate)</span></div>` : ""}
+      <div class="stat"><b>${shown(est, cur)}</b><span>the plan's estimate${n > 1 ? ` · ${shown(est / n, cur)} each` : ""}</span></div>
+      <div class="stat"><b>${shown(sum.total, cur)}</b><span>really spent${n > 1 && spentAny ? ` · ${shown(sum.total / n, cur)} each` : ""}</span><button type="button" class="link-btn" data-cx-go="spent">${spentAny ? "See all" : "Add what you paid"}</button></div>
+      ${perDay ? `<div class="stat ${diff < 0 ? "over" : ""}"><b>${shown(Math.abs(diff), cur)}</b><span>${diff < 0 ? "over" : "under"} the budget of ${shown(budget, cur)} (${shown(perDay, cur)} a day)</span></div>` : ""}
+      ${paidBookings ? `<div class="stat"><b>${shown(paidBookings, cur)}</b><span>bookings already paid (not in the estimate)</span></div>` : ""}
     </div>
     <div class="cx-cols">
       <div>
@@ -48,12 +48,12 @@ function overviewHtml() {
           const e = Number(d.estimatedCost) || 0, s = sum.byDay[d.date] || 0;
           return `<tr data-cx-day="${i}" title="Open this day in the Plan tab"><td class="muted">${esc(fmtDate(d.date))}</td><td class="cx-town">${esc(d.city.split(",")[0])}</td>
             <td class="cx-bars">${bar(e, maxDay, "est")}${bar(s, maxDay, "spent")}</td>
-            <td class="num${perDay && e > perDay ? " over" : ""}">${money(e, cur)}</td><td class="num">${s ? money(s, cur) : "—"}</td></tr>`;
+            <td class="num${perDay && e > perDay ? " over" : ""}">${shown(e, cur)}</td><td class="num">${s ? shown(s, cur) : "—"}</td></tr>`;
         }).join("")}</table>` : `<p class="hint">No plan yet.</p>`}
       </div>
       <div>
         <h3>By kind <span class="cx-legend"><i class="est"></i> estimate <i class="spent"></i> spent</span></h3>
-        ${kinds.length ? `<table class="cb-table">${kinds.map(([k, label]) => `<tr><td>${esc(label)}</td><td class="cx-bars">${bar(estKind[k] || 0, maxKind, "est")}${bar(sum.byKind[k] || 0, maxKind, "spent")}</td><td class="num">${money(estKind[k] || 0, cur)}</td><td class="num">${sum.byKind[k] ? money(sum.byKind[k], cur) : "—"}</td></tr>`).join("")}</table>` : `<p class="hint">Nothing with a cost yet.</p>`}
+        ${kinds.length ? `<table class="cb-table">${kinds.map(([k, label]) => `<tr><td>${esc(label)}</td><td class="cx-bars">${bar(estKind[k] || 0, maxKind, "est")}${bar(sum.byKind[k] || 0, maxKind, "spent")}</td><td class="num">${shown(estKind[k] || 0, cur)}</td><td class="num">${sum.byKind[k] ? shown(sum.byKind[k], cur) : "—"}</td></tr>`).join("")}</table>` : `<p class="hint">Nothing with a cost yet.</p>`}
         <div class="fuel" data-fuel-box>${fuelHtml()}</div>
       </div>
     </div>
@@ -77,14 +77,9 @@ let planQuery = "";
 /** "Paid by" for everyone paying their own share (tickets bought one by one). */
 const EACH = "__each";
 
-/** The currency's symbol ("€", "¥"), shown inside a money field. */
-function symbol(cur: string) {
-  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, currencyDisplay: "narrowSymbol" }).formatToParts(0).find((p) => p.type === "currency")?.value || cur; }
-  catch { return cur; }
-}
 /** A quiet money field for a table row: the symbol inside, no spinner, empty for nothing. */
 const moneyIn = (attrs: string, value: number | undefined, cur: string) =>
-  `<span class="cx-in"><span class="cx-sym">${esc(symbol(cur))}</span><input type="number" min="0" inputmode="decimal" step="${step(cur)}" ${attrs} placeholder=" " value="${esc(value ? amountText(value, cur) : "")}"${ro() ? " disabled" : ""}></span>`;
+  `<span class="cx-in"><span class="cx-sym">${esc(currencySymbol(cur))}</span><input type="number" min="0" inputmode="decimal" step="${step(cur)}" ${attrs} placeholder=" " value="${esc(value ? amountText(value, cur) : "")}"${ro() ? " disabled" : ""}></span>`;
 
 /** Who it was for, in a few words: "everyone", "3 of 4 · covers Tom", "each their own". */
 export function splitWords(e: Expense, names: string[]) {
@@ -97,7 +92,7 @@ export function splitWords(e: Expense, names: string[]) {
 function paidCells(link: string, p: Preset) {
   presets.set(link, p);
   const e = linked(link), cur = e?.currency || state.currency, names = people(), off = ro() ? " disabled" : "";
-  const asEst = !e && p.est > 0 && !ro() ? `<button type="button" class="cx-asest" data-paid-est="${esc(link)}" title="Paid as estimated">${icon("check")} ${esc(money(p.est, state.currency))}</button>` : "";
+  const asEst = !e && p.est > 0 && !ro() ? `<button type="button" class="cx-asest" data-paid-est="${esc(link)}" title="Paid as estimated">${icon("check")} ${esc(shown(p.est, state.currency))}</button>` : "";
   const payer = e?.each ? EACH : e?.paidBy || "";
   return `<td class="cx-paid"><div class="cx-paid-in">${moneyIn(`data-paid="${esc(link)}" data-fk="paid:${esc(link)}" aria-label="Really paid"`, e?.amount, cur)}${asEst}</div></td>
     ${names.length > 1 ? `<td class="cx-payer"><select data-payer="${esc(link)}" data-fk="payer:${esc(link)}" aria-label="Paid by"${off}>${e ? "" : `<option value="">—</option>`}${names.map((n) => `<option value="${esc(n)}"${n === payer ? " selected" : ""}>${esc(n)}</option>`).join("")}<option value="${EACH}"${payer === EACH ? " selected" : ""}>Each paid their own</option></select></td>
@@ -112,7 +107,7 @@ function planHtml() {
   const head = (first: string) => `<tr class="cx-th"><td class="cx-time">${first}</td><td class="cx-stop"></td><td class="cx-estc">Estimate</td><td class="cx-paid">Really paid</td>${split ? `<td class="cx-payer">Paid by</td><td class="cx-split-cell">For</td>` : ""}</tr>`;
   const days = (it?.days || []).map((d, di) => {
     const est = Number(d.estimatedCost) || 0, spent = sum.byDay[d.date] || 0;
-    return `<section class="cx-pday" id="cx-day-${di}" data-q="${q(`day ${di + 1}`, fmtDate(d.date), d.date, d.city, d.title)}"><h3><span>Day ${di + 1} · ${esc(fmtDate(d.date))} · ${esc(d.city.split(",")[0])}</span><span class="hint">${esc(d.title)}</span><span class="num">est. ${money(est, cur)}${spent ? ` · spent ${money(spent, cur)}` : ""}</span></h3>
+    return `<section class="cx-pday" id="cx-day-${di}" data-q="${q(`day ${di + 1}`, fmtDate(d.date), d.date, d.city, d.title)}"><h3><span>Day ${di + 1} · ${esc(fmtDate(d.date))} · ${esc(d.city.split(",")[0])}</span><span class="hint">${esc(d.title)}</span><span class="num">est. ${shown(est, cur)}${spent ? ` · spent ${shown(spent, cur)}` : ""}</span></h3>
       <table class="cb-table cx-plan">${head("Time")}${d.items.map((x, xi) => {
         const who = (x.who || []).filter((n) => names.includes(n));
         return `<tr data-q="${q(x.place, x.where || "", x.time)}"><td class="muted cx-time">${esc(fmtTime(x.time))}</td><td class="cx-stop">${esc(x.place)}${splitGroup(x) ? ` <span class="muted">· ${esc(x.who?.join(", ") || x.group || "")}</span>` : ""}</td>
@@ -258,14 +253,17 @@ function draw(scrollTo?: string) {
   const body = $("#costsBody"), active = document.activeElement as HTMLElement | null;
   const fk = active && body.contains(active) ? active.dataset.fk : undefined, top = body.scrollTop;
   const cur = state.currency, sum = spending(rows(), people(), cur, fx), undo = takeUndo();
-  const count: Partial<Record<CostsTab, string>> = { spent: sum.total ? money(sum.total, cur) : "" };
-  body.innerHTML = `<div class="cx-tabs" role="tablist">${TABS.map(([k, label, ic]) => `<button type="button" role="tab" class="cx-tab${k === tab ? " on" : ""}" data-cx-tab="${k}" aria-selected="${k === tab}">${icon(ic)} ${label}${count[k] ? `<span class="tb-count">${esc(count[k])}</span>` : ""}</button>`).join("")}${tab === "plan" ? `<label class="cx-search">${icon("search")}<input type="search" data-plan-q data-fk="planq" placeholder="Search stops, days, towns…" value="${esc(planQuery)}" aria-label="Search the plan"></label>` : ""}</div>
+  const count: Partial<Record<CostsTab, string>> = { spent: sum.total ? shown(sum.total, cur) : "" };
+  body.innerHTML = `<div class="cx-tabs" role="tablist">${TABS.map(([k, label, ic]) => `<button type="button" role="tab" class="cx-tab${k === tab ? " on" : ""}" data-cx-tab="${k}" aria-selected="${k === tab}">${icon(ic)} ${label}${count[k] ? `<span class="tb-count">${esc(count[k])}</span>` : ""}</button>`).join("")}${tab === "plan" ? `<label class="cx-search">${icon("search")}<input type="search" data-plan-q data-fk="planq" placeholder="Search stops, days, towns…" value="${esc(planQuery)}" aria-label="Search the plan"></label>` : ""}${displayPicker("data-cx-cur")}</div>
     ${undo ? `<div class="cx-undo">${esc(undo.text)}<button type="button" class="link-btn" data-cx-undo>Undo</button></div>` : ""}
     <div class="cx-pane cx-${tab}">${tab === "overview" ? overviewHtml() : tab === "plan" ? planHtml() : tab === "spent" ? spentHtml() : oweHtml()}</div>`;
   const pane = body.querySelector<HTMLElement>(".cx-pane")!;
   for (const b of $$<HTMLButtonElement>("[data-cx-tab]", body)) b.onclick = () => { tab = b.dataset.cxTab as CostsTab; clearUndo(); draw(); body.scrollTop = 0; };
   for (const b of $$<HTMLElement>("[data-cx-go]", body)) b.onclick = () => { tab = b.dataset.cxGo as CostsTab; draw(); body.scrollTop = 0; };
   body.querySelector<HTMLButtonElement>("[data-cx-undo]")?.addEventListener("click", () => takeUndo()?.undo());
+  // Show prices in: the window and the plan behind it drawn again in that currency.
+  const showCur = body.querySelector<HTMLButtonElement>("[data-cx-cur]");
+  if (showCur) showCur.onclick = () => pickDisplayCurrency(showCur, () => { draw(); renderItinerary(); });
   if (tab === "overview") {
     body.querySelector<HTMLButtonElement>("[data-cb-csv]")?.addEventListener("click", () => downloadFile(new Blob([csv()], { type: "text/csv" }), "trip-costs.csv"));
     for (const r of $$<HTMLElement>("[data-cx-day]", body)) r.onclick = () => { tab = "plan"; draw(`cx-day-${r.dataset.cxDay}`); };
@@ -303,8 +301,9 @@ export function openCosts(at?: CostsTab) {
   setRedraw(() => { if (dlg.open) draw(); });
   setViewRedraw(() => draw());
   draw();
-  // Rates for expenses in other currencies: drawn again when they arrive.
-  loadFx().then((got) => { if (got && dlg.open) draw(); });
+  // Rates for expenses in other currencies: drawn again when they first come in, but not over a form being filled in.
+  const had = fxReady;
+  loadFx().then((got) => { if (got && !had && dlg.open && !document.querySelector("#costsBody [data-ex-form]")) draw(); });
   dlg.onclose = () => { if (changed) renderItinerary(); };
   if (!dlg.open) dlg.showModal();
 }

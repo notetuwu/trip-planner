@@ -172,7 +172,8 @@
         <div class="cp-attach" id="cpAttach" hidden></div>
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
         <div class="cp-tools">
-          <label class="cp-tool" title="Add a picture: a place you saw but don't know the name of (you can also paste or drop one)"><i data-icon="image"></i><input type="file" id="cpImage" accept="image/*" multiple hidden></label>
+          <label class="cp-tool" title="Attach a booking confirmation (PDF, email, screenshot) or a picture of a place you saw (you can also paste or drop them)"><i data-icon="image"></i><input type="file" id="cpImage" accept="image/*,.pdf,.eml,.txt,.html,.htm" multiple hidden></label>
+          <button class="cp-tool" id="cpGmail" type="button" title="Add a booking email from Gmail" aria-label="Add a booking email from Gmail"><i data-icon="mail"></i></button>
           <select id="cpModel" class="cp-model" title="The model that answers in the chat (changes are still applied with the planning model)"></select>
           <button class="cp-tool cp-ring" id="cpCompact" type="button" hidden></button>
           <span class="cp-tools-fill"></span>

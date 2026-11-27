@@ -57,6 +57,17 @@ function jsonFiles(p: string): DriveFile[] {
     .map(meta);
 }
 
+export function listDocs(folder: string): { id: string; name: string }[] {
+  const p = pathOf(folder);
+  return fs.readdirSync(p, { withFileTypes: true }).filter((f) => f.isFile()).map((f) => ({ id: LOCAL + path.join(p, f.name), name: f.name }));
+}
+/** A new file, never over one that's there. */
+export function putDoc(folder: string, name: string, data: Buffer): { name: string } {
+  fs.writeFileSync(path.join(pathOf(folder), path.basename(name)), data, { flag: "wx" });
+  return { name: path.basename(name) };
+}
+export const getDoc = (id: string): Buffer => fs.readFileSync(pathOf(id));
+
 export function fileMeta(id: string): DriveFile & { trashed?: boolean } {
   const f = pathOf(id);
   if (!fs.existsSync(f)) return { id, name: path.basename(f), md5Checksum: "", trashed: true };

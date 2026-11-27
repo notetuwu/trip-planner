@@ -10,6 +10,7 @@ import { renderItinerary } from "../itinerary/render";
 import { countryCodes, stayLoc, tripCountries } from "../geo/locate";
 import { map, pickOnMap } from "../map/map";
 import { drawMap } from "../map/draw";
+import { docUrl } from "./chat-docs";
 
 /** Which booking's editor is open (a new one opens by itself). */
 let openRow = -1;
@@ -66,6 +67,7 @@ function rowHtml(b: Booking, i: number) {
         <input type="number" min="0" step="any" data-bk="cost" value="${b.cost ?? ""}" placeholder="Cost (${esc(state.currency)}, whole group)" title="What it costs the whole group">
         <label class="inline-check" title="Count the cost in that day's budget (off: already paid, shown as 0)"><input type="checkbox" data-bk="countCost"${b.countCost ? " checked" : ""}> in the day's cost</label>
       </div>
+      ${b.docs?.length ? `<div class="bk-docs">${b.docs.map((n) => `<a class="cp-file" href="${esc(docUrl(n))}" target="_blank" rel="noopener" title="Open the confirmation">${icon("file")}<span>${esc(n)}</span></a>`).join("")}</div>` : ""}
     </details>`;
 }
 

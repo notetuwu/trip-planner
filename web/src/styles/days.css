@@ -185,3 +185,8 @@
 .journey.suggested > :last-child { border-bottom-style: dashed; }
 .journey.suggested::before { background: var(--panel); border: 2px dashed var(--c); box-shadow: none; }
 @media print { .journey-act { display: none; } }
+/* Not checked here: the planner's estimates, and opening hours from OpenStreetMap. */
+.hours-src { color: var(--muted); font-weight: 400; font-size: 11px; cursor: help; }
+.item .cost.est { cursor: help; }
+.key-cost { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.key-cost.actual { color: var(--ok); font-weight: 600; }

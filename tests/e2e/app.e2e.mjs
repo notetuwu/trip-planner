@@ -42,6 +42,8 @@ const STUBS = `(() => {
     if (url.includes("/api/hours")) return json((body().checks || []).map(() => ({ status: "unknown", text: "" })));
     if (url.includes("/api/open")) { window.__e2e.open.push(body().url); return json({ ok: true }); }
     if (url.includes("/api/nearby")) return json({ warming: 0 });
+    // Exchange rates per euro, fixed (the live ones change).
+    if (url.includes("/api/fx")) return json({ JPY: 160, USD: 1.1, CHF: 0.95 });
     // Updates: scripted by the test through window.__e2e.update (absent: no update).
     const up = window.__e2e.update;
     if (up && url.includes("/api/update/status")) return json(up.statuses.length > 1 ? up.statuses.shift() : up.statuses[0]);
@@ -677,7 +679,7 @@ test("settings group their tabs; AI models opens a page per provider; Gemini's h
   await page.eval(`document.querySelector('[data-tab="photos"]').click()`);
   assert.equal(await page.eval(`document.querySelectorAll("#setMain [data-kf]").length`), 1, "the Google API key");
   await page.eval(`document.querySelector('[data-tab="accounts"]').click()`);
-  await page.waitFor(`document.querySelectorAll("#setMain [data-account]").length === 2`, 10000, "Google and Dropbox");
+  await page.waitFor(`document.querySelectorAll("#setMain [data-account]").length === 3`, 10000, "Google, Gmail and Dropbox");
   // Connect opens the steps, one at a time.
   await page.eval(`document.querySelector('[data-account="google"] [data-connect]').click()`);
   await page.waitFor(`!!document.querySelector('.wz-dialog [data-mode="guided"]')`, 10000, "the two ways through");
@@ -1001,6 +1003,8 @@ test("a booking added in the sidebar goes to the planner and onto its day; Re-pl
   const edit = await page.eval(`window.__e2e.requests.at(-1).edit`);
   assert.deepEqual(edit.days, [2, 3]);
   assert.match(edit.request, /Re-plan these 2 days of the stay in Milano together/);
+  // Let the re-plan finish before the next test sets up its own trip (its answer would land in that one).
+  await page.waitFor(`!document.querySelector(".day.replanning, .inline-progress") && !document.querySelector("#output").dataset.generating`, 20000, "the re-plan done");
 });
 
 test("the Costs window: estimates changed in place, what was paid and by whom, other expenses, and who owes whom", async () => {
@@ -1079,7 +1083,8 @@ test("the Costs window: estimates changed in place, what was paid and by whom, o
   // Paid for both, Tom covered: he owes nothing for it, and the balances stay even.
   await tab("spent");
   if (!(await page.eval(`!!document.querySelector("[data-ex-form]")`))) await page.eval(`document.querySelector("[data-ex-open]").click()`);
-  await page.waitFor(`!!document.querySelector('[data-ex-form] [data-stand="Tom"][value="covered"]')`, 3000, "the covered switch");
+  // (The window draws itself again just after a save: wait for the fresh, empty form.)
+  await page.waitFor(`document.querySelector('[data-ex-form] [data-x="what"]')?.value === "" && !!document.querySelector('[data-ex-form] [data-stand="Tom"][value="covered"]')`, 3000, "a fresh form");
   await page.eval(`(() => { const f = document.querySelector("[data-ex-form]"), x = (k) => f.querySelector('[data-x="' + k + '"]');
     x("what").value = "Wine"; x("amount").value = "30"; x("amount").dispatchEvent(new Event("input")); x("paidBy").value = "Mia"; x("paidBy").dispatchEvent(new Event("change"));
     const c = f.querySelector('[data-stand="Tom"][value="covered"]'); c.checked = true; c.dispatchEvent(new Event("change")); })()`);
@@ -1163,6 +1168,112 @@ test("the phone file before the trip: it opens on the plan, and Today goes from 
   assert.match(await page.eval(`${doc}.querySelector("#vToday .ph-stop").textContent`), /Piazza delle Erbe/);
   assert.equal(await page.eval(`!!${doc}.querySelector("#vToday .ph-stop.next")`), false, "no Next on another day");
   await page.eval(`document.getElementById("phoneFile").remove()`);
+});
+
+test("estimates are marked as not checked, prices can show in another currency, and Export has a KML and a GPX map file", async () => {
+  await page.eval(`localStorage.removeItem("trip-planner-show-currency")`);
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Currency test", expenses: undefined, itinerary: { summary: "", totalEstimatedCost: 18, days: [
+      { date: "2027-09-14", city: "Padua", title: "Chapels", estimatedCost: 18, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "", cost: 18 }] } ] } })`);
+  await page.waitFor(`!!document.querySelector('.item[data-k="0-0"] .cost')`, 10000, "the stop's cost");
+  assert.equal(await page.eval(`document.querySelector('.item[data-k="0-0"] .cost').textContent.trim()`).then((t) => t.startsWith("~")), true, "an estimate shows as ~");
+  assert.match(await page.eval(`document.querySelector('.item[data-k="0-0"] .cost').title`), /not checked/);
+  // Show prices in yen: the figures converted (18 EUR at 160), the amounts kept in euros, the choice kept on this
+  // computer for this trip (not in the trip); then back.
+  await page.eval(`document.querySelector("[data-show-cur]").click()`);
+  await page.eval(`document.querySelector('.cur-pop [data-cur="JPY"]').click()`);
+  await page.waitFor(`/2,880/.test(document.querySelector('.item[data-k="0-0"] .cost')?.textContent || "")`, 5000, "the cost in yen");
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].cost`), 18);
+  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-show-currency"))["Currency test"]`), "JPY");
+  assert.equal(await page.eval(`"displayCurrency" in planner.state()`), false, "not in the trip");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/show-cur.png`, ".summary");
+  await page.eval(`document.querySelector("[data-show-cur]").click()`);
+  await page.eval(`document.querySelector('.cur-pop [data-cur="EUR"]').click()`);
+  await page.waitFor(`/18/.test(document.querySelector('.item[data-k="0-0"] .cost')?.textContent || "")`, 5000, "back in euros");
+  // Export: one menu, with a map file of each kind that saves straight away.
+  await page.eval(`document.querySelector("[data-export]").click()`);
+  await page.waitFor(`document.querySelector(".menu-pop")?.matches(":popover-open")`, 3000, "the Export menu");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll(".menu-pop .menu-item")].map((b) => b.dataset.menuItem).filter((x) => x !== "share")`), ["phone", "ics", "kml", "gpx", "print", "json"]);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/export-menu.png`);
+  await page.eval(`document.querySelector('.menu-pop [data-menu-item="kml"]').click()`);
+  assert.equal(await page.eval(`!!document.querySelector(".menu-pop") || !!document.querySelector("dialog.ask-dialog[open]")`), false, "saved without a question");
+  await page.eval(`localStorage.removeItem("trip-planner-show-currency")`);
+});
+
+test("a booking confirmation in the chat: offered as a booking, never applied by itself, and kept in a docs folder", async () => {
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Docs test", chat: [], chatMode: "auto", bookings: [], itinerary: { summary: "", totalEstimatedCost: 0, days: [
+      { date: "2027-09-14", city: "Padua", title: "Chapels", estimatedCost: 0, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "" }] } ] } })`);
+  await page.waitFor(`!!document.querySelector(".item")`, 10000, "the plan");
+  await page.eval(`fetch("/api/saves/Docs%20test", { method: "PUT", body: JSON.stringify(planner.state()) }).then((r) => r.ok)`);
+  await page.eval(`window.__e2e.companion = { answer: "A table at Caffè Pedrocchi.", change: { days: [], request: "", edits: [{ op: "addBooking", name: "Caffè Pedrocchi", date: "2027-09-14", from: "20:00" }] } }`);
+  await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
+  await page.eval(`(() => { const d = new DataTransfer(); d.items.add(new File(["Table for two"], "table.txt", { type: "text/plain" })); const i = document.querySelector("#cpImage"); i.files = d.files; i.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(`!!document.querySelector("#cpAttach .cp-file")`, 3000, "the file by the message box");
+  await page.eval(`document.querySelector("#cpSend").click()`);
+  await page.waitFor(`!!document.querySelector("[data-docs-keep]")`, 8000, "the question about the docs folder");
+  assert.deepEqual(await page.eval(`window.__e2e.companionAsked.files.map((f) => f.name)`), ["table.txt"]);
+  assert.equal(await page.eval(`(planner.state().bookings || []).length`), 0, "waits for Apply, also in Auto");
+  await page.eval(`document.querySelector("[data-apply]").click()`);
+  await page.waitFor(`(planner.state().bookings || []).length === 1`, 5000, "the booking");
+  await page.eval(`document.querySelector("[data-docs-keep]").click()`);
+  await page.waitFor(`!!planner.state().bookings[0].docs`, 5000, "the file linked to the booking");
+  assert.equal(await page.eval(`fetch(document.querySelector(".bk-docs a").href).then((r) => r.text())`), "Table for two");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/chat-docs.png`);
+  await page.eval(`window.__e2e.companion = null; document.querySelector("#cpClose").click()`);
+});
+
+test("Add from Gmail in the chat: browse two accounts, read an email as sent (safely), tick two and add them", async () => {
+  await page.eval(`(() => { const real = window.fetch; window.__e2e.unGmail = () => { window.fetch = real; };
+    const json = (o) => Promise.resolve(new Response(JSON.stringify(o), { status: 200 }));
+    const mail = (id, subject) => ({ id, threadId: id, subject, from: "Caffè Pedrocchi", fromEmail: "book@example.com", date: new Date().toISOString(), snippet: "See you at 20:00", unread: true, attachment: true });
+    window.fetch = (u, o) => {
+      const url = new URL(String(u), location.origin), q = url.searchParams;
+      if (url.pathname === "/api/sync/gmail/list") { (window.__e2e.listed ||= []).push([q.get("account"), q.get("view"), q.get("page") || "", q.get("q") || ""]);
+        return json(q.get("page") ? { mails: [mail("older1234", "Older booking")], next: "" } : { mails: [mail("abc123def", "Your table (" + q.get("account") + ")")], next: "p2" }); }
+      if (url.pathname === "/api/sync/gmail/message") return json({ name: q.get("id") + ".eml", data: btoa("Subject: Your table"), threadId: "t1", subject: "Your table", from: "Caffè Pedrocchi", fromEmail: "book@example.com", to: "me", date: "",
+        html: '<p>See you at <b>20:00</b></p><img src="https://track.example/x.png"><a href="https://example.com/booking">Your booking</a>', remote: true, attachments: ["voucher.pdf"] });
+      return url.pathname === "/api/sync" ? real(u, o).then((r) => r.json()).then((s) => json({ ...s, configured: true, gmail: [{ email: "one@example.com" }, { email: "two@example.com" }] })) : real(u, o);
+    }; })()`);
+  await page.eval(`localStorage.removeItem("trip-planner-gmail"); localStorage.removeItem("trip-planner-gmail-filters"); if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
+  await page.eval(`document.querySelector("#cpGmail").click()`);
+  await page.waitFor(`!!document.querySelector(".mbx-row")`, 5000, "the inbox");
+  // The account is switched from its menu.
+  await page.eval(`document.querySelector("[data-mbx-account-btn]").click()`);
+  await page.waitFor(`!!document.querySelector('.mbx-acc-pop [data-mbx-account="two@example.com"]')`, 3000, "the accounts menu");
+  await page.eval(`document.querySelector('.mbx-acc-pop [data-mbx-account="two@example.com"]').click()`);
+  await page.waitFor(`/two@/.test(document.querySelector(".mbx-row")?.textContent || "") && document.querySelectorAll(".mbx-row").length === 2`, 5000, "the other account's mail, and older mail as it scrolls");
+  await page.eval(`document.querySelector(".mbx-row").click()`);
+  await page.waitFor(`!!document.querySelector(".mbx-paper iframe")?.contentDocument?.body?.textContent.includes("20:00")`, 5000, "the email in its frame");
+  assert.equal(await page.eval(`document.querySelector(".mbx-paper iframe").sandbox.contains("allow-scripts")`), false, "no scripts");
+  assert.match(await page.eval(`document.querySelector(".mbx-paper iframe").srcdoc`), /img-src data:;/, "pictures from the web blocked");
+  assert.equal(await page.eval(`!!document.querySelector("[data-mbx-images]")`), true, "offered to load them");
+  // A link in the email opens outside the app.
+  await page.eval(`document.querySelector(".mbx-paper iframe").contentDocument.querySelector("a").click()`);
+  await page.waitFor(`window.__e2e.open.includes("https://example.com/booking")`, 3000, "the link opened outside");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/gmail.png`);
+  await page.eval(`document.querySelectorAll(".mbx-row [data-mbx-check]")[1].click()`);
+  await page.waitFor(`!document.querySelector(".mbx-picked").hidden && /Add with 1 ticked/.test(document.querySelector("[data-mbx-add]").textContent)`, 3000, "one more ticked");
+  await page.eval(`document.querySelector("[data-mbx-add]").click()`);
+  await page.waitFor(`document.querySelectorAll("#cpAttach .cp-file").length === 2 && !document.querySelector(".mbx")`, 5000, "both attached");
+  assert.ok(await page.eval(`window.__e2e.listed.some((x) => x[0] === "two@example.com" && x[2] === "p2")`), "older mail of the account picked");
+  // Sorting: oldest of the emails loaded first.
+  await page.eval(`localStorage.removeItem("trip-planner-gmail")`);
+  // A search saved as a filter: listed on the left, and one click searches it again.
+  await page.eval(`document.querySelector("#cpGmail").click()`);
+  await page.waitFor(`!!document.querySelector(".mbx-row")`, 5000, "the inbox again");
+  await page.eval(`(() => { const i = document.querySelector(".mbx-search input"); i.value = "from:booking.com"; i.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  await page.waitFor(`!document.querySelector("[data-mbx-save]").hidden`, 3000, "Save as filter");
+  await page.eval(`document.querySelector("[data-mbx-save]").click(); document.querySelector('[data-mbx-view="bookings"]').click()`);
+  await page.waitFor(`document.querySelector("[data-mbx-filter]")?.textContent.includes("from:booking.com")`, 3000, "the filter on the left");
+  await page.eval(`document.querySelector("[data-mbx-filter]").click()`);
+  await page.eval(`document.querySelector("[data-mbx-sort]").click()`);
+  await page.waitFor(`!!document.querySelector('.mbx-sort-pop [data-sort="from"]')`, 3000, "the sort menu");
+  await page.eval(`document.querySelector('.mbx-sort-pop [data-sort="from"]').click()`);
+  await page.waitFor(`/Sender A–Z/.test(document.querySelector("[data-mbx-sort]").textContent)`, 3000, "sorted by sender");
+  await page.waitFor(`window.__e2e.listed.at(-1)[3] === "from:booking.com" && document.querySelector("[data-mbx-filter]").getAttribute("aria-current") === "true"`, 3000, "searched again");
+  assert.deepEqual(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-gmail-filters"))`), ["from:booking.com"]);
+  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-gmail")).sort`), "from", "the sort is remembered");
+  await page.eval(`document.querySelector(".mbx form[method=dialog] button").click()`);
+  await page.eval(`window.__e2e.unGmail(); document.querySelectorAll("[data-unfile]").forEach(() => document.querySelector("[data-unfile]").click()); document.querySelector("#cpClose").click()`);
 });
 
 test("a stop moves to another day from its edit window, and two days swap", async () => {

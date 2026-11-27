@@ -399,6 +399,8 @@ function generalHtml() {
         <div class="segs">${seg("clock", "24", "24-hour")}${seg("clock", "12", "12-hour")}</div></div>
       <div class="set-row"><div><b>Dates</b><div class="hint">As your system writes them, day first (Mon, 2 Nov) or month first (Mon, Nov 2).</div></div>
         <div class="segs">${seg("dates", "auto", "System")}${seg("dates", "dmy", "2 Nov")}${seg("dates", "mdy", "Nov 2")}</div></div>
+      <div class="set-row"><div><b>Show prices in</b><div class="hint">What costs are shown in, converted at the day's exchange rate; you still enter them in the trip's currency. A trip can show another with the picker above its plan (kept on this computer).</div></div>
+        <select id="setShowCur" class="set-select">${opt("", "The trip's currency", prefs.app.displayCurrency)}${opt("local", "The local currency", prefs.app.displayCurrency)}<optgroup label="Always">${CURRENCIES.map((c) => opt(c, c, prefs.app.displayCurrency)).join("")}</optgroup></select></div>
     </div>
     <div class="set-card">
       <b class="card-title">New trips start with</b>
@@ -496,6 +498,7 @@ function wireGeneral() {
     currency: $<HTMLSelectElement>("#ntCurrency").value, pace: $<HTMLSelectElement>("#ntPace").value,
   } });
   for (const id of ["#ntTravelers", "#ntBudget", "#ntCurrency", "#ntPace"]) document.querySelector<HTMLElement>(id)?.addEventListener("change", () => saveApp(trip()));
+  document.querySelector<HTMLSelectElement>("#setShowCur")?.addEventListener("change", (e) => saveApp({ displayCurrency: (e.target as HTMLSelectElement).value }));
 }
 
 function renderMap() {

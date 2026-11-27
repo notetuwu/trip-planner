@@ -24,12 +24,17 @@ import { readSettings } from "../settings";
 export const SYNC_DIR = path.join(ROOT, "sync");
 const AUTH_FILE = path.join(SYNC_DIR, "google-auth.json");
 const CLIENT_FILE = path.join(SYNC_DIR, "google-client.json");
+const GMAIL_FILE = path.join(SYNC_DIR, "gmail-auth.json");
 /** Every file in Drive: needed to see trips other people put in a shared folder (a narrower permission only covers
  *  files this app made with the same account). Only the sync folders are ever used. */
 export const SCOPE = "https://www.googleapis.com/auth/drive";
 /** Gemini's exact limits: read-only access to the Google Cloud project (its Gemini quotas) and
  *  whether billing is on for it. Asked for only when that's ticked. */
 export const CLOUD_SCOPES = ["https://www.googleapis.com/auth/cloud-platform.read-only", "https://www.googleapis.com/auth/cloud-billing.readonly"];
+/** Booking emails for the trip chat (gmail.ts): reading mail only. Each Gmail account is its own sign-in, apart from
+ *  the one for Drive (so it can be another account, or several). With it, Google says whose mailbox it is ("email"). */
+export const GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly";
+const GMAIL_SIGNIN = ["openid", "email", GMAIL_SCOPE];
 /** What signing in asks for: Drive for sync and photos, Cloud for Gemini's limits (as ticked in Settings → Accounts). */
 function wantedScopes() {
   const g = readSettings().google;
@@ -89,7 +94,7 @@ export async function setClient(next: Client | null) {
     fs.mkdirSync(SYNC_DIR, { recursive: true });
     fs.writeFileSync(CLIENT_FILE, JSON.stringify(next, null, 2), { mode: 0o600 });
   } else { try { fs.unlinkSync(CLIENT_FILE); } catch { /* none */ } }
-  if (before?.id !== client()?.id) await signOut();
+  if (before?.id !== client()?.id) { await signOut(); for (const a of gmailAccounts()) await gmailSignOut(a.email); }
 }
 
 /** scopes: what Google allowed at sign-in (older sign-ins: Drive only). */
@@ -134,7 +139,7 @@ const escHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)
 
 /** Starts signing in: opens Google's page in the default browser. Returns the page's address (shown as a link too, in
  *  case the browser doesn't open). */
-export async function startSignIn(): Promise<string> {
+export async function startSignIn(gmail = false): Promise<string> {
   const c = client();
   if (!c) throw new Error("Add your Google client ID and secret first (Settings → Accounts).");
   stopPending();
@@ -158,8 +163,8 @@ export async function startSignIn(): Promise<string> {
       return done(err === "access_denied" ? "Signing in was cancelled." : `Google said: ${err}`);
     }
     try {
-      await finishSignIn(c, String(url.searchParams.get("code") || ""), verifier, redirect);
-      answer(200, "Signed in", "Trip Planner can sync your trips now. You can close this tab and go back to the app.");
+      await (gmail ? finishGmail : finishSignIn)(c, String(url.searchParams.get("code") || ""), verifier, redirect);
+      answer(200, "Signed in", `${gmail ? "Trip Planner can read your booking emails now" : "Trip Planner can sync your trips now"}. You can close this tab and go back to the app.`);
       done();
     } catch (e) {
       answer(200, "That didn't work", escHtml(errMsg(e)));
@@ -170,10 +175,10 @@ export async function startSignIn(): Promise<string> {
   pending = { server, timer: setTimeout(() => { if (pending?.server === server) { signInError = "Signing in took too long. Try again."; stopPending(); } }, 10 * 60_000) };
 
   const url = `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({
-    client_id: c.id, redirect_uri: redirect, response_type: "code", scope: wantedScopes().join(" "), state,
+    client_id: c.id, redirect_uri: redirect, response_type: "code", scope: (gmail ? GMAIL_SIGNIN : wantedScopes()).join(" "), state,
     code_challenge: challenge, code_challenge_method: "S256",
     // A refresh token, so it stays signed in.
-    access_type: "offline", prompt: "consent",
+    access_type: "offline", prompt: gmail ? "select_account consent" : "consent",
   })}`;
   openInBrowser(url);
   return url;
@@ -220,7 +225,68 @@ export async function signOut() {
   const a = readAuth();
   access = null;
   writeAuth(null);
-  if (a) await revoke(a.refresh);
+  // Revoking ends the app's whole access for that account, Gmail too: not while it's connected for Gmail.
+  if (a && !gmailAccounts().some((x) => x.email === a.email)) await revoke(a.refresh);
+}
+
+// ---- Gmail accounts -------------------------------------------------------------------------------------------------------
+interface GmailAuth { email: string; refresh: string; expired?: boolean }
+const gmailTokens = new Map<string, { token: string; until: number }>();
+function readGmail(): GmailAuth[] {
+  try {
+    const list = JSON.parse(fs.readFileSync(GMAIL_FILE, "utf8"))?.accounts;
+    return Array.isArray(list) ? list.filter((a) => typeof a?.email === "string" && a.email && typeof a?.refresh === "string") : [];
+  } catch { return []; }
+}
+function writeGmail(accounts: GmailAuth[]) {
+  if (!accounts.length) { try { fs.unlinkSync(GMAIL_FILE); } catch { /* none */ } return; }
+  fs.mkdirSync(SYNC_DIR, { recursive: true });
+  fs.writeFileSync(GMAIL_FILE, JSON.stringify({ accounts }, null, 2), { mode: 0o600 });
+}
+/** The connected Gmail accounts (never their tokens). */
+export const gmailAccounts = () => readGmail().map((a) => ({ email: a.email, ...(a.expired ? { expired: true } : {}) }));
+
+async function finishGmail(c: { id: string; secret: string }, code: string, verifier: string, redirect: string) {
+  if (!code) throw new Error("Google sent no sign-in code.");
+  const { ok, json } = await token({ code, client_id: c.id, client_secret: c.secret, redirect_uri: redirect, grant_type: "authorization_code", code_verifier: verifier });
+  if (!ok || !json.access_token) throw new Error(`Google refused the sign-in: ${json.error_description || json.error || "no token"}`);
+  if (!String(json.scope || "").split(" ").includes(GMAIL_SCOPE)) throw new Error("Reading your mail wasn't allowed (it was unticked on Google's page). Sign in again and leave every box ticked.");
+  if (!json.refresh_token) throw new Error("Google didn't let the app stay signed in. Sign in again.");
+  // Whose mailbox: the ID token, which came straight from Google just now.
+  let email = "";
+  try { email = String(JSON.parse(Buffer.from(String(json.id_token).split(".")[1], "base64url").toString("utf8")).email || ""); } catch { /* none */ }
+  if (!email) throw new Error("Google didn't say which account that is. Sign in again.");
+  gmailTokens.set(email, { token: json.access_token, until: Date.now() + (Number(json.expires_in) || 3000) * 1000 });
+  writeGmail([...readGmail().filter((a) => a.email !== email), { email, refresh: json.refresh_token }]);
+}
+
+/** Forgets one Gmail account (and tells Google to, unless it's the account Drive is signed in with). */
+export async function gmailSignOut(email: string) {
+  const all = readGmail(), a = all.find((x) => x.email === email);
+  if (!a) return;
+  gmailTokens.delete(email);
+  writeGmail(all.filter((x) => x !== a));
+  const main = readAuth();
+  if (!a.expired && !(main && !main.expired && main.email === email)) await revoke(a.refresh);
+}
+
+/** A read-only Gmail request for one of the connected accounts. */
+export async function gmailGet(email: string, url: string, again = true): Promise<Response> {
+  const a = readGmail().find((x) => x.email === email), c = client();
+  if (!a || a.expired || !c) throw new SignedOut(a?.expired ? `Google signed ${email} out. Connect it again.` : "Connect Gmail first (Settings → Accounts → Google).");
+  let t = gmailTokens.get(email);
+  if (!t || t.until < Date.now() + 60_000) {
+    const { ok, json } = await token({ refresh_token: a.refresh, client_id: c.id, client_secret: c.secret, grant_type: "refresh_token" });
+    if (!ok) {
+      if (json.error === "invalid_grant") { writeGmail(readGmail().map((x) => (x.email === email ? { ...x, refresh: "-", expired: true } : x))); throw new SignedOut(`Google signed ${email} out. Connect it again.`); }
+      throw new Error(`Google: ${json.error_description || json.error || "couldn't sign in"}`);
+    }
+    t = { token: json.access_token, until: Date.now() + (Number(json.expires_in) || 3000) * 1000 };
+    gmailTokens.set(email, t);
+  }
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${t.token}`, "User-Agent": USER_AGENT }, signal: AbortSignal.timeout(60000) });
+  if (res.status === 401 && again) { gmailTokens.delete(email); return gmailGet(email, url, false); }
+  return res;
 }
 
 export class SignedOut extends Error {}
@@ -444,6 +510,26 @@ export async function download(id: string): Promise<string> {
   const text = await res.text();
   if (text.length > MAX_TRIP_BYTES) throw new Error("That trip file is too big.");
   return text;
+}
+
+export async function listDocs(folder: string): Promise<{ id: string; name: string }[]> {
+  if (!isDriveId(folder)) throw new Error("Not a folder id");
+  const q = new URLSearchParams({ q: `'${folder}' in parents and trashed = false and mimeType != '${FOLDER_TYPE}'`, fields: "files(id,name)", pageSize: "1000", supportsAllDrives: "true", includeItemsFromAllDrives: "true" });
+  return (await driveJson(`${DRIVE}/files?${q}`)).files || [];
+}
+export async function putDoc(folder: string, name: string, data: Buffer, type: string): Promise<{ name: string }> {
+  if (!isDriveId(folder)) throw new Error("Not a folder id");
+  const boundary = `tp-${crypto.randomBytes(12).toString("hex")}`;
+  const head = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name, parents: [folder], mimeType: type })}\r\n--${boundary}\r\nContent-Type: ${type}\r\n\r\n`;
+  const body = new Uint8Array(Buffer.concat([Buffer.from(head), data, Buffer.from(`\r\n--${boundary}--`)]));
+  await driveJson(`${UPLOAD}/files?uploadType=multipart&supportsAllDrives=true&fields=id`, { method: "POST", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body });
+  return { name };
+}
+export async function getDoc(id: string): Promise<Buffer> {
+  if (!isDriveId(id)) throw new Error("Not a file id");
+  const res = await drive(`${DRIVE}/files/${id}?alt=media&supportsAllDrives=true`);
+  if (!res.ok) throw new Error(explain(res.status, await res.json().catch(() => ({}))));
+  return Buffer.from(await res.arrayBuffer());
 }
 
 /** Writes a trip file: a new one in `folder`, or a new version of file `id` (Drive keeps the earlier versions). */

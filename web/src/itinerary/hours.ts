@@ -34,7 +34,8 @@ function show(byItem: Map<string, HoursCheck>) {
     const warn = r && r.status !== "ok" && r.status !== "unknown";
     el.hidden = !warn;
     el.classList.toggle("note", r?.status === "closes-soon");
-    el.innerHTML = warn ? `${icon("clock")} ${esc(r.text)}` : "";
+    // Where the hours come from: OpenStreetMap's listing, which can be out of date.
+    el.innerHTML = warn ? `${icon("clock")} ${esc(r.text)} <span class="hours-src" title="The opening hours as listed on OpenStreetMap: they can be out of date. Check the place's own website before you go.">· OpenStreetMap hours</span>` : "";
   }
 }
 

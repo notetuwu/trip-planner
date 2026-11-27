@@ -8,7 +8,9 @@ import { addDays, fmtDate } from "../core/format";
 import { $, $$, downloadFile, esc, toast } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc, stopMapsUrl } from "../geo/item-loc";
-import { downloadForPhone, shareForPhone } from "../export/offline";
+import { canShareFiles, downloadForPhone, shareForPhone } from "../export/offline";
+import { toggleMenu } from "../core/menu";
+import { displayCurrency, fxReady, loadFx, pickDisplayCurrency } from "./costs-data";
 import { runGeneration } from "../generate/run";
 import { renderDayChips, selectDay, showOnMap } from "../map/days";
 import { drawMap } from "../map/draw";
@@ -19,6 +21,7 @@ import { wireMoves } from "./move-stops";
 import { updateLegInfo } from "../map/legs";
 import { renderTripTitle } from "../trip/title";
 import { itineraryIcs } from "../export/ics";
+import { downloadMapFile } from "../export/map-file";
 import { wireBookAhead } from "./book-ahead";
 import { wirePacking } from "./packing";
 import { daysHtml, extrasHtml } from "./days-html";
@@ -95,11 +98,27 @@ function wire(out: HTMLElement) {
     phone: downloadForPhone,
     share: shareForPhone,
     ics: downloadCalendar,
+    kml: () => downloadMapFile("kml"),
+    gpx: () => downloadMapFile("gpx"),
     print: () => window.print(),
     json: () => downloadFile(new Blob([JSON.stringify(state.itinerary, null, 2)], { type: "application/json" }), "itinerary.json"),
     clear: async () => { if (await askConfirm({ title: "Clear this itinerary?", text: "The day-by-day plan goes; the stays and places stay. (The saved trip keeps earlier versions: Your trips → Recover.)", ok: "Clear", danger: true })) clearItinerary(); },
   };
   for (const b of $$("[data-tool]", out)) b.onclick = tools[b.dataset.tool!];
+  // Show prices in: another currency for the figures shown (the amounts stay in the trip's).
+  const showCur = out.querySelector<HTMLButtonElement>("[data-show-cur]");
+  if (showCur) showCur.onclick = () => pickDisplayCurrency(showCur, () => renderItinerary());
+  // Export: every way the plan leaves the planner, in one menu.
+  const exportBtn = out.querySelector<HTMLButtonElement>("[data-export]");
+  if (exportBtn) exportBtn.onclick = () => toggleMenu(exportBtn, [
+    { id: "phone", icon: "phone", label: "For phone", hint: "One file that works offline: today's stops, the plan and expenses", run: tools.phone },
+    ...(canShareFiles() ? [{ id: "share", icon: "share" as const, label: "Share", hint: "The phone file through the system share menu", run: tools.share }] : []),
+    { id: "ics", icon: "calendar", label: "Calendar", hint: "Every stop as an event, for your phone's calendar", run: tools.ics },
+    { id: "kml", icon: "map", label: "Map file · KML", hint: "For Google My Maps, Google Earth and Organic Maps", run: tools.kml },
+    { id: "gpx", icon: "route", label: "Map file · GPX", hint: "For Garmin, OsmAnd, Komoot and Organic Maps", run: tools.gpx },
+    { id: "print", icon: "printer", label: "Print / PDF", hint: "A clean printout with a cover page", run: tools.print },
+    { id: "json", icon: "download", label: "JSON", hint: "The itinerary as data", run: tools.json },
+  ]);
   out.querySelector('[data-stale="clear"]')?.addEventListener("click", clearItinerary);
   out.querySelector('[data-stale="gen"]')?.addEventListener("click", () => runGeneration());
   $("#refineBtn").onclick = () => openChat("");
@@ -146,6 +165,8 @@ export function renderItinerary(error?: string) {
   const out = $("#output");
   // A plan is being generated there: redraws meanwhile (weather arriving, countries found) would wipe the progress view.
   if (out.dataset.generating) return;
+  // Prices shown in another currency: drawn again once the rates are in.
+  if (displayCurrency() !== state.currency && !fxReady) loadFx().then((got) => { if (got) renderItinerary(); });
   showPlannedModes();
   // Splits written only into the text get their groups (plans from before this was read on the server too).
   if (it && (groupsFromText(it.days) || orderSplitRuns(it.days))) { orderSplitRuns(it.days); save(); }

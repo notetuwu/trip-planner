@@ -54,6 +54,7 @@ label.check.off { opacity: .5; }
 .stat { flex: 1 1 120px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .stat b { display: block; font-size: 18px; font-weight: 700; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
 .stat span { font-size: 12px; color: var(--muted); }
+.stat .stat-line { display: block; }
 .bars { display: flex; align-items: flex-end; gap: 3px; height: 56px; margin: 14px 0 4px; position: relative; }
 .bars .budget-line { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--muted); opacity: .6; pointer-events: none; }
 .bars button { flex: 1; min-width: 4px; border: 0; padding: 0; border-radius: 3px 3px 0 0; background: var(--c); opacity: .8; cursor: pointer; }
@@ -253,3 +254,39 @@ label.check.off { opacity: .5; }
 }
 
 .review-dialog:focus { outline: none; }
+/* Export in the toolbar, and its menu (core/menu.ts). */
+.toolbar .tb-export { gap: 6px; }
+.toolbar .tb-export > svg:last-child { width: 13px; height: 13px; color: var(--muted); transition: transform .15s; }
+.toolbar .tb-export[aria-expanded="true"] { border-color: var(--accent); }
+.toolbar .tb-export[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
+@media (max-width: 760px) {
+  .toolbar .tb-group:first-child .tb-export { width: auto; padding: 0 10px; }
+  .toolbar .tb-group:first-child .tb-export .tb-label { display: inline; }
+}
+.menu-pop { position: fixed; inset: auto; margin: 0; min-width: 280px; max-width: min(360px, calc(100vw - 16px)); padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 36px rgba(0, 0, 0, .35); }
+.menu-pop:not(:popover-open) { display: none; }
+.menu-item { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 12px; width: 100%; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.menu-item:hover, .menu-item:focus-visible { background: var(--field); }
+.menu-item > svg { flex: none; width: 18px; height: 18px; color: var(--accent); }
+.menu-item span { display: grid; gap: 1px; min-width: 0; }
+.menu-item b { font-size: 13.5px; font-weight: 600; }
+.menu-item small { font-size: 12px; color: var(--muted); line-height: 1.35; }
+/* "Show prices in": a small currency picker in the plan's summary and the Costs window (costs-data.ts). */
+button.show-cur { display: inline-flex; align-items: center; gap: 5px; margin: 0 0 0 auto; padding: 0 8px 0 9px; height: 30px; border: 1px solid var(--line); border-radius: 999px; background: var(--field); color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.show-cur:hover { border-color: var(--line-strong, var(--line)); }
+.show-cur:focus-visible, .show-cur[aria-expanded="true"] { border-color: var(--accent); }
+.show-cur svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.sum-head .show-cur { margin-right: 6px; }
+.cx-tabs .show-cur { align-self: center; }
+.cx-tabs .cx-search + .show-cur { margin-left: 8px; }
+/* Its list (core/menu.ts): the trip's and local currency, then the rest in columns. */
+.cur-pop { position: fixed; inset: auto; margin: 0; width: 264px; box-sizing: border-box; padding: 6px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 14px 36px rgba(0, 0, 0, .35); }
+.cur-pop:not(:popover-open) { display: none; }
+.cur-pop button { all: unset; box-sizing: border-box; display: flex; align-items: center; width: 100%; min-height: 30px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.cur-pop button:hover, .cur-pop button:focus-visible { background: var(--field); }
+.cur-pop button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.cur-more { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.cur-more h6 { grid-column: 1 / -1; margin: 0; padding: 2px 10px 4px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cur-pop .cur-more button { justify-content: center; padding: 0; white-space: nowrap; }
+.cur-pop i { margin-left: 1px; font-style: normal; font-weight: 500; color: var(--muted); }
+.cur-pop button[aria-checked="true"] i { color: inherit; }

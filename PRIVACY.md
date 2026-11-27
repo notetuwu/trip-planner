@@ -29,6 +29,23 @@ Sync is off unless you set it up with your own Google client ID and secret and s
 
 Data from your Google account is not sold, used for advertising, or sent to the developer.
 
+## Gmail booking emails (optional)
+
+Gmail is off unless you connect it (Settings → Accounts → Google).
+
+- **Access:** read-only. The app can't send, change, delete or mark mail as read. Each account you add is its own
+  sign-in, apart from the one for Drive.
+- **What's read:** only while "Add from Gmail" is open in the trip chat: the subject, sender, date and first words of the
+  emails listed (your inbox, the booking emails or your search), and the whole of each email you open there, with its
+  attachments.
+- **Where it goes:** the email you pick is sent, when you send your chat message, to the AI model you chose for the chat
+  (a cloud model's provider receives it; a local model keeps it on your computer). If you then keep the file, it's saved
+  in the trip's `docs` folder, which everyone with access to a shared folder can open. The app keeps no other copy of
+  your mail.
+- **Storage:** the sign-in tokens stay in the app's data folder.
+- **Removing it:** remove the account in Settings → Accounts, or remove the app at
+  <https://myaccount.google.com/connections>.
+
 ## Dropbox sync and photos (optional)
 
 Dropbox is off unless you set it up with your own Dropbox app key and sign in to Dropbox.

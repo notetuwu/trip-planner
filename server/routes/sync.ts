@@ -5,7 +5,8 @@ import type { RemoteTripCard, SyncPlace } from "../../shared/types";
 import { errMsg } from "../config";
 import { lookUpStays, placesByName, tripCard } from "./trips";
 import * as box from "../sync/dropbox";
-import { browse, clientShown, createFolder, parseClient, setClient, startSignIn } from "../sync/google";
+import { browse, clientShown, createFolder, gmailSignOut, parseClient, setClient, startSignIn } from "../sync/google";
+import { listMail, readMail } from "../sync/gmail";
 import { addPerson, folderAccess, removeAccess, setLimited, setLinkAccess, setRole } from "../sync/google-access";
 import { addFolder, checkTrip, dismissNotices, followMove, tripPlaces, newFolder, openRemote, remoteTrips, removeFolder, renameFolder, resolve, runSync, setDiscover, setTripSync, signOut, status, remoteName } from "../sync/sync";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
@@ -21,6 +22,15 @@ export async function handleSync(req: Req, res: Res, path: string) {
     // Look at the folders now (Your trips opened, or "Sync now"); answers when it's done.
     if (method === "POST" && path === "/api/sync/now") { await runSync(); return sendJson(res, 200, status()); }
     if (method === "GET" && path === "/api/sync/check") return sendJson(res, 200, await checkTrip(new URL(req.url || "/", "http://x").searchParams.get("name") || ""));
+    // Gmail for booking emails in the trip chat: connecting accounts, and reading them (read-only; this computer only,
+    // like the rest of /api/sync).
+    if (method === "POST" && path === "/api/sync/gmail/signin") return sendJson(res, 200, { url: await startSignIn(true) });
+    if (method === "POST" && path === "/api/sync/gmail/signout") { await gmailSignOut(String((await readJson(req))?.email || "")); return sendJson(res, 200, status()); }
+    if (method === "GET" && path === "/api/sync/gmail/list") {
+      const q = new URL(req.url || "/", "http://x").searchParams;
+      return sendJson(res, 200, await listMail(q.get("account") || "", { query: q.get("q") || "", view: q.get("view") || "", page: q.get("page") || "" }));
+    }
+    if (method === "GET" && path === "/api/sync/gmail/message") { const q = new URL(req.url || "/", "http://x").searchParams; return sendJson(res, 200, await readMail(q.get("account") || "", q.get("id") || "")); }
     // Where a trip can go in a folder with a folder per trip.
     if (method === "GET" && path === "/api/sync/places") { const q = new URL(req.url || "/", "http://x").searchParams; return sendJson(res, 200, await tripPlaces(q.get("name") || "", q.get("folder") || "")); }
     // The Drive folders to pick from: "?in=root" (My Drive), "shared" (shared with me), "drives" (shared drives) or a folder's id.

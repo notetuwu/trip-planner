@@ -28,6 +28,14 @@ export const download = (id: string) => pick(id, { local: () => Promise.resolve(
 export const upload = (o: { id?: string; folder?: string; name: string; text: string; properties?: Record<string, string> }) =>
   pick(o.id || o.folder, { local: () => Promise.resolve(local.upload(o)), dropbox: () => box.upload(o), drive: () => g.upload(o) });
 
+/** Other files next to the trips (booking confirmations in a "docs" folder): what's in a folder, a new file, its bytes. */
+export const listDocs = (folder: string): Promise<{ id: string; name: string }[]> =>
+  pick(folder, { local: () => Promise.resolve(local.listDocs(folder)), dropbox: async () => (await box.folderEntries(folder)).filter((f) => !f.folder), drive: () => g.listDocs(folder) });
+export const putDoc = (folder: string, name: string, data: Buffer, type: string): Promise<{ name: string }> =>
+  pick(folder, { local: () => Promise.resolve(local.putDoc(folder, name, data)), dropbox: () => box.putDoc(folder, name, data), drive: () => g.putDoc(folder, name, data, type) });
+export const getDoc = (id: string): Promise<Buffer> =>
+  pick(id, { local: () => Promise.resolve(local.getDoc(id)), dropbox: async () => Buffer.from(await (await box.fileResponse(id)).arrayBuffer()), drive: () => g.getDoc(id) });
+
 /** A file name for what's kept about a file (its last-agreed copy, its download): a Drive id as it is, others hashed. */
 export const fileKey = (id: string) => (g.isDriveId(id) ? id : `l-${crypto.createHash("sha1").update(id).digest("hex")}`);
 

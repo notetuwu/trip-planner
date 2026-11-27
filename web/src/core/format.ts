@@ -29,10 +29,17 @@ export const ago = (iso: string | undefined) => {
   return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
 };
 
-export function money(n: number | undefined, cur: string) {
+export function money(n: number | undefined, cur: string, whole = false) {
   if (n == null || isNaN(n)) return "";
-  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: ["JPY", "KRW", "VND", "IDR", "HUF"].includes(cur) ? 0 : 2 }).format(n); }
+  const digits = whole || ["JPY", "KRW", "VND", "IDR", "HUF"].includes(cur) ? 0 : 2;
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n); }
   catch { return `${Math.round(n)} ${cur}`; }
+}
+
+/** A currency's short sign ("€", "$", "kr"); the code where it has none. */
+export function currencySymbol(cur: string) {
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, currencyDisplay: "narrowSymbol" }).formatToParts(0).find((p) => p.type === "currency")?.value || cur; }
+  catch { return cur; }
 }
 
 export const fmtDist = (m: number) => {
@@ -56,4 +63,4 @@ export const fmtDur = (s: number) => {
 const DAY_COLORS = ["#e4572e", "#2b8a3e", "#1c7ed6", "#ae3ec9", "#f59f00", "#0ca678", "#d6336c", "#4263eb", "#a9743b", "#1098ad"];
 export const dayColor = (i: number) => DAY_COLORS[i % DAY_COLORS.length];
 
-export const CURRENCIES = ["EUR", "USD", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "KRW", "CNY", "HKD", "TWD", "SGD", "THB", "VND", "IDR", "MYR", "PHP", "INR", "AED", "TRY", "MXN", "BRL", "ZAR"];
+export const CURRENCIES = ["EUR", "AUD", "GBP", "CHF", "SEK", "NOK", "DKK", "PLN", "CZK", "HUF", "TRY", "USD", "CAD", "MXN", "BRL", "JPY", "KRW", "CNY", "HKD", "TWD", "SGD", "THB", "VND", "IDR", "MYR", "PHP", "INR", "AED", "NZD", "ZAR"];

@@ -7,6 +7,10 @@ One Google project and sign-in of your own serves everything Google can add to t
 - **Gemini's exact limits:** the planner reads your Gemini key's limits from its Google Cloud project (the Service
   Usage API), the same numbers AI Studio shows, so it knows which models the key can run without spending test requests.
 
+- **Booking emails from Gmail** in the trip chat: browse or search your mail, pick a confirmation, and the chat reads
+  it. Read-only. Each Gmail account is connected on its own (Settings → Accounts → Gmail → Add account), and can be a
+  different one from Drive's; with the app **In production** any of your accounts can sign in to it.
+
 To sign in, the app needs a Google "OAuth client": an ID and a secret that tell Google which app is asking. The app ships
 without one. You make your own, free, once, in about 5–10 minutes. The app takes you through the same steps (Settings →
 Accounts → Connect, or the Connect button of the feature), showing only the ones that feature needs. It first asks how:
@@ -31,6 +35,7 @@ the same project as your Gemini key.
    | [Google Drive API](https://console.cloud.google.com/apis/library/drive.googleapis.com) | Sync, photos from Drive |
    | [Service Usage API](https://console.cloud.google.com/apis/library/serviceusage.googleapis.com) | Gemini's exact limits |
    | [Cloud Billing API](https://console.cloud.google.com/apis/library/cloudbilling.googleapis.com) | Whether billing is on (which limits apply) |
+   | [Gmail API](https://console.cloud.google.com/apis/library/gmail.googleapis.com) | Booking emails from Gmail |
 
 3. [Google Auth Platform → Branding](https://console.cloud.google.com/auth/branding): **Get started** (not shown if the
    project already has a sign-in screen). App name "Trip Planner", your email as support email, audience **External**,
@@ -59,7 +64,9 @@ the same project as your Gemini key.
    Testing: do step 4 (**Publish app**) and sign in again.
 
 Adding a feature later? Switch on its API (step 2), then sign in again: the app's steps show just that. Read-only
-Cloud access is asked for only when Gemini's exact limits are on.
+Cloud access is asked for only when Gemini's exact limits are on, and Gmail only when it's connected. Google treats
+reading mail as sensitive, so it needs the app **In production** (step 4) and shows the "unverified app" warning; a work
+or school account's administrator may block it.
 
 Menu names in Google's console change now and then; the links should still lead to the right pages.
 

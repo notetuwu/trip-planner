@@ -1,10 +1,13 @@
 // What the Costs window's tabs share: the expenses as a list, exchange rates, who travels, and changing an expense
 // (with Undo inside the window, since the page's toast can't be clicked behind it).
-import { type Expense, type ExpenseKind, type Stand, decimals, expenseId, inTrip } from "../../../shared/expenses";
+import { type Expense, type ExpenseKind, type Stand, decimals, expenseId, inTrip, rateOf } from "../../../shared/expenses";
 import type { ItineraryItem } from "../../../shared/types";
 import { api, esc } from "../core/dom";
-import { todayIso } from "../core/format";
+import { CURRENCIES, currencySymbol, money, todayIso } from "../core/format";
+import { icon } from "../core/icons";
+import { togglePopup } from "../core/menu";
 import { save, state } from "../core/state";
+import { prefs } from "../core/prefs";
 import { isReadOnly } from "../saves/read-only";
 
 export type Row = Expense & { id: string };
@@ -12,7 +15,61 @@ export type Row = Expense & { id: string };
 /** Exchange rates per 1 EUR (from /api/fx, once a session). */
 export let fx: Record<string, number> = { EUR: 1 };
 let fxAsked: Promise<boolean> | null = null;
-export const loadFx = () => (fxAsked ??= api<Record<string, number>>("/api/fx").then((r) => { fx = { EUR: 1, ...r }; return true; }).catch(() => { fxAsked = null; return false; }));
+export const loadFx = () => (fxAsked ??= api<Record<string, number>>("/api/fx").then((r) => { fx = { EUR: 1, ...r }; fxReady = true; return true; }).catch(() => { fxAsked = null; return false; }));
+/** An amount in the trip's currency (or `from`), shown in the currency picked under "Show prices in" (converted at the
+ *  day's rate; as it is while there's no rate). */
+export function shown(n: number | undefined, from: string = state.currency, whole = false): string {
+  if (n == null || isNaN(n)) return "";
+  const to = displayCurrency();
+  if (to === from) return money(n, from, whole);
+  const r = rateOf(from, to, fx);
+  return r ? money(n * r, to, whole) : money(n, from, whole);
+}
+
+// What prices are shown in is kept on this computer, per trip (never in the trip itself, so it isn't synced): the
+// trip's own choice when one was made with the picker, else the default from Settings → General.
+const SHOW_KEY = "trip-planner-show-currency";
+const tripKey = () => state.sync?.id || state.saveName || "(unsaved)";
+const picks = (): Record<string, string> => { try { return JSON.parse(localStorage.getItem(SHOW_KEY) || "{}"); } catch { return {}; } };
+/** "" (the trip's currency), "local", or a currency, as the default says it. */
+const resolve = (v: string) => (v === "local" ? state.itinerary?.localCurrency || state.currency : v || state.currency);
+/** The currency prices are shown in now. */
+export const displayCurrency = (): string => { const p = picks()[tripKey()]; return resolve(p ?? prefs.app.displayCurrency); };
+
+/** "Show prices in": a button with the currency shown now; `attr` tells the pickers apart. */
+export function displayPicker(attr: string) {
+  const trip = state.currency, local = state.itinerary?.localCurrency, now = displayCurrency();
+  const name = now === trip ? `${now} · trip` : now === local ? `${now} · local` : now;
+  return `<button type="button" class="show-cur" ${attr} aria-haspopup="menu" aria-expanded="false" aria-label="Show prices in: ${esc(name)}" title="Show prices in another currency (converted at the day's exchange rate; you still enter them in ${esc(trip)})">${icon("coins")}<span>${esc(name)}</span>${icon("chevronDown")}</button>`;
+}
+
+/** Opens its list at the button: the trip's currency, the local one, then the rest. (The app's own list: not every
+ *  browser can style its own.) */
+export function pickDisplayCurrency(anchor: HTMLElement, then: () => void) {
+  const trip = state.currency, local = state.itinerary?.localCurrency, now = displayCurrency();
+  const opt = (c: string, note = "") => {
+    const sign = currencySymbol(c);
+    return `<button type="button" role="menuitemradio" aria-checked="${c === now}" data-cur="${esc(c)}"><span>${esc(c)}${sign === c ? "" : ` <i>${esc(sign)}</i>`}${note ? ` · ${note}` : ""}</span></button>`;
+  };
+  togglePopup(anchor, {
+    className: "cur-pop", end: true,
+    html: `${opt(trip, "trip")}${local && local !== trip ? opt(local, "local") : ""}
+      <div class="cur-more" role="group" aria-label="Other currencies"><h6>Other currencies</h6>${CURRENCIES.filter((c) => c !== trip && c !== local).map((c) => opt(c)).join("")}</div>`,
+    pick: (b) => setDisplayCurrency(b.dataset.cur!, then),
+  });
+}
+
+/** Sets what prices are shown in (the trip's currency: none), with the rates fetched first. */
+async function setDisplayCurrency(c: string, then: () => void) {
+  const all = picks();
+  all[tripKey()] = c || state.currency;
+  try { localStorage.setItem(SHOW_KEY, JSON.stringify(all)); } catch { /* storage full or blocked */ }
+  if (displayCurrency() !== state.currency) await loadFx();
+  then();
+}
+
+/** The rates have come in (once they have, nothing needs drawing again for them). */
+export let fxReady = false;
 
 export const ro = () => isReadOnly();
 /** The travelers by name (none: not named, or one traveler). */

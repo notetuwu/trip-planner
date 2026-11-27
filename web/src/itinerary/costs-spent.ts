@@ -5,12 +5,12 @@
 import { type Expense, type ExpenseKind, KINDS, balances, costShares, coveredBy, type Expenses, decimals, inTrip, mergeFromPhone, ownBy, backBy, rateOf, settleUp, spending, standOf } from "../../../shared/expenses";
 import { cleanNames } from "../../../shared/people";
 import { $$, downloadFile, esc } from "../core/dom";
-import { CURRENCIES, fmtDate, fmtTime, money, todayIso } from "../core/format";
+import { CURRENCIES, currencySymbol, fmtDate, fmtTime, money, todayIso } from "../core/format";
 import { type IconName, icon } from "../core/icons";
 import { type PickItem, pickList } from "../core/pick-list";
 import { state } from "../core/state";
 import { showNames } from "../trip/fields";
-import { type Row, amountText, defaultDate, defaultPayer, dropExpense, fx, kindOf, last, linked, needNames, people, putExpense, ro, rows, step, stopLink, touched, tripDates, readStands, standPicker, noteUndo } from "./costs-data";
+import { type Row, amountText, defaultDate, defaultPayer, dropExpense, fx, kindOf, last, linked, needNames, people, putExpense, ro, rows, step, stopLink, touched, tripDates, readStands, standPicker, noteUndo, shown } from "./costs-data";
 import { PHONE_EXPENSES } from "../export/offline-extras";
 import { tell } from "../core/ask";
 
@@ -29,8 +29,6 @@ const forWhom = (e: Expense) => {
 /** The people whose share is unfolded on Who owes (kept while it's drawn again). */
 const openShares = new Set<string>();
 /** The currency's symbol ("€"), for inside a money field. */
-const symbolOf = (cur: string) => { try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur, currencyDisplay: "narrowSymbol" }).formatToParts(0).find((x) => x.type === "currency")?.value || cur; } catch { return cur; } };
-
 /** The expense in the form (null: a new one). */
 let editing: string | null = null;
 /** The form is folded away until "Add an expense" (or an expense picked to change) opens it. */
@@ -102,7 +100,7 @@ function rowHtml(e: Row) {
   const cur = state.currency, v = inTrip(e, cur, fx), names = people().length > 1;
   return `<tr${editing === e.id ? ` class="editing"` : ""}>
     <td><b>${esc(e.what)}</b>${e.link ? ` <span class="cx-tag" title="Entered next to it in the Plan tab">${icon(e.link.startsWith("stay:") ? "bed" : e.link.startsWith("booking:") ? "ticket" : "pin")} plan</span>` : ""}<div class="hint">${esc(kindLabel(e.kind))}${names ? ` · ${e.kind === "settle" ? `${esc(e.paidBy || "?")} → ${esc(e.split?.[0] || "?")}` : e.each ? `each paid their own · for ${esc(forWhom(e))}` : `paid by ${esc(e.paidBy || "nobody said")} · for ${esc(forWhom(e))}`}` : ""}</div></td>
-    <td class="num">${money(e.amount, e.currency)}${e.currency !== cur ? `<div class="hint">${v == null ? "no rate" : `≈ ${money(v, cur)}`}</div>` : ""}</td>
+    <td class="num">${money(e.amount, e.currency)}${e.currency !== cur ? `<div class="hint">${v == null ? "no rate" : `≈ ${shown(v, cur)}`}</div>` : ""}</td>
     <td class="cx-acts">${ro() ? "" : `${e.kind === "settle" ? "" : `<button type="button" class="icon-btn" data-ex-edit="${esc(e.id)}" title="Change">${icon("pencil")}</button>`}<button type="button" class="icon-btn" data-ex-del="${esc(e.id)}" title="Remove">${icon("x")}</button>`}</td>
   </tr>`;
 }
@@ -116,12 +114,12 @@ export function spentHtml() {
   return `${needNames() ? namesBox() : ""}
     ${ro() ? "" : formOpen ? formHtml() : `<button type="button" class="cx-add" data-ex-open>${icon("plus")} Add an expense</button>`}
     <div class="stats cb-stats">
-      <div class="stat"><b>${money(sum.total, cur)}</b><span>spent in all${sum.unrated ? ` (${sum.unrated} without an exchange rate not counted)` : ""}</span></div>
+      <div class="stat"><b>${shown(sum.total, cur)}</b><span>spent in all${sum.unrated ? ` (${sum.unrated} without an exchange rate not counted)` : ""}</span></div>
       <div class="stat"><b>${all.filter((e) => e.kind !== "settle").length}</b><span>expenses</span></div>
     </div>
     ${all.length ? [...byDate].map(([date, list]) => {
       const dayTotal = list.filter((e) => e.kind !== "settle").reduce((n, e) => n + (inTrip(e, cur, fx) || 0), 0);
-      return `<h3 class="cx-day"><span>${esc(fmtDate(date) || date)}</span><span class="hint">${esc(dayName(date))}</span><span class="num">${dayTotal ? money(dayTotal, cur) : ""}</span></h3>
+      return `<h3 class="cx-day"><span>${esc(fmtDate(date) || date)}</span><span class="hint">${esc(dayName(date))}</span><span class="num">${dayTotal ? shown(dayTotal, cur) : ""}</span></h3>
         <table class="cb-table cx-list">${list.map(rowHtml).join("")}</table>`;
     }).join("") : `<p class="hint cx-empty">Nothing yet. Add what you paid above, or next to the stops in the Plan tab.</p>`}
     <div class="cx-tools">
@@ -167,7 +165,7 @@ export function wireSpent(root: HTMLElement) {
   // The rate shows for another currency than the trip's, with what the amount comes to.
   const conv = () => {
     const c = f<HTMLSelectElement>("currency").value, amount = Number(f("amount").value), rate = Number(f("rate").value);
-    form.querySelector<HTMLElement>("[data-conv]")!.textContent = c !== cur && amount > 0 && rate > 0 ? `≈ ${money(amount * rate, cur)}` : "";
+    form.querySelector<HTMLElement>("[data-conv]")!.textContent = c !== cur && amount > 0 && rate > 0 ? `≈ ${shown(amount * rate, cur)}` : "";
   };
   f<HTMLSelectElement>("currency").onchange = () => {
     const c = f<HTMLSelectElement>("currency").value;
@@ -226,7 +224,7 @@ export function wireSpent(root: HTMLElement) {
     const paid = linked(stopLink(d.date, x.place));
     return {
       value: `${di}-${xi}`, label: x.place.split(",")[0], group: `Day ${di + 1} · ${fmtDate(d.date) || d.date} · ${d.city.split(",")[0]}`,
-      lead: fmtTime(x.time), icon: KIND_ICON[kindOf(x.kind)], note: x.cost ? money(Number(x.cost), cur) : "",
+      lead: fmtTime(x.time), icon: KIND_ICON[kindOf(x.kind)], note: x.cost ? shown(Number(x.cost), cur) : "",
       tag: paid && paid.id !== editing ? "paid" : "", words: `${x.place} ${x.where || ""} ${d.date} ${d.title}`,
     };
   }));
@@ -303,32 +301,32 @@ export function oweHtml() {
   const everyone = [...new Set([...names, ...Object.keys(bal)])];
   const noPayer = spent.filter((e) => !e.each && (!e.paidBy || !names.includes(e.paidBy)));
   return `<div class="stats cb-stats">
-      <div class="stat"><b>${money(sum.total, cur)}</b><span>spent in all</span></div>
-      <div class="stat"><b>${money(sum.total / names.length, cur)}</b><span>on average per person</span></div>
-      <div class="stat ${pay.length ? "over" : ""}"><b>${pay.length ? money(pay.reduce((s, p) => s + p.amount, 0), cur) : "Even"}</b><span>${pay.length ? `still to pay back, in ${pay.length} payment${pay.length === 1 ? "" : "s"}` : "nobody owes anybody"}</span></div>
+      <div class="stat"><b>${shown(sum.total, cur)}</b><span>spent in all</span></div>
+      <div class="stat"><b>${shown(sum.total / names.length, cur)}</b><span>on average per person</span></div>
+      <div class="stat ${pay.length ? "over" : ""}"><b>${pay.length ? shown(pay.reduce((s, p) => s + p.amount, 0), cur) : "Even"}</b><span>${pay.length ? `still to pay back, in ${pay.length} payment${pay.length === 1 ? "" : "s"}` : "nobody owes anybody"}</span></div>
     </div>
     ${noPayer.length ? `<p class="cx-error">${noPayer.length} expense${noPayer.length === 1 ? " has" : "s have"} nobody set as having paid, so ${noPayer.length === 1 ? "it isn't" : "they aren't"} in the balances: ${esc(noPayer.slice(0, 4).map((e) => e.what).join(", "))}${noPayer.length > 4 ? "…" : ""}.</p>` : ""}
     <h3>Settle up</h3>
-    ${pay.length ? `<ul class="cx-pay">${pay.map((p, i) => `<li><b>${esc(p.from)}</b> ${"→"} <b>${esc(p.to)}</b>${ro() ? `<span class="num">${money(p.amount, cur)}</span>` : `<span class="cx-pay-part hint" data-part-of="${i}" hidden>part of ${esc(money(p.amount, cur))}</span>
-        <label class="cx-pay-amt" title="Paid only part of it? Change the amount: the rest stays open"><span>${esc(symbolOf(cur))}</span><input type="number" min="0" step="${step(cur)}" inputmode="decimal" data-settle-amt="${i}" value="${esc(p.amount.toFixed(decimals(cur)))}" aria-label="Amount paid"></label>
+    ${pay.length ? `<ul class="cx-pay">${pay.map((p, i) => `<li><b>${esc(p.from)}</b> ${"→"} <b>${esc(p.to)}</b>${ro() ? `<span class="num">${shown(p.amount, cur)}</span>` : `<span class="cx-pay-part hint" data-part-of="${i}" hidden>part of ${esc(shown(p.amount, cur))}</span>
+        <label class="cx-pay-amt" title="Paid only part of it? Change the amount: the rest stays open"><span>${esc(currencySymbol(cur))}</span><input type="number" min="0" step="${step(cur)}" inputmode="decimal" data-settle-amt="${i}" value="${esc(p.amount.toFixed(decimals(cur)))}" aria-label="Amount paid"></label>
         <button type="button" class="btn" data-settle="${i}" title="Note it as paid: the balances even out by this much">${icon("check")} Mark as paid</button>`}</li>`).join("")}</ul>`
       : `<p class="hint">Everyone is even.</p>`}
     <h3>Balances</h3>
     <table class="cb-table cx-bal"><tr class="cx-th"><td>Who</td><td class="num">Paid</td><td class="num">Their share</td><td class="num">Paid back</td><td class="num">Balance</td></tr>
-      ${everyone.map((n) => { const b = bal[n] || 0, tiny = Math.abs(b) < 0.005; return `<tr${names.includes(n) ? "" : ` class="muted" title="Not among the travelers anymore (renamed?)"`}><td><b>${esc(n)}</b></td><td class="num">${money(paid(n), cur)}</td><td class="num">${money(sum.share[n] || 0, cur)}</td><td class="num">${back(n) ? money(back(n), cur) : "—"}</td><td class="num ${tiny ? "" : b > 0 ? "cx-plus" : "cx-minus"}">${tiny ? "even" : `${b > 0 ? "gets back" : "owes"} ${money(Math.abs(b), cur)}`}</td></tr>`; }).join("")}
+      ${everyone.map((n) => { const b = bal[n] || 0, tiny = Math.abs(b) < 0.005; return `<tr${names.includes(n) ? "" : ` class="muted" title="Not among the travelers anymore (renamed?)"`}><td><b>${esc(n)}</b></td><td class="num">${shown(paid(n), cur)}</td><td class="num">${shown(sum.share[n] || 0, cur)}</td><td class="num">${back(n) ? shown(back(n), cur) : "—"}</td><td class="num ${tiny ? "" : b > 0 ? "cx-plus" : "cx-minus"}">${tiny ? "even" : `${b > 0 ? "gets back" : "owes"} ${shown(Math.abs(b), cur)}`}</td></tr>`; }).join("")}
     </table>
     <h3>Each person's share</h3>
     ${names.map((n) => {
       // Their part of each expense they're in: their even share, plus the shares they covered, or nothing when covered.
       const mine = spent.map((e) => { const v = inTrip(e, cur, fx) || 0; return { e, v, part: costShares(e, v, names)[n] }; }).filter((x) => x.part !== undefined);
-      return `<details class="cb-day cx-share" data-share="${esc(n)}"${openShares.has(n) ? " open" : ""}><summary><span class="cb-date"><b>${esc(n)}</b></span><span class="cb-city hint">${mine.length} expense${mine.length === 1 ? "" : "s"}</span><span></span><span class="num">${money(sum.share[n] || 0, cur)}</span></summary>
+      return `<details class="cb-day cx-share" data-share="${esc(n)}"${openShares.has(n) ? " open" : ""}><summary><span class="cb-date"><b>${esc(n)}</b></span><span class="cb-city hint">${mine.length} expense${mine.length === 1 ? "" : "s"}</span><span></span><span class="num">${shown(sum.share[n] || 0, cur)}</span></summary>
         <table class="cb-table">${mine.map(({ e, v, part }) => {
           const k = (e.split?.length ? e.split : names).length, cov = coveredBy(e, names);
           const why = ownBy(e, names).includes(n) ? "paid their own" : backBy(e, names).includes(n) ? `paid ${esc(e.paidBy!)} back` : cov.includes(n) ? `covered by ${esc(e.paidBy!)}` : e.paidBy === n && cov.length ? `paid it · covers ${esc(cov.join(", "))}` : e.paidBy === n ? "paid it" : e.paidBy ? `${esc(e.paidBy)} paid` : "";
           const st = standOf(e, n, names), id = (e as Row).id;
           const act = ro() ? "" : st === "owes" && e.paidBy ? `<button type="button" class="link-btn" data-back="${esc(id)}" data-who="${esc(n)}" title="${esc(`${n} already paid ${e.paidBy} back for this`)}">${icon("check")} Paid back</button>`
             : st === "back" ? `<button type="button" class="link-btn muted" data-unback="${esc(id)}" data-who="${esc(n)}" title="Not paid back after all">Undo</button>` : "";
-          return `<tr${st === "back" ? ` class="cx-done"` : ""}><td class="muted">${esc(fmtDate(e.date))}</td><td>${esc(e.what)}${k > 1 ? ` <span class="muted">· ${money(v, cur)} for ${k}</span>` : ""}</td><td class="muted">${why}</td><td class="num">${cov.includes(n) ? "—" : money(part!, cur)}</td><td class="cx-share-act">${act}</td></tr>`;
+          return `<tr${st === "back" ? ` class="cx-done"` : ""}><td class="muted">${esc(fmtDate(e.date))}</td><td>${esc(e.what)}${k > 1 ? ` <span class="muted">· ${shown(v, cur)} for ${k}</span>` : ""}</td><td class="muted">${why}</td><td class="num">${cov.includes(n) ? "—" : shown(part!, cur)}</td><td class="cx-share-act">${act}</td></tr>`;
         }).join("")}</table>
       </details>`;
     }).join("")}

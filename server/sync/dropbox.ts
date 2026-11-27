@@ -258,6 +258,15 @@ export async function upload(o: { id?: string; folder?: string; name: string; te
   return asFile(json);
 }
 
+/** A new file in a folder (renamed by Dropbox if the name is taken). */
+export async function putDoc(folder: string, name: string, data: Buffer): Promise<{ name: string }> {
+  const arg = { path: `${raw(folder)}/${name}`, mode: "add", autorename: true, mute: true };
+  const res = await call(`${CONTENT}/2/files/upload`, { method: "POST", headers: { "Content-Type": "application/octet-stream", "Dropbox-API-Arg": headerArg(arg) }, body: new Uint8Array(data) });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(explain(res.status, json));
+  return { name: String(json.name || name) };
+}
+
 // ---- Photos (only reading) ----------------------------------------------------------------------------------------------
 /** What's directly in a folder; `version` changes when a file's content does. */
 export async function folderEntries(id: string): Promise<{ id: string; name: string; folder: boolean; version: string; modified: string; size: number }[]> {

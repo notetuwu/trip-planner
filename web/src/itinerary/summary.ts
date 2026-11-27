@@ -1,7 +1,7 @@
 // The top of the itinerary: stale warning, title, cost stats and bars, the toolbar and Ask for changes.
 import type { Itinerary } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { dayColor, fmtDate, fmtShort, money } from "../core/format";
+import { dayColor, fmtDate, fmtShort } from "../core/format";
 import { staysKey, state } from "../core/state";
 import { sameName } from "../geo/locate";
 import type { ByTitle } from "../geo/item-loc";
@@ -9,9 +9,8 @@ import { bookAheadCount } from "./book-ahead";
 import { packingCount } from "./packing";
 import { promptSummary } from "./panels";
 import { icon } from "../core/icons";
-import { canShareFiles } from "../export/offline";
 import { balances, settleUp, spending } from "../../../shared/expenses";
-import { fx } from "./costs-data";
+import { displayPicker, fx, shown } from "./costs-data";
 
 /** The stays have changed since this itinerary was made (e.g. a new trip typed over an old one). */
 /** The stays changed since the plan was made (for older plans: it starts on another day, or no day is in a stay's town). */
@@ -61,6 +60,7 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
   return `${stale}<div class="summary">
     <div class="sum-head">
       <h3>${it.days.length} days${it.destination ? ` in ${esc(it.destination)}` : ""}</h3>
+      ${displayPicker("data-show-cur")}
       <div class="sum-icons">
         ${thoughts ? `<button type="button" class="icon-btn" data-section="reasoning" title="How the plan was made: the overview and the planner's reasoning${meta.lookups?.length ? ` (${meta.lookups.length} lookups)` : ""}" aria-label="Reasoning">${icon("brain")}</button>` : ""}
         ${meta.prompt?.length ? `<button type="button" class="icon-btn" data-section="prompt" title="${esc(promptSummary(meta.prompt))}" aria-label="Prompt">${icon("prompt")}</button>` : ""}
@@ -68,23 +68,19 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       </div>
     </div>
     <div class="stats">
-      <button class="stat stat-btn" type="button" data-costs title="Costs: change the estimates, note what you paid and who paid it, and who owes whom"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total · costs</span></button>
-      ${spent ? `<button class="stat stat-btn" type="button" data-costs="spent" title="What you really spent, and who owes whom"><b>${money(spent, cur)}</b><span>really spent · ${owing ? `${owing} to pay back` : "all even"}</span></button>` : ""}
-      <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day for ${state.travelers > 1 ? `all ${state.travelers}` : "you"} (budget ${money(budget, cur)}${state.travelers > 1 ? `, ${money(budget / state.travelers, cur)} each` : ""})</span></div>
+      <button class="stat stat-btn" type="button" data-costs title="Costs: change the estimates, note what you paid and who paid it, and who owes whom"><b>${shown(it.totalEstimatedCost, cur)}</b><span>est. total · costs</span></button>
+      ${spent ? `<button class="stat stat-btn" type="button" data-costs="spent" title="What you really spent, and who owes whom"><b>${shown(spent, cur)}</b><span>really spent · ${owing ? `${owing} to pay back` : "all even"}</span></button>` : ""}
+      <div class="stat"><b>${shown(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day for ${state.travelers > 1 ? `all ${state.travelers}` : "you"}</span><span class="stat-line">budget ${shown(budget, cur, true)}</span>${state.travelers > 1 ? `<span class="stat-line">${shown(budget / state.travelers, cur, true)} each</span>` : ""}</div>
       <div class="stat"><b>${listedCount}</b><span>saved places used</span></div>
       ${it.localCurrency && it.localCurrency !== cur ? `<div class="stat"><b>${esc(it.localCurrency)}</b><span>local currency</span></div>` : ""}
     </div>
     <div class="bars" title="Daily cost vs budget">
       <div class="budget-line" style="bottom:${(budget / maxCost) * 100}%"></div>
-      ${it.days.map((d, i) => `<button style="--c:${dayColor(i)};height:${Math.max(4, (d.estimatedCost / maxCost) * 100)}%" class="${d.estimatedCost > budget ? "over" : ""}" data-bar="${i}" title="${esc(fmtDate(d.date))}: ${esc(money(d.estimatedCost, cur))}"></button>`).join("")}
+      ${it.days.map((d, i) => `<button style="--c:${dayColor(i)};height:${Math.max(4, (d.estimatedCost / maxCost) * 100)}%" class="${d.estimatedCost > budget ? "over" : ""}" data-bar="${i}" title="${esc(fmtDate(d.date))}: ${esc(shown(d.estimatedCost, cur))}"></button>`).join("")}
     </div>
     <div class="toolbar">
       <div class="tb-group">
-        <button data-tool="phone" title="Save one self-contained file that works offline on your phone (send it with Phone Link, AirDrop, a messenger or email)">${icon("phone")}<span class="tb-label">For phone</span></button>
-        ${canShareFiles() ? `<button data-tool="share" title="Send the phone file with the system share menu">${icon("share")}<span class="tb-label">Share</span></button>` : ""}
-        <button data-tool="ics" title="Every stop as an event, for your phone's calendar">${icon("calendar")}<span class="tb-label">Calendar</span></button>
-        <button data-tool="print" title="Print it or save it as a PDF">${icon("printer")}<span class="tb-label">Print / PDF</span></button>
-        <button data-tool="json" title="The itinerary as a JSON file">${icon("download")}<span class="tb-label">JSON</span></button>
+        <button type="button" class="tb-export" data-export aria-haspopup="menu" aria-expanded="false" title="The plan for your phone, your calendar, other map apps, paper or a file">${icon("download")}<span class="tb-label">Export</span>${icon("chevronDown")}</button>
         <button data-tool="clear" class="danger" title="Clear this itinerary" aria-label="Clear this itinerary">${icon("trash")}</button>
       </div>
       <div class="tb-group tb-sections">

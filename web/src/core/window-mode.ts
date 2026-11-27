@@ -28,7 +28,8 @@ export function engineText() {
 }
 
 const external = (href: string) => /^https?:/i.test(href) && new URL(href, location.href).origin !== location.origin;
-const openOutside = (url: string) => api("/api/open", { method: "POST", body: JSON.stringify({ url }) }).catch(() => window.open(url, "_blank"));
+/** Opens a link outside the app: in the default browser (from a phone, a new tab). */
+export const openOutside = (url: string) => api("/api/open", { method: "POST", body: JSON.stringify({ url }) }).catch(() => window.open(url, "_blank"));
 
 function sendLinksToBrowser() {
   const onClick = (e: MouseEvent) => {

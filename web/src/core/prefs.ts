@@ -25,12 +25,14 @@ export interface AppPrefs {
   transitLines: boolean;
   linesDownload: boolean;
   linesRadius: number;
+  /** What prices are shown in, unless a trip says otherwise: "" the trip's currency, "local" the local one, or a currency. */
+  displayCurrency: string;
   newTrip: { currency: string; travelers: number; dailyBudget: number; pace: string };
 }
 
 export const APP_DEFAULTS: AppPrefs = {
   units: "km", temp: "c", clock: "24", dates: "auto", mapNames: "local", showPlaces: true, showRoutes: true, mapsApp: "google", startWith: "last", autoSave: false, liveSave: true, placePictures: false,
-  transitLines: false, linesDownload: true, linesRadius: 10,
+  transitLines: false, linesDownload: true, linesRadius: 10, displayCurrency: "",
   newTrip: { currency: "EUR", travelers: 1, dailyBudget: 100, pace: "balanced (3-5 stops per day)" },
 };
 

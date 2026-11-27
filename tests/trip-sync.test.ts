@@ -29,6 +29,7 @@ vi.mock("../server/sync/google", async () => {
     clientInfo: () => ({ clientFrom: "app", clientId: "client" }),
     account: () => ({ signedIn: true, expired: false, ...drive.me }),
     signInState: () => ({ signingIn: false, signInError: "" }),
+    gmailAccounts: () => [],
     isDriveId: (id: unknown) => typeof id === "string" && /^[\w-]{10,200}$/.test(id),
     folderInfo: async (id: string) => ({ id, name: `Drive ${id}`, canWrite: drive.canWrite }),
     createFolder: async (name: string, parent?: string) => {
@@ -37,6 +38,9 @@ vi.mock("../server/sync/google", async () => {
       return made;
     },
     listFolders: async () => drive.folders,
+    listDocs: async (folder: string) => [...drive.files.values()].filter((f) => f.folder === folder),
+    putDoc: async (folder: string, name: string, data: Buffer) => { const id = `doc${++drive.n}xxxxxxxx`; drive.files.set(id, { id, name, folder, text: data.toString(), md5: "", by: "", byEmail: "", canEdit: true }); return { name }; },
+    getDoc: async (id: string) => Buffer.from(drive.files.get(id)!.text),
     listTripFiles: async (folder: string, deep = false) => [...drive.files.values()].filter((f) => f.folder === folder && (deep || !f.sub)).map(meta),
     fileMeta: async (id: string) => meta(drive.files.get(id)),
     download: async (id: string) => drive.files.get(id)!.text,

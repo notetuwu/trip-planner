@@ -640,6 +640,19 @@ export async function setTripSync(name: string, folderIds: string[], mode?: "edi
   return { sync: share, created };
 }
 
+/** The sync folders a saved trip is in, with the folder its file is in (where its other files go), and whether this
+ *  person may add to it. */
+export function tripDirs(name: string): { id: string; label: string; dir: string; canWrite: boolean }[] {
+  const local = readLocal(name), share = local && cleanShare(local.trip.sync);
+  const t = share ? state().trips[share.id] : undefined;
+  if (!local || !t) return [];
+  const { editable } = rights(t, local);
+  return Object.entries(t.folders).flatMap(([id, link]) => {
+    const f = state().folders.find((x) => x.id === id);
+    return f ? [{ id, label: f.label, dir: link.at || link.into?.id || id, canWrite: editable }] : [];
+  });
+}
+
 /** The person's choice of where a trip goes in a folder with a folder per trip, checked (and its new folder made). */
 async function placeIn(f: SyncFolder, tripId: string, place: SyncPlace | undefined, created: { id: string; name: string }[]): Promise<Partial<Link>> {
   const files = await refreshFolder(f);
@@ -682,7 +695,7 @@ export async function tripPlaces(name: string, folderId: string): Promise<SyncPl
   const id = cleanShare(readLocal(name)?.trip?.sync)?.id;
   return {
     topWrite: f.canWrite,
-    folders: (await store.listFolders(f.id)).map((d) => ({ ...d, trips: files.filter((x) => x.subId === d.id && x.tripId).map((x) => x.name) })),
+    folders: (await store.listFolders(f.id)).filter((d) => d.name.toLowerCase() !== "docs").map((d) => ({ ...d, trips: files.filter((x) => x.subId === d.id && x.tripId).map((x) => x.name) })),
     matches: files.filter((x) => !!id && x.tripId === id).map((x) => ({ fileId: x.id, name: x.name, sub: x.sub || "", subId: x.subId || "" })),
   };
 }
@@ -793,7 +806,7 @@ export function status(): SyncStatus {
     };
   }
   return {
-    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), identities: store.me().ids, editIds: store.me().ids.map(editId), pictures: pictures(),
+    configured: !!g.client(), ...g.clientInfo(), ...acc, ...g.signInState(), gmail: g.gmailAccounts(), identities: store.me().ids, editIds: store.me().ids.map(editId), pictures: pictures(),
     dropbox: { configured: !!box.appKey(), keyFrom: box.keyFrom(), ...box.account(), ...box.signInState() },
     folders: s.folders, trips, running: !!current, lastRun, error: lastError, notices: s.notices,
   };

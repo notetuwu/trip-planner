@@ -7,6 +7,8 @@ import { ext, icon } from "../core/icons";
 import { setSyncStatus } from "../saves/sync-client";
 
 export type Mode = "guided" | "quick";
+/** What the steps are for. */
+export type Use = "drive" | "quotas" | "gmail";
 
 export interface Step {
   id: string;
@@ -75,7 +77,8 @@ async function saveClient(d: HTMLDialogElement, s: SyncStatus) {
   catch (e) { toast((e as Error).message); return false; }
 }
 
-function parts(quotas: boolean): Part[] {
+function parts(use: Use): Part[] {
+  const quotas = use === "quotas", gmail = use === "gmail";
   return [
     {
       id: "project", title: "Pick a project", setupOnly: !quotas,
@@ -94,13 +97,13 @@ function parts(quotas: boolean): Part[] {
       links: link("https://console.cloud.google.com/", "Google Cloud Console") + (quotas ? link("https://aistudio.google.com/apikey", "Which project is my key in?") : ""),
     },
     {
-      id: "apis", title: quotas ? "Switch on two APIs" : "Switch on the Drive API",
-      what: `An <b>API</b> is the way one program talks to a Google service. ${quotas ? "Each link opens one service's page" : "The link opens the Drive service's page"} in the console, with a big button on it.`,
+      id: "apis", title: quotas ? "Switch on two APIs" : `Switch on the ${gmail ? "Gmail" : "Drive"} API`,
+      what: `An <b>API</b> is the way one program talks to a Google service. ${quotas ? "Each link opens one service's page" : `The link opens the ${gmail ? "Gmail" : "Drive"} service's page`} in the console, with a big button on it.`,
       why: quotas ? "They're off in a project until you switch them on. These two let the planner read your key's limits and whether billing is on. Switching them on costs nothing."
-        : "It's off in a project until you switch it on. Without it the planner can't open your trip or photo folders, even after you sign in. It costs nothing.",
+        : `It's off in a project until you switch it on. Without it the planner can't ${gmail ? "find your booking emails" : "open your trip or photo folders"}, even after you sign in. It costs nothing.`,
       how: [`Open ${quotas ? "each page" : "the page"} and press <b>Enable</b>. If the button says <i>Manage</i>, it's on already.`],
       short: `<b>Enable</b> ${quotas ? "both" : "it"}.`,
-      links: quotas ? apiPage("serviceusage.googleapis.com", "Service Usage API") + apiPage("cloudbilling.googleapis.com", "Cloud Billing API") : apiPage("drive.googleapis.com", "Google Drive API"),
+      links: quotas ? apiPage("serviceusage.googleapis.com", "Service Usage API") + apiPage("cloudbilling.googleapis.com", "Cloud Billing API") : gmail ? apiPage("gmail.googleapis.com", "Gmail API") : apiPage("drive.googleapis.com", "Google Drive API"),
     },
     {
       id: "brand", title: "Name the app", setupOnly: true,
@@ -160,9 +163,10 @@ function parts(quotas: boolean): Part[] {
   ];
 }
 
-const intro = (quotas: boolean): Step => ({
+const INTRO: Record<Use, string> = { drive: "To sync trips and show photos from Google Drive", quotas: "To read your Gemini key's exact limits", gmail: "To find booking confirmations in your Gmail" };
+const intro = (use: Use): Step => ({
   id: "intro", title: "Before you start",
-  body: () => `<p>${quotas ? "To read your Gemini key's exact limits" : "To sync trips and show photos from Google Drive"}, the planner needs your permission at Google. It comes without an app of its own there, so you make a small private one, which only you control.</p>
+  body: () => `<p>${INTRO[use]}, the planner needs your permission at Google. It comes without an app of its own there, so you make a small private one, which only you control.</p>
     <ul>
       <li><b>What you'll do:</b> click through a few pages on Google's site, then copy two codes back here and sign in.</li>
       <li><b>How long:</b> about 5 to 10 minutes, once. You can close this window and carry on later.</li>
@@ -189,12 +193,12 @@ const checklist = (list: Part[]): Step => ({
 });
 
 /**
- * The steps before signing in. `quotas`: for Gemini's exact limits, otherwise Drive. With a client already saved,
+ * The steps before signing in, for what `use` needs. With a client already saved,
  * setting it up again isn't needed: only what this adds, unless `all`.
  */
-export function googleSteps(quotas: boolean, s: SyncStatus, all: boolean, mode: Mode): Step[] {
+export function googleSteps(use: Use, s: SyncStatus, all: boolean, mode: Mode): Step[] {
   const setup = all || !s.configured;
-  const list = parts(quotas).filter((p) => setup || !p.setupOnly);
+  const list = parts(use).filter((p) => setup || !p.setupOnly);
   if (mode === "quick") return [checklist(list)];
-  return [...(setup ? [intro(quotas)] : []), ...list.map(guidedStep)];
+  return [...(setup ? [intro(use)] : []), ...list.map(guidedStep)];
 }

@@ -4,7 +4,7 @@
 // "Use this" writes into the day as stops.
 import type { Day, ItineraryItem, Ride, TravelMode } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { money } from "../core/format";
+import { shown } from "./costs-data";
 import { icon } from "../core/icons";
 import { state } from "../core/state";
 import { stayLoc } from "../geo/locate";
@@ -49,7 +49,7 @@ export function journeyCard(d: Day, j: DayJourney, k: number, rows: string, cur:
   const modes = [...new Set(all.map(rideMode).filter(Boolean))];
   const main = modes.find((m) => ["flight", "train", "ferry"].includes(m)) || modes[0];
   const span = journeySpan(d.items, j.runs);
-  const meta = first ? [modes.length ? `by ${modes.map(modeName).join(" + ")}` : "", span.from ? `${span.from} → ${span.to}` : "", span.cost ? money(span.cost, cur) : ""].filter(Boolean).join(" · ") : "";
+  const meta = first ? [modes.length ? `by ${modes.map(modeName).join(" + ")}` : "", span.from ? `${span.from} → ${span.to}` : "", span.cost ? shown(span.cost, cur) : ""].filter(Boolean).join(" · ") : "";
   return `<li class="journey" data-stay-leg="${j.arrive}">
     <div class="journey-head"><span class="journey-icon">${modeIcon(main) || icon("route")}</span><b>${esc(town(j.from))} → ${esc(town(j.to))}</b>${first ? "" : `<span class="hint">continued</span>`}${meta ? `<span class="journey-meta">${esc(meta)}</span>` : ""}</div>
     ${first ? `<div class="journey-end">${icon("bed")} Leave ${esc(hotelOf(j.from))}</div>` : ""}

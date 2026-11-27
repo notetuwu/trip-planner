@@ -3,9 +3,9 @@
 import {
   Play, Pause, Maximize2, Minimize2, ArrowLeftRight, ArrowUp, ArrowUpRight, BedDouble, Bike, Bus, CableCar, TramFront, Layers, CalendarDays, Car, Clock, Cloud, CloudDrizzle, CloudFog,
   Check, CloudLightning, CloudRain, CloudSnow, CloudSun, Copy, CornerDownRight, Download, ExternalLink, FileText, Footprints, Hotel,
-  KeyRound, Map, Wallet, ChevronDown, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Search, Share2, Ship, Smartphone, Star, Sun,
+  KeyRound, Map, Wallet, ChevronDown, MapPin, Monitor, Moon, Plane, Plus, Printer, RefreshCw, Route, Mail, Search, Share2, Ship, Smartphone, Star, Sun,
   Ticket, TrainFront, Trash2, TriangleAlert, Users, X, Settings, Cpu, Wifi, HardDrive, Sliders, Power, MessageCircle, Upload, Square, Sparkles, ImagePlus, Images,
-  Brain, ScrollText, Info, PartyPopper, Luggage, Crosshair, Rocket, LayoutGrid, List, Globe, Container, Pencil, FolderOpen, Hourglass, Terminal, Compass, History, Heart, Zap, Hand, Eye, Lock, ArrowLeft, Link, EyeOff, GripHorizontal, Box, PanelLeftClose, PanelLeftOpen, Undo2, Utensils, ShoppingBag,
+  Brain, ScrollText, Info, PartyPopper, Luggage, Crosshair, Rocket, LayoutGrid, List, Globe, Container, Pencil, FolderOpen, Hourglass, Terminal, Compass, History, Heart, Zap, Hand, Eye, Lock, ArrowLeft, Link, EyeOff, GripHorizontal, Box, PanelLeftClose, PanelLeftOpen, Undo2, Utensils, ShoppingBag, Coins,
 } from "lucide";
 
 type IconNode = [string, Record<string, string | number | undefined>][];
@@ -16,10 +16,10 @@ const ICONS = {
   cloudLightning: CloudLightning, cloudRain: CloudRain, cloudSnow: CloudSnow, cloudSun: CloudSun, dayTrip: CornerDownRight,
   download: Download, external: ExternalLink, file: FileText, walk: Footprints, hotel: Hotel, key: KeyRound, map: Map,
   pin: MapPin, monitor: Monitor, moon: Moon, plane: Plane, plus: Plus, printer: Printer, refresh: RefreshCw, route: Route,
-  search: Search, share: Share2, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, wallet: Wallet, chevronDown: ChevronDown, train: TrainFront, trash: Trash2,
+  mail: Mail, search: Search, share: Share2, ship: Ship, phone: Smartphone, star: Star, sun: Sun, ticket: Ticket, wallet: Wallet, chevronDown: ChevronDown, train: TrainFront, trash: Trash2,
   warn: TriangleAlert, users: Users, x: X, settings: Settings, cpu: Cpu, wifi: Wifi, drive: HardDrive, sliders: Sliders, power: Power, chat: MessageCircle, upload: Upload, stop: Square, sparkles: Sparkles, image: ImagePlus,
   brain: Brain, prompt: ScrollText, info: Info, party: PartyPopper, luggage: Luggage, crosshair: Crosshair, rocket: Rocket, grid: LayoutGrid,
-  list: List, globe: Globe, container: Container, pencil: Pencil, folder: FolderOpen, hourglass: Hourglass, terminal: Terminal, compass: Compass, history: History, heart: Heart, zap: Zap, hand: Hand, eye: Eye, lock: Lock, arrowLeft: ArrowLeft, link: Link, eyeOff: EyeOff, grip: GripHorizontal, box: Box, panelClose: PanelLeftClose, panelOpen: PanelLeftOpen, undo: Undo2, utensils: Utensils, shoppingBag: ShoppingBag,
+  list: List, globe: Globe, container: Container, pencil: Pencil, folder: FolderOpen, hourglass: Hourglass, terminal: Terminal, compass: Compass, history: History, heart: Heart, zap: Zap, hand: Hand, eye: Eye, lock: Lock, arrowLeft: ArrowLeft, link: Link, eyeOff: EyeOff, grip: GripHorizontal, box: Box, panelClose: PanelLeftClose, panelOpen: PanelLeftOpen, undo: Undo2, utensils: Utensils, shoppingBag: ShoppingBag, coins: Coins,
 } satisfies Record<string, IconNode>;
 
 export type IconName = keyof typeof ICONS;

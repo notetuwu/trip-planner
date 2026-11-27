@@ -5,7 +5,7 @@ import { api, esc, toast } from "../core/dom";
 import { icon } from "../core/icons";
 import { loadSyncStatus, setSyncStatus, syncStatus } from "../saves/sync-client";
 import { askConfirm } from "../core/ask";
-import { type Purpose, openConnect } from "./connect-wizard";
+import { type Purpose, addGmail, openConnect } from "./connect-wizard";
 
 const use = (on: boolean, text: string, purpose: Purpose | "") => `<li class="acc-use${on ? " on" : ""}">${on ? icon("check") : `<span class="acc-off"></span>`}<span>${text}</span>${!on && purpose ? `<button type="button" class="link-btn" data-connect="${purpose}">Turn on</button>` : ""}</li>`;
 
@@ -40,7 +40,13 @@ function html(s: SyncStatus) {
       <div class="set-inline"><button type="button" class="btn" data-setup="dropbox" data-at="key">${icon("pencil")} Change or see the steps</button>
       ${d?.keyFrom === "app" ? `<button type="button" class="btn" data-remove="dropbox">Remove</button>` : ""}</div>`,
   });
-  return `${g}${box}`;
+  const mail = s.gmail || [];
+  const gmail = `<div class="set-card acc-card" data-account="gmail">
+    <div class="set-row"><div><b>${icon("mail")} Gmail</b><div class="hint status">${mail.length ? `<span class="dot ok"></span> Booking emails in the trip chat, read-only` : `<span class="dot off"></span> Not connected: add booking emails to the trip from the chat (read-only)`}</div></div>
+      <button type="button" class="btn${mail.length ? "" : " solid"}" ${mail.length ? "data-gmail-add" : `data-connect="gmail"`}>${icon(mail.length ? "plus" : "key")} ${mail.length ? "Add account" : "Connect"}</button></div>
+    ${mail.length ? `<ul class="acc-uses">${mail.map((a) => `<li class="acc-use on">${a.expired ? icon("warn") : icon("check")}<span>${esc(a.email)}${a.expired ? " (signed out: add it again)" : ""}</span><button type="button" class="link-btn" data-gmail-out="${esc(a.email)}">Remove</button></li>`).join("")}</ul>` : ""}
+  </div>`;
+  return `${g}${gmail}${box}`;
 }
 
 export function renderAccounts(main: HTMLElement, again: () => void) {
@@ -59,6 +65,12 @@ export function renderAccounts(main: HTMLElement, again: () => void) {
     const c = await api<{ id: string; secret: string }>("/api/sync/client");
     await navigator.clipboard.writeText(`${c.id}\n${c.secret}`);
     toast("Copied the client ID and secret");
+  });
+  on("[data-gmail-add]", () => { addGmail(again); });
+  on("[data-gmail-out]", async (b) => {
+    const email = b.dataset.gmailOut!;
+    if (!await askConfirm({ title: "Remove this Gmail account?", text: `${email}: the planner can't read its mail any more. Nothing is deleted.`, ok: "Remove" })) return;
+    setSyncStatus(await post("/api/sync/gmail/signout", { email })); again();
   });
   on("[data-out]", async (b) => {
     const dbx = b.dataset.out === "dropbox", name = dbx ? "Dropbox" : "Google";

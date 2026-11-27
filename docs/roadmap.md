@@ -15,14 +15,17 @@ isn't running, so anything meant for the trip itself goes into the phone file (t
       back as a small file the app imports (`joinExpenses` in shared/expenses.ts already joins them by id).
 - [x] **Today in the phone file.** Opened during the trip: the current and next stop, a directions button, today's
       bookings and the weather saved with the file. Stops can be ticked off on the phone (kept in the browser).
-- [ ] **GPX / KML export.** The stays, stops and routes for Organic Maps, Garmin or Google My Maps.
-- [ ] **"Not verified" labels in the plan.** On prices from the model and hours from OpenStreetMap (also on the chat
+- [x] **GPX / KML export.** "Map file" in the plan's toolbar: the stays, every day's stops and its route, for Organic Maps,
+      Garmin, Google My Maps and others.
+- [x] **"Not verified" labels in the plan.** On prices from the model and hours from OpenStreetMap (also on the chat
       roadmap).
 
 ## Maybe
-- [ ] **Booking confirmations.** Drop a PDF, an email or a screenshot: the model fills in a booking or a stay's hotel
-      for you to confirm. Optionally the files are kept in a `docs` folder next to the trip in its save or sync
-      folder, linked from the booking.
+- [x] **Booking confirmations.** Drop a PDF, an email (.eml) or a screenshot into the chat: it fills in a booking or a
+      stay's hotel for you to confirm. Optionally the files are kept in a `docs` folder next to the trip in its save or
+      sync folder, linked from the booking.
+- [x] **Gmail.** Pick a confirmation straight from your mail ("Add from Gmail" in the chat, a read-only inbox
+      browser for one or several accounts): sign-ins with your own Google client, off unless connected.
 
 ## Later
 - [ ] **Group voting.** Everyone marks saved places as want / fine / skip, and the planner weighs the votes.

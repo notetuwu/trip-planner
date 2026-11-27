@@ -30,6 +30,7 @@ import { handleOllama } from "./routes/ollama";
 import { handleSearxng, searxngInfo, startSearxngIfChosen } from "./routes/searxng";
 import { readSettings } from "./settings";
 import { handleCurrent } from "./routes/current";
+import { handleDocs } from "./routes/docs";
 import { handleSync } from "./routes/sync";
 import { startSyncTimer } from "./sync/sync";
 import { handleUpdate } from "./routes/update";
@@ -86,6 +87,7 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/lan" || path.startsWith("/api/lan/")) { await handleLan(req, res, path); return true; }
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
     if (path === "/api/searxng" || path.startsWith("/api/searxng/")) { await handleSearxng(req, res, path); return true; }
+    if (path === "/api/docs" || path === "/api/docs/file") { await handleDocs(req, res, url); return true; }
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
     if (path === "/api/sync" || path.startsWith("/api/sync/")) { await handleSync(req, res, path); return true; }
     if (path === "/api/trips" && method === "GET") { sendJson(res, 200, tripCards()); return true; }

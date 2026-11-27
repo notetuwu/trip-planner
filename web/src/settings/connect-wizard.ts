@@ -11,24 +11,25 @@ import { loadSyncStatus, setSyncStatus, syncStatus } from "../saves/sync-client"
 import { type Mode, type Step, copyable, googleSteps, link } from "./google-steps";
 
 export type Account = "google" | "dropbox";
-/** What it's for: Drive (sync and photos), Gemini's exact limits, or Dropbox (sync and photos). */
-export type Purpose = "drive" | "quotas" | "dropbox";
+/** What it's for: Drive (sync and photos), Gemini's exact limits, Gmail (booking emails), or Dropbox (sync and photos). */
+export type Purpose = "drive" | "quotas" | "gmail" | "dropbox";
 
-const NAMES: Record<Purpose, string> = { drive: "Google Drive", quotas: "Gemini's exact limits", dropbox: "Dropbox" };
+const NAMES: Record<Purpose, string> = { drive: "Google Drive", quotas: "Gemini's exact limits", gmail: "Gmail", dropbox: "Dropbox" };
 
 /** Whether the account is signed in with what this needs. */
 export function connected(s: SyncStatus | null, purpose: Purpose) {
   if (!s) return false;
   if (purpose === "dropbox") return !!s.dropbox?.signedIn;
+  if (purpose === "gmail") return !!s.gmail?.some((a) => !a.expired);
   return s.signedIn && (purpose === "drive" ? s.drive !== false : !!s.cloud);
 }
 
 /** Saves what Google is used for, which decides what signing in asks for: this, and what the sign-in allows already. */
 async function saveUse(purpose: Purpose) {
+  if (purpose === "gmail") return; // its own sign-in: nothing about the other one changes
   const s = syncStatus, drive = purpose === "drive" || (!!s?.signedIn && s.drive !== false);
   const google: Record<string, boolean> = { sync: drive, photos: drive };
-  if (purpose === "quotas") google.quotas = true;
-  else if (s?.cloud) google.quotas = true;
+  if (purpose === "quotas" || s?.cloud) google.quotas = true;
   await api("/api/settings", { method: "POST", body: JSON.stringify({ google }) });
 }
 
@@ -40,10 +41,12 @@ function signInStep(purpose: Purpose): Step {
     id: "signin", title: "Sign in",
     body: (s) => {
       const d = dbx ? s.dropbox : s, busy = !!d?.signingIn;
-      if (connected(s, purpose)) return `<p class="wz-done">${icon("check")} <b>Connected.</b> ${esc((dbx ? s.dropbox.name || s.dropbox.email : s.name || s.email) || "")}</p>`;
+      const who = purpose === "gmail" ? (s.gmail || []).filter((a) => !a.expired).map((a) => a.email).join(", ") : dbx ? s.dropbox.name || s.dropbox.email : s.name || s.email;
+      if (connected(s, purpose)) return `<p class="wz-done">${icon("check")} <b>Connected.</b> ${esc(who || "")}</p>`;
       return `<p>${dbx ? "Your browser opens Dropbox's page: sign in and allow the app."
         : `Your browser opens Google's page. Sign in${purpose === "quotas" ? " with the account that owns the project" : ""}. Google warns that the app isn't verified, because it's your own private app: press <i>Advanced</i>, then <i>Go to Trip Planner (unsafe)</i>, and <b>leave every box ticked</b>: they are the permissions the planner needs.`}</p>
-        ${dbx || purpose === "quotas" ? "" : `<p class="hint">Google offers no narrower permission than your whole Drive for shared folders. The planner only opens the folders you add to it and never deletes anything.</p>`}
+        ${purpose === "gmail" ? `<p class="hint">Gmail access is read-only: the planner can't send, change or delete mail. It only looks at your mail while you have “Add from Gmail” open. It can be another account than the one for Drive.</p>` : ""}
+        ${purpose !== "drive" ? "" : `<p class="hint">Google offers no narrower permission than your whole Drive for shared folders. The planner only opens the folders you add to it and never deletes anything.</p>`}
         <button type="button" class="btn solid" data-signin>${icon("key")} ${busy ? "Open the page again" : dbx ? "Sign in to Dropbox" : "Sign in with Google"}</button>
         ${busy ? `<p class="hint"><span class="sx-spin small"></span> Waiting for you to finish in the browser…</p>` : ""}
         ${d?.signInError ? `<p class="error-text">${icon("warn")} ${esc(d.signInError)}</p>` : ""}
@@ -90,6 +93,23 @@ function chooser(s: SyncStatus) {
     </div>`;
 }
 
+/** Connects one more Gmail account (the Google client is set up already): Google's page opens to pick it; onDone runs
+ *  when that's finished, however it went. */
+export async function addGmail(onDone: () => void) {
+  try {
+    await post("/api/sync/gmail/signin");
+    toast("Pick the account on Google's page in your browser");
+  } catch (e) { toast((e as Error).message); return; }
+  const until = Date.now() + 11 * 60_000;
+  const watching = window.setInterval(async () => {
+    const now = await loadSyncStatus();
+    if (now?.signingIn && Date.now() < until) return;
+    clearInterval(watching);
+    if (now?.signInError) toast(now.signInError);
+    onDone();
+  }, 2000);
+}
+
 /**
  * Opens the steps for `purpose`; onDone runs when it closes (connected or not). Already connected with what it needs:
  * nothing to do but turn it on. `at`: a step to open at (the client's or key's, to change it), showing every step.
@@ -110,7 +130,7 @@ export async function openConnect(purpose: Purpose, onDone: () => void = () => {
     if (localStorage.getItem(MODE_KEY) === "quick") mode = "quick";
   } catch { /* private window */ }
   const google = purpose !== "dropbox";
-  const steps = () => (google ? [...googleSteps(purpose === "quotas", s, all, mode), signInStep(purpose)] : dropboxSteps());
+  const steps = () => (google ? [...googleSteps(purpose as "drive" | "quotas" | "gmail", s, all, mode), signInStep(purpose)] : dropboxSteps());
   // Back where it was; otherwise Google's first setup asks how to go through it, and Dropbox starts at signing in when
   // everything before it is there already.
   let current = at || saved || (google ? (s.configured ? "" : CHOOSE) : s.dropbox?.configured ? "signin" : "");
@@ -172,7 +192,7 @@ export async function openConnect(purpose: Purpose, onDone: () => void = () => {
     d.querySelector<HTMLButtonElement>("[data-signin]")?.addEventListener("click", async () => {
       try {
         if (purpose !== "dropbox") await saveUse(purpose);
-        await post(purpose === "dropbox" ? "/api/sync/dropbox/signin" : "/api/sync/signin");
+        await post(purpose === "dropbox" ? "/api/sync/dropbox/signin" : purpose === "gmail" ? "/api/sync/gmail/signin" : "/api/sync/signin");
         s = await loadSyncStatus() || s;
         draw();
         watch();

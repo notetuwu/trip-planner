@@ -33,7 +33,9 @@ function keyHtml() {
       ${row(`<span class="key-link">Route</span>`, `Directions from the stop before, in ${esc(mapsName())} (Settings → General → Maps app).`)}
       ${row(`<span class="key-link">Find restaurants</span>`, "A meal without a particular place: what there is to eat around there.")}
       ${row(`<span class="key-leg">⇢ 1.2 km · 15 min walk</span>`, "How far it is from the stop before, along real paths and roads.")}
-      ${row(`<span class="key-warn">${icon("clock")}</span>`, "Closed or closing at the planned time (OpenStreetMap's opening hours).")}
+      ${row(`<span class="key-warn">${icon("clock")}</span>`, "Closed or closing at the planned time, by OpenStreetMap's opening hours: they can be out of date, so check before you go.")}
+      ${row(`<span class="key-cost">~€12</span>`, "The planner's estimate of what it costs: not checked, prices may differ.")}
+      ${row(`<span class="key-cost actual">✓ €10</span>`, "What you really paid (noted in Costs), in place of the estimate.")}
       ${row(`<span class="key-warn">${icon("warn")}</span>`, "The only place of that name is far from the day's town: probably a mix-up, pinned in town for now.")}
     </ul>
     <h4>Days</h4>

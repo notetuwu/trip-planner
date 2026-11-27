@@ -59,6 +59,8 @@ export interface Booking {
   cost?: number;
   /** Count the cost in that day's budget (otherwise it's already paid and shows as 0). */
   countCost?: boolean;
+  /** Its confirmations, by file name, in a "docs" folder next to the trip (see server/routes/docs.ts). */
+  docs?: string[];
 }
 
 export interface DayTrip {
@@ -476,6 +478,8 @@ export interface SyncStatus {
   /** What the sign-in allows: Drive (sync and photos), and read-only Cloud access (Gemini's exact limits). */
   drive?: boolean;
   cloud?: boolean;
+  /** The Gmail accounts connected for booking emails in the trip chat (each its own read-only sign-in). */
+  gmail?: { email: string; expired?: boolean }[];
   signingIn: boolean;
   signInError: string;
   folders: SyncFolder[];

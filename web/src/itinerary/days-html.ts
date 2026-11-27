@@ -3,7 +3,7 @@ import { dayKey } from "../../../shared/edits";
 import { editChip } from "../saves/collab";
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
-import { dayColor, fmtDate, fmtTemps, fmtTime, money, addDays } from "../core/format";
+import { dayColor, fmtDate, fmtTemps, fmtTime, addDays } from "../core/format";
 import { session, state } from "../core/state";
 import type { ByTitle } from "../geo/item-loc";
 import { byWho, dayGroupColors, parentGroup, splitGroup, stopCompany, trackOrder } from "../trip/modes";
@@ -18,15 +18,16 @@ import { weatherTitle, wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
 import { isTransfer, onMap } from "../map/travel-day";
 import { dayJourney, journeyCard, suggestedJourney } from "./journey";
-import { paidByLink, stopLink } from "./costs-data";
+import { paidByLink, shown, stopLink } from "./costs-data";
 
 /** What was really paid per stop (Costs window), worked out once per drawing of the days. */
 let paid = new Map<string, number>();
 /** A stop's cost: what was really paid, highlighted (the estimate in its tooltip), or the estimate. */
 function costHtml(x: ItineraryItem, d: Day, cur: string) {
   const real = paid.get(stopLink(d.date, x.place));
-  if (real != null) return `<span class="cost actual" title="${esc(`Really paid${x.cost ? ` · estimated ${money(x.cost, cur)}` : ""}`)}">${icon("check")}${money(real, cur)}</span>`;
-  return x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : "";
+  if (real != null) return `<span class="cost actual" title="${esc(`Really paid${x.cost ? ` · estimated ${shown(x.cost, cur)}` : ""}`)}">${icon("check")}${shown(real, cur)}</span>`;
+  // The planner's guess, which nothing here can check: marked as such.
+  return x.cost ? `<span class="cost est" title="The planner's estimate: not checked, so prices may differ. Note what you really paid in Costs.">~${shown(x.cost, cur)}</span>` : "";
 }
 /** A day's cost: what was paid where it's known and the estimate for the rest; null when nothing's paid that day. */
 function dayActual(d: Day) {
@@ -214,8 +215,8 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
           <span class="edit-slot" data-edit="${esc(dayKey(it.days, i))}">${editChip(dayKey(it.days, i))}</span>
           ${w ? `<span class="weather${w.kind === "typical" ? " typical" : w.kind === "was" ? " was" : ""}" title="${esc(weatherTitle(w))}">${wmoIcon(w.code)}${w.kind === "typical" ? "~" : ""}${fmtTemps(w.min, w.max)}</span>` : ""}
           ${((real) => real == null
-            ? `<span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>`
-            : `<span class="budget-pill actual${real > budget ? " over" : ""}" title="${esc(`What was really paid where it's known, the estimate for the rest (estimated ${money(d.estimatedCost, cur)})`)}">${icon("check")}${money(real, cur)}</span>`)(dayActual(d))}
+            ? `<span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}" title="The planner's estimate for the day${d.estimatedCost > budget ? ", over the budget" : ""}: not checked">${shown(d.estimatedCost, cur)}</span>`
+            : `<span class="budget-pill actual${real > budget ? " over" : ""}" title="${esc(`What was really paid where it's known, the estimate for the rest (estimated ${shown(d.estimatedCost, cur)})`)}">${icon("check")}${shown(real, cur)}</span>`)(dayActual(d))}
           ${it.days.length > 1 ? `<button class="redo" data-swap="${i}" title="Swap this day with another day (the dates stay)">${icon("arrowLeftRight")}</button>` : ""}
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>
