@@ -446,7 +446,7 @@ label.btn { margin: 0; font-size: 14px; color: var(--ink); }
 .read-only-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 14px; margin: 0 0 12px; border-radius: 12px; background: color-mix(in srgb, var(--warn) 14%, transparent); font-size: 13px; }
 .read-only-bar b { display: inline-flex; align-items: center; gap: 6px; }
 body.read-only .settings > [inert] { opacity: .55; }
-body.read-only :is([data-del], [data-redo], [data-replan-stay], [data-leg-edit], #refineBtn, .generate-bar, #saveBtn) { display: none !important; }
+body.read-only :is([data-del], [data-redo], [data-swap], [data-replan-stay], [data-leg-edit], #refineBtn, .generate-bar, #saveBtn) { display: none !important; }
 .trips-remote-hint { margin: -4px 0 10px; }
 .trips-notice { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--accent-soft); font-size: 13px; }
 .trips-notice > div { flex: 1; }

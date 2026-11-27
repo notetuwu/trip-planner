@@ -18,6 +18,22 @@ import { weatherTitle, wmoIcon } from "./weather";
 import { ext, icon } from "../core/icons";
 import { isTransfer, onMap } from "../map/travel-day";
 import { dayJourney, journeyCard, suggestedJourney } from "./journey";
+import { paidByLink, stopLink } from "./costs-data";
+
+/** What was really paid per stop (Costs window), worked out once per drawing of the days. */
+let paid = new Map<string, number>();
+/** A stop's cost: what was really paid, highlighted (the estimate in its tooltip), or the estimate. */
+function costHtml(x: ItineraryItem, d: Day, cur: string) {
+  const real = paid.get(stopLink(d.date, x.place));
+  if (real != null) return `<span class="cost actual" title="${esc(`Really paid${x.cost ? ` · estimated ${money(x.cost, cur)}` : ""}`)}">${icon("check")}${money(real, cur)}</span>`;
+  return x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : "";
+}
+/** A day's cost: what was paid where it's known and the estimate for the rest; null when nothing's paid that day. */
+function dayActual(d: Day) {
+  let any = false, total = 0;
+  for (const x of d.items) { const real = paid.get(stopLink(d.date, x.place)); if (real != null) any = true; total += real ?? (Number(x.cost) || 0); }
+  return any ? total : null;
+}
 
 /** The stop's name links to it in the maps app: a saved place's own link (see placeUrl), the exact spot where it's known,
  *  else a search for "name, town" (for a meal without a place: what's there to eat). */
@@ -59,9 +75,9 @@ function itemHtml(d: Day, di: number, x: ItineraryItem, xi: number, byTitle: ByT
     <li class="item${must ? " must" : listed ? " listed" : ""}" data-k="${di}-${xi}">
       <div class="item-top">
         <time>${esc(fmtTime(x.time))}</time>
-        <span class="n">${xi + 1}</span>
+        <span class="n" draggable="true" data-drag="${di}-${xi}" title="Drag onto another day to move this stop there">${xi + 1}</span>
         <span class="name"><a href="${esc(mapsLink(x, d, di, xi, byTitle))}" target="_blank" rel="noopener"${transfer && x.transportWas !== undefined ? ` title="The line is from the timetable. The plan said: ${esc(x.transportWas)}"` : ""}>${transfer && x.transportWas !== undefined ? `<span class="from-timetable">${icon("clock")}</span>` : ""}${esc(x.place)}</a>${must ? `<span class="must-tag" title="One of your must-sees">${icon("star")} must-see</span>` : ""}${badge}</span>
-        ${x.cost ? `<span class="cost">${money(x.cost, cur)}</span>` : ""}
+        ${costHtml(x, d, cur)}
         <span class="item-acts">
         <button class="pin" data-stop-edit="${di}-${xi}" title="Edit everything about this stop: time, name, description, cost, booking, how you get here">${icon("pencil")}</button>
         ${where ? `<button class="pin${x.leg ? " set" : ""}" data-leg-edit="${di}-${xi}" title="${x.leg ? "How you get here is set by hand: change it" : "How you get here: walk, road, train, boat, places on the way"}">${icon("route")}</button>` : ""}
@@ -161,6 +177,7 @@ function dayItemsHtml(d: Day, di: number, byTitle: ByTitle, cur: string, trackCo
 
 export function daysHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget: number) {
   refreshMustSees();
+  paid = paidByLink();
   return daysGroups(it, byTitle, cur, budget) + (it.days.length ? `</div></section>` : "");
 }
 
@@ -196,7 +213,10 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
         <span class="right">
           <span class="edit-slot" data-edit="${esc(dayKey(it.days, i))}">${editChip(dayKey(it.days, i))}</span>
           ${w ? `<span class="weather${w.kind === "typical" ? " typical" : w.kind === "was" ? " was" : ""}" title="${esc(weatherTitle(w))}">${wmoIcon(w.code)}${w.kind === "typical" ? "~" : ""}${fmtTemps(w.min, w.max)}</span>` : ""}
-          <span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>
+          ${((real) => real == null
+            ? `<span class="budget-pill ${d.estimatedCost > budget ? "over" : ""}">${money(d.estimatedCost, cur)}</span>`
+            : `<span class="budget-pill actual${real > budget ? " over" : ""}" title="${esc(`What was really paid where it's known, the estimate for the rest (estimated ${money(d.estimatedCost, cur)})`)}">${icon("check")}${money(real, cur)}</span>`)(dayActual(d))}
+          ${it.days.length > 1 ? `<button class="redo" data-swap="${i}" title="Swap this day with another day (the dates stay)">${icon("arrowLeftRight")}</button>` : ""}
           <button class="redo" data-redo="${i}" title="Re-plan this day (keeps the other days)">${icon("refresh")}</button>
         </span>
       </div>

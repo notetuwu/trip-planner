@@ -26,7 +26,7 @@ const PACKING = ["packed", "packingExtra"];
 /** Parts that are a few of the trip's own fields together. */
 const GROUPS: Record<string, string[]> = { details: DETAILS, places: PLACES, packing: PACKING };
 /** Parts that are one field of the trip. */
-const FIELDS: Record<string, string> = { stays: "stays", bookings: "bookings", bookahead: "booked", ideas: "ideas" };
+const FIELDS: Record<string, string> = { stays: "stays", bookings: "bookings", bookahead: "booked", ideas: "ideas", expenses: "expenses" };
 
 type Trip = Record<string, any>;
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -229,7 +229,7 @@ export function partLabel(key: string, trip?: Trip | null): string {
     return i >= 0 ? `Day ${i + 1}${d?.city ? ` · ${short(d.city)}` : d?.title ? ` · ${d.title}` : ""}` : key.startsWith("day:#") ? "A day of the plan" : `The day of ${key.slice(4)}`;
   }
   if (key.startsWith("photo:")) return "Photo on the map";
-  return ({ stays: "Stays", details: "Travelers & style", places: "Places", bookings: "Bookings", bookahead: "Book ahead", packing: "Packing list", ideas: "Ideas & notes", photoFolders: "Photo folders", plan: "The plan" } as Record<string, string>)[key] || key;
+  return ({ stays: "Stays", details: "Travelers & style", places: "Places", bookings: "Bookings", bookahead: "Book ahead", packing: "Packing list", ideas: "Ideas & notes", expenses: "Expenses", photoFolders: "Photo folders", plan: "The plan" } as Record<string, string>)[key] || key;
 }
 
 const FIELD_WORDS: Record<string, string> = {
@@ -248,6 +248,13 @@ export function describePart(key: string, before: unknown, after: unknown): stri
   if (key.startsWith("day:")) return dayWords(before as any, after as any);
   if (key === "stays") return staysWords(before as any[], after as any[]);
   if (key === "bookings") return namedListWords(before as any[], after as any[], (b) => b?.name || "a booking");
+  if (key === "expenses" && isObj(before) && isObj(after)) {
+    const name = (id: string, t: Trip) => (t[id]?.kind === "settle" ? "a payment back" : t[id]?.what || "an expense");
+    const added = Object.keys(after).filter((id) => !(id in before)).map((id) => name(id, after));
+    const removed = Object.keys(before).filter((id) => !(id in after)).map((id) => name(id, before));
+    const changed = Object.keys(after).filter((id) => id in before && !same(before[id], after[id])).map((id) => name(id, after));
+    return [added.length ? `added ${list(added)}` : "", removed.length ? `removed ${list(removed)}` : "", changed.length ? `changed ${list(changed)}` : ""].filter(Boolean).join("; ") || "changed";
+  }
   if (key === "places" && isObj(before) && isObj(after)) {
     const was = isObj(before.marks) ? before.marks : {}, now = isObj(after.marks) ? after.marks : {};
     const starred = Object.keys(now).filter((t) => now[t] === "must" && was[t] !== "must"), unstarred = Object.keys(was).filter((t) => was[t] === "must" && now[t] !== "must");

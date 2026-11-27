@@ -26,6 +26,11 @@
 .item-top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .item time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; min-width: 40px; }
 .item .n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--c); color: #fff; font-size: 10px; font-weight: 700; align-self: center; }
+/* The number is the handle for dragging a stop onto another day (itinerary/move-stops.ts). */
+.item .n[draggable="true"] { cursor: grab; }
+.item .n[draggable="true"]:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 30%, transparent); }
+.moving-stop .day { transition: outline-color .12s; outline: 2px dashed transparent; outline-offset: 2px; border-radius: 12px; }
+.moving-stop .day.drop-here { outline-color: var(--c); }
 .item .name { font-weight: 600; }
 .item .name a { color: inherit; text-decoration-color: var(--line); }
 .item .name a:hover { color: var(--accent); }
@@ -33,6 +38,11 @@
 /* The stop's buttons (how you get here, show on map, set location, remove) at the right edge, after the cost if any. */
 .item-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; align-self: center; }
 .item .cost + .item-acts { margin-left: 0; }
+/* What was really paid, in place of the estimate (Costs window): marked with a check. */
+.item .cost.actual { display: inline-flex; align-items: center; gap: 3px; color: var(--ok); font-weight: 600; }
+.item .cost.actual svg, .budget-pill.actual svg { width: 11px; height: 11px; }
+.budget-pill.actual { display: inline-flex; align-items: center; gap: 4px; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 55%, transparent); }
+.budget-pill.actual svg { stroke-width: 3; }
 .item .del { display: inline-grid; place-items: center; border: 0; background: none; color: var(--muted); cursor: pointer; width: 22px; height: 22px; padding: 0; border-radius: 6px; font-size: 13px; visibility: hidden; align-self: center; }
 .item:hover .del { visibility: visible; }
 .item .del:hover { color: var(--accent); background: var(--accent-soft); }

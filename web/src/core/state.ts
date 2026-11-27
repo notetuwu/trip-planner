@@ -3,6 +3,7 @@ import type { DayTrip, Itinerary, ListSummary, MustSeeHow, Place, Poi, TravelMod
 import { prefs } from "./prefs";
 import type { PhotoSpot } from "../map/photo-spot";
 import type { Change, Edits } from "../../../shared/edits";
+import type { Expenses } from "../../../shared/expenses";
 
 export interface Stay {
   city: string;
@@ -123,6 +124,8 @@ export interface AppState {
   routePlan?: { plan: unknown; chat: unknown[]; form: Record<string, string> };
   /** Things already booked (Bookings in the sidebar). */
   bookings?: Booking[];
+  /** What was really spent, by id (Expenses in the toolbar; shared/expenses.ts). */
+  expenses?: Expenses;
   /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */
   okRepeats?: { key: string; name: string }[];
   /** The photo folders (shared Google Drive folders, or folders on this computer) whose photos the map's Photos layer

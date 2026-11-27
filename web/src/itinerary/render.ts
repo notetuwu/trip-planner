@@ -1,7 +1,7 @@
 // Renders the itinerary column and wires up its buttons.
 import { initSplitTabs } from "./split-tabs";
 import { openChat } from "../trip/companion";
-import { openCosts } from "./costs";
+import { type CostsTab, openCosts } from "./costs";
 import { openPhotosView } from "./photos-view";
 import { openPreview } from "./preview-view";
 import { addDays, fmtDate } from "../core/format";
@@ -15,6 +15,7 @@ import { drawMap } from "../map/draw";
 import { removeStop } from "../map/edit";
 import { openPin } from "./pin";
 import { openStopEdit } from "./stop-edit";
+import { wireMoves } from "./move-stops";
 import { updateLegInfo } from "../map/legs";
 import { renderTripTitle } from "../trip/title";
 import { itineraryIcs } from "../export/ics";
@@ -119,11 +120,12 @@ function wire(out: HTMLElement) {
   }
   for (const el of $$("[data-sel]", out)) el.onclick = (e) => { if (!(e.target as HTMLElement).closest("a")) selectDay(+el.dataset.sel!); };
   for (const el of $$("[data-bar]", out)) el.onclick = () => selectDay(+el.dataset.bar!, { scroll: true });
-  for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts();
+  for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts((el.dataset.costs || undefined) as CostsTab | undefined);
   for (const el of $$("[data-photos]", out)) el.onclick = () => openPhotosView();
   for (const el of $$("[data-preview]", out)) el.onclick = () => openPreview();
   for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
+  wireMoves(out);
   // A suggested journey between two stays, written into the travel day as its stops (Undo takes them out again).
   for (const el of $$<HTMLButtonElement>("[data-journey-use]", out)) el.onclick = () => {
     const di = +el.dataset.journeyUse!, day = state.itinerary!.days[di], before = [...day.items];

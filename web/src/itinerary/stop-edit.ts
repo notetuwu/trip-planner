@@ -8,7 +8,8 @@ import { save, state } from "../core/state";
 import { byTitleMap, geocodeItems, itemLoc } from "../geo/item-loc";
 import { company } from "../../../shared/people";
 import { drawMap } from "../map/draw";
-import { removeStop } from "../map/edit";
+import { moveStopTo, removeStop } from "../map/edit";
+import { fmtDate } from "../core/format";
 import { moveToTime } from "./journey-model";
 import { legControls } from "./leg-edit";
 import { openPin } from "./pin";
@@ -29,6 +30,7 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
   dlg.className = "keys-dialog stop-edit";
   dlg.innerHTML = `<div class="se-head"><h3>${icon("pencil")} Edit stop</h3><span class="hint">Day ${di + 1} · stop ${xi + 1}</span><button type="button" class="icon-btn" data-se-close title="Close">${icon("x")}</button></div>
     <div class="se-body">
+      <label class="se-f"><span>Day</span><select data-f="day">${state.itinerary!.days.map((o, k) => `<option value="${k}"${k === di ? " selected" : ""}>Day ${k + 1} · ${esc(fmtDate(o.date) || o.date)} · ${esc(o.city.split(",")[0])}</option>`).join("")}</select></label>
       <div class="se-row se-time-name">
         <label class="se-f se-time"><span>Time</span><input type="time" data-f="time" value="${esc(/^\d{1,2}:\d{2}/.test(x.time || "") ? x.time.slice(0, 5).padStart(5, "0") : "")}"></label>
         <label class="se-f se-grow"><span>Name</span><input type="text" data-f="place" value="${esc(x.place)}" required></label>
@@ -104,6 +106,9 @@ export function openStopEdit(di: number, xi: number, focus?: "leg") {
     // A new time puts it in its place in the day (after the leg fields are read, which go by its old place).
     moveToTime(d.items, x, retimed);
     close();
+    // Another day: moved there in its time order (with its own toast and Undo).
+    const toDi = Number(text("day"));
+    if (Number.isInteger(toDi) && toDi !== di && state.itinerary!.days[toDi]) { moveStopTo(di, d.items.indexOf(x), toDi); geocodeItems(); return; }
     save(); renderItinerary(); drawMap({ fit: false });
     geocodeItems(); // a new "where" is looked up
     toast(`Saved “${x.place}”`);

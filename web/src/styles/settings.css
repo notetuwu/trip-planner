@@ -741,7 +741,7 @@ button.refine:hover { border-color: var(--accent); }
 .booking input[type=date] { flex: 1.5; }
 
 /* The cost breakdown window. */
-.costs-dialog { width: min(760px, 94vw); padding: 0; }
+.costs-dialog { width: min(1180px, 96vw); padding: 0; }
 .costs-dialog .pl-head .hint { flex: 1; margin: 0; }
 .costs-body { padding: 8px 22px 22px; max-height: 76vh; overflow: auto; }
 .costs-body h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 18px 0 6px; }
@@ -757,6 +757,201 @@ button.refine:hover { border-color: var(--accent); }
 .cb-day summary .over { color: var(--warn); }
 .cb-day .cb-city { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cb-day .cb-table { margin: 0 0 8px 14px; width: calc(100% - 14px); }
+
+/* The Costs window's tabs (itinerary/costs.ts, costs-spent.ts). */
+.costs-body { max-height: min(80vh, 900px); }
+.cx-tabs { position: sticky; top: -8px; z-index: 10; display: flex; gap: 4px; margin: -8px -22px 6px; padding: 8px 22px; background: var(--panel, var(--bg)); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.cx-tab { display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.cx-tab:hover { background: var(--field); color: var(--ink); }
+.cx-tab.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.cx-tab .tb-count { font-weight: 500; font-size: 11.5px; opacity: .8; }
+.cx-undo { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 7px 12px; border-radius: 8px; background: var(--field); font-size: 13px; }
+.cx-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+@media (max-width: 820px) { .cx-cols { grid-template-columns: 1fr; } }
+.cx-legend { float: right; display: inline-flex; gap: 6px; align-items: center; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.cx-legend i { display: inline-block; width: 10px; height: 6px; border-radius: 3px; background: var(--accent); }
+.cx-legend i.spent, .cb-bar.spent i { background: var(--ok, #2f9e6b); }
+.cx-bars { width: 32%; }
+.cx-bars .cb-bar { display: block; height: 5px; margin: 2px 0; }
+.cx-days tr { cursor: pointer; }
+.cx-days tr:hover td { background: var(--field); }
+.cx-days .over, .cx-plan .over { color: var(--warn); }
+.cx-town { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-stats .stat .link-btn { display: block; margin-top: 2px; font-size: 12px; padding: 0; }
+.cx-pday h3 { display: flex; gap: 10px; align-items: baseline; text-transform: none; letter-spacing: 0; font-size: 13.5px; color: var(--ink); }
+.cx-pday h3 .hint { flex: 1; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-pday h3 .num { font-weight: 500; color: var(--muted); font-size: 12.5px; }
+.cx-th td { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cx-th td small { text-transform: none; font-weight: 400; }
+/* The Plan tab's rows: quiet fields that look like text until pointed at (costs.ts). */
+.cx-plan { table-layout: fixed; }
+.cx-plan td { padding: 4px 6px; height: 40px; box-sizing: border-box; }
+.cx-plan tr:not(.cx-th):hover td { background: color-mix(in srgb, var(--field) 70%, transparent); }
+.cx-plan .cx-th td { height: auto; padding-bottom: 6px; }
+.cx-time { width: 84px; white-space: nowrap; }
+.cx-stop { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-plan .cx-th td:nth-child(3), .cx-estc { width: 120px; }
+.cx-paid { width: 210px; }
+.cx-payer { width: 170px; }
+.cx-split-cell { width: 190px; }
+.cx-in { position: relative; display: inline-flex; align-items: center; width: 108px; height: 32px; border: 1px solid transparent; border-radius: 8px; transition: border-color .12s, background .12s; }
+.cx-in:hover { border-color: var(--line); background: var(--panel); }
+.cx-in:focus-within { border-color: var(--accent); background: var(--panel); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.cx-sym { position: absolute; left: 9px; font-size: 12px; color: var(--muted); pointer-events: none; }
+.cx-plan .cx-in input { width: 100%; height: 100%; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; padding: 0 8px 0 22px; text-align: left; font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; color: var(--ink); -moz-appearance: textfield; }
+.cx-in input::-webkit-inner-spin-button, .cx-in input::-webkit-outer-spin-button, .cx-money-in input::-webkit-inner-spin-button, .cx-money-in input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.cx-in input:placeholder-shown + * { opacity: 1; }
+.cx-in:has(input:placeholder-shown):not(:focus-within) .cx-sym { opacity: 0; }
+.cx-paid-in { display: flex; align-items: center; gap: 6px; }
+.cx-asest { all: unset; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 11.5px; color: var(--muted); cursor: pointer; opacity: 0; transition: opacity .12s, background .12s, color .12s; white-space: nowrap; }
+.cx-asest svg { width: 12px; height: 12px; }
+.cx-plan tr:hover .cx-asest, .cx-asest:focus-visible { opacity: 1; }
+.cx-asest:hover { background: var(--ok-soft); color: var(--ok); }
+.cx-plan select { width: 100%; height: 32px; padding: 0 28px 0 10px; border-radius: 8px; font: inherit; font-size: 13px; border-color: transparent; background-color: transparent; }
+.cx-plan select:hover { border-color: var(--line); background-color: var(--panel); }
+.cx-plan select:focus { border-color: var(--accent); background-color: var(--panel); }
+.cx-split-btn { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--ink); cursor: pointer; }
+.cx-split-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-split-btn svg { width: 13px; height: 13px; flex: none; color: var(--muted); }
+.cx-split-btn:hover { border-color: var(--accent); }
+.cx-split-btn[disabled] { opacity: .6; cursor: default; }
+/* The plan's search, in the sticky tab bar. */
+.cx-search { margin-left: auto; display: flex; align-items: center; gap: 7px; width: min(320px, 40%); height: 34px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--field); color: var(--muted); }
+.cx-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.cx-search svg { width: 15px; height: 15px; flex: none; }
+.cx-search input { flex: 1; min-width: 0; height: 100%; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; padding: 0; font: inherit; font-size: 13px; color: var(--ink); }
+.cx-noresult { margin: 18px 0; }
+/* A row's "For": who it was for, whose share is covered (a popover over the window). */
+.cx-pop { position: fixed; inset: auto; margin: 0; width: 320px; padding: 10px 12px 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); box-shadow: 0 16px 40px rgba(0, 0, 0, .4); }
+.cx-pop-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.cx-pop-head .hint { margin-left: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cx-pop-row { display: grid; grid-template-columns: 1fr auto 70px; align-items: center; gap: 8px; min-height: 34px; padding: 0 6px; border-radius: 8px; font-size: 13px; }
+.cx-pop-row:hover { background: var(--field); }
+.cx-pop-row:not(.on) { color: var(--muted); }
+.cx-pop-who { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; min-width: 0; }
+.cx-pop-who input { width: 15px; height: 15px; margin: 0; flex: none; }
+.cx-pop-who .cx-paid-badge { display: inline-block; }
+.cx-pop-amt { text-align: right; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.cx-pop-row.covered .cx-pop-amt { color: var(--muted); }
+.cx-pop-row .cx-cover { grid-area: auto; justify-self: end; padding: 2px 9px; }
+.cx-pop-row.covered .cx-cover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cx-pop-row.covered .cx-cover svg { fill: currentColor; }
+.cx-pop-row.covered .cx-cover-on { display: inline; }
+.cx-pop-row.covered .cx-cover-off { display: none; }
+.cx-pop-foot { margin: 6px 4px 2px; font-size: 11.5px; }
+/* Each paid their own: nobody covers anybody. */
+.cx-form.each .cx-cover { display: none; }
+.cx-tip { margin: 8px 0; display: flex; gap: 6px; align-items: center; }
+/* The form for an expense (costs-spent.ts): from the plan, what and how much, when, kind and payer, and the split. */
+.cx-form { margin: 12px 0 8px; padding: 16px 18px 14px; border: 1px solid var(--line); border-radius: 14px; display: grid; gap: 14px; background: var(--field); }
+.cx-form.editing { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.cx-form-title { font-weight: 700; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.cx-form-title .i, .cx-form-title svg { color: var(--accent); }
+.cx-from { flex: 1 1 100%; display: grid; gap: 4px; }
+.cx-form .se-f input, .cx-form .se-f select { height: 38px; padding: 0 10px; border-radius: 8px; }
+.cx-grid { display: grid; grid-template-columns: minmax(220px, 1fr) 240px 150px 170px 150px; gap: 12px; align-items: start; }
+.cx-grid:not(:has([data-x="paidBy"])) { grid-template-columns: minmax(220px, 1fr) 240px 150px 170px; }
+@media (max-width: 1000px) { .cx-grid, .cx-grid:not(:has([data-x="paidBy"])) { grid-template-columns: 1fr 1fr; } .cx-what { grid-column: 1 / -1; } }
+/* The amount and its currency as one field. */
+.cx-money-in { display: flex; height: 38px; border: 1px solid var(--line-strong, var(--line)); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.cx-money-in:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.cx-form .cx-money-in input { flex: 1; min-width: 0; height: 100%; border: 0 !important; box-shadow: none !important; background: transparent !important; outline: 0; padding: 0 10px; font-size: 15px; font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.cx-form .cx-money-in select { flex: none; width: auto; height: 100%; border: 0 !important; border-left: 1px solid var(--line) !important; border-radius: 0; box-shadow: none !important; background-color: var(--field) !important; padding: 0 26px 0 10px; font-weight: 600; font-size: 13px; }
+.cx-rate { display: flex; align-items: center; gap: 5px; margin-top: 5px; font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.cx-rate[hidden] { display: none; }
+.cx-form .cx-rate input { width: 78px; height: 24px; padding: 0 6px; font-size: 11.5px; border-radius: 6px; }
+.cx-rate b { margin-left: auto; color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* A searchable picker (core/pick-list.ts). */
+.pick-list { position: relative; }
+.pk-box { display: flex; align-items: center; gap: 8px; padding: 0 8px 0 11px; border: 1px solid var(--line-strong, var(--line)); border-radius: 8px; background: var(--panel); color: var(--muted); }
+.pick-list.open .pk-box, .pk-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent); }
+.pick-list.open .pk-box { border-radius: 8px 8px 0 0; }
+.pick-list.open.up .pk-box { border-radius: 0 0 8px 8px; }
+.pk-box > svg { width: 15px; height: 15px; flex: none; }
+.pk-box > svg:last-child { cursor: pointer; transition: transform .15s; }
+.pick-list.open .pk-box > svg:last-child { transform: rotate(180deg); }
+.pk-box input { flex: 1; min-width: 0; height: 36px; border: 0 !important; outline: 0; background: transparent !important; box-shadow: none !important; padding: 0; color: var(--ink); font: inherit; font-size: 13px; }
+.pk-clear { all: unset; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; }
+.pk-clear[hidden] { display: none; }
+.pk-clear:hover { background: var(--field); color: var(--ink); }
+/* A popover in the top layer (above the modal), placed by pick-list.ts at the field. */
+.pk-list { position: fixed; inset: auto; margin: 0; box-sizing: border-box; max-height: 340px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--accent); border-top: 0; border-radius: 0 0 8px 8px; background: var(--panel); color: var(--ink); padding: 4px 0 6px; box-shadow: 0 12px 28px rgba(0, 0, 0, .35); }
+.pick-list.up .pk-list { border-top: 1px solid var(--accent); border-bottom: 0; border-radius: 8px 8px 0 0; box-shadow: 0 -12px 28px rgba(0, 0, 0, .35); }
+.pk-list:not(:popover-open) { display: none; }
+.pk-group { position: sticky; top: -4px; z-index: 1; padding: 7px 12px 4px; background: var(--panel); font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pk-item { display: flex; align-items: center; gap: 9px; padding: 6px 12px 6px 16px; cursor: pointer; font-size: 13px; }
+.pk-item.active { background: var(--field); }
+.pk-item.picked .pk-label { color: var(--accent); font-weight: 600; }
+.pk-item > svg { width: 14px; height: 14px; flex: none; color: var(--muted); }
+.pk-lead { flex: none; width: 40px; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+.pk-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pk-label mark, .pk-group mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: inherit; border-radius: 2px; }
+.pk-note { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.pk-tag { flex: none; font-size: 10.5px; padding: 1px 6px; border-radius: 6px; background: var(--ok-soft); color: var(--ok); font-weight: 600; }
+.pk-empty { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+/* Split between: a card per traveler. The avatar includes or leaves them out; their part on the right; the payer has a
+   "paid" badge, the others a button to cover their share. */
+.cx-split { display: grid; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.cx-split-head { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.cx-split-head .hint { font-size: 12px; font-variant-numeric: tabular-nums; }
+.cx-split-links { margin-left: auto; display: flex; gap: 12px; }
+.cx-split-links .link-btn { font-size: 12px; padding: 0; }
+.cx-people { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+.cx-person { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "who part" "cover cover"; align-items: center; gap: 8px 10px; padding: 10px 12px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); transition: border-color .15s, background .15s, opacity .15s; }
+.cx-person:not(.on):not(.payer) { opacity: .55; border-style: dashed; background: transparent; }
+.cx-person:not(.on) .cx-avatar { filter: grayscale(1); opacity: .7; }
+.cx-person.on { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.cx-person.covered { background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.cx-who { grid-area: who; display: flex; align-items: center; gap: 10px; min-width: 0; cursor: pointer; }
+.cx-who input { position: absolute; opacity: 0; pointer-events: none; }
+.cx-avatar { position: relative; flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff; background: hsl(var(--h) 45% 46%); transition: transform .12s; }
+.cx-avatar svg { display: none; }
+.cx-who:hover .cx-avatar { transform: scale(1.06); }
+.cx-who:has(input:focus-visible) .cx-avatar { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cx-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cx-part { grid-area: part; min-width: 84px; display: grid; justify-items: end; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.cx-part b { font-size: 14px; }
+.cx-part small { font-size: 11px; color: var(--muted); }
+.cx-person.covered .cx-part b { color: var(--muted); text-decoration: line-through; }
+.cx-paid-badge { display: none; flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: var(--ok-soft); color: var(--ok); }
+.cx-person.payer .cx-paid-badge { display: inline-block; }
+/* The payer's second line: what they paid, where the others have the cover button. */
+.cx-payer-note { grid-area: cover; display: none; align-items: center; height: 26px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cx-person.payer .cx-payer-note { display: flex; }
+.cx-cover { grid-area: cover; justify-self: start; display: inline-flex; white-space: nowrap; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; transition: background .12s, color .12s, border-color .12s; }
+.cx-cover input { position: absolute; opacity: 0; pointer-events: none; }
+.cx-cover svg { width: 12px; height: 12px; }
+.cx-cover:hover { color: var(--ink); border-color: var(--line-strong, var(--line)); }
+.cx-cover:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cx-cover-on { display: none; }
+.cx-person.covered .cx-cover { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cx-person.covered .cx-cover svg { fill: currentColor; }
+.cx-person.covered .cx-cover-on { display: inline; }
+.cx-person.covered .cx-cover-off { display: none; }
+/* Nobody covers themselves, and only those it was for can be covered. */
+.cx-person.payer .cx-cover { display: none; }
+.cx-person:not(.on) .cx-cover { visibility: hidden; }
+.cx-form-foot { display: flex; align-items: center; gap: 12px; }
+.cx-form-acts { display: flex; justify-content: flex-end; gap: 8px; margin-left: auto; }
+.cx-error { color: var(--warn); font-size: 12.5px; margin: 0; }
+.cx-day { display: flex; gap: 10px; align-items: baseline; text-transform: none !important; letter-spacing: 0 !important; color: var(--ink) !important; font-size: 13px !important; }
+.cx-day .hint { flex: 1; font-weight: 400; }
+.cx-list tr.editing td { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.cx-acts { width: 70px; text-align: right; white-space: nowrap; }
+.cx-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 0 5px; }
+.cx-tag .i { width: 11px; height: 11px; }
+.cx-empty { margin: 14px 0; }
+.cx-pay { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
+.cx-pay li { display: flex; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box; padding: 8px 10px 8px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 13.5px; line-height: 1; }
+.cx-pay .num { margin-left: auto; font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+.costs-body .cx-pay li .btn { margin: 0; display: inline-flex; align-items: center; gap: 6px; height: 34px; line-height: 1; }
+.cx-pay .btn svg { width: 14px; height: 14px; }
+.cx-plus { color: var(--ok, #2f9e6b); font-weight: 600; }
+.cx-minus { color: var(--warn); font-weight: 600; }
+.cx-names { margin: 10px 0; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: 12px; display: grid; gap: 8px; font-size: 13px; }
+.cx-names-row { display: flex; gap: 8px; }
+.cx-names-row input { flex: 1; font: inherit; }
 .costs-body .btn { margin-top: 12px; }
 .stat-btn { text-align: left; cursor: pointer; font: inherit; color: inherit; }
 .stat-btn:hover { border-color: var(--accent); }
@@ -1113,3 +1308,63 @@ button.edit-chip:hover { color: var(--text); }
   .lightbox-strip { bottom: calc(6px + env(safe-area-inset-bottom)); max-width: calc(100vw - 16px); padding: 4px; gap: 4px; }
   .lightbox-strip button { width: 54px; height: 42px; }
 }
+/* The Plan tab's headers all start at the left, like their fields. */
+.cx-plan .cx-th td { text-align: left; }
+/* "Add an expense": the form folded away (costs-spent.ts). */
+.cx-add { all: unset; box-sizing: border-box; display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 46px; margin: 12px 0 8px; border: 1px dashed var(--line-strong, var(--line)); border-radius: 12px; color: var(--accent); font-weight: 600; font-size: 13.5px; cursor: pointer; transition: background .12s, border-color .12s; }
+.cx-add:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); border-color: var(--accent); }
+.cx-add svg { width: 16px; height: 16px; }
+.cx-form-title .icon-btn { margin-left: auto; color: var(--muted); }
+/* How someone stands in an expense: owes, covered, paid own (costs-data.ts standPicker). */
+.cx-seg { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--field); }
+.cx-seg label { position: relative; display: inline-flex; align-items: center; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--muted); cursor: pointer; white-space: nowrap; transition: background .12s, color .12s; }
+.cx-seg label:hover { color: var(--ink); }
+.cx-seg input { position: absolute; opacity: 0; pointer-events: none; }
+.cx-seg label.on, .cx-seg label:has(input:checked) { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, .25); }
+.cx-seg label:has(input[value="covered"]:checked) { background: var(--accent); color: #fff; }
+.cx-seg label:has(input[value="own"]:checked) { background: var(--ok-soft); color: var(--ok); }
+.cx-seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.cx-person .cx-seg { grid-area: cover; justify-self: start; }
+.cx-person.payer .cx-seg, .cx-form.each .cx-person .cx-seg { display: none; }
+.cx-person:not(.on) .cx-seg { visibility: hidden; }
+.cx-person.own { background: color-mix(in srgb, var(--ok) 6%, var(--panel)); }
+.cx-person.own .cx-part b { color: var(--muted); }
+.cx-pop { width: 380px; }
+.cx-pop-row { grid-template-columns: minmax(0, 1fr) auto 64px; }
+.cx-pop-row .cx-seg label { padding: 0 8px; }
+/* Room for four choices, and air between the rows. */
+.cx-pop { width: 470px; max-width: calc(100vw - 24px); padding: 12px 12px 10px; }
+.cx-pop-head { margin-bottom: 8px; padding: 0 6px; }
+.cx-pop-row { min-height: 44px; padding: 4px 6px; gap: 10px; }
+.cx-pop-row + .cx-pop-row { margin-top: 2px; }
+.cx-pop-foot { margin: 10px 6px 2px; line-height: 1.5; }
+.cx-pop-foot b { color: var(--ink); font-weight: 600; }
+.cx-seg label { padding: 0 9px; }
+.cx-seg label:has(input[value="back"]:checked) { background: color-mix(in srgb, var(--ok) 22%, var(--panel)); color: var(--ok); }
+.cx-people { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+/* (The page's labels have a margin under them: not these.) */
+.cx-seg { align-items: center; gap: 2px; }
+.cx-seg label { margin: 0; gap: 0; line-height: 1; box-sizing: border-box; }
+.cx-seg input { width: 0; height: 0; margin: 0; }
+.cx-who, .cx-cover, .cx-pop-who { margin: 0; }
+.cx-search { margin-bottom: 0; }
+/* In the expense form's cards, the switch spans the card, its choices sharing the width evenly. */
+.cx-person .cx-seg { justify-self: stretch; display: flex; }
+.cx-person .cx-seg label { flex: 1; justify-content: center; }
+/* Settle up: the amount paid can be changed (part of it), then Mark as paid. */
+.cx-pay-part { margin-left: auto; font-size: 12px; }
+.cx-pay-part:not([hidden]) + .cx-pay-amt { margin-left: 0; }
+.cx-pay-amt { margin: 0 0 0 auto; display: inline-flex; align-items: center; gap: 0; height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; color: var(--ink); font-weight: 700; font-size: 14px; transition: border-color .12s, background .12s; }
+.cx-pay-amt:hover { border-color: var(--line); background: var(--field); }
+.cx-pay-amt:focus-within { border-color: var(--accent); background: var(--field); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
+.cx-pay-amt input { width: auto; field-sizing: content; min-width: 3ch; max-width: 120px; height: 100%; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; padding: 0 0 0 2px; text-align: left; font: inherit; color: inherit; font-variant-numeric: tabular-nums; -moz-appearance: textfield; }
+.cx-pay-amt input::-webkit-inner-spin-button, .cx-pay-amt input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* Each person's share: a line already paid back, and its button. */
+.cx-share .cb-table tr.cx-done td:not(.cx-share-act) { color: var(--muted); }
+.cx-share .cb-table tr.cx-done .num { text-decoration: line-through; }
+.cx-share-act { width: 100px; text-align: right; white-space: nowrap; }
+.cx-share-act .link-btn { display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: 12px; }
+.cx-share-act .link-btn svg { width: 12px; height: 12px; }
+/* The Expenses tab's buttons: a bar fixed to the bottom of the window while its list scrolls. */
+.cx-tools { position: sticky; bottom: -22px; z-index: 3; display: flex; gap: 8px; flex-wrap: wrap; margin: 16px -22px -22px; padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--line); }
+.costs-body .cx-tools .btn { margin-top: 0; }

@@ -10,6 +10,8 @@ import { packingCount } from "./packing";
 import { promptSummary } from "./panels";
 import { icon } from "../core/icons";
 import { canShareFiles } from "../export/offline";
+import { balances, settleUp, spending } from "../../../shared/expenses";
+import { fx } from "./costs-data";
 
 /** The stays have changed since this itinerary was made (e.g. a new trip typed over an old one). */
 /** The stays changed since the plan was made (for older plans: it starts on another day, or no day is in a stay's town). */
@@ -52,6 +54,10 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
   const thoughts = !!(it.summary || meta.reasoning || meta.thinking || meta.lookups?.length);
   const events = it.holidaysAndEvents?.length || 0;
   const ahead = bookAheadCount(it), pack = packingCount(it);
+  // What was really spent (rates as entered; today's for the rest, once loaded) and how many payments would even it out.
+  const ex = Object.values(state.expenses || {}), names = state.people || [];
+  const spent = spending(ex, names, cur, fx).total;
+  const owing = names.length > 1 ? settleUp(balances(ex, names, cur, fx), cur).length : 0;
   return `${stale}<div class="summary">
     <div class="sum-head">
       <h3>${it.days.length} days${it.destination ? ` in ${esc(it.destination)}` : ""}</h3>
@@ -62,7 +68,8 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       </div>
     </div>
     <div class="stats">
-      <button class="stat stat-btn" type="button" data-costs title="See the full cost breakdown"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total · breakdown</span></button>
+      <button class="stat stat-btn" type="button" data-costs title="Costs: change the estimates, note what you paid and who paid it, and who owes whom"><b>${money(it.totalEstimatedCost, cur)}</b><span>est. total · costs</span></button>
+      ${spent ? `<button class="stat stat-btn" type="button" data-costs="spent" title="What you really spent, and who owes whom"><b>${money(spent, cur)}</b><span>really spent · ${owing ? `${owing} to pay back` : "all even"}</span></button>` : ""}
       <div class="stat"><b>${money(it.totalEstimatedCost / Math.max(1, it.days.length), cur)}</b><span>avg / day for ${state.travelers > 1 ? `all ${state.travelers}` : "you"} (budget ${money(budget, cur)}${state.travelers > 1 ? `, ${money(budget / state.travelers, cur)} each` : ""})</span></div>
       <div class="stat"><b>${listedCount}</b><span>saved places used</span></div>
       ${it.localCurrency && it.localCurrency !== cur ? `<div class="stat"><b>${esc(it.localCurrency)}</b><span>local currency</span></div>` : ""}

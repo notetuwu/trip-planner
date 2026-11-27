@@ -53,4 +53,6 @@ export const OFFLINE_SCRIPT = `
         .bindTooltip(city, { direction: "right", offset: [12, -16], permanent: true }).addTo(map);
     });
     if (all.length) map.fitBounds(L.latLngBounds(all).pad(.1)); else el.hidden = true;
+    // Drawn while the Plan view may be hidden: fitted again the first time it shows.
+    window.__phoneMapShow = () => { map.invalidateSize(); if (all.length) map.fitBounds(L.latLngBounds(all).pad(.1)); };
   }`;

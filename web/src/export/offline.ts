@@ -8,6 +8,7 @@ import { directionsUrl } from "../itinerary/directions";
 import { APP_CSS } from "../styles";
 import { sectionsHtml } from "./print";
 import { OFFLINE_SCRIPT, offlineMapData } from "./offline-map";
+import { EXTRAS_CSS, EXTRAS_SCRIPT, phoneExtrasData } from "./offline-extras";
 
 const EXPORT_CSS = `
   main.offline { display: block; max-width: 760px; margin: 0 auto; padding: 12px 12px 40px; }
@@ -54,6 +55,7 @@ export function offlineHtml() {
   const title = it.destination || tripCountries().map(([, n]) => n).join(" & ") || "Trip";
   const nav = it.days.map((d, i) => `<a href="#day-${i}" data-date="${esc(d.date)}" style="--c:${dayColor(i)}">${esc(fmtDate(d.date) || d.date)}</a>`).join("");
   const data = JSON.stringify(offlineMapData()).replace(/</g, "\\u003c");
+  const extras = JSON.stringify(phoneExtrasData()).replace(/</g, "\\u003c");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -67,14 +69,23 @@ export function offlineHtml() {
 <style>
 ${APP_CSS}
 ${EXPORT_CSS}
+${EXTRAS_CSS}
 </style>
 </head>
 <body>
+<header class="ph-top"><b>${esc(title)}</b><nav class="ph-tabs"><button type="button" data-view="today">Today</button><button type="button" data-view="plan">Plan</button><button type="button" data-view="money">Expenses</button></nav></header>
+<section id="vToday" class="ph-view" hidden></section>
+<div id="vPlan" class="ph-view">
 <nav class="daynav">${nav}</nav>
 <main class="offline"><div id="map" hidden></div><section class="panel">${content.innerHTML}</section></main>
+</div>
+<section id="vMoney" class="ph-view" hidden></section>
+<button type="button" class="ph-fab" hidden>+ Expense</button>
 <script>
   const DATA = ${data};
+  const EXTRAS = ${extras};
 ${OFFLINE_SCRIPT}
+${EXTRAS_SCRIPT}
 <\/script>
 </body>
 </html>`;

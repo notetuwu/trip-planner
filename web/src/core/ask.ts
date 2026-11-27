@@ -59,6 +59,14 @@ export function askText(o: Base & { value?: string; placeholder?: string; label?
     });
 }
 
+/** Asks to pick one of several choices from a list; resolves with the picked value, or null when cancelled. */
+export function askChoice(o: Base & { label?: string; choices: { value: string; text: string }[]; value?: string }): Promise<string | null> {
+  const field = `<select class="ask-input">${o.choices.map((c) => `<option value="${esc(c.value)}"${c.value === o.value ? " selected" : ""}>${esc(c.text)}</option>`).join("")}</select>`;
+  return open<string | null>(o, `${o.label ? `<label class="ask-label">${esc(o.label)}</label>` : ""}${field}`,
+    (d) => d.querySelector<HTMLSelectElement>(".ask-input")!.value, null,
+    (d) => d.querySelector<HTMLSelectElement>(".ask-input")!.focus());
+}
+
 /** Asks yes or no; resolves true for yes. */
 export function askConfirm(o: Base): Promise<boolean> {
   return open<boolean>(o, "", () => true, false, (d) => d.querySelector<HTMLButtonElement>('button[type="submit"]')!.focus());
