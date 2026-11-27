@@ -61,6 +61,35 @@ begin
   Result := (Pos(Uppercase(AddBackslash(ExpandConstant('{commonpf64}'))), D) = 1) or (Pos(Uppercase(AddBackslash(ExpandConstant('{commonpf32}'))), D) = 1);
 end;
 
+// A running program's file can't be opened for writing.
+function InUse(FileName: String): Boolean;
+var Stream: TFileStream;
+begin
+  Result := False;
+  if not FileExists(FileName) then exit;
+  try
+    Stream := TFileStream.Create(FileName, fmOpenReadWrite or fmShareExclusive);
+    Stream.Free;
+  except
+    Result := True;
+  end;
+end;
+
+// An in-app update starts this installer and then closes the app. Checking for running apps while it's still closing
+// fails ("could not be shut down") and the silent install gives up, so it's given time to exit first. This runs before
+// that check; an app that stays open is then ended by it.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var Waited: Integer;
+begin
+  Result := '';
+  if not WizardSilent then exit;
+  Waited := 0;
+  while InUse(ExpandConstant('{app}\Trip Planner.exe')) and (Waited < 10000) do begin
+    Sleep(200);
+    Waited := Waited + 200;
+  end;
+end;
+
 procedure InitializeWizard;
 begin
   if (not IsAdmin) and InProgramFiles(WizardForm.DirEdit.Text) then

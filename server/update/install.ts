@@ -103,7 +103,9 @@ async function install(info: UpdateInfo, beforeInstall?: () => void) {
     await launch(current, ["--no-window"]);
   }
   console.log("Update: closing for the new version.");
-  setTimeout(() => process.exit(0), 300);
+  // With the installer, at once: it looks for the running app a moment after it starts, and finding it half closed
+  // makes it give up (installers up to 3.37.0, still run by a roll back, don't wait for it).
+  setTimeout(() => process.exit(0), info.mode === "installer" ? 0 : 300);
 }
 
 /** macOS: the new .app unpacked next to the running one (same disk, so it can be moved in), the running one moved
