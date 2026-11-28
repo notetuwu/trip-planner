@@ -14,7 +14,9 @@
 <meta name="theme-color" content="#151516">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Trips">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Not "black-translucent": drawn under the status bar, an iPhone dims what's at the top of the page and leaves a gap
+     as high as the status bar at the bottom. With "black" the page starts below the status bar and fills the rest. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.png">
 <link rel="apple-touch-icon" href="icon.png">
@@ -43,7 +45,7 @@
   .err { color: var(--warn); font-size: 14px; }
   #view { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
   #bar { flex: none; display: flex; align-items: center; gap: 8px; padding: calc(4px + env(safe-area-inset-top)) 8px 4px; border-bottom: 1px solid var(--line); background: var(--bg); }
-  #bar button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; }
+  #bar button { height: 34px; padding: 0 14px; border: 1px solid var(--muted); border-radius: 999px; background: var(--panel); color: var(--ink); font: inherit; font-size: 14px; font-weight: 700; }
   #bar span { flex: 1; min-width: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
   #frame { flex: 1; width: 100%; border: 0; background: var(--bg); }
 </style>
