@@ -37,6 +37,7 @@ import { initCompanion } from "./trip/companion";
 import { initPrint } from "./export/print";
 import { initSettings } from "./settings/settings";
 import { initQuickstart } from "./setup/quickstart";
+import { initGames } from "./games/games";
 import { greet } from "./setup/greet";
 import { initSync } from "./core/sync";
 import { loadPrefs, onAppPrefs, prefs } from "./core/prefs";
@@ -65,7 +66,7 @@ hydrateIcons(); initTheme();
 initSearchKey(); initUpdates(); initWindowMode();
 // Every dialog, in the page or added later, closes on a click outside it.
 closeDialogsOnBackdrop();
-initSettings(); initQuickstart(); initSync();
+initSettings(); initQuickstart(); initSync(); initGames();
 // Settings → General changed (or came in from the computer): redraw in the new units and formats.
 onAppPrefs(() => { renderBookings(); renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
 initFields(); initBookings(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();

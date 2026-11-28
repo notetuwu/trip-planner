@@ -9,11 +9,14 @@ import { bookAheadHtml, refreshLinks, wireBookAhead } from "./book-ahead";
 import { packingHtml, wirePacking } from "./packing";
 import { promptBody, thoughtsBody } from "./panels";
 import { eventsHtml } from "./summary";
+import { balanceHtml } from "./balance-view";
+import { selectDay } from "../map/days";
 
-export type Section = "reasoning" | "prompt" | "key" | "events" | "ahead" | "packing";
+export type Section = "reasoning" | "prompt" | "key" | "events" | "ahead" | "packing" | "balance";
 
 const dialog = () => $<HTMLDialogElement>("#sectionDialog");
 let onClose: (() => void) | null = null;
+let remeasure: number | undefined;
 
 /** What's what in the plan and on the map. */
 function keyHtml() {
@@ -57,7 +60,7 @@ function keyHtml() {
 
 const TITLES: Record<Section, [IconName, string]> = {
   reasoning: ["brain", "How the plan was made"], prompt: ["prompt", "Prompt sent to the model"], key: ["info", "What's what"],
-  events: ["party", "Holidays & events"], ahead: ["ticket", "Book ahead"], packing: ["luggage", "Packing list"],
+  events: ["party", "Holidays & events"], ahead: ["ticket", "Book ahead"], packing: ["luggage", "Packing list"], balance: ["sliders", "How full each day is"],
 };
 
 /** A fold-out section as a plain block (no fold: the window is the section), with its heading line in the window's
@@ -87,6 +90,13 @@ function render(kind: Section) {
     body = `<div class="thoughts-body">${promptBody(meta.prompt || [])}</div>`;
     hint = `${(meta.prompt || []).length} part${(meta.prompt || []).length === 1 ? "" : "s"} · ${(meta.prompt || []).reduce((n, p) => n + p.text.length, 0).toLocaleString()} characters`;
   } else if (kind === "key") body = keyHtml();
+  else if (kind === "balance") {
+    const b = balanceHtml();
+    body = b.html; hint = b.hint;
+    // Routes still being measured: drawn again as they come in, while the window shows this.
+    clearTimeout(remeasure);
+    if (b.waiting) remeasure = window.setTimeout(() => { if (dialog().open && $("#sectionBody").classList.contains("sec-balance")) { const top = $("#sectionBody").scrollTop; render("balance"); $("#sectionBody").scrollTop = top; } }, 1500);
+  }
   else ({ html: body, hint } = unfolded(kind === "events" ? eventsHtml(it) : kind === "ahead" ? bookAheadHtml(it) : packingHtml(it)));
   const [ic, title] = TITLES[kind];
   $("#sectionTitle").innerHTML = `${icon(ic)} ${esc(title)}`;
@@ -95,6 +105,13 @@ function render(kind: Section) {
   el.className = `section-body sec-${kind}`;
   el.innerHTML = body;
   if (kind === "ahead") { wireBookAhead(el); refreshLinks(); }
+  if (kind === "balance") {
+    for (const row of el.querySelectorAll<HTMLElement>("[data-bal-day]")) {
+      const go = () => { dialog().close(); selectDay(+row.dataset.balDay!, { scroll: true }); };
+      row.onclick = go;
+      row.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } };
+    }
+  }
   if (kind === "packing") wirePacking(el, () => { render("packing"); el.dataset.changed = "1"; });
   // Ticking things off changes the counts in the toolbar: redrawn when the window closes.
   el.onchange = () => { el.dataset.changed = "1"; };

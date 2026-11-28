@@ -4,6 +4,6 @@
     "lib": ["es2023"],
     "types": ["node"]
   },
-  "include": ["server", "shared", "tests", "vite.config.ts", "vitest.config.ts"],
-  "exclude": ["tests/formats.test.ts", "tests/transfer-spot.test.ts"]
+  "include": ["server", "shared", "tests", "vite.config.ts", "vitest.config.ts", "vitest.live.config.ts"],
+  "exclude": ["tests/formats.test.ts", "tests/transfer-spot.test.ts", "tests/live/map.live.ts"]
 }

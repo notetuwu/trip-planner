@@ -47,6 +47,7 @@ import { showNames } from "./fields";
 import { openGmail } from "./gmail-picker";
 import { showEmail } from "./email-view";
 import { type ChatDocs, ATTACHABLE, keepable, docsCard, filesData, holdFiles, heldFiles, linkDocs, wireDocs } from "./chat-docs";
+import { type Found, type SearchAsk, docLinks, foundHtml, foundNames, searchAskHtml, wireFound } from "./chat-found";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
@@ -58,7 +59,7 @@ interface EditOp { op: string; [k: string]: string | number | boolean | undefine
 interface PlanChange { days: number[]; request: string; trip?: TripOps; stops?: StopOp[]; edits?: EditOp[]; title?: string; status?: ChangeState; skip?: string[]; impact?: string; agreed?: AgreedStop[] }
 type Source = ChatSource;
 /** revises: their message is an edit to the change offered just before it (sent back from its card). */
-type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean; files?: string[]; filesKey?: string; docs?: ChatDocs };
+type Turn = { role: "me" | "ai"; text: string; modelName?: string; images?: string[]; thinking?: string; thoughtSecs?: number; change?: PlanChange; sources?: Source[]; ask?: Ask; revises?: boolean; files?: string[]; filesKey?: string; docs?: ChatDocs; found?: Found[]; searchAsk?: SearchAsk };
 /** A question the chat asked, with answers to pick from, and what they answered (once they have). */
 
 /** The chat's modes, in the order Shift+Tab goes through them. */
@@ -111,7 +112,7 @@ const small = (c: PlanChange) => !c.request && (c.stops?.length || 0) + (c.edits
 /** The setup's fields as they're called on the page. */
 const SET_NAMES: Record<string, string> = {
   travelers: "Travelers", people: "Names", dailyBudget: "Budget", currency: "Currency", pace: "Pace", fitness: "Fitness",
-  dayStart: "Days start at", breakfast: "Breakfast", getAround: "Getting around", interests: "Interests", wishes: "What you want to see",
+  dayStart: "Days start at", breakfast: "Breakfast", getAround: "Getting around", placeMix: "Places", interests: "Interests", wishes: "What you want to see",
 };
 
 /** One edit in words. */
@@ -163,7 +164,8 @@ function applyEdits(edits: EditOp[]) {
       else if (f === "fitness" && ["easy", "average", "fit"].includes(s)) state.fitness = s as never;
       else if (f === "dayStart" && (s === "" || /^\d{2}:\d{2}$/.test(s))) state.dayStart = s;
       else if (f === "breakfast" && ["", "hotel", "out", "brunch", "skip"].includes(s)) state.breakfast = s as never;
-      else if (f === "getAround" && ["", "transit", "car"].includes(s)) state.getAround = s as never;
+      else if (f === "getAround" && ["", "transit", "car", "mixed"].includes(s)) state.getAround = s as never;
+      else if (f === "placeMix" && ["", "popular", "mixed", "hidden"].includes(s)) state.placeMix = s as never;
       else if (f === "interests") state.interests = s;
       else if (f === "wishes") state.wishes = s;
       else if (f === "people") {
@@ -387,7 +389,8 @@ export function tripContext(full = true): string {
     `Days start: ${/^\d{2}:\d{2}$/.test(s.dayStart || "") ? `around ${s.dayStart}` : "any time (not set)"}`,
     s.breakfast ? `breakfast: ${BREAKFAST[s.breakfast] || s.breakfast}` : "",
     s.fitness ? `fitness: ${s.fitness}` : "",
-    `getting around: ${s.getAround === "transit" ? "public transport and the odd taxi (no car)" : s.getAround === "car" ? "by car" : "not set (the plan decides)"}`,
+    `getting around: ${s.getAround === "transit" ? "public transport and the odd taxi (no car)" : s.getAround === "car" ? "by car" : s.getAround === "mixed" ? "car between stays, public transport in town" : "not set (the plan decides)"}`,
+    s.placeMix ? `places: ${s.placeMix === "popular" ? "the famous sights" : s.placeMix === "hidden" ? "hidden gems, few crowds" : "famous sights and hidden gems"}` : "",
   ].filter(Boolean).join(" · "));
   if (s.interests) out.push(`Interests: ${s.interests}`);
   if (s.wishes) out.push(`What they want to see: ${s.wishes}`);
@@ -692,7 +695,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
     return j >= 0 && turns[j].modelName !== t.modelName ? `<div class="cp-switch"><span>${icon("sparkles")} Switched to ${esc(t.modelName)}</span></div>` : "";
   };
   const bubble = (t: Turn, k: number) => t.role === "me" ? `${pics(t)}${t.text ? `<div class="rc-msg me">${t.revises ? `<span class="cp-revise-tag">${icon("pencil")} Change to the proposal</span>` : ""}${esc(t.text)}</div>` : ""}${marker(k)}`
-    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.ask ? withoutClosingQuestion(t.text) : t.text)}${sourcesHtml(t.sources)}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.docs ? docsCard(t.docs, k) : ""}${t.ask && !(k === last && pending == null && !t.ask.answered) ? askCard(t.ask) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
+    : `${switched(k)}<div class="rc-msg ai${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? " last" : ""}">${t.thinking ? thinkingHtml(t.thinking, `Thought for ${t.thoughtSecs || 1}s`, false) : ""}${mdLite(t.ask ? withoutClosingQuestion(t.text) : t.text)}${sourcesHtml(t.sources)}${foundHtml(t.found, k)}${t.searchAsk ? searchAskHtml(t.searchAsk, k, k === last && pending == null, sentTo(chatModel())) : ""}${t.change ? changeCard(t.change, k, k === last && pending == null) : ""}${t.docs ? docsCard(t.docs, k) : ""}${t.ask && !(k === last && pending == null && !t.ask.answered) ? askCard(t.ask) : ""}${k === last && pending == null && !["applied", "applying"].includes(t.change?.status || "") ? `<div class="cp-msg-tools"><button type="button" class="link-btn" data-retry title="Ask again (a new answer replaces this one)">${icon("refresh")} Retry</button></div>` : ""}</div>${marker(k)}`;
   const hasPlan = !!state.itinerary?.days?.length;
   const starters = hasPlan
     ? ["Check my plan", "What's the plan for tomorrow?", "What should we book ahead?", "Make the busiest day more relaxed", "Where should we eat near our hotel?", "Is anything closed on the days we're there?"]
@@ -737,6 +740,11 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
   });
   linkPlaces(log);
   wireDocs(log, (k) => chat()[k], () => { save(); renderBookings(); render(); });
+  wireFound(log, (k) => chat()[k], {
+    attach: (file) => { addFiles([file]); box().focus(); },
+    search: (searches) => retry(searches),
+    skip: (k) => { const a = chat()[k]?.searchAsk; if (a) { a.declined = true; save(); render(); } },
+  });
   if (pending) patchLive(pending);
   for (const { d, key } of foldKeys(log)) if (folds.has(key)) d.open = folds.get(key)!;
   // The live thinking scrolls to its newest line (unless they scrolled up in it); then the log.
@@ -1093,7 +1101,7 @@ function renderPictures() {
 }
 
 /** A message as the model gets it: changes with how they went. */
-const turnText = (t: Turn) => ({ role: t.role, text: `${t.revises ? "(Sent the proposed change back with this edit) " : ""}${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.files?.length ? `(attached ${t.files.join(", ")}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}` });
+const turnText = (t: Turn) => ({ role: t.role, text: `${t.revises ? "(Sent the proposed change back with this edit) " : ""}${t.images?.length ? `(sent ${t.images.length} picture${t.images.length > 1 ? "s" : ""}) ` : ""}${t.files?.length ? `(attached ${t.files.join(", ")}) ` : ""}${t.text}${t.change ? `\n(${changeNote(t.change)})` : ""}${t.ask ? `\n(Asked: ${t.ask.q} Answers offered: ${t.ask.options.join(" / ")})` : ""}${t.found?.length ? `\n(Showed: ${foundNames(t.found)})` : ""}${t.searchAsk?.declined ? "\n(They didn't allow the search.)" : ""}` });
 
 /** About how many tokens some text is (a token is roughly 4 characters). */
 const tokensIn = (text: string) => Math.round(text.length / 4);
@@ -1176,7 +1184,7 @@ function fit() {
 
 /** Retry: the last message asked again (its answer, or the error, replaced). Its pictures go again too: full size while
  *  the page is open, else the small copy kept with the chat. */
-function retry() {
+function retry(searches?: SearchAsk["searches"]) {
   if (running || compacting) return;
   const turns = chat();
   let u = turns.length - 1;
@@ -1191,10 +1199,10 @@ function retry() {
   if (me.files?.length && !files.length) { setNotice(esc("The attached files aren't here any more (the page was reloaded). Attach them again.")); return; }
   state.chat = turns.slice(0, u);
   if (chain && chain.cards.some((k) => k >= u)) chain = null;
-  ask({ text: me.text, pictures: pics, files, revise: me.revises });
+  ask({ text: me.text, pictures: pics, files, revise: me.revises, searches });
 }
 
-async function ask(again?: { text: string; pictures: Picture[]; files: File[]; revise?: boolean }) {
+async function ask(again?: { text: string; pictures: Picture[]; files: File[]; revise?: boolean; searches?: SearchAsk["searches"] }) {
   const typed = again ? again.text : box().value.trim();
   const sent = again ? again.pictures : pictures, files = again ? again.files : documents;
   // Sent back from a change's card: the chat makes their edit to that proposal and offers all of it again.
@@ -1222,8 +1230,8 @@ Make exactly this edit to that proposal and offer the whole revised change again
   render(pending);
   try {
     const data = await filesData(files);
-    const { answer, change, thinking, thoughtSecs, sources, question: asked } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number; sources?: Source[]; question?: Ask }>("/api/companion", {
-      model: chatModel(), mode: mode(), data: appData(),
+    const { answer, change, thinking, thoughtSecs, sources, question: asked, found, searchAsk, read } = await streamRequest<{ answer: string; change?: PlanChange; thinking?: string; thoughtSecs?: number; sources?: Source[]; question?: Ask; found?: Found[]; searchAsk?: SearchAsk; read?: boolean }>("/api/companion", {
+      model: chatModel(), mode: mode(), data: appData(), trip: state.saveName || "", docLinks: docLinks(), ...(again?.searches ? { searches: again.searches } : {}),
       dayAt: Object.fromEntries((state.itinerary?.days || []).map((d, i) => [i + 1, stayOn(d) && stayLoc(stayOn(d)!)]).filter(([, l]) => l).map(([k, l]) => [k, [(l as { lat: number }).lat, (l as { lng: number }).lng]])), question, history, summary: state.chatSummary || "", images: sent.map(({ type, data }) => ({ type, data })), files: data, context: tripContext(), today: todayIso(), days: state.itinerary?.days?.length || 0,
       towns: state.stays.filter((s) => s.city).map((s) => ({ s, l: stayLoc(s) })).filter((x) => x.l).map(({ s, l }) => ({ name: s.city, lat: l!.lat, lng: l!.lng })),
     }, (l) => {
@@ -1237,7 +1245,7 @@ Make exactly this edit to that proposal and offer the whole revised change again
     const booking = change?.edits?.some((e) => ["addBooking", "stayHotel", "stayDates", "paid", "addStay"].includes(e.op));
     const kept = originals.filter((f) => keepable(f.name));
     const keep: ChatDocs | undefined = kept.length && !asked && (files.length || booking) ? { key: filesKey, names: kept.map((f) => f.name) } : undefined;
-    state.chat = [...chat(), { role: "ai" as const, ...(keep ? { docs: keep } : {}), text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}) }];
+    state.chat = [...chat(), { role: "ai" as const, ...(keep ? { docs: keep } : {}), text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}), ...(found ? { found } : {}), ...(searchAsk ? { searchAsk } : {}) }];
     // A stop added far from the day's other stops can't just be slotted in: the planner re-plans that day around it.
     const got = chat()[chat().length - 1].change;
     if (got?.stops?.length) farStops(got);
@@ -1245,8 +1253,9 @@ Make exactly this edit to that proposal and offer the whole revised change again
     const added = chat()[chat().length - 1].change;
     if (added && direct(added)) { try { const w = wouldBe(added); added.impact = impactLine(w.before, w.after); } catch { /* shown without it */ } }
     // Auto mode: a small change happens straight away (Undo is on its card); anything bigger waits for Apply.
-    // (Never from an attached file or picture: what's in it isn't theirs, so they confirm it.)
-    if (change && !originals.length && mode() === "auto" && small(change)) autoApply = chat().length - 1;
+    // (Never from an attached file or picture, or a document or email the chat read: what's in it isn't theirs, so they
+    // confirm it.)
+    if (change && !originals.length && !read && mode() === "auto" && small(change)) autoApply = chat().length - 1;
   } catch (e) {
     const err = e as Error;
     notice = `${esc(err.name === "AbortError" ? "Stopped." : `Couldn't answer: ${err.message}`)} <button type="button" class="link-btn" data-retry>${icon("refresh")} Retry</button>`;

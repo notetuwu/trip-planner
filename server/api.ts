@@ -42,6 +42,7 @@ import { warmNearby } from "./trip/nearby";
 import { suggestStops } from "./trip/stops";
 import { planRoute } from "./trip/route-plan";
 import { askCompanion, compactChat } from "./trip/companion";
+import { reviewJournalDay } from "./trip/journal";
 import { streamProgress } from "./util/progress-stream";
 import { busyWhile, goodbye, openWindows, ping, touch } from "./util/activity";
 import { refuse } from "./util/guard";
@@ -100,8 +101,8 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/trips" && method === "GET") { sendJson(res, 200, tripCards()); return true; }
     if (path === "/api/bye") { goodbye(url.searchParams.get("id") || ""); sendJson(res, 200, { ok: true }); return true; }
     // Earlier versions of a saved trip, and copies of the open trip from before it was replaced.
-    const histMatch = path.match(/^\/api\/saves\/([^/]+)\/history(?:\/(\d+))?$/), rescueMatch = path.match(/^\/api\/rescue(?:\/(\d+))?$/);
-    if (histMatch) { await handleHistory(req, res, decodeURIComponent(histMatch[1]), histMatch[2]); return true; }
+    const histMatch = path.match(/^\/api\/saves\/([^/]+)\/history(?:\/(\d+|before))?$/), rescueMatch = path.match(/^\/api\/rescue(?:\/(\d+))?$/);
+    if (histMatch) { await handleHistory(req, res, decodeURIComponent(histMatch[1]), histMatch[2], url.searchParams); return true; }
     if (rescueMatch) { await handleRescue(req, res, rescueMatch[1]); return true; }
     const saveMatch = path.match(/^\/api\/saves(?:\/(.+))?$/);
     const listMatch = path.match(/^\/api\/lists(?:\/([^/]+))?(?:\/(sync))?$/);
@@ -289,6 +290,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
       const body = await readJson(req);
       if (!body?.model) sendJson(res, 400, { error: "A model is needed" });
       else await busyWhile(() => streamProgress(res, (report, signal) => compactChat(body, report, signal)));
+    }
+    // The journal: a day's entry and its plan, worked out into the day as it really went.
+    else if (method === "POST" && path === "/api/journal") {
+      const body = await readJson(req);
+      if (!body?.model || !body?.text) sendJson(res, 400, { error: "A model and a journal entry are needed" });
+      else await busyWhile(() => streamProgress(res, (report, signal) => reviewJournalDay(body, report, signal)));
     }
     else if (method === "POST" && path === "/api/companion") {
       const body = await readJson(req);

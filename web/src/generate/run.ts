@@ -14,6 +14,7 @@ import { renderTripTitle } from "../trip/title";
 import { setMapStatus } from "../map/status";
 import { type Problem, checksSettled, planProblems, quickFixes } from "./autofix";
 import { planGaps } from "../itinerary/gaps";
+import { CHECKED_ENGINE } from "../../../shared/planner";
 import { liveTokens, streamRequest } from "../core/progress";
 import { byTitleMap, daySegments, exactPoi } from "../geo/item-loc";
 import { addDays } from "../core/format";
@@ -52,11 +53,15 @@ function spliceDay(current: Itinerary, day: number, data: RunResult, view: Progr
   state.meta = { ...meta, reasoning: (meta.reasoning || "") + notes, pois: [...(meta.pois || []), ...view.collected.pois] };
 }
 
+/** A day of four or more stops that comes back with under half of them. */
+const gutted = (old: Itinerary["days"][number], fresh: Itinerary["days"][number]) => old.items.length >= 4 && (fresh.items?.length || 0) < old.items.length / 2;
+
 /** Swaps the fixed days in (matched by date) and notes what was fixed. */
 function spliceFixed(current: Itinerary, data: RunResult, view: ProgressView, count: number, label?: string) {
   for (const fresh of data.itinerary.days || []) {
     const i = current.days.findIndex((d) => d.date === fresh.date);
-    if (i >= 0) current.days[i] = { ...fresh, date: current.days[i].date };
+    // A fix that comes back with most of the day gone (a broken answer) isn't taken.
+    if (i >= 0 && !gutted(current.days[i], fresh)) current.days[i] = { ...fresh, date: current.days[i].date };
   }
   current.totalEstimatedCost = current.days.reduce((n, d) => n + (Number(d.estimatedCost) || 0), 0);
   const meta = state.meta || {};
@@ -117,7 +122,7 @@ async function fixProblems(it: Itinerary, problems: Problem[], view: ProgressVie
 }
 
 /** Meals and full days the plan came back without. */
-const gaps = (it: Itinerary): Problem[] => planGaps(it, state.stays, state.pace || "");
+const gaps = (it: Itinerary): Problem[] => planGaps(it, state.stays, state.pace || "", CHECKED_ENGINE.test(state.meta?.engine || ""));
 
 /** Looks the plan's stops up and returns what's wrong or missing; null when cancelled or the plan changed. */
 async function checkPlan(it: Itinerary, view: ProgressView, signal: AbortSignal, status: string) {
@@ -227,6 +232,9 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
   const editDays = edit ? [...new Set(edit.days)].sort((a, b) => a - b) : [];
   const editWhat = editDays.length === 1 ? fmtDate(edit!.itinerary.days[editDays[0]]?.date || "") : `${editDays.length} days`;
   running = true; btn.disabled = true;
+  let shown = false;
+  // The games window (games/games.ts) says when the plan is being made and when it's ready.
+  window.dispatchEvent(new CustomEvent("generation-state", { detail: { busy: true } }));
   const abort = new AbortController();
   // A day re-plan or a fix shows its progress inside the itinerary; the rest of the plan stays readable.
   const box = redo || fix || edit ? document.createElement("div") : undefined;
@@ -283,6 +291,7 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
       document.getElementById(`day-${editDays[0]}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
       toast(`Changed ${editWhat}`);
     }
+    shown = true;
     return true;
   } catch (err) {
     setInlineProgress(null);
@@ -291,6 +300,7 @@ export async function runGeneration(change: Change = {}): Promise<boolean> {
     return false;
   } finally {
     view.stop(); btn.disabled = false; running = false;
+    window.dispatchEvent(new CustomEvent("generation-state", { detail: { busy: false, ok: shown } }));
     window.dispatchEvent(new Event("ai-request-done")); // the quota line under the Model menu counts again
   }
 }

@@ -22,7 +22,7 @@
 <header>
   <div class="brand"><span class="logo"><i data-icon="map"></i></span>Trip Planner</div>
   <div class="trip-title" id="tripTitle"></div>
-  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="chat-toggle" id="chatBtn" type="button" title="Trip chat: ask anything about the trip, or ask for changes" aria-pressed="false"><i data-icon="chat"></i><span>Chat</span></button><button class="icon-btn theme-btn" id="quickstartBtn" type="button" title="Quick start: what's set up on this computer, and what's missing" aria-label="Quick start"><i data-icon="rocket"></i></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
+  <div class="header-tools" id="headerTools"><a class="app-version" id="appVersion" target="_blank" rel="noopener"></a><button class="chat-toggle" id="chatBtn" type="button" title="Trip chat: ask anything about the trip, or ask for changes" aria-pressed="false"><i data-icon="chat"></i><span>Chat</span></button><button class="icon-btn theme-btn games-btn" id="gamesBtn" type="button" title="Games to pass the time while a plan is made (best scores stay on this computer)" aria-label="Games" aria-pressed="false"><i data-icon="gamepad"></i></button><button class="icon-btn theme-btn" id="quickstartBtn" type="button" title="Quick start: what's set up on this computer, and what's missing" aria-label="Quick start"><i data-icon="rocket"></i></button><button class="icon-btn theme-btn" id="settingsBtn" type="button" title="Settings" aria-label="Settings"><i data-icon="settings"></i></button></div>
 </header>
 
 <main>
@@ -78,12 +78,20 @@
           <option value="fit">Fit: long hikes are fine</option>
         </select></div>
     </div>
-    <div class="row" style="--cols:1">
+    <div class="row" style="--cols:2">
       <div><label for="getAround" title="How you get from place to place within a stay: the plan's transport is made for it, and the map draws any leg whose text doesn't say how with it">Getting around</label>
         <select id="getAround">
           <option value="">Decided by the plan</option>
           <option value="transit">Public transport (and the odd taxi)</option>
           <option value="car">By car</option>
+          <option value="mixed">Car between stays, public transport in town</option>
+        </select></div>
+      <div><label for="placeMix" title="Which places the plan picks when you haven't saved your own: the famous sights, lesser-known places and local favourites, or a mix of both">Places</label>
+        <select id="placeMix">
+          <option value="">A mix (or as your wishes say)</option>
+          <option value="popular">The famous sights</option>
+          <option value="mixed">Famous sights and hidden gems</option>
+          <option value="hidden">Hidden gems, few crowds</option>
         </select></div>
     </div>
     <div class="row" style="--cols:2">

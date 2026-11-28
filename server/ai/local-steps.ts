@@ -6,6 +6,7 @@
 //   3. model + web: research for exactly those days and places
 //   4. model: each day in detail, one at a time, with only that day's places, nearby food and findings
 // The usual checks (map, opening hours, fixes) run afterwards as for any plan.
+import { prefsLines } from "../trip/prefs";
 import type { Day, Itinerary, Place, RunResult } from "../../shared/types";
 import { km } from "../../shared/route";
 import { addDays, errMsg } from "../config";
@@ -140,7 +141,7 @@ export async function planInSteps(trip: Trip, places: Place[], onEvent: OnEvent,
   const outputRules = section(full, "## Output rules");
   const travelers = Number(trip.travelers) || 1;
   const budget = trip.budgetPer === "person" && travelers > 1 ? `${trip.dailyBudget} ${trip.currency} per person per day (${trip.dailyBudget * travelers} for the group)` : `${trip.dailyBudget} ${trip.currency} per day`;
-  const about = `Travelers: ${travelers}. Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}.` : ""} Pace: ${trip.pace || "balanced"}. Budget: ${budget}, a ceiling, not a target.`;
+  const about = `Travelers: ${travelers}. Interests: ${trip.interests || "none given"}.${trip.wishes ? ` What they want to see: ${trip.wishes}.` : ""} Pace: ${trip.pace || "balanced"}. Budget: ${budget}, a ceiling, not a target.${prefsLines(trip.prefs) ? `\n${prefsLines(trip.prefs)}` : ""}`;
   const requests = [requestsSection(trip), bookingsSection(trip), trainsSection(trip)].filter(Boolean).join("\n\n");
 
   // --- 1. The saved places per stay (code) ---
@@ -153,7 +154,8 @@ export async function planInSteps(trip: Trip, places: Place[], onEvent: OnEvent,
     if (!(Number(s.nights) > 0) && !perStay[i].length) return "";
     const saved = perStay[i].length ? `### ${s.city}: saved places (near the stay or its day trips)\n${placeLines(trip, perStay[i])}` : "";
     const real = sightsAt(s.city, perStay[i].length >= 15 ? 8 : 25);
-    return [saved, real.length ? `### ${s.city}: real sights nearby (from OpenStreetMap${perStay[i].length ? "; for filling the days" : ""})\n${real.join("\n")}` : ""].filter(Boolean).join("\n");
+    const wished = (trip.nearby || []).filter((x) => lc(x.city) === lc(s.city)).flatMap((x) => x.wished || []).map((p) => `- ${p.name} (${p.kind}${p.hours ? `; hours ${p.hours}` : ""}) {location ${p.lat},${p.lng}} - asked for: ${p.for}`);
+    return [saved, wished.length ? `### ${s.city}: what they asked to see, found nearby (OpenStreetMap)\n${wished.join("\n")}` : "", real.length ? `### ${s.city}: real sights nearby (from OpenStreetMap${perStay[i].length ? "; for filling the days" : ""})\n${real.join("\n")}` : ""].filter(Boolean).join("\n");
   }).filter(Boolean).join("\n\n") + (unplaced.length ? `\n\n### Location not known\n${placeLines(trip, unplaced)}` : "");
 
   // --- 2. The outline ---

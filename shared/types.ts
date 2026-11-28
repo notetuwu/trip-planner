@@ -87,6 +87,8 @@ export interface TripStay {
 
 export interface ItineraryItem {
   time: string;
+  /** How long the stop takes, in minutes (the checked planner fills it in; older plans have none). */
+  durationMinutes?: number;
   place: string;
   fromList?: boolean;
   description: string;
@@ -193,7 +195,9 @@ export interface TripRequest {
   /** Breakfast at the hotel, out at a café, brunch instead, skipped ("" or unset: the planner decides). */
   breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
   /** How they get around: public transport and the odd taxi, their car, or "" (the planner decides). */
-  getAround?: "" | "transit" | "car";
+  getAround?: "" | "transit" | "car" | "mixed";
+  /** The places to pick: the famous sights, a mix, or lesser-known places ("" or unset: a mix, unless their wishes say). */
+  placeMix?: "" | "popular" | "mixed" | "hidden";
   model: string;
   interests: string;
   /** What they want to see, in their words. */
@@ -340,6 +344,25 @@ export interface RunResult {
   /** How the run is paid for: Claude subscription, an API key, an API key on a free tier, or free on this computer. */
   billing?: "plan" | "api" | "free" | "local";
   searches?: number;
+  /** The checked planner's own report of its checks (server/ai/checked): what was checked, fixed and is still open. */
+  checks?: PlanChecks;
+}
+
+export interface PlanChecks {
+  version: string;
+  requests: number;
+  /** Requests whose JSON schema the provider enforced, and ones that fell back to plain JSON (checked in code anyway). */
+  enforced: number;
+  fallback: number;
+  truncated: number;
+  repairRounds: number;
+  daysRepaired: number;
+  /** Problems found on the first full check, by code, and still open at the end. */
+  found: Record<string, number>;
+  open: { code: string; severity: string; date?: string; message: string }[];
+  fixedInCode: string[];
+  /** The plan is missing days or still has hard problems. */
+  partial: boolean;
 }
 
 /** One line of the NDJSON stream from POST /api/itinerary. */

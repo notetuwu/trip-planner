@@ -1,6 +1,6 @@
 {
   "name": "local-trip-planner",
-  "version": "3.41.0",
+  "version": "3.42.0",
   "private": true,
   "description": "Day-by-day itinerary planner that runs locally with Claude Code or a local model.",
   "license": "MIT",
@@ -15,7 +15,8 @@
     "typecheck": "tsc -p tsconfig.web.json && tsc -p tsconfig.server.json",
     "test": "node scripts/test.mjs",
     "package": "npm run build && node scripts/package.mjs",
-    "e2e": "node --test --test-concurrency=1 tests/e2e/app.e2e.mjs"
+    "e2e": "node --test --test-concurrency=1 tests/e2e/app.e2e.mjs",
+    "test:live": "node scripts/test.mjs --config vitest.live.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",

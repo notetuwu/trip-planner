@@ -1,6 +1,7 @@
 import type { Place, RunResult, StreamEvent, TripRequest } from "../../shared/types";
 import type { Holiday } from "../trip/holidays";
 import type { NearbyList } from "../trip/nearby";
+import type { Prefs } from "../trip/prefs";
 
 /** The trip request plus what the server gathered for it before planning. */
 export interface Trip extends TripRequest {
@@ -8,6 +9,8 @@ export interface Trip extends TripRequest {
   /** Per stay (by index): sunrise and sunset there, filled in by the server. */
   daylight?: string[];
   nearby?: NearbyList[];
+  /** Their interests, wishes and notes read into diets, allergies, kinds of place asked for (prefs.ts). */
+  prefs?: Prefs;
   researchNotes?: string;
   /** Road routes between consecutive stays travelled by road, by the arriving stay's index (null: no road route). */
   drives?: Record<number, { km: number; hours: number } | null>;

@@ -106,7 +106,7 @@ const poiLine = (p: NearbyPlace) => `- ${p.name} (${[p.kind, ...p.extras, ...(p.
 /** Real places near each stay. Compact: each town once, and only the best-ranked places, fewer the more towns there
  *  are (a few for places you only pass through), so a long trip doesn't fill a local model's context. */
 export function nearbySection(trip: Trip, compact = false) {
-  const lists = (trip.nearby || []).filter((n) => n.sights.length || n.food.length);
+  const lists = (trip.nearby || []).filter((n) => n.sights.length || n.food.length || n.wished?.length);
   const towns = compact ? [...new Map(lists.map((n) => [n.city.trim().toLowerCase(), n])).values()] : lists;
   const nights = (city: string) => trip.stays.filter((s) => s.city === city).reduce((n, s) => n + (Number(s.nights) || 0), 0);
   // Settings → Planning: fewer places (smaller, faster prompt) or more (more choice).
@@ -115,7 +115,8 @@ export function nearbySection(trip: Trip, compact = false) {
   return towns.map((n) => {
     const keep = !compact ? (amount === "fewer" ? 12 : 99) : nights(n.city) === 0 ? 4 : perTown;
     const sights = n.sights.slice(0, keep), food = n.food.slice(0, compact || amount === "fewer" ? Math.ceil(keep * 0.6) : 99);
-    return `### ${n.city}\nSights:\n${sights.map(poiLine).join("\n") || "(none found)"}\nFood and drink:\n${food.map(poiLine).join("\n") || "(none found)"}`;
+    const wished = (n.wished || []).map((p) => `${poiLine(p)} - asked for: ${p.for}`).join("\n");
+    return `### ${n.city}\nSights:\n${sights.map(poiLine).join("\n") || "(none found)"}${wished ? `\nWhat they asked to see, nearby:\n${wished}` : ""}\nFood and drink:\n${food.map(poiLine).join("\n") || "(none found)"}`;
   }).join("\n\n");
 }
 

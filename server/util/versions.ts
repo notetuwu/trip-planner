@@ -82,6 +82,44 @@ export function listVersions(root: string, name: string) {
     return { id: String(t), savedAt: new Date(t).toISOString(), size: text.length, ...summary(text) };
   });
 }
+/** The newest version from before a change made at `at`: what the save held then (the version kept by the save that made
+ *  the change is stamped a moment after it). */
+export function versionBefore(root: string, name: string, at: number): { savedAt: string; text: string } | null {
+  const dir = histDir(root, name), t = stamps(dir).find((s) => s <= at + 5000);
+  if (t == null) return null;
+  try { return { savedAt: new Date(t).toISOString(), text: fs.readFileSync(path.join(dir, `${t}.json`), "utf8") }; } catch { return null; }
+}
+
+// ---- What a part held before a change (for putting one change back, from the history of changes) ---------------------------
+export const MAX_PARTS = 400;
+const partsDir = (root: string, name: string) => path.join(histDir(root, name), "parts");
+const partFile = (was: string, key: string) => `${was}-${key.replace(/[^\w-]/g, "_").slice(0, 80)}.json`;
+
+/** Keeps what a part held before the change named `was` (shared/edits.ts: Change.was); the oldest go past MAX_PARTS. */
+export function keepPart(root: string, name: string, was: string, key: string, before: unknown) {
+  if (!/^\d+$/.test(was)) return;
+  const dir = partsDir(root, name);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, partFile(was, key)), JSON.stringify(before ?? {}));
+  const files = fs.readdirSync(dir).filter((f) => /^\d+-/.test(f)).sort((a, b) => parseInt(b) - parseInt(a));
+  for (const f of files.slice(MAX_PARTS)) { try { fs.unlinkSync(path.join(dir, f)); } catch { /* already gone */ } }
+}
+/** What the part holds after the change, noted again when the same change goes on (changes joined into one). Left alone
+ *  when what's kept is of the other kind (a part against a whole plan). */
+export function setPartAfter(root: string, name: string, was: string, key: string, after: unknown, whole: boolean) {
+  const text = readPart(root, name, was, key);
+  if (text == null) return;
+  try {
+    const kept = JSON.parse(text);
+    if (!!kept.whole !== whole) return;
+    fs.writeFileSync(path.join(partsDir(root, name), partFile(was, key)), JSON.stringify({ ...kept, after }));
+  } catch { /* unreadable: left */ }
+}
+export function readPart(root: string, name: string, was: string, key: string): string | null {
+  if (!/^\d+$/.test(was)) return null;
+  try { return fs.readFileSync(path.join(partsDir(root, name), partFile(was, key)), "utf8"); } catch { return null; }
+}
+
 export function readVersion(root: string, name: string, id: string): string | null {
   if (!/^\d+$/.test(id)) return null;
   try { return fs.readFileSync(path.join(histDir(root, name), `${id}.json`), "utf8"); } catch { return null; }

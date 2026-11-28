@@ -3,9 +3,13 @@
 // models skip these, so they go back to the model with the other checks. Plain data in, no page.
 import type { Itinerary } from "../../../shared/types";
 import { isMeal } from "./duplicates";
+import { DAY_SIZE } from "../../../shared/planner";
 
 /** The fewest sights and activities a full day has at each pace (as the planning prompt asks). */
 const FEWEST = { relaxed: 3, balanced: 4, packed: 6 };
+/** The checked planner (server/ai/checked) asks for fewer, bigger things on a full day and never filler: the low end
+ *  of its own range, so the fix round doesn't push filler back in. */
+const FEWEST_CHECKED = { relaxed: DAY_SIZE.relaxed.full[0], balanced: DAY_SIZE.balanced.full[0], packed: DAY_SIZE.packed.full[0] };
 
 export interface Gap { day: number; text: string }
 
@@ -18,8 +22,9 @@ const hour = (t: string) => Number(/^(\d{1,2}):\d{2}/.exec(t || "")?.[1] ?? NaN)
  * at the same stay) lunch and the pace's number of sights and activities; on other days but the last, at least one of
  * those when every transfer starts by noon.
  */
-export function planGaps(it: Itinerary, stays: { start: string; nights: number }[], pace: string): Gap[] {
-  const fewest = FEWEST[(Object.keys(FEWEST) as (keyof typeof FEWEST)[]).find((k) => pace.startsWith(k)) || "balanced"];
+export function planGaps(it: Itinerary, stays: { start: string; nights: number }[], pace: string, checked = false): Gap[] {
+  const counts = checked ? FEWEST_CHECKED : FEWEST;
+  const fewest = counts[(Object.keys(counts) as (keyof typeof counts)[]).find((k) => pace.startsWith(k)) || "balanced"];
   return it.days.flatMap((d, day) => {
     const full = stays.some((s) => s.start && d.date > s.start && d.date < later(s.start, Number(s.nights) || 0));
     const meals = d.items.filter(isMeal).map((x) => hour(x.time));

@@ -142,12 +142,15 @@ export interface Tune {
   search: "auto" | "brave" | "searxng";
   /** Local models: plan in one go (one big prompt) or step by step (outline, research, then each day on its own). */
   localPlan: "whole" | "steps";
+  /** Every model: the usual planner, or the checked one (experimental; server/ai/checked): the days allocated first,
+   *  then written in small batches with real drive times, checked in code and only the broken days sent back. */
+  planner: "standard" | "checked";
   /** Research: the model that looks things up before planning (a Gemini or local model id); "" = the planning model
    *  does (on Gemini's free tier, a Flash Lite model for it). */
   researchModel: string;
 }
 
-export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m", pages: "known", search: "auto", localPlan: "whole", researchModel: "" };
+export const TUNE_DEFAULTS: Tune = { language: "", detail: "normal", places: "normal", lookups: 30, fixRounds: 1, thinking: "on", temperature: 0.4, keepAlive: "5m", pages: "known", search: "auto", localPlan: "whole", planner: "standard", researchModel: "" };
 
 /** Only valid values; anything else falls back to what it was (or the default). */
 function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
@@ -164,6 +167,7 @@ function cleanTune(t: Partial<Tune> = {}, base: Tune = TUNE_DEFAULTS): Tune {
     pages: pick("pages", (v) => ["found", "known", "any"].includes(v as string)),
     search: pick("search", (v) => ["auto", "brave", "searxng"].includes(v as string)),
     localPlan: pick("localPlan", (v) => ["whole", "steps"].includes(v as string)),
+    planner: pick("planner", (v) => ["standard", "checked"].includes(v as string)),
     researchModel: pick("researchModel", (v) => typeof v === "string" && v.length <= 300 && /^$|^(api\|gemini|local)\|/.test(v)),
   };
 }

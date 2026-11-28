@@ -85,6 +85,8 @@ function legMode(x: ItineraryItem, a: LatLng, b: LatLng, dayMode = ""): LegMode 
   if (ROAD.test(t)) return "car";
   if (km < 1.5) return "foot";
   // Nothing said: as they get around (by public transport: town transport, a train further out), else by road.
+  // Car between stays, public transport in town: short hops by transit, longer ones by road.
+  if (state.getAround === "mixed") return km < 30 ? "transit" : "car";
   if (gettingAround() === "transit") return km > 20 ? (km < 300 ? "train" : "straight") : "transit";
   return km < 80 ? "car" : "straight";
 }

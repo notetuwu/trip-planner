@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_RESCUE, MAX_VERSIONS, keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, summary, versionedNames } from "../server/util/versions";
+import { MAX_PARTS, MAX_RESCUE, MAX_VERSIONS, keepPart, keepRescue, keepVersion, listRescue, listVersions, readPart, readRescue, readVersion, summary, versionBefore, versionedNames } from "../server/util/versions";
 
 let root = "";
 beforeEach(() => { root = fs.mkdtempSync(path.join(os.tmpdir(), "trip-saves-")); });
@@ -86,5 +86,30 @@ describe("keepRescue", () => {
 describe("summary", () => {
   it("copes with text that isn't a trip", () => {
     expect(summary("not json")).toEqual({ cities: [], days: 0, items: 0, chat: 0, name: "" });
+  });
+});
+
+describe("what a part held before a change", () => {
+  it("is kept by the change's name and part, and read back; only the newest are kept", () => {
+    keepPart(root, "test", "1000", "day:2027-04-02", { value: { date: "2027-04-02" } });
+    expect(JSON.parse(readPart(root, "test", "1000", "day:2027-04-02")!)).toEqual({ value: { date: "2027-04-02" } });
+    expect(readPart(root, "test", "1000", "stays")).toBeNull();
+    expect(readPart(root, "test", "../1000", "stays")).toBeNull();
+    for (let i = 0; i < MAX_PARTS + 2; i++) keepPart(root, "test", String(2000 + i), "stays", { value: i });
+    expect(readPart(root, "test", "1000", "day:2027-04-02")).toBeNull();
+    expect(readPart(root, "test", String(2000 + MAX_PARTS + 1), "stays")).toBe('{"value":' + (MAX_PARTS + 1) + "}");
+    // (The parts aren't versions of the trip.)
+    expect(listVersions(root, "test")).toEqual([]);
+  });
+
+  it("falls back on the newest version from before the change", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(Date.UTC(2027, 8, 10, 10, 0)));
+    write(trip({ n: 1 })); keepVersion(root, "test", file(), true);
+    vi.setSystemTime(new Date(Date.UTC(2027, 8, 10, 11, 0)));
+    write(trip({ n: 2 })); keepVersion(root, "test", file(), true);
+    expect(JSON.parse(versionBefore(root, "test", Date.UTC(2027, 8, 10, 10, 30))!.text).n).toBe(1);
+    expect(JSON.parse(versionBefore(root, "test", Date.UTC(2027, 8, 10, 11, 0) - 1000)!.text).n).toBe(2);
+    expect(versionBefore(root, "test", Date.UTC(2027, 8, 10, 9, 0))).toBeNull();
   });
 });

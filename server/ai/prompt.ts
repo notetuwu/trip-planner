@@ -3,6 +3,7 @@ import { tune } from "../settings";
 import { addDays } from "../config";
 import type { Day, Place } from "../../shared/types";
 import { bookingsSection, trainsSection, holidayLines, hasChosenModes, nearbySection, placeLines, requestsSection, stayLines, withDay } from "./prompt-sections";
+import { placeMixOf, prefsLines } from "../trip/prefs";
 import { LOCAL_SCHEMA } from "./schema";
 import type { Trip } from "./types";
 
@@ -36,17 +37,18 @@ const BREAKFAST = {
 } as const;
 
 /** When the days start, breakfast and fitness, as constraint lines. */
-function dayShapeLines(trip: Trip) {
+export function dayShapeLines(trip: Trip) {
   const lines = [`- Fitness: ${FITNESS[trip.fitness || "average"] || FITNESS.average}`];
   if (/^\d{2}:\d{2}$/.test(trip.dayStart || "")) lines.push(`- Days start around ${trip.dayStart}: the first stop (or breakfast) is at about that time. Start earlier only when the day needs it (a day trip, a travel day with a long drive, a booked early time, a place that's only quiet or open early, a packed day with several big sights) and then say why in the day's notes; on a normal day in town, don't.`);
   if (trip.breakfast && BREAKFAST[trip.breakfast]) lines.push(`- Breakfast: ${BREAKFAST[trip.breakfast]}.`);
   if (trip.getAround === "transit") lines.push(`- They have no car: within a stay they get around by public transport, on foot and the odd taxi (between stays as each stay's travel says). Every stop's "transport" names the actual line or train and the stop or station to get on at ("Osaka Metro Chūō Line from Hommachi to Morinomiya, 10 min", "Bus 5 towards Kriens from Luzern Bahnhof, 15 min"); a taxi only where public transport is poor or late at night, and say so. Never driving or parking.`);
+  else if (trip.getAround === "mixed") lines.push(`- They have a car for getting between stays and for places public transport serves badly (remote sights, trips that would take far longer without it). Within a town they leave it parked and walk or take public transport: those stops' "transport" names the actual line and the stop to get on at ("Metro M2 from Porta Garibaldi to Cadorna, 8 min"), never driving or parking in town. Say once where to leave the car.`);
   else if (trip.getAround === "car") lines.push(`- They have a car: they drive between places that aren't walkable; each stop's "transport" says the drive and where to park ("15 min drive, park at the Burgplatz garage"). A town centre that's easier on foot or by tram: park once and say so.`);
   return lines.join("\n");
 }
 
 /** What a stop's description says, by the detail chosen in Settings → Planning. */
-const DETAIL = {
+export const DETAIL = {
   brief: "one short sentence on what it is and why go, plus anything they must know (book ahead, closed days).",
   normal: "what to do there and why it's worth it, with practical details (opening hours, whether to book ahead, best time to go, what to order).",
   detailed: "a few sentences: what to see and do there and why it's worth it, the highlights not to miss, practical details (opening hours, whether to book ahead, best time to go, how long to allow, what to order), and a local tip.",
@@ -146,7 +148,7 @@ These exist, with exact locations. Use them for sights and especially for meals,
 ${nearby}
 ` : ""}
 ## What every day must look like
-- Choosing sights: mix the essential highlights of each place (the ones most visitors would be sorry to miss) with a few lesser-known spots that fit their interests, the kind locals recommend${trip.wishes?.trim() ? `, weighted the way they describe under "What they want to see"` : ""}. Give each full day a theme or an area.
+- Choosing sights: ${placeMixOf(trip) === "popular" ? "the essential highlights of each place (the ones most visitors would be sorry to miss); lesser-known spots only when a day has room left" : placeMixOf(trip) === "hidden" ? "lesser-known spots and local favourites that fit their interests (the lists mark them); one famous sight a day at most, when it's quiet" : "mix the essential highlights of each place (the ones most visitors would be sorry to miss) with a few lesser-known spots that fit their interests, the kind locals recommend"}${trip.wishes?.trim() ? `, weighted the way they describe under "What they want to see"` : ""}. Give each full day a theme or an area.${prefsLines(trip.prefs) ? `\n${prefsLines(trip.prefs)}` : ""}
 - Only real places: every named stop must exist under exactly that name (from the saved places, the lists above, or your research). Never make up names for restaurants, cafés or sights. If you don't know a real place for a meal, write a generic stop such as "Lunch around the Marktplatz" instead of inventing one.
 - ${STOPS_PER_DAY[pace]} sights or activities per full day, plus meals: a specific, named place for lunch and for dinner (and breakfast when not at the hotel) that fits the interests and dietary needs, and a different one each time (no restaurant or café twice in the trip unless they ask). Arrival and departure days can be lighter, but still plan the hours that are free.
 - One lunch and one dinner a day, never two of either. A restaurant they ask for on a day (in their requests or bookings) is that day's lunch or dinner at that time: don't add another meal next to it (no second dinner at 19:00 after McDonald's at 17:00); a restaurant you had in mind instead goes on another day.

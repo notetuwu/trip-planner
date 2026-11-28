@@ -4,6 +4,7 @@ import { prefs } from "./prefs";
 import type { PhotoSpot } from "../map/photo-spot";
 import type { Change, Edits } from "../../../shared/edits";
 import type { Expenses } from "../../../shared/expenses";
+import type { Actual, Journal } from "../../../shared/journal";
 
 export interface Stay {
   city: string;
@@ -72,7 +73,9 @@ export interface AppState {
   dayStart?: string;
   breakfast?: "" | "hotel" | "out" | "brunch" | "skip";
   /** How they get around: public transport (and the odd taxi), their car, or "" (worked out from what the plan says). */
-  getAround?: "" | "transit" | "car";
+  getAround?: "" | "transit" | "car" | "mixed";
+  /** Famous sights, a mix, or hidden gems ("" a mix, unless the wishes say). */
+  placeMix?: "" | "popular" | "mixed" | "hidden";
   model: string;
   interests: string;
   /** What they want to see ("the must-sees plus hidden gems"); the route planner fills it from its description. */
@@ -126,6 +129,10 @@ export interface AppState {
   bookings?: Booking[];
   /** What was really spent, by id (Expenses in the toolbar; shared/expenses.ts). */
   expenses?: Expenses;
+  /** What they really did, a few loose lines per day (by date), and the days as they really went, worked out from
+   *  them (shared/journal.ts). The plan itself stays as it was. */
+  journal?: Journal;
+  actual?: Actual;
   /** Places that may be on more than one day (marked "Fine as is" in the problem review), by their name as matched. */
   okRepeats?: { key: string; name: string }[];
   /** The photo folders (shared Google Drive folders, or folders on this computer) whose photos the map's Photos layer
@@ -197,6 +204,8 @@ export function saveQuietly() {
 
 /** Data for this session only. */
 export const session = {
+  /** The itinerary shows the trip as it really went (from the journal) instead of the plan. */
+  showActual: false,
   /** Stays folded in the itinerary (by stay index): only their heading shows. */
   foldedStays: new Set<number>(),
   /** What the itinerary is filtered by (the search box above the days). */

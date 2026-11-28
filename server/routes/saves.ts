@@ -5,8 +5,8 @@ import type { SaveSummary } from "../../shared/types";
 import { SAVES_DIR, cleanName } from "../config";
 import { type Req, type Res, readBody, readJson, sendJson } from "../util/http";
 import { afterSave, beforeDelete, editor, pageWrite, saveSyncInfo } from "../sync/sync";
-import { joinLogs, logChanges, stamp } from "../../shared/edits";
-import { keepRescue, keepVersion, listRescue, listVersions, readRescue, readVersion, versionedNames } from "../util/versions";
+import { joinLogs, logChanges, manyDays, partBefore, stamp } from "../../shared/edits";
+import { keepPart, setPartAfter, keepRescue, keepVersion, listRescue, listVersions, readPart, readRescue, readVersion, versionBefore, versionedNames } from "../util/versions";
 
 function savePath(name: string) {
   const clean = cleanName(name);
@@ -52,6 +52,13 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
       // And the history of changes (Changes, and placing photos → History).
       const log = prev ? logChanges(prev, next, who, at) : joinLogs(next.log);
       if (log.length) next.log = log; else delete next.log;
+      // What each changed part held until now, so that one change can be put back later (Changes → Put back).
+      // And what it holds now, to show exactly what the change did (a change that goes on keeps its first "before").
+      if (prev) for (const c of log) if (c.at === at && c.was) {
+        const whole = manyDays(c), after = partBefore(next, c.key, whole).value, save = path.basename(file, ".json");
+        if (c.was === String(at)) keepPart(SAVES_DIR, save, c.was, c.key, { ...partBefore(prev, c.key, whole), after });
+        else setPartAfter(SAVES_DIR, save, c.was, c.key, after, whole);
+      }
     }
     // What the save held until now is kept first (a save made by hand always keeps one; a trip updated by itself, one every 10 minutes).
     keepVersion(SAVES_DIR, path.basename(file, ".json"), file, req.headers["x-keep-version"] === "1");
@@ -68,10 +75,23 @@ export async function handleSaves(req: Req, res: Res, name: string | undefined) 
 }
 
 /** Earlier versions of a saved trip: "GET /api/saves/<name>/history" lists them, ".../history/<id>" is one. */
-export async function handleHistory(req: Req, res: Res, name: string, id?: string) {
+export async function handleHistory(req: Req, res: Res, name: string, id?: string, query?: URLSearchParams) {
   const clean = savePath(name) && path.basename(savePath(name)!, ".json");
   if (!clean) return sendJson(res, 400, { error: "No such save." });
   if (req.method !== "GET") return res.writeHead(405).end();
+  // ".../history/before?key=&was=&at=&whole=": what a part held before a change. Exactly, when this computer kept it;
+  // else from the newest version of the trip from before the change (`savedAt` says how old that is).
+  if (id === "before") {
+    const none = () => sendJson(res, 404, { error: "What it held before this change wasn't kept." });
+    const key = String(query?.get("key") || "").slice(0, 200), was = String(query?.get("was") || ""), at = Number(query?.get("at"));
+    if (!key) return none();
+    const kept = readPart(SAVES_DIR, clean, was, key);
+    if (kept != null) { try { return sendJson(res, 200, { ...JSON.parse(kept), exact: true }); } catch { /* unreadable: from a version */ } }
+    // ("exact=1": only what was kept for this very change, for showing what it did.)
+    const old = Number.isFinite(at) && query?.get("exact") !== "1" ? versionBefore(SAVES_DIR, clean, at) : null;
+    if (!old) return none();
+    try { return sendJson(res, 200, { ...partBefore(JSON.parse(old.text), key, query?.get("whole") === "1"), exact: false, savedAt: old.savedAt }); } catch { return none(); }
+  }
   if (!id) return sendJson(res, 200, listVersions(SAVES_DIR, clean));
   const text = readVersion(SAVES_DIR, clean, id);
   if (text == null) return sendJson(res, 404, { error: "No such version." });

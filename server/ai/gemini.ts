@@ -714,6 +714,9 @@ export interface GeminiAsk {
   tick: (piece?: string, thought?: string) => void;
   /** Waiting out a limit, or switching to another model, in words. */
   onWait?: (text: string) => void;
+  /** A JSON schema for the answer (responseJsonSchema); a request Google rejects with it is sent again without. */
+  schema?: object;
+  onFormat?: (enforced: boolean) => void;
 }
 
 export async function askGemini(a: GeminiAsk): Promise<string> {
@@ -721,13 +724,21 @@ export async function askGemini(a: GeminiAsk): Promise<string> {
   const temperature = a.retry ? Math.min(1, tune().temperature + 0.3) : undefined;
   const base = { contents: [{ role: "user", parts }] };
   const cfg = { ...(a.json ? { responseMimeType: "application/json" } : {}), ...(temperature != null ? { temperature } : {}) };
+  const strict = a.json && a.schema ? { ...cfg, responseJsonSchema: a.schema } : null;
+  const think = { thinkingConfig: { includeThoughts: true } };
+  // With a schema the first two bodies enforce it; the rest are the plain fallbacks, sent when Google rejects one.
+  const bodies = [...(strict ? [{ ...base, generationConfig: { ...strict, ...think } }, { ...base, generationConfig: strict }] : []),
+    { ...base, generationConfig: { ...cfg, ...think } }, { ...base, generationConfig: cfg }, base];
+  let used = 0;
   const { res, model } = await geminiFetch({
     model: a.model, method: "streamGenerateContent?alt=sse", search: false, signal: a.signal, onStatus: a.onWait,
-    bodies: () => [{ ...base, generationConfig: { ...cfg, thinkingConfig: { includeThoughts: true } } }, { ...base, generationConfig: cfg }, base],
+    bodies: () => bodies, onBody: (_m, i) => { used = i; },
   });
+  if (strict) a.onFormat?.(used < 2);
   let text = "", total = 0;
   for await (const c of chunks(res)) {
     if (c.promptFeedback?.blockReason) throw new Error(`Google declined the request (${c.promptFeedback.blockReason}).`);
+    if (c.candidates?.[0]?.finishReason === "MAX_TOKENS") throw new Error(`${model} ran out of room before finishing its answer.`);
     for (const part of c.candidates?.[0]?.content?.parts || []) {
       if (typeof part.text !== "string" || !part.text) continue;
       if (part.thought) a.tick("", part.text);

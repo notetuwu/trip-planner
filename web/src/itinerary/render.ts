@@ -10,6 +10,7 @@ import { $, $$, downloadFile, esc, toast } from "../core/dom";
 import { groupBudget, save, session, state } from "../core/state";
 import { byTitleMap, itemLoc, stopMapsUrl } from "../geo/item-loc";
 import { canShareFiles, downloadForPhone, shareForPhone } from "../export/offline";
+import { openIphoneGuide } from "../export/iphone";
 import { toggleMenu } from "../core/menu";
 import { displayCurrency, fxReady, loadFx, pickDisplayCurrency } from "./costs-data";
 import { runGeneration } from "../generate/run";
@@ -34,6 +35,7 @@ import { cleanStop } from "./duplicates";
 import { onQueueChange, queuedJobs } from "../generate/queue";
 import { summaryHtml } from "./summary";
 import { type Section, openSection } from "./sections";
+import { actualDaysHtml, actualSwitchHtml, hasActual, openJournal, setJournalRedraw } from "./journal";
 import type { Itinerary } from "../../../shared/types";
 import { icon } from "../core/icons";
 import { type Problem, type Stop, checksSettled, planDuplicates, planProblems, quickFixes, setRepeatOk } from "../generate/autofix";
@@ -112,7 +114,8 @@ function wire(out: HTMLElement) {
   // Export: every way the plan leaves the planner, in one menu.
   const exportBtn = out.querySelector<HTMLButtonElement>("[data-export]");
   if (exportBtn) exportBtn.onclick = () => toggleMenu(exportBtn, [
-    { id: "phone", icon: "phone", label: "For phone", hint: "One file that works offline: today's stops, the plan and expenses", run: tools.phone },
+    { id: "phone", icon: "phone", label: "For phone", hint: "One file that works offline: today's stops, the plan, expenses and the journal", run: tools.phone },
+    { id: "iphone", icon: "phone", label: "For iPhone", hint: "An iPhone can't run that file by itself: how to open it there, in three steps", run: openIphoneGuide },
     ...(canShareFiles() ? [{ id: "share", icon: "share" as const, label: "Share", hint: "The phone file through the system share menu", run: tools.share }] : []),
     { id: "ics", icon: "calendar", label: "Calendar", hint: "Every stop as an event, for your phone's calendar", run: tools.ics },
     { id: "kml", icon: "map", label: "Map file · KML", hint: "For Google My Maps, Google Earth and Organic Maps", run: tools.kml },
@@ -144,6 +147,8 @@ function wire(out: HTMLElement) {
   for (const el of $$("[data-costs]", out)) el.onclick = () => openCosts((el.dataset.costs || undefined) as CostsTab | undefined);
   for (const el of $$("[data-photos]", out)) el.onclick = () => openPhotosView();
   for (const el of $$("[data-preview]", out)) el.onclick = () => openPreview();
+  for (const el of $$("[data-journal]", out)) el.onclick = () => openJournal();
+  for (const el of $$("[data-actual]", out)) el.onclick = () => { session.showActual = el.dataset.actual === "1"; renderItinerary(); };
   for (const el of $$("[data-section]", out)) el.onclick = () => openSection(el.dataset.section as Section, () => renderItinerary());
   for (const el of $$("[data-del]", out)) el.onclick = () => { const [d, x] = el.dataset.del!.split("-"); removeStop(+d, +x); };
   wireMoves(out);
@@ -185,7 +190,7 @@ export function renderItinerary(error?: string) {
   const budget = meta.budget || groupBudget();
   const byTitle = byTitleMap();
   const unfixed = meta.unfixed ? `<div class="fix-bar"><span class="fix-msg">${icon("warn")}<span>${esc(meta.unfixed)}</span></span></div>` : "";
-  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + unfixed + `<div class="fix-bar" id="fixBar" hidden></div>` + searchHtml() + daysHtml(it, byTitle, cur, budget) + extrasHtml(it);
+  out.innerHTML = errorHtml + summaryHtml(it, byTitle, cur, budget) + unfixed + `<div class="fix-bar" id="fixBar" hidden></div>` + actualSwitchHtml() + (session.showActual && hasActual() ? actualDaysHtml(cur) : searchHtml() + daysHtml(it, byTitle, cur, budget)) + extrasHtml(it);
   wire(out);
   initSplitTabs(out);
   showDuplicates(it);
@@ -325,3 +330,6 @@ function showFixBar(it: Itinerary) {
     runGeneration({ fix: { itinerary: it, problems } });
   };
 }
+
+// The journal window changes what the itinerary shows (the Journal count, Planned / Actual).
+setJournalRedraw(() => renderItinerary());

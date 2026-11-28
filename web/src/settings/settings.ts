@@ -2,7 +2,7 @@
 // App: General (how the app opens, theme, start-up and saving, units, what a new trip starts with, where the data is),
 //   Map (place names, the maps app, downloading transport lines), Phone (the planner on the home network: start/stop,
 //   status, the link and its QR code).
-// Planning: Plan style (language, detail, how many real places, fix rounds), AI models (a row per provider that opens its
+// Planning: Plan style (planner: standard or checked, language, detail, how many real places, fix rounds), AI models (a row per provider that opens its
 //   own page: Claude Code, Google Gemini with its tier, usage, limits and guide, Anthropic, OpenAI, OpenRouter), Local
 //   models (Ollama: status, the graphics card, models from ollama.com that fit it, a search of the library, installs with
 //   download progress, installed models, how they plan, the context size), Search & places (the search engine, Brave,
@@ -34,7 +34,7 @@ import { loadSyncStatus } from "../saves/sync-client";
 import { askConfirm } from "../core/ask";
 import { markNewSince, setRollback, updateLog } from "./update-log";
 
-interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string; researchModel: string }
+interface Tune { language: string; detail: string; places: string; lookups: number; fixRounds: number; thinking: string; temperature: number; keepAlive: string; pages: string; search: string; localPlan: string; planner: string; researchModel: string }
 export type ServiceKey = "brave" | "geoapify" | "google";
 interface Settings { window: "app" | "browser"; numCtx: number; checkUpdates: boolean; serviceKeys?: Record<ServiceKey, KeyStatus>; braveKeySet: boolean; geoapifyKeySet: boolean; googleKeySet: boolean; searxngUrl: string; lan: boolean; packaged: boolean; appWindow: boolean; dataDir: string; version: string; tune: Tune; app?: AppPrefs }
 interface Pull { name: string; status: string; total: number; completed: number; error?: string; done: boolean; started: number }
@@ -543,6 +543,8 @@ function planningHtml() {
   return `
     <h3>Plan style</h3>
     <div class="set-card">
+      <div class="set-row"><div><b>Planner</b><div class="hint">Standard: the whole trip in one request (or step by step for local models, below). Checked (experimental, any model): first decides which day goes where, then writes a few days at a time. The model only names places, times and how to get there: where each stop is comes from your saved places, OpenStreetMap and lookups by name, the drives between towns from a routing service (the map draws them; the model writes no drives as stops). Every day is checked in code (dates, where you sleep, the time it takes between stops, opening hours, overlaps, repeats, must-sees, travel days that are too full, empty days, ferry or train times nobody looked up, events outside your stay) and only the days with problems go back; the fixes the page asks for afterwards go the same way. Costs are added up in code. More requests, so slower; research online works with Gemini or local models (or a research model under Search &amp; places).</div></div>
+        <div class="segs">${seg("planner", "standard", "Standard")}${seg("planner", "checked", "Checked (experimental)")}</div></div>
       <div class="set-row"><div><b>Language</b><div class="hint">What the plan is written in. Place names stay as they're known locally.</div></div>
         <select id="tuneLang">${LANGUAGES.map((l) => opt(l, l || "English", t.language)).join("")}${t.language && !LANGUAGES.includes(t.language) ? opt(t.language, t.language, t.language) : ""}</select></div>
       <div class="set-row"><div><b>Descriptions</b><div class="hint">How much each stop's description says. Brief is quicker to read and to write (faster with local models).</div></div>

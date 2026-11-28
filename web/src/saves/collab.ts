@@ -4,10 +4,13 @@
 // waiting, with Update. Either way a note says who changed what, and Review lists it, with Undo for each change. When you
 // and someone else changed the same thing, yours stays on screen and theirs is a click away (and kept as a copy).
 import type { Change, Edit } from "../../../shared/edits";
-import { changedParts, changesTo, describePart, partLabel, partsOf, setPart } from "../../../shared/edits";
+import { type Line, changeLines, wordDiff } from "../../../shared/change-details";
+import { type Before, changedParts, changesTo, describePart, manyDays, partLabel, partsOf, putBack, setPart } from "../../../shared/edits";
 import { same } from "../../../shared/merge";
 import { type AppState, state } from "../core/state";
-import { closeOnBackdrop, esc } from "../core/dom";
+import { api, closeOnBackdrop, esc } from "../core/dom";
+import { askConfirm, tell } from "../core/ask";
+import { isReadOnly } from "./read-only";
 import { icon } from "../core/icons";
 import { onSyncStatus, syncStatus } from "./sync-client";
 
@@ -236,7 +239,7 @@ function openReview() {
           ${e ? avatar(e) : `<span class="who-dot" aria-hidden="true">${icon("users")}</span>`}
           <div class="cr-what"><b>${esc(rowLabel(r.keys))}</b>${detail ? `<span>${esc(detail)}</span>` : ""}
             <small>${e ? `${esc(whoOf(e) === "you" ? "You" : e.by)} · ${esc(ago(e.at))}` : ""}${clash ? `${e ? " · " : ""}you changed it too: yours is kept` : ""}</small></div>
-          <div class="cr-acts">${canShow(k) ? `<button type="button" class="btn" data-cr-show="${i}">Show</button>` : ""}
+          <div class="cr-acts">${canShow(k) ? `<button type="button" class="btn" data-cr-show="${i}" title="Close this and go to that part of the trip">Go to</button>` : ""}
             ${clash ? `<button type="button" class="btn" data-cr-theirs="${i}" title="Use their version of this instead of yours">Use theirs</button>`
               : `<button type="button" class="btn" data-cr-undo="${i}" title="Put this back as it was before">${icon("history")} Undo</button>`}</div>
         </li>`;
@@ -301,27 +304,116 @@ function rowText(r: { changes: Change[]; first: Change }) {
   return { label: partLabel(r.first.key, state), what: r.first.what };
 }
 
-/** Changes: the trip's latest changes, who made them and when, each with Show. `keys`: only those to these parts, with a
- *  button for all of them. */
+/**
+ * Puts one change of the history back: its part (a day, the stays, the bookings…) as it was before that change. Photos
+ * carry where they were; for the rest the computer keeps what each part held (exactly for changes saved here since
+ * that was kept; otherwise the newest earlier version of the trip stands in, and the question says so). Asks first,
+ * saying what going back changes. Resolves true when it was done.
+ */
+async function putChangeBack(r: { changes: Change[]; first: Change }): Promise<boolean> {
+  const c = r.first, next = structuredClone(state) as AppState, label = rowText(r).label;
+  const cant = (text: string) => tell({ title: "Can't put this back", text }).then(() => false);
+  let words = "", note = "";
+  if (c.key.startsWith("photo:")) {
+    if (!r.changes.every((x) => setPart(next, x.key, x.from))) return cant("These photos can't be put back from here.");
+    words = r.changes.length > 1 ? `${r.changes.length} photos go back to where they were (or to not placed)` : c.from === undefined ? "the photo is no longer placed by hand" : "the photo goes back to where it was";
+  } else {
+    let before: Before & { exact?: boolean; savedAt?: string };
+    try {
+      before = await api(`/api/saves/${encodeURIComponent(state.saveName || "")}/history/before?${new URLSearchParams({ key: c.key, was: c.was || "", at: String(c.at), ...(manyDays(c) ? { whole: "1" } : {}) })}`);
+    } catch {
+      return cant("What this held before the change wasn't kept on this computer. Changes made from now on can be put back; for older ones, Your trips → Recover has earlier versions of the whole trip.");
+    }
+    if (!putBack(next, c.key, before)) return cant(c.key.startsWith("day:") ? "That day isn't in the plan any more (its date changed, or it didn't exist before this change)." : "This can't be put back from here.");
+    const days = changedParts(state, next).filter((k) => k.startsWith("day:")).length;
+    words = before.whole ? `${days} day${days === 1 ? "" : "s"} of the plan go${days === 1 ? "es" : ""} back` : describePart(c.key, partsOf(state)[c.key], partsOf(next)[c.key]);
+    if (!before.exact && before.savedAt) note = `\n\nExactly what it held wasn't kept for this change: this uses the trip's version from ${fullTime(Date.parse(before.savedAt))}, the newest from before it.`;
+  }
+  if (!changedParts(state, next).length) return tell({ title: "Nothing to put back", text: `${label} is already as it was before this change.` }).then(() => false);
+  const ok = await askConfirm({
+    title: `Put ${label} back?`,
+    text: `${label} goes back to how it was before this change (${whoOf(c) === "you" ? "yours" : `by ${c.by}`}, ${fullTime(c.at)}).\n\nWhat that changes: ${words || "it goes back"}.\n\nAnything changed in it since then goes too. Putting it back is itself listed here as a change, so it can be put back as well.${note}`,
+    ok: "Put back",
+  });
+  if (!ok) return false;
+  await apply(next);
+  return true;
+}
+
+// What exactly each change did (shared/change-details.ts), from what the computer that saved it kept of the part before
+// and after: asked for once per change, when its row comes into view. null: nothing was kept (an older change, or one
+// made on another computer): the row keeps its few words.
+const details = new Map<string, Line[] | null>();
+const detailId = (c: Change) => `${state.saveName}|${c.key}|${c.was}|${c.at}`;
+async function loadDetails(c: Change): Promise<Line[] | null> {
+  const id = detailId(c);
+  if (details.has(id)) return details.get(id)!;
+  let lines: Line[] | null = null;
+  try {
+    const whole = manyDays(c);
+    const kept = await api<Before & { after?: unknown }>(`/api/saves/${encodeURIComponent(state.saveName || "")}/history/before?${new URLSearchParams({ key: c.key, was: c.was || "", at: String(c.at), exact: "1", ...(whole ? { whole: "1" } : {}) })}`);
+    if ("after" in kept || kept.value !== undefined) lines = changeLines(c.key, kept.value, kept.after, whole);
+  } catch { /* not kept */ }
+  details.set(id, lines);
+  return lines;
+}
+
+const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
+/** How many lines of a change show before "Show all". */
+const LINES_SHOWN = 5;
+
+/** One line of a change: what was added (green), taken away (struck through), or changed from → to; a longer text
+ *  with the words that went and came marked in it. */
+function lineHtml(l: Line) {
+  const what = l.what ? `<span class="chd-what">${esc(cap(l.what))}</span>` : "";
+  if (l.before === undefined) return `<div class="chd add">${what}<span class="chd-new">${esc(l.after || "")}</span></div>`;
+  if (l.after === undefined) return `<div class="chd del">${what}<span class="chd-old">${esc(l.before)}</span></div>`;
+  const words = l.before.length + l.after.length > 80 ? wordDiff(l.before, l.after) : null;
+  if (words) return `<div class="chd text">${what}<span class="chd-words">${words.map((p) => (p.op < 0 ? `<del>${esc(p.text)}</del>` : p.op > 0 ? `<ins>${esc(p.text)}</ins>` : esc(p.text))).join("")}</span></div>`;
+  return `<div class="chd">${what}<span class="chd-old">${esc(l.before)}</span><span class="chd-arrow" aria-hidden="true">→</span><span class="chd-new">${esc(l.after)}</span></div>`;
+}
+
+function detailsHtml(lines: Line[], open: boolean) {
+  const more = lines.length - LINES_SHOWN;
+  return `${(open || more <= 1 ? lines : lines.slice(0, LINES_SHOWN)).map(lineHtml).join("")}${more > 1 ? `<button type="button" class="link-btn chd-more" data-chd-more>${open ? "Show less" : `Show all ${lines.length} changes`}</button>` : ""}`;
+}
+
+/** Changes: the trip's latest changes, newest first: who made each and when, what exactly it did (before → after, where
+ *  that was kept; else in a few words), Go to (the part it's about) and Put back. `keys`: only those to these parts,
+ *  with a button for all of them. */
 export function openHistory(keys?: string[]) {
   const d = document.createElement("dialog");
   d.className = "keys-dialog collab-review collab-history";
   document.body.append(d);
   closeOnBackdrop(d);
-  d.addEventListener("close", () => d.remove());
+  let seen: IntersectionObserver | null = null;
+  d.addEventListener("close", () => { seen?.disconnect(); d.remove(); });
   let others = false;
+  /** Rows whose lines are all shown. */
+  const opened = new Set<string>();
   const draw = () => {
+    seen?.disconnect();
     const log = keys ? changesTo(state.log || [], keys) : state.log;
     const rowsAll = historyRows(log, others ? (c) => !isMine(c) : undefined).slice(0, 250);
+    const one = keys?.length === 1;
     const title = keys ? `Changes: ${keys.map((k) => partLabel(k, state)).join(", ")}` : "Changes to this trip";
     const none = others ? "Nobody else has changed this yet." : keys ? "No details are recorded for this change." : "No changes recorded yet. From now on every change is listed here, with who made it and when.";
+    const canPut = !!state.saveName && !isReadOnly();
     let day = "";
     const items = rowsAll.map((r, i) => {
-      const { label, what } = rowText(r), h = dayHeading(r.first.at);
+      const { label, what } = rowText(r), h = dayHeading(r.first.at), c = r.first;
       const head = h !== day ? `<li class="ch-day">${esc((day = h))}</li>` : "";
-      return `${head}<li>${avatar(r.first)}
-        <div class="cr-what"><b>${esc(label)}</b>${what ? `<span>${esc(what)}</span>` : ""}<small>${esc(isMine(r.first) ? "You" : r.first.by)} · ${esc(clock(r.first.at))}</small></div>
-        <div class="cr-acts">${canShow(r.first.key) ? `<button type="button" class="btn" data-ch-show="${i}">Show</button>` : ""}</div></li>`;
+      const known = details.get(detailId(c));
+      // Its exact lines when they're known already; else its few words, until (and unless) the lines come.
+      const body = known?.length ? detailsHtml(known, opened.has(detailId(c))) : what ? `<div class="chd words">${esc(cap(what))}</div>` : "";
+      const wants = r.changes.length === 1 && !!c.was && !!state.saveName && known === undefined;
+      return `${head}<li class="ch-row">
+        <div class="ch-top">${avatar(c)}
+          <div class="cr-what"><b>${esc(one ? `${isMine(c) ? "You" : c.by} · ${clock(c.at)}` : label)}</b>${one ? "" : `<small>${esc(isMine(c) ? "You" : c.by)} · ${esc(clock(c.at))}</small>`}</div>
+          <div class="cr-acts">${canShow(c.key) ? `<button type="button" class="btn" data-ch-show="${i}" title="Close this and go to ${esc(label)} in the trip">${icon("arrowUpRight")} Go to</button>` : ""}
+            ${canPut ? `<button type="button" class="btn" data-ch-back="${i}" title="Put ${esc(label)} back as it was before this change (asks first)">${icon("undo")} Put back</button>` : ""}</div>
+        </div>
+        <div class="ch-detail" data-ch-row="${i}"${wants ? " data-ch-wants" : ""}>${body}</div></li>`;
     }).join("");
     d.innerHTML = `<form method="dialog" class="ask-form">
       <h3>${icon("history")} ${esc(title)}</h3>
@@ -332,6 +424,39 @@ export function openHistory(keys?: string[]) {
     d.querySelector<HTMLButtonElement>("[data-ch-all]")?.addEventListener("click", () => { keys = undefined; draw(); });
     d.querySelectorAll<HTMLButtonElement>("[data-ch-who]").forEach((b) => { b.onclick = () => { others = b.dataset.chWho === "others"; draw(); }; });
     d.querySelectorAll<HTMLButtonElement>("[data-ch-show]").forEach((b) => { b.onclick = () => { d.close(); reveal(rowsAll[+b.dataset.chShow!].first.key); }; });
+    d.querySelectorAll<HTMLButtonElement>("[data-ch-back]").forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        const row = rowsAll[+b.dataset.chBack!];
+        const done = await putChangeBack(row).catch((e) => tell({ title: "Couldn't put it back", text: (e as Error).message }).then(() => false));
+        if (!done) { b.disabled = false; return; }
+        // Done: the part itself is shown (the history gets its new line once the trip is saved, a moment later).
+        d.close();
+        if (canShow(row.first.key)) reveal(row.first.key);
+      };
+    });
+    const fill = (el: HTMLElement) => {
+      const c = rowsAll[+el.dataset.chRow!].first, lines = details.get(detailId(c));
+      if (lines?.length) el.innerHTML = detailsHtml(lines, opened.has(detailId(c)));
+    };
+    const list = d.querySelector<HTMLElement>(".ch-list");
+    if (list) list.onclick = (e) => {
+      const more = (e.target as HTMLElement).closest("[data-chd-more]"), el = more?.closest<HTMLElement>("[data-ch-row]");
+      if (!el) return;
+      const id = detailId(rowsAll[+el.dataset.chRow!].first);
+      if (opened.has(id)) opened.delete(id); else opened.add(id);
+      fill(el);
+    };
+    // Each row's exact lines are asked for when it comes into view.
+    seen = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const el = en.target as HTMLElement;
+        seen?.unobserve(el);
+        loadDetails(rowsAll[+el.dataset.chRow!].first).then(() => { if (el.isConnected) fill(el); });
+      }
+    }, { root: list, rootMargin: "200px" });
+    d.querySelectorAll<HTMLElement>("[data-ch-wants]").forEach((el) => seen!.observe(el));
   };
   draw();
   d.showModal();

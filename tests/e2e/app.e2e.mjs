@@ -67,6 +67,7 @@ const STUBS = `(() => {
     if (lists && listPath && listPath.lastIndexOf("/") === 0) { const name = decodeURIComponent(listPath.slice(1)); return json({ name, places: lists[name] || [], source: { type: "csv" } }); }
     if (url.includes("/api/stops")) { window.__e2e.stopsAsked = body(); return stream(window.__e2e.stops); }
     if (url.includes("/api/route-plan")) { window.__e2e.routeAsked = body(); return stream(window.__e2e.route); }
+    if (url.includes("/api/journal")) { window.__e2e.journalAsked = body(); return stream(window.__e2e.journal); }
     if (url.includes("/api/companion/compact")) { window.__e2e.compactAsked = body(); return stream({ summary: "- They want Pedrocchi on the way." }); }
     if (url.includes("/api/companion")) { window.__e2e.companionAsked = body(); return stream(window.__e2e.companion || { answer: "On **day 2** you're in Padua:" + String.fromCharCode(10) + "- 10:00 Basilica" }); }
     if (url.includes("/api/itinerary")) {
@@ -629,12 +630,14 @@ test("Settings → Planning saves the options, and fix rounds take effect in the
   await page.waitFor(`document.querySelector('[data-tune="detail"][data-v="brief"]').classList.contains("on")`);
   await page.eval(`document.querySelector('[data-tune="fixRounds"][data-v="2"]').click()`);
   await page.waitFor(`document.querySelector('[data-tune="fixRounds"][data-v="2"]').classList.contains("on")`);
+  await page.eval(`document.querySelector('[data-tune="planner"][data-v="checked"]').click()`);
+  await page.waitFor(`document.querySelector('[data-tune="planner"][data-v="checked"]').classList.contains("on")`);
   await page.eval(`(() => { const l = document.querySelector("#tuneLang"); l.value = "Deutsch"; l.dispatchEvent(new Event("change")); })()`);
   await page.sleep(400);
   const s = await page.eval(`fetch("/api/settings").then((r) => r.json())`);
-  assert.deepEqual([s.tune.detail, s.tune.fixRounds, s.tune.language], ["brief", 2, "Deutsch"]);
+  assert.deepEqual([s.tune.detail, s.tune.fixRounds, s.tune.language, s.tune.planner], ["brief", 2, "Deutsch", "checked"]);
   // Back to the defaults for the other tests.
-  await page.eval(`fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tune: { detail: "normal", fixRounds: 1, language: "" } }) })`);
+  await page.eval(`fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tune: { detail: "normal", fixRounds: 1, language: "", planner: "standard" } }) })`);
   await page.eval(`document.querySelector("#settingsDialog").close()`);
 });
 
@@ -1199,7 +1202,7 @@ test("estimates are marked as not checked, prices can show in another currency, 
   // Export: one menu, with a map file of each kind that saves straight away.
   await page.eval(`document.querySelector("[data-export]").click()`);
   await page.waitFor(`document.querySelector(".menu-pop")?.matches(":popover-open")`, 3000, "the Export menu");
-  assert.deepEqual(await page.eval(`[...document.querySelectorAll(".menu-pop .menu-item")].map((b) => b.dataset.menuItem).filter((x) => x !== "share")`), ["phone", "ics", "kml", "gpx", "print", "json"]);
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll(".menu-pop .menu-item")].map((b) => b.dataset.menuItem).filter((x) => x !== "share")`), ["phone", "iphone", "ics", "kml", "gpx", "print", "json"]);
   if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/export-menu.png`);
   await page.eval(`document.querySelector('.menu-pop [data-menu-item="kml"]').click()`);
   assert.equal(await page.eval(`!!document.querySelector(".menu-pop") || !!document.querySelector("dialog.ask-dialog[open]")`), false, "saved without a question");
@@ -1295,6 +1298,25 @@ test("Add from Gmail in the chat: browse two accounts, read an email as sent (sa
   assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-gmail")).sort`), "from", "the sort is remembered");
   await page.eval(`document.querySelector(".mbx form[method=dialog] button").click()`);
   await page.eval(`window.__e2e.unGmail(); document.querySelectorAll("[data-unfile]").forEach(() => document.querySelector("[data-unfile]").click()); document.querySelector("#cpClose").click()`);
+});
+
+test("the chat shows the documents and emails it found, and asks before searching Gmail", async () => {
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Find test", chat: [], chatMode: "auto", bookings: [] })`);
+  await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
+  await page.eval(`window.__e2e.companion = { answer: "To find that, I'd search your Gmail.", searchAsk: { searches: [{ kind: "gmail", args: ["ferry"] }] } }`);
+  await page.eval(`(() => { const q = document.querySelector("#cpQ"); q.value = "find the ferry email"; q.dispatchEvent(new Event("input")); document.querySelector("#cpSend").click(); })()`);
+  await page.waitFor(`!!document.querySelector("[data-search-ok]")`, 5000, "the question before searching");
+  assert.equal(await page.eval(`window.__e2e.companionAsked.searches || null`), null);
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/search-ask.png`);
+  await page.eval(`window.__e2e.companion = { answer: "Two of them.", read: true, found: [{ kind: "mail", ref: "mail1", account: "one@example.com", id: "abc123def", subject: "Your ferry", from: "Example Ferries", date: "2027-05-01T10:00:00Z" }, { kind: "doc", ref: "doc1", name: "ferry.pdf", note: "Ferry, 2027-09-15" }] }; document.querySelector("[data-search-ok]").click()`);
+  await page.waitFor(`document.querySelectorAll(".cp-found-item").length === 2`, 5000, "what was found");
+  assert.deepEqual(await page.eval(`[window.__e2e.companionAsked.searches[0].args[0], window.__e2e.companionAsked.question, window.__e2e.companionAsked.history.length]`), ["ferry", "find the ferry email", 0]);
+  assert.match(await page.eval(`document.querySelector(".cp-found a.cp-file").href`), /file=ferry\.pdf/);
+  await page.eval(`(() => { const real = window.fetch; window.fetch = (u, o) => String(u).includes("/api/sync/gmail/message") ? (window.fetch = real, Promise.resolve(new Response(JSON.stringify({ name: "Your ferry.eml", data: btoa("Subject: Your ferry") }), { status: 200 }))) : real(u, o); })()`);
+  await page.eval(`document.querySelector("[data-found-attach]").click()`);
+  await page.waitFor(`document.querySelector("#cpAttach .cp-file")?.textContent.includes("Your ferry.eml")`, 5000, "the email attached");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/chat-found.png`);
+  await page.eval(`window.__e2e.companion = null; document.querySelector("[data-unfile]").click(); document.querySelector("#cpClose").click()`);
 });
 
 test("planning by hand: an empty plan from the stays, and stops added under each day", async () => {
@@ -1432,4 +1454,195 @@ test("the chat can ask with answers to pick from; the one picked is sent as the 
 
 test("no errors in the page", () => {
   assert.deepEqual(page.errors, []);
+});
+
+test("the games window: start, pause, game over keeps the best score in the browser, not in the trip", async () => {
+  await page.eval(`document.querySelector("#gamesBtn").click()`);
+  await page.waitFor(`!document.querySelector(".games").hidden && /Start/.test(document.querySelector("#gmGo")?.textContent)`, 5000, "the start screen");
+  await page.eval(`document.querySelector("#gmGo").click()`);
+  assert.equal(await page.eval(`document.querySelector("#gmOver").hidden`), true);
+  // Space pauses, and the button says Resume.
+  await page.eval(`document.body.dispatchEvent(new KeyboardEvent("keydown", { code: "Space", key: " ", bubbles: true }))`);
+  await page.waitFor(`/Resume/.test(document.querySelector("#gmPause").textContent) && /Paused/.test(document.querySelector("#gmOver").textContent)`, 3000, "paused");
+  // The snake runs into the wall: game over, and the best score goes to localStorage.
+  await page.eval(`document.querySelector("#gmPause").click()`);
+  await page.waitFor(`/Game over/.test(document.querySelector("#gmOver").textContent)`, 8000, "game over");
+  assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-game-best") || "{}").snake ?? 0`), 0);
+  assert.ok(!JSON.stringify(await page.eval(`planner.state()`)).includes("game"));
+  // Another game, and the window closes.
+  await page.eval(`document.querySelector('.gm-tab[data-game="blocks"]').click()`);
+  await page.waitFor(`/Blocks/.test(document.querySelector("#gmOver").textContent)`, 3000, "blocks start screen");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/games.png`, ".games");
+  await page.eval(`document.querySelector("#gmClose").click()`);
+  assert.equal(await page.eval(`document.querySelector(".games").hidden`), true);
+});
+
+test("Changes: one change is put back as it was before (asked first), and the rest of the trip stays", async () => {
+  const name = "Put back test";
+  try {
+    const first = { ...PADUA_MILANO, saveName: name, itinerary: { summary: "Plan", totalEstimatedCost: 0, days: [
+      { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "15:00", place: "Cappella degli Scrovegni", description: "" }] },
+      { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 0, items: [{ time: "10:00", place: "Basilica", description: "" }] },
+    ] } };
+    const second = structuredClone(first);
+    second.itinerary.days[1].items = [{ time: "11:00", place: "Prato della Valle", description: "" }];
+    second.itinerary.days[0].items[0].time = "16:00";
+    const put = (t) => page.eval(`fetch("/api/saves/${encodeURIComponent(name)}", { method: "PUT", body: JSON.stringify(${JSON.stringify(t)}) }).then((r) => r.json())`);
+    await put(first);
+    const saved = await put(second);
+    assert.equal(saved.log.length, 2, "both days' changes are in the history");
+    await trip({ ...second, log: saved.log, edits: saved.edits });
+    await page.waitFor(`!document.querySelector("#historyBtn").hidden`, 5000, "the Changes button");
+    await page.eval(`document.querySelector("#historyBtn").click()`);
+    await page.waitFor(`document.querySelectorAll(".collab-history [data-ch-back]").length === 2`, 5000, "Put back on each change");
+    // Each change says exactly what it did, and the button that goes to the part says so.
+    await page.waitFor(`document.querySelectorAll(".collab-history .chd-new").length >= 2`, 5000, "the changes line by line");
+    const lines = await page.eval(`[...document.querySelectorAll(".collab-history .ch-row")].map((li) => li.querySelector(".ch-detail").textContent)`);
+    assert.ok(lines.some((t) => /Added\s*11:00 Prato della Valle/.test(t) && /Removed\s*10:00 Basilica/.test(t)), lines.join(" | "));
+    assert.ok(lines.some((t) => /Cappella degli Scrovegni: time\s*15:00\s*→\s*16:00/.test(t)), lines.join(" | "));
+    assert.match(await page.eval(`document.querySelector(".collab-history [data-ch-show]").textContent`), /Go to/);
+    if (process.env.SHOT) await page.screenshot(process.env.SHOT, ".collab-history");
+    // Day 2's change goes back; the question says what that does.
+    await page.eval(`[...document.querySelectorAll(".collab-history .ch-list li")].find((li) => /Day 2/.test(li.textContent)).querySelector("[data-ch-back]").click()`);
+    await page.waitFor(`!!document.querySelector(".ask-dialog[open]")`, 5000, "the question");
+    assert.match(await page.eval(`document.querySelector(".ask-dialog[open]").textContent`), /Put Day 2 · Padua back\?[\s\S]*added Basilica; removed Prato della Valle/);
+    await answerAsk();
+    await page.waitFor(`planner.state().itinerary.days[1].items[0]?.place === "Basilica"`, 5000, "day 2 as it was");
+    assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].time`), "16:00", "day 1 keeps its change");
+    assert.equal(await page.eval(`!!document.querySelector(".collab-history")`), false, "the history closed");
+  } finally {
+    await page.eval(`fetch("/api/saves/${encodeURIComponent(name)}", { method: "DELETE" })`);
+  }
+});
+
+test("Balance: every day's load side by side, the heavy day marked, and a click goes to the day", async () => {
+  await trip({ ...PADUA_MILANO, pace: "relaxed (2-3 main stops per day, late starts)", dailyBudget: 50, travelers: 1, itinerary: { summary: "Plan", totalEstimatedCost: 240, days: [
+    { date: "2027-09-14", city: "Padua", title: "Padua", estimatedCost: 40, items: [{ time: "15:00", place: "Cappella degli Scrovegni", description: "" }, { time: "19:00", place: "Dinner", kind: "meal", description: "" }] },
+    { date: "2027-09-15", city: "Padua", title: "Padua", estimatedCost: 200, items: ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00"].map((time, i) => ({ time, place: "Stop " + (i + 1), description: "" })) },
+  ] } });
+  await page.waitFor(`!!document.querySelector('[data-section="balance"]')`, 5000, "the Balance button");
+  await page.eval(`document.querySelector('[data-section="balance"]').click()`);
+  await page.waitFor(`document.querySelectorAll("#sectionDialog[open] .bal-table tbody tr").length === 2`, 5000, "a row per day");
+  assert.deepEqual(await page.eval(`[...document.querySelectorAll(".bal-table tbody tr")].map((r) => [r.classList.contains("heavy"), [...r.querySelectorAll(".bal-cell.over")].length])`), [[false, 0], [true, 2]], "day 2 has too many stops and costs too much");
+  assert.match(await page.eval(`document.querySelector("#sectionMeta").textContent`), /1 day stands out/);
+  if (process.env.SHOT) await page.screenshot(process.env.SHOT, "#sectionDialog");
+  await page.eval(`document.querySelectorAll(".bal-table tbody tr")[1].click()`);
+  await page.waitFor(`!document.querySelector("#sectionDialog").open && document.querySelector("#day-1").classList.contains("selected")`, 5000, "day 2 picked");
+});
+
+test("the journal: written in the phone file (travelers named and parts set there), brought into the app, worked out into the day as it went, and shown under Actual", async () => {
+  const today = new Date().toLocaleDateString("sv");
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, travelers: 2, people: undefined, currency: "EUR", expenses: undefined, journal: undefined, actual: undefined,
+    itinerary: { summary: "", destination: "Padua", totalEstimatedCost: 12, days: [
+      { date: "${today}", city: "Padua", title: "Chapels", estimatedCost: 12, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "" }, { time: "13:00", place: "Caffè Pedrocchi", description: "", cost: 12, kind: "meal" }] } ] } })`);
+  await page.waitFor(`!!document.querySelector(".item")`, 10000, "the plan");
+  await page.eval(`(() => { Object.keys(localStorage).filter((k) => k.startsWith("trip-phone:")).forEach((k) => localStorage.removeItem(k)); const f = document.createElement("iframe"); f.id = "phoneFile"; f.style.cssText = "width:400px;height:820px"; f.srcdoc = planner.offlineHtml(); document.body.append(f); })()`);
+  const doc = `document.getElementById("phoneFile").contentDocument`, win = `document.getElementById("phoneFile").contentWindow`;
+  await page.waitFor(`${doc}?.querySelector("#vToday:not([hidden]) [data-journal]")`, 5000, "the journal box under Today");
+  // The day's entry, in their own words; and the castle ticked.
+  await page.eval(`(() => { const t = ${doc}.querySelector("[data-journal]"); t.value = "Skipped the chapel. Went to the market, I paid 30 for lunch."; t.dispatchEvent(new Event("input")); const b = ${doc}.querySelector('#vToday [data-done="1"]'); b.checked = true; b.dispatchEvent(new Event("change")); })()`);
+  assert.equal(await page.eval(`${doc}.querySelector("[data-journal]").value`), "Skipped the chapel. Went to the market, I paid 30 for lunch.", "the entry stays when the day is drawn again");
+  assert.equal(await page.eval(`${doc}.querySelector("[data-journal-send]").hidden`), false, "not in the app yet");
+  // An expense: the trip has no names, so the sheet asks for them first; then who paid and each one's part.
+  await page.eval(`${doc}.querySelector("#vToday [data-other]").click()`);
+  await page.waitFor(`${doc}.querySelectorAll(".ph-sheet[open] [data-name]").length === 2`, 3000, "a name field per traveler");
+  assert.equal(await page.eval(`!!${doc}.querySelector(".ph-sheet form").paidBy`), false);
+  await page.eval(`(() => { const n = ${doc}.querySelectorAll(".ph-sheet [data-name]"); n[0].value = "Mia"; n[1].value = "Tom"; ${doc}.querySelector(".ph-sheet [data-names]").click(); })()`);
+  await page.waitFor(`!!${doc}.querySelector(".ph-sheet[open] form")?.paidBy`, 3000, "who paid, once they have names");
+  await page.eval(`(() => { const f = ${doc}.querySelector(".ph-sheet form"); f.what.value = "Lunch"; f.amount.value = "30"; f.amount.dispatchEvent(new Event("input")); f.paidBy.value = "Mia"; f.paidBy.dispatchEvent(new Event("change"));
+    const s = f.querySelector('[data-share="Tom"]'); s.value = "10"; s.dispatchEvent(new Event("input")); })()`);
+  assert.match(await page.eval(`${doc}.querySelector('[data-person="Tom"] [data-amt]').textContent`), /10\.00.*owes Mia/, "Tom's part as typed");
+  assert.match(await page.eval(`${doc}.querySelector('[data-person="Mia"] [data-amt]').textContent`), /20\.00/, "Mia has the rest");
+  if (process.env.SHOT) await page.screenshot(process.env.SHOT.replace(".png", "-phone.png"), "#phoneFile");
+  await page.eval(`${doc}.querySelector(".ph-sheet form").requestSubmit()`);
+  // Send: one file with the journal, the ticks, the expense and the names.
+  await page.eval(`(() => { const w = ${win}; Object.defineProperty(w.navigator, "canShare", { value: undefined, configurable: true }); const make = w.URL.createObjectURL.bind(w.URL); w.URL.createObjectURL = (f) => { w.__sent = f; return make(f); }; ${doc}.querySelector("#vToday [data-send]").click(); })()`);
+  await page.waitFor(`!!${win}.__sent`, 3000, "the file to send");
+  const sent = await page.eval(`${win}.__sent.text()`);
+  assert.deepEqual(JSON.parse(sent).journal[today].done, ["Caffè Pedrocchi"]);
+  assert.equal(await page.eval(`${doc}.querySelector("[data-journal-send]").hidden`), true, "sent");
+  await page.eval(`document.getElementById("phoneFile").remove()`);
+
+  // In the app: Journal → Import from phone.
+  await page.eval(`document.querySelector("[data-journal]").click()`);
+  await page.waitFor(`document.querySelector(".journal-dialog")?.open && !!document.querySelector("[data-jr-import]")`, 5000, "the Journal window");
+  await page.eval(`(() => { const i = document.querySelector("[data-jr-import]"), dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(sent)}], "phone.json", { type: "application/json" })); i.files = dt.files; i.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(`!!planner.state().journal?.["${today}"]`, 3000, "the entry in the app");
+  assert.deepEqual(await page.eval(`planner.state().people`), ["Mia", "Tom"], "the names given on the phone");
+  assert.deepEqual(await page.eval(`(({ what, amount, paidBy, shares }) => ({ what, amount, paidBy, shares }))(Object.values(planner.state().expenses)[0])`), { what: "Lunch", amount: 30, paidBy: "Mia", shares: { Tom: 10 } });
+  assert.match(await page.eval(`document.querySelector(".jr-day .jr-plan").textContent`), /Ticked on the phone: Caffè Pedrocchi/);
+
+  // Work out the day: the entry and the plan go to the model; what comes back is the day as it went.
+  await page.eval(`window.__e2e.journal = { day: { date: "${today}", city: "Padua", title: "Market day", estimatedCost: 30, from: planner.state().journal["${today}"].at, notes: "They skipped the chapel.",
+    items: [{ time: "11:00", place: "Market", description: "Looked around.", kind: "activity" }, { time: "13:00", place: "Lunch at the market", description: "Mia paid.", kind: "meal", cost: 30 }],
+    expenses: [{ what: "Souvenir", amount: 8, currency: "EUR", paidBy: "Tom", split: ["Tom"], kind: "shopping" }], unclear: ["what Tom had"] } }`);
+  await page.eval(`document.querySelector("[data-jr-work]").click()`);
+  await page.waitFor(`!!planner.state().actual?.["${today}"]`, 5000, "the day as it went");
+  const asked = await page.eval(`window.__e2e.journalAsked`);
+  assert.match(asked.text, /Skipped the chapel/);
+  assert.deepEqual([asked.planned.items.length, asked.done, asked.people], [2, ["Caffè Pedrocchi"], ["Mia", "Tom"]]);
+  assert.match(await page.eval(`document.querySelector(".jr-actual").textContent`), /Market day[\s\S]*Lunch at the market[\s\S]*Left open: what Tom had[\s\S]*Souvenir/);
+  if (process.env.SHOT) await page.screenshot(process.env.SHOT, ".journal-dialog");
+  // The expense it mentions goes to Costs only when they say so, once.
+  await page.eval(`document.querySelector("[data-jr-add]").click()`);
+  await page.waitFor(`Object.keys(planner.state().expenses).length === 2 && !document.querySelector("[data-jr-add]")`, 3000, "the souvenir in Costs");
+  // An entry changed afterwards says so.
+  await page.eval(`(() => { const t = document.querySelector("[data-jr-text]"); t.value += " Then gelato."; t.dispatchEvent(new Event("input")); t.dispatchEvent(new Event("change")); })()`);
+  await page.waitFor(`!!document.querySelector(".jr-stale")`, 3000, "the entry changed since");
+  await page.eval(`document.querySelector(".journal-dialog").close()`);
+
+  // The itinerary: the plan as it was, and Actual shows the day as it went.
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[0].place`), "Cappella degli Scrovegni", "the plan is untouched");
+  await page.waitFor(`!!document.querySelector('[data-actual="1"]')`, 3000, "the Planned / Actual switch");
+  await page.eval(`document.querySelector('[data-actual="1"]').click()`);
+  await page.waitFor(`!!document.querySelector(".actual-day .actual-tag.real")`, 3000, "the actual day");
+  assert.match(await page.eval(`document.querySelector(".actual-day").textContent`), /Market day[\s\S]*Lunch at the market/);
+  await page.eval(`document.querySelector('[data-actual="0"]').click()`);
+  await page.waitFor(`!!document.querySelector('.item[data-k="0-0"]')`, 3000, "the plan again");
+});
+
+test("the phone viewer (for iPhones): a trip file is picked, kept on the phone and runs with its storage; Export shows how", async () => {
+  const fs = await import("node:fs");
+  const viewer = fs.readFileSync(new URL("../../site/phone/index.html", import.meta.url), "utf8");
+  const today = new Date().toLocaleDateString("sv");
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Viewer trip", travelers: 1, currency: "EUR", expenses: undefined, journal: undefined,
+    itinerary: { summary: "", destination: "Padua", totalEstimatedCost: 0, days: [{ date: "${today}", city: "Padua", title: "Chapels", estimatedCost: 0, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "" }] }] } })`);
+  await page.waitFor(`!!document.querySelector(".item")`, 10000, "the plan");
+  // Export → For iPhone: the steps, a QR code for the viewer page, and the file.
+  await page.eval(`document.querySelector("[data-export]").click()`);
+  await page.waitFor(`[...document.querySelectorAll("button")].some((b) => /For iPhone/.test(b.textContent))`, 3000, "For iPhone in the Export menu");
+  await page.eval(`[...document.querySelectorAll("button")].find((b) => /For iPhone/.test(b.textContent)).click()`);
+  await page.waitFor(`!!document.querySelector(".iphone-dialog[open] .qr svg")`, 3000, "the guide with its QR code");
+  assert.match(await page.eval(`document.querySelector(".iphone-dialog").textContent`), /Add to Home Screen[\s\S]*Open a trip file/);
+  if (process.env.SHOT) await page.screenshot(process.env.SHOT.replace(".png", "-guide.png"), ".iphone-dialog");
+  await page.eval(`document.querySelector(".iphone-dialog").close()`);
+
+  // The viewer page, as the phone's browser would have it (in a frame here; its own storage cleared first).
+  const file = await page.eval(`planner.offlineHtml()`);
+  await page.eval(`(async () => { indexedDB.deleteDatabase("trip-phone-viewer"); Object.keys(localStorage).filter((k) => k.startsWith("trip-phone")).forEach((k) => localStorage.removeItem(k));
+    const f = document.createElement("iframe"); f.id = "viewer"; f.style.cssText = "width:400px;height:800px"; f.srcdoc = ${JSON.stringify(viewer)}; document.body.append(f); })()`);
+  const v = `document.getElementById("viewer").contentDocument`;
+  await page.waitFor(`!!${v}?.getElementById("pick") && !${v}.getElementById("main").hidden`, 5000, "the viewer's first page");
+  // Something that isn't a trip file is said so.
+  const pick = (text) => page.eval(`(() => { const i = ${v}.getElementById("file"), dt = new DataTransfer(); dt.items.add(new File([${JSON.stringify(text)}], "x.html", { type: "text/html" })); i.files = dt.files; i.dispatchEvent(new Event("change")); })()`);
+  await pick("<p>hello</p>");
+  await page.waitFor(`/isn't a trip file/.test(${v}.getElementById("err").textContent)`, 3000, "not a trip file");
+  // The trip file: shown at once, with Today working (its scripts run and it has storage).
+  await pick(file);
+  const t = `${v}.getElementById("frame").contentDocument`;
+  await page.waitFor(`!${v}.getElementById("view").hidden && !!${t}?.querySelector("#vToday:not([hidden]) [data-journal]")`, 8000, "the trip, on Today");
+  assert.equal(await page.eval(`${v}.getElementById("tripName").textContent`), "Viewer trip");
+  await page.eval(`(() => { const j = ${t}.querySelector("[data-journal]"); j.value = "Rain all day."; j.dispatchEvent(new Event("input")); })()`);
+  await page.waitFor(`Object.keys(localStorage).some((k) => k.startsWith("trip-phone:") && /Rain all day/.test(localStorage.getItem(k)))`, 3000, "the entry kept on the phone");
+  if (process.env.SHOT) await page.screenshot(process.env.SHOT.replace(".png", "-viewer.png"), "#viewer");
+  // Back to the list: the trip is there to open again.
+  await page.eval(`${v}.getElementById("back").click()`);
+  await page.waitFor(`${v}.querySelectorAll(".trip").length === 1 && !${v}.getElementById("home").hidden`, 3000, "the trip in the list");
+  assert.match(await page.eval(`${v}.querySelector(".trip").textContent`), /Viewer trip[\s\S]*1 day/);
+  // Opened again later (the page loaded afresh, the trip picked from the list): the entry is still there.
+  await page.eval(`document.getElementById("viewer").srcdoc = ${JSON.stringify(viewer)} + "<!-- again -->"`);
+  await page.waitFor(`${v}?.querySelectorAll(".trip").length === 1`, 5000, "the kept trip after a reload");
+  await page.eval(`${v}.querySelector("[data-open]").click()`);
+  await page.waitFor(`${t}?.querySelector("[data-journal]")?.value === "Rain all day."`, 8000, "what was written, still there");
+  await page.eval(`document.getElementById("viewer").remove()`);
 });

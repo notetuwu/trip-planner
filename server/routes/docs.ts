@@ -83,6 +83,26 @@ export async function findDoc(trip: string, file: string): Promise<Buffer | null
   return null;
 }
 
+/** A kept file to search: `key` names this copy of it (for what's been read of it), `read` gets its bytes. */
+export interface DocFile { name: string; key: string; read: () => Promise<Buffer> }
+
+/** Every file a trip's chat can search: those on this computer and in the trip's sync folders (one of each name, as
+ *  findDoc opens it). */
+export async function tripDocs(trip: string): Promise<DocFile[]> {
+  const out = new Map<string, DocFile>();
+  const add = (f: DocFile) => { if (docName(f.name) === f.name && !out.has(f.name)) out.set(f.name, f); };
+  for (const name of fs.existsSync(localDir()) ? fs.readdirSync(localDir()) : []) {
+    const file = path.join(localDir(), name), stat = fs.statSync(file);
+    if (stat.isFile() && stat.size <= 15_000_000) add({ name, key: `${file}|${stat.mtimeMs}|${stat.size}`, read: async () => fs.readFileSync(file) });
+  }
+  for (const d of tripDirs(trip)) {
+    // (A folder that can't be reached right now is left out.)
+    const docs = await syncDocs(d.dir, false).catch(() => "");
+    for (const f of docs ? await store.listDocs(docs).catch(() => []) : []) add({ name: f.name, key: f.id, read: () => store.getDoc(f.id) });
+  }
+  return [...out.values()];
+}
+
 export async function handleDocs(req: Req, res: Res, url: URL) {
   const trip = cleanName(url.searchParams.get("trip"));
   try {

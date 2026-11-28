@@ -1,6 +1,6 @@
 // Who changed which part of a trip, joining those stamps, and what changed in words.
 import { describe, expect, it } from "vitest";
-import { changedParts, changesTo, dayKey, describePart, joinEdits, joinLogs, logChanges, mergeTrip, partLabel, partOfPath, partsOf, removedStops, setPart, stamp } from "../shared/edits";
+import { changedParts, changesTo, dayKey, describePart, joinEdits, joinLogs, logChanges, manyDays, mergeTrip, partBefore, partLabel, partOfPath, partsOf, putBack, removedStops, setPart, stamp } from "../shared/edits";
 
 const day = (date: string, city: string, places: string[]) => ({ date, city, title: city, estimatedCost: 0, items: places.map((place, i) => ({ time: `${9 + i}:00`, place, description: "" })) });
 const trip = (extra: object = {}) => ({
@@ -144,5 +144,35 @@ describe("removed stops", () => {
     const log = [{ key: "plan", by: "Lena", at: 1, what: "6 days changed" }, { key: "stays", by: "Lena", at: 2, what: "added Bern" }];
     expect(changesTo(log, ["day:2026-05-01"])).toEqual([log[0]]);
     expect(changesTo(log, ["stays"])).toEqual([log[1]]);
+  });
+});
+
+describe("putting one change back", () => {
+  it("names what each changed part held before (the first's, for changes joined into one), and puts it back", () => {
+    const t = trip() as any, u = structuredClone(t), v = structuredClone(t);
+    u.itinerary.days[1].items.push({ time: "12:00", place: "Lunch", description: "" });
+    v.itinerary.days[1].items = [];
+    const one = logChanges(t, u, { by: "Me" }, 100);
+    expect(one).toEqual([{ key: "day:2027-04-02", by: "Me", at: 100, what: "added Lunch", was: "100" }]);
+    // Changed again soon after: still one change, back to before the first.
+    const two = logChanges({ ...u, log: one }, { ...v, log: one }, { by: "Me" }, 200);
+    expect(two).toMatchObject([{ key: "day:2027-04-02", at: 200, was: "100" }]);
+    const before = partBefore(t, "day:2027-04-02");
+    expect(putBack(v, "day:2027-04-02", before)).toBe(true);
+    expect(v.itinerary.days).toEqual(t.itinerary.days);
+    // A photo carries where it was instead.
+    u.photoSpots.a = { lat: 9, lng: 9 };
+    expect(logChanges(t, u, { by: "Me" }, 300).find((c) => c.key === "photo:a")).not.toHaveProperty("was");
+  });
+
+  it("puts a whole plan back for a change to many days at once", () => {
+    const days = (n: number, place: string) => Array.from({ length: n }, (_x, i) => day(`2027-04-${String(i + 1).padStart(2, "0")}`, "Kyoto", [place]));
+    const t = trip({ itinerary: { summary: "s", totalEstimatedCost: 0, days: days(6, "Old") } }) as any, u = trip({ itinerary: { summary: "s", totalEstimatedCost: 0, days: days(6, "New") } }) as any;
+    const [c] = logChanges(t, u, { by: "Me" }, 100);
+    expect(manyDays(c)).toBe(true);
+    expect(putBack(u, c.key, partBefore(t, c.key, true))).toBe(true);
+    expect(u.itinerary).toEqual(t.itinerary);
+    // A day that isn't in the plan any more can't be put back.
+    expect(putBack(trip() as any, "day:2031-01-01", { value: day("2031-01-01", "Kyoto", ["x"]) })).toBe(false);
   });
 });

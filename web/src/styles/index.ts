@@ -14,5 +14,6 @@ import "./itinerary.css";
 import "./days.css";
 import "./print.css";
 import "./setup.css";
+import "./games.css";
 
 export const APP_CSS = [base, settings, map, itinerary, days, print].join("\n");

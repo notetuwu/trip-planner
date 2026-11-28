@@ -8,6 +8,8 @@ import { runClaude } from "../ai/claude";
 import { runLocal } from "../ai/local";
 import { runResponses } from "../ai/responses";
 import { runGemini } from "../ai/gemini";
+import { fixChecked, planChecked } from "../ai/checked/planner";
+import { ensureOllama } from "../ai/ollama-start";
 import { verifyWebsites } from "../ai/verify-links";
 import type { Runner, Trip } from "../ai/types";
 import { errMsg } from "../config";
@@ -20,6 +22,7 @@ import { stayDaylight } from "../trip/daylight";
 import { roadRoutes } from "../trip/drives";
 import { trainConnections } from "../trip/trains";
 import { nearbyPlaces } from "../trip/nearby";
+import { readPrefs } from "../trip/prefs";
 import { type Req, type Res, readJson, sendJson } from "../util/http";
 import { addDays } from "../config";
 
@@ -33,7 +36,7 @@ function validateTrip(t: Trip | null) {
 }
 
 /** Local models, the Anthropic API, Google Gemini, OpenAI/OpenRouter, or (by default) Claude Code. */
-function runnerFor(model: string): Runner {
+export function runnerFor(model: string): Runner {
   if (model.startsWith("local|")) return runLocal;
   if (model.startsWith("api|anthropic|")) return runAnthropic;
   if (model.startsWith("api|gemini|")) return runGemini;
@@ -100,7 +103,7 @@ export function scopeTrip(trip: Trip, places: Place[], scope: { dates: Set<strin
 }
 
 /** The ticked lists' places plus the ones picked on the map. */
-async function tripPlaces(trip: Trip): Promise<Place[]> {
+export async function tripPlaces(trip: Trip): Promise<Place[]> {
   const extra = Array.isArray(trip.extraPlaces) ? trip.extraPlaces.filter((p) => p?.title) : [];
   // Older map-picked places were saved without an address; look it up so the model knows where they are.
   for (const p of extra) {
@@ -121,6 +124,44 @@ async function tripPlaces(trip: Trip): Promise<Place[]> {
   return [...mergeListPlaces(located, trip.stays, trip.mustSee), ...extra];
 }
 
+/**
+ * What the server gathers before any planner runs: where the stays are, holidays, daylight, real road routes and train
+ * connections, and real places around the stays (only the ones a re-plan of some days needs). Returns the places left
+ * for the plan. Exported for the checked planner's live test (tests/live).
+ */
+export async function prepareTrip(trip: Trip, places: Place[], scope: ReturnType<typeof partialScope>, send: (ev: StreamEvent) => void) {
+  send({ type: "status", text: "Looking up holidays and real places near your stays…" });
+  // Stays the page hadn't located (the request came too early, or from elsewhere): look them up here, since
+  // holidays, daylight, nearby places and step-by-step planning all go by where the stays are.
+  for (const s of trip.stays) {
+    if (typeof s.lat === "number" && typeof s.lng === "number" || !s.city) continue;
+    const hit = await locateTown(s.city, s.cc).catch(() => null);
+    if (hit) Object.assign(s, { lat: hit.lat, lng: hit.lng, cc: s.cc || hit.cc, country: s.country || hit.country });
+  }
+  trip.holidays = await tripHolidays(trip.stays).catch(() => []);
+  trip.daylight = await stayDaylight(trip.stays).catch(() => []);
+  trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));
+  trip.trains = await trainConnections(trip, places, (text) => send({ type: "status", text })).catch(() => []);
+  // What they wrote, read by the model into diets, allergies and the kinds of place they asked for (any language), so
+  // the lists below can look for them; the trip's own setting for famous sights or hidden gems wins over the wishes.
+  if (!trip.prefs) {
+    send({ type: "status", text: "Reading your wishes…" });
+    trip.prefs = await readPrefs(trip);
+  }
+  // (A copy: what readPrefs returns is its cache's, or the shared empty one.)
+  if (trip.placeMix) trip.prefs = { ...trip.prefs, placeMix: trip.placeMix };
+  // A re-plan of some days only needs the places around their stays.
+  trip.nearby = await nearbyPlaces(scope ? trip.stays.filter((_, i) => scope.stays.has(i)) : trip.stays, trip.prefs, (text) => send({ type: "status", text }));
+  if (scope) places = scopeTrip(trip, places, scope);
+  // The page uses these to put stops on the map at their exact spot.
+  send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food, ...(n.wished || [])].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
+  return places;
+}
+
+/** Settings → Plan style → Planner: the checked planner makes whole new plans and takes the page's fix round for
+ *  them (so one set of rules applies); re-planning a day, changes and revisions stay with the usual planner of the model. */
+export const usesChecked = (trip: Trip, planner = tune().planner) => planner === "checked" && !trip.redoDay && !trip.edit && !trip.revise;
+
 export async function handleItinerary(req: Req, res: Res) {
   const trip: Trip | null = await readJson(req);
   if (!trip) return sendJson(res, 400, { error: "Invalid JSON" });
@@ -135,23 +176,7 @@ export async function handleItinerary(req: Req, res: Res) {
   const abort = new AbortController();
   res.on("close", () => { if (!res.writableFinished) abort.abort(); });
   try {
-    send({ type: "status", text: "Looking up holidays and real places near your stays…" });
-    // Stays the page hadn't located (the request came too early, or from elsewhere): look them up here, since
-    // holidays, daylight, nearby places and step-by-step planning all go by where the stays are.
-    for (const s of trip.stays) {
-      if (typeof s.lat === "number" && typeof s.lng === "number" || !s.city) continue;
-      const hit = await locateTown(s.city, s.cc).catch(() => null);
-      if (hit) Object.assign(s, { lat: hit.lat, lng: hit.lng, cc: s.cc || hit.cc, country: s.country || hit.country });
-    }
-    trip.holidays = await tripHolidays(trip.stays).catch(() => []);
-    trip.daylight = await stayDaylight(trip.stays).catch(() => []);
-    trip.drives = await roadRoutes(trip, (text) => send({ type: "status", text }));
-    trip.trains = await trainConnections(trip, places, (text) => send({ type: "status", text })).catch(() => []);
-    // A re-plan of some days only needs the places around their stays.
-    trip.nearby = await nearbyPlaces(scope ? trip.stays.filter((_, i) => scope.stays.has(i)) : trip.stays, `${trip.interests || ""} ${trip.notes || ""}`, (text) => send({ type: "status", text }));
-    if (scope) places = scopeTrip(trip, places, scope);
-    // The page uses these to put stops on the map at their exact spot.
-    send({ type: "pois", places: trip.nearby.flatMap((n) => [...n.sights, ...n.food].map(({ name, lat, lng, hours, website }) => ({ name, lat, lng, city: n.city, hours, website }))) });
+    places = await prepareTrip(trip, places, scope, send);
     // A research model of its own looks things up first; the planning model then doesn't search itself. If it can't,
     // the planning model researches as it would without one.
     let researched: Awaited<ReturnType<typeof researchWith>> | null = null;
@@ -169,7 +194,10 @@ export async function handleItinerary(req: Req, res: Res) {
         send({ type: "status", text: `The research model didn't work (${errMsg(e).slice(0, 160)}), so the planning model researches…` });
       }
     }
-    const run = runnerFor(String(trip.model || ""));
+    const checked = usesChecked(trip);
+    // The checked planner talks to Ollama itself (runLocal would otherwise start it if it stopped).
+    if (checked && String(trip.model || "").startsWith("local|ollama|") && !(await ensureOllama())) throw new Error("Ollama isn't running and couldn't be started. Start Ollama, then generate again.");
+    const run = checked ? (trip.fix ? fixChecked : planChecked) : runnerFor(String(trip.model || ""));
     const result = await run(trip, places, send, abort.signal);
     if (researched) {
       result.reasoning = [`${researched.model} researched online first.`, result.reasoning].filter(Boolean).join("\n\n");

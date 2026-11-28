@@ -1,14 +1,16 @@
 // Lookups the trip chat can ask for before it answers, instead of answering from memory: where a place is (with how far
-// it is from the trip's towns), a road route between two places, or a web search. The model writes LOOKUP lines; the
-// results go back to it and it's asked again (see companion.ts). They work the same with every model.
+// it is from the trip's towns), a road route between two places, a web search, or the trip's documents and the
+// traveler's Gmail (chat-find.ts). The model writes LOOKUP lines; the results go back to it and it's asked again (see
+// companion.ts). They work the same with every model.
 import type { LatLng } from "../../shared/types";
 import { errMsg } from "../config";
 import { bestHit, countryCode, geocodeOne } from "../geo/geocode";
 import { nominatim, nominatimHit } from "../geo/providers";
 import { waitForRoute } from "../geo/routing";
 import { webSearch } from "../research/search";
+import { type FindContext, searchDocs, searchGmail } from "./chat-find";
 
-export interface Lookup { kind: "place" | "route" | "search" | "trip"; args: string[] }
+export interface Lookup { kind: "place" | "route" | "search" | "trip" | "docs" | "gmail"; args: string[] }
 /** What an answer relied on, listed under it with links: a web page, a place on the map, or a road route (its stops in
  *  order, with the routed distance and time). */
 export type Source =
@@ -27,7 +29,7 @@ export function webSources(text: string): Source[] {
 }
 export interface Town { name: string; lat: number; lng: number }
 
-const LINE = /^[ \t>*`-]*LOOKUP:\s*(place|route|search|trip)\s*\|\s*(.+?)[ \t`]*$/gim;
+const LINE = /^[ \t>*`-]*LOOKUP:\s*(place|route|search|trip|docs|gmail)\s*\|\s*(.+?)[ \t`]*$/gim;
 
 /** The LOOKUP lines in a reply (at most `max`). */
 export function parseLookups(text: string, max = 3): Lookup[] {
@@ -127,14 +129,17 @@ async function route(stops: string[], sources: Source[]) {
 }
 
 /** Runs the lookups; each result is labelled with what was asked. */
-export async function runLookups(lookups: Lookup[], towns: Town[], onStatus: (s: string) => void, sources: Source[] = [], data: Record<string, string> = {}): Promise<string> {
+export async function runLookups(lookups: Lookup[], towns: Town[], onStatus: (s: string) => void, sources: Source[] = [], data: Record<string, string> = {}, find?: FindContext): Promise<string> {
   const out: string[] = [];
   for (const l of lookups) {
     const what = `${l.kind}: ${l.args.join(" | ")}`;
-    onStatus(l.kind === "trip" ? `Looking at the trip's ${l.args[0]}…` : l.kind === "search" ? `Searching the web for "${l.args[0]}"…` : l.kind === "route" ? `Looking up the route ${l.args.join(" → ")}…` : `Looking up where ${l.args[0]} is…`);
+    onStatus(l.kind === "docs" ? "Searching the trip's documents…" : l.kind === "gmail" ? "Searching your Gmail…" : l.kind === "trip" ? `Looking at the trip's ${l.args[0]}…` : l.kind === "search" ? `Searching the web for "${l.args[0]}"…` : l.kind === "route" ? `Looking up the route ${l.args.join(" → ")}…` : `Looking up where ${l.args[0]} is…`);
     try {
       let text: string;
-      if (l.kind === "trip") {
+      if (l.kind === "docs" || l.kind === "gmail") {
+        // (A "|" in a Gmail search is part of it, not a second argument.)
+        text = find ? await (l.kind === "docs" ? searchDocs : searchGmail)(l.args.join(" "), find) : "That can't be searched here.";
+      } else if (l.kind === "trip") {
         const topic = l.args[0].toLowerCase().trim();
         text = data[topic] ?? `Nothing called "${topic}". There is: ${Object.keys(data).join(", ") || "nothing"}.`;
       } else if (l.kind === "place") text = await place(l.args.join(", "), towns, sources);

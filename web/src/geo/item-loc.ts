@@ -6,7 +6,7 @@ import { geo, geoKey, geocode } from "./geocode";
 import { addDays } from "../core/format";
 import { type Loc, countryCodes, distKm, placeLoc, sameName as plainName, stayLoc, stayOn } from "./locate";
 import { onWayOf, splitGroup, transferEnds } from "../trip/modes";
-import { activityTown } from "./stop-text";
+import { activityTown, genericDestination, vagueWhere } from "./stop-text";
 import { namesRide } from "../itinerary/journey-model";
 import { pointUrl, searchUrl } from "../core/maps-links";
 
@@ -24,15 +24,20 @@ export const daySegments = (d: Day) => String(d.city || "").replace(/\s*\(\s*via
 const JUNK_KIND = /^(employment_agency|industrial|office|company|commercial|retail|government|bus_stop|stop_position|parking|post_box|atm|vending_machine|residential|primary|secondary|tertiary|unclassified|service|trunk|motorway|living_street)$/;
 const usable = (g: GeoHit | null | undefined): g is GeoHit => !!g && !JUNK_KIND.test(g.kind || "");
 
+/** The farthest a day's town (or a transfer's destination) can be from every stay of that day. */
+const TOWN_REACH_KM = 300;
+
 /** A town of the day, looked up both within the trip's countries and anywhere: Vaduz is in Liechtenstein even when
  *  nobody sleeps there (searched only in the stays' countries, "Vaduz" came back as something in Sardinia). Of the
  *  two, the one nearer the day's stays wins. */
 function townHit(seg: string, d: Day): GeoHit | null {
-  const found = [geo[geoKey(seg, countryCodes())], geo[geoKey(seg)]].filter(usable);
-  if (found.length < 2) return found[0] || null;
   const refs = staysOn(d);
-  if (!refs.length) return found[0];
   const dist = (g: GeoHit) => Math.min(...refs.map((r) => distKm(g, r)));
+  // Nothing a day visits is farther from where it sleeps than this: a palace found by that name only on another side of
+  // the continent is a different one.
+  const found = [geo[geoKey(seg, countryCodes())], geo[geoKey(seg)]].filter(usable).filter((g) => !refs.length || dist(g) <= TOWN_REACH_KM);
+  if (found.length < 2) return found[0] || null;
+  if (!refs.length) return found[0];
   return dist(found[1]) < dist(found[0]) - 1 ? found[1] : found[0];
 }
 /** Both lookups of a town (see townHit). */
@@ -88,6 +93,7 @@ function townSoFar(x: ItineraryItem, d: Day, towns: Town[]): Town | null {
     if (named) { at = named; continue; }
     // A station or spot rather than a town ("Saga-Arashiyama Station"): where it is, named after the nearest of the
     // day's towns for lookups ("…, Kyoto").
+    if (genericDestination(cleanDest(ends[1]))) continue;
     const spot = townHit(cleanDest(ends[1]), d);
     if (spot && typeof spot.lat === "number") { // any result will do here, even the bus stop outside the station
       const near = towns.reduce<Town | null>((b, t) => (!b || distKm(t.loc, spot) < distKm(b.loc, spot) ? t : b), null);
@@ -183,7 +189,7 @@ function onTheDrive(loc: Loc, d: Day) {
 // into some other inn in town, so require a distinctive word of the name (not "Gasthaus", "Café" or the town).
 const GENERIC_WORDS = new Set(("gasthaus gasthof restaurant ristorante trattoria osteria cafe caffe bakery baeckerei backerei hotel pension bar pub "
   + "bistro kirche church chiesa park street strasse town walk trail tour old altstadt centre center city market markt house haus lunch dinner "
-  + "mount mountain monte mont peak summit gipfel lake lago").split(" "));
+  + "mount mountain monte mont peak summit gipfel lake lago port porto harbour harbor hafen pier ferry terminal station").split(" "));
 const words = (s: string) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/ß/g, "ss").split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
 function sameName(query: string, hit: Loc & { names?: string[] }, d: Day) {
   const towns = new Set(daySegments(d).flatMap(words));
@@ -223,6 +229,7 @@ function whereQueries(x: ItineraryItem, d: Day, town: string): string[] {
 function whereHit(x: ItineraryItem, d: Day): GeoHit | null {
   const town = itemTown(x, d), home = town?.loc;
   if (!home) return null;
+  if (vagueWhere(String(x.where), [...daySegments(d), ...state.stays.map((s) => s.city)])) return null;
   for (const q of whereQueries(x, d, town!.name)) {
     const g = geo[geoKey(q, stopCc(town!), nearOf(home), true)];
     if (usable(g) && distKm(g, home) < 60) return g;
@@ -255,7 +262,9 @@ function arrivalQueries(x: ItineraryItem, d: Day) {
 export function arrivalSpot(x: ItineraryItem, d: Day): Loc | null {
   const ends = transferEnds(x);
   if (!ends) return null;
-  const dest = cleanDest(ends[1]), town = townHit(dest, d);
+  const dest = cleanDest(ends[1]);
+  if (genericDestination(dest)) return null;
+  const town = townHit(dest, d);
   const near = (l: Loc) => (farFromDay(l, d) ? null : l);
   for (const query of arrivalQueries(x, d)) {
     const g = geo[geoKey(query.q, query.cc, query.near, true)];
@@ -338,13 +347,15 @@ export function itemLoc(x: ItineraryItem, day: Day, byTitle: ByTitle): Loc | nul
   // A transfer is where it arrives.
   const arrival = arrivalSpot(x, day);
   if (arrival) return arrival;
-  // Where it says it is (the venue of an exhibition, the mall a shop is in).
-  const where = x.where ? whereHit(x, day) : null;
-  if (where) return where;
+  // Breakfast, checking in and out: at the stay, whatever else the stop says about where it is.
   const p = byTitle.get(x.place);
   const hotel = !p && hotelLoc(x, day);
   if (hotel) return hotel;
+  // A saved place with a known location is where it is; otherwise where the stop says it is (the venue of an
+  // exhibition, the mall a shop is in).
   const known = p && placeLoc(p) ? { loc: placeLoc(p)!, where: p.address || "" } : null;
+  const where = !known && x.where ? whereHit(x, day) : null;
+  if (where) return where;
   const poi = !known && poiFor(x.place, day);
   const hit = known || (poi && { loc: { lat: poi.lat, lng: poi.lng }, where: poi.city || "" });
   const home = dayHome(day), found = stopHit(x, day);

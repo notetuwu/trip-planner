@@ -15,6 +15,17 @@ const itinerary = {
 };
 
 describe("planning prompt", () => {
+  it("picks famous sights or hidden gems as the trip says, and carries the read preferences", () => {
+    expect(buildPrompt(trip, [])).toMatch(/Choosing sights: mix the essential highlights/);
+    expect(buildPrompt({ ...trip, placeMix: "popular" }, [])).toMatch(/Choosing sights: the essential highlights .* lesser-known spots only when a day has room left/);
+    expect(buildPrompt({ ...trip, placeMix: "hidden" }, [])).toMatch(/Choosing sights: lesser-known spots and local favourites/);
+    expect(buildPrompt({ ...trip, prefs: { diet: [], allergies: [], avoid: [], wants: [], placeMix: "hidden" } }, [])).toMatch(/Choosing sights: lesser-known/);
+    const p = buildPrompt({ ...trip, prefs: { diet: ["vegan"], allergies: ["nuts"], avoid: [], wants: [{ kind: "lighthouse", what: "a lighthouse" }] }, nearby: [{ city: "Kyoto", sights: [], food: [], wished: [{ name: "Phare de X", kind: "lighthouse", extras: [], lat: 45.7, lng: 4.8, for: "a lighthouse" }] }] }, []);
+    expect(p).toMatch(/every restaurant must suit a vegan diet/);
+    expect(p).toMatch(/Allergies: nuts/);
+    expect(p).toMatch(/asked to see: a lighthouse/);
+    expect(p).toContain("What they asked to see, nearby:\n- Phare de X (lighthouse) {location 45.7,4.8} - asked for: a lighthouse");
+  });
   it("asks Claude Code to research and write notes as text", () => {
     const p = buildPrompt(trip, [], { webTools: true });
     expect(p).toContain("Research online while you plan");

@@ -31,10 +31,10 @@ const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)}
 
 /** A page of emails, newest first: what `query` finds (Gmail's own search words work), else the view's (the inbox, the
  *  booking emails, the emails with PDFs). `next`: the page after it ("" at the end). */
-export async function listMail(account: string, o: { query?: string; view?: string; page?: string } = {}): Promise<{ mails: Mail[]; next: string }> {
+export async function listMail(account: string, o: { query?: string; view?: string; page?: string; max?: number } = {}): Promise<{ mails: Mail[]; next: string }> {
   const query = (o.query || "").trim().slice(0, 300);
   const which: Record<string, string> = query ? { q: query } : o.view === "bookings" ? { q: BOOKINGS } : o.view === "files" ? { q: FILES } : { labelIds: "INBOX" };
-  const params = new URLSearchParams({ maxResults: String(PER_PAGE), ...which, ...(o.page && /^[\w-]{1,100}$/.test(o.page) ? { pageToken: o.page } : {}) });
+  const params = new URLSearchParams({ maxResults: String(o.max || PER_PAGE), ...which, ...(o.page && /^[\w-]{1,100}$/.test(o.page) ? { pageToken: o.page } : {}) });
   const found = await get(account, `/messages?${params}`);
   const ids: string[] = (found.messages || []).map((m: any) => String(m.id)).filter((id: string) => /^[\w-]+$/.test(id));
   const mails = await Promise.all(ids.map(async (id): Promise<Mail> => {

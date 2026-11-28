@@ -58,6 +58,21 @@ export interface AskOptions {
   images?: AskImage[];
   /** PDFs to read (the trip chat), base64. Models that can't take a PDF get its text. */
   pdfs?: AskPdf[];
+  /** A JSON schema the answer must follow, enforced by the provider where it can (Ollama's format, OpenAI's and
+   *  LM Studio's json_schema, Claude's output_config.format, Gemini's responseJsonSchema, Claude Code's --json-schema).
+   *  A provider that rejects the schema is asked again in plain JSON mode; the answer is validated in code either way. */
+  schema?: { name: string; schema: object };
+  /** Told whether the schema was enforced by the provider (false: it fell back to plain JSON mode). */
+  onFormat?: (enforced: boolean) => void;
+  /** Most output tokens (Claude API; default 8000). */
+  maxTokens?: number;
+  /** How long one answer may take (default 6 minutes). */
+  timeoutMs?: number;
+}
+
+/** The answer was cut off by the output limit: retrying the same request won't help, a smaller one may. */
+export class TruncatedError extends Error {
+  constructor(what: string) { super(`${what} ran out of room before finishing its answer.`); this.name = "TruncatedError"; }
 }
 export interface AskPdf { name: string; data: string }
 export interface AskImage { type: string; data: string }
@@ -84,7 +99,9 @@ export async function askModel(modelId: string, prompt: string, onProgress: OnPr
 }
 
 async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, opts: AskOptions, retry: boolean, onPiece: (piece: string) => void): Promise<string> {
-  const signal = opts.signal ? AbortSignal.any([AbortSignal.timeout(TIMEOUT), opts.signal]) : AbortSignal.timeout(TIMEOUT);
+  const limit = opts.timeoutMs || TIMEOUT;
+  const signal = opts.signal ? AbortSignal.any([AbortSignal.timeout(limit), opts.signal]) : AbortSignal.timeout(limit);
+  const schema = opts.text ? undefined : opts.schema;
   let tokens = 0, reply = "", thinking = "";
   const tick = (piece = "", thought = "") => {
     reply += piece; thinking += thought;
@@ -101,10 +118,11 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     if (kind === "ollama") {
       const images = opts.images?.length ? { images: opts.images.map((i) => i.data) } : {};
       const numCtx = await askCtx(base, model, prompt, opts.images?.length || 0, !!opts.text && tune().thinking !== "off");
+      let format: unknown = opts.text ? undefined : schema?.schema || "json";
       const chat = (noThink: boolean) => fetch(`${base}/api/chat`, {
         method: "POST", signal,
         body: JSON.stringify({
-          model, stream: true, ...(opts.text ? {} : { format: "json" }), ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt, ...images }],
+          model, stream: true, ...(format ? { format } : {}), ...(noThink ? { think: false } : {}), messages: [{ role: "user", content: prompt, ...images }],
           // Asked again after a loop: a little more randomness and a penalty on repeating, to get it out of the rut.
           options: { num_ctx: numCtx, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { repeat_penalty: 1.15 } : {}) },
           keep_alive: keepAlive(tune().keepAlive),
@@ -114,7 +132,10 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
       // without it reject the option.
       let res = await chat(!opts.text || tune().thinking === "off");
       if (!res.ok) res = await chat(false);
+      // An older Ollama that takes no JSON schema as the format: plain JSON mode.
+      if (!res.ok && schema) { format = "json"; res = await chat(false); }
       if (!res.ok) throw new Error(`Ollama: ${(await res.text()).slice(0, 300)}`);
+      if (schema) opts.onFormat?.(format !== "json");
       let text = "";
       for await (const line of lines(res.body)) {
         if (!line.trim()) continue;
@@ -122,10 +143,11 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
         if (ev.error) throw new Error(`Ollama: ${ev.error}`);
         if (ev.message?.content) { text += ev.message.content; tick(ev.message.content); }
         else if (ev.message?.thinking) tick("", ev.message.thinking);
+        if (ev.done && ev.done_reason === "length") throw new TruncatedError(model);
       }
       return text;
     }
-    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick, retry, opts.images);
+    return openAiChat(`${base}/v1/chat/completions`, {}, model, prompt, signal, tick, retry, opts.images, schema, opts.onFormat);
   }
 
   if (modelId.startsWith("api|")) {
@@ -134,22 +156,42 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
     if (!key) throw new Error(`No ${PROVIDERS[provider].name} API key.`);
     if (provider === "anthropic") {
       const content = opts.images?.length || opts.pdfs?.length ? claudeContent(prompt, opts.images, opts.pdfs) as Anthropic.ContentBlockParam[] : prompt;
-      const stream = new Anthropic({ apiKey: key, fetch: watchedFetch("anthropic") }).messages.stream({ model, max_tokens: 8000, messages: [{ role: "user", content }] }, { signal });
-      stream.on("text", (t) => tick(t));
-      const msg = await stream.finalMessage();
+      const client = new Anthropic({ apiKey: key, fetch: watchedFetch("anthropic") });
+      const send = async (enforce: boolean) => {
+        const params: any = { model, max_tokens: opts.maxTokens || 8000, messages: [{ role: "user", content }],
+          ...(enforce && schema ? { output_config: { format: { type: "json_schema", schema: schema.schema } } } : {}) };
+        const stream = client.messages.stream(params, { signal });
+        stream.on("text", (t) => tick(t));
+        return stream.finalMessage();
+      };
+      let msg: Anthropic.Message;
+      try { msg = await send(true); if (schema) opts.onFormat?.(true); }
+      catch (e) {
+        // A model without structured outputs (or a schema it won't take): plain JSON, checked in code.
+        if (!schema || !(e instanceof Anthropic.BadRequestError)) throw e;
+        reply = ""; opts.onFormat?.(false);
+        msg = await send(false);
+      }
+      if (msg.stop_reason === "max_tokens") throw new TruncatedError(model);
+      if (msg.stop_reason === "refusal") throw new Error(`${model} declined to answer.`);
       return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
     }
     if (provider === "gemini") {
-      return askGemini({ model, prompt, json: !opts.text, images: [...(opts.images || []), ...(opts.pdfs || []).map((p) => ({ type: "application/pdf", data: p.data }))], signal, retry, tick, onWait: opts.onRetry });
+      return askGemini({ model, prompt, json: !opts.text, schema: schema?.schema, onFormat: opts.onFormat, images: [...(opts.images || []), ...(opts.pdfs || []).map((p) => ({ type: "application/pdf", data: p.data }))], signal, retry, tick, onWait: opts.onRetry });
     }
     // OpenAI / OpenRouter: the Responses API, streamed.
-    const res = await watchedFetch(provider)(`${BASE[provider]}/responses`, {
+    const ask = (enforce: boolean) => watchedFetch(provider)(`${BASE[provider]}/responses`, {
       method: "POST", signal, headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model, stream: true, input: opts.images?.length || opts.pdfs?.length
         ? [{ role: "user", content: [{ type: "input_text", text: prompt }, ...(opts.images || []).map((i) => ({ type: "input_image", image_url: dataUrl(i) })),
           ...(opts.pdfs || []).map((p) => ({ type: "input_file", filename: p.name, file_data: `data:application/pdf;base64,${p.data}` }))] }]
-        : prompt }),
+        : prompt,
+      ...(enforce && schema ? { text: { format: { type: "json_schema", name: schema.name, schema: schema.schema, strict: true } } } : {}) }),
     });
+    let res = await ask(true);
+    // A model or router that takes no strict schema: plain JSON, checked in code.
+    if (!res.ok && schema && res.status === 400) { opts.onFormat?.(false); res = await ask(false); }
+    else if (res.ok && schema) opts.onFormat?.(true);
     if (!res.ok) throw new Error(`${PROVIDERS[provider].name}: ${(await res.text()).slice(0, 300)}`);
     let text = "";
     for await (const line of lines(res.body)) {
@@ -160,10 +202,11 @@ async function askOnce(modelId: string, prompt: string, onProgress: OnProgress, 
       if (ev.type === "response.output_text.delta" && ev.delta) { text += ev.delta; tick(ev.delta); }
       else if (ev.type === "response.reasoning_summary_text.delta" && ev.delta) tick("", ev.delta);
       if (ev.type === "response.completed" && !text) text = ev.response?.output_text || "";
+      if (ev.type === "response.incomplete" && ev.response?.incomplete_details?.reason === "max_output_tokens") throw new TruncatedError(model);
     }
     return text;
   }
-  return askClaudeCli(modelId, prompt, tick, signal, opts.images, opts.pdfs);
+  return askClaudeCli(modelId, prompt, tick, signal, opts.images, opts.pdfs, schema, opts.onFormat, limit);
 }
 
 /** The message as Claude takes it: the pictures and PDFs, then the words. */
@@ -183,39 +226,49 @@ export function withPdfText(prompt: string, pdfs: AskPdf[]) {
 }
 
 /** An OpenAI-compatible chat endpoint (LM Studio, llama.cpp…), streamed. */
-async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false, images?: AskImage[]) {
+async function openAiChat(url: string, headers: Record<string, string>, model: string, prompt: string, signal: AbortSignal, tick: (piece?: string, thought?: string) => void, retry = false, images?: AskImage[],
+  schema?: AskOptions["schema"], onFormat?: AskOptions["onFormat"]) {
   const content = images?.length ? [{ type: "text", text: prompt }, ...images.map((i) => ({ type: "image_url", image_url: { url: dataUrl(i) } }))] : prompt;
-  const res = await fetch(url, {
+  const ask = (enforce: boolean) => fetch(url, {
     method: "POST", signal, headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify({ model, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content }] }),
+    body: JSON.stringify({ model, temperature: retry ? Math.min(1, tune().temperature + 0.3) : tune().temperature, ...(retry ? { frequency_penalty: 0.3 } : {}), stream: true, messages: [{ role: "user", content }],
+      ...(enforce && schema ? { response_format: { type: "json_schema", json_schema: { name: schema.name, schema: schema.schema, strict: true } } } : {}) }),
   });
+  let res = await ask(true);
+  if (!res.ok && schema) { onFormat?.(false); res = await ask(false); }
+  else if (schema) onFormat?.(true);
   if (!res.ok) throw new Error(`${url}: ${(await res.text()).slice(0, 300)}`);
   let text = "";
   for await (const line of lines(res.body)) {
     const data = line.replace(/^data:\s*/, "").trim();
     if (!data || data === "[DONE]" || !line.startsWith("data:")) continue;
-    const delta = JSON.parse(data).choices?.[0]?.delta;
+    const choice = JSON.parse(data).choices?.[0], delta = choice?.delta;
     const piece = delta?.content, thought = delta?.reasoning_content || delta?.reasoning;
     if (piece) { text += piece; tick(piece); }
     else if (typeof thought === "string" && thought) tick("", thought);
+    if (choice?.finish_reason === "length") throw new TruncatedError(model);
   }
   return text;
 }
 
 /** Through the Claude Code CLI (your plan), with no tools; streamed so the progress count moves. */
-function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thought?: string) => void, signal: AbortSignal, images?: AskImage[], pdfs?: AskPdf[]) {
+function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thought?: string) => void, signal: AbortSignal, images?: AskImage[], pdfs?: AskPdf[],
+  schema?: AskOptions["schema"], onFormat?: AskOptions["onFormat"], limit = TIMEOUT) {
   const blocks = !!(images?.length || pdfs?.length);
   return new Promise<string>((resolve, reject) => {
     const bin = findClaude();
     if (!bin) return reject(new Error("Could not find the claude CLI."));
-    // With pictures or PDFs, the message goes in as stream-json (text and file blocks); otherwise as plain text.
+    // With pictures or PDFs, the message goes in as stream-json (text and file blocks); otherwise as plain text. With a
+    // schema, Claude Code hands the answer over as structured output checked against it.
     const args = ["-p", "--output-format", "stream-json", "--verbose", "--include-partial-messages", "--tools", "", "--no-session-persistence",
+      ...(schema ? ["--json-schema", JSON.stringify(schema.schema)] : []),
       ...(blocks ? ["--input-format", "stream-json"] : []), ...(model && model !== "default" ? ["--model", model] : [])];
+    if (schema) onFormat?.(true);
     const env = { ...process.env };
     delete env.ANTHROPIC_API_KEY; delete env.ANTHROPIC_AUTH_TOKEN; // always the plan, never API billing
     const child = spawn(bin, args, { cwd: os.tmpdir(), windowsHide: true, env });
     let buf = "", err = "", result: string | null = null, failed = "";
-    const timer = setTimeout(() => { child.kill(); reject(new Error("Claude timed out")); }, TIMEOUT);
+    const timer = setTimeout(() => { child.kill(); reject(new Error("Claude timed out")); }, limit);
     signal.addEventListener("abort", () => { child.kill(); reject(new Error("Cancelled")); }, { once: true });
     child.stdout.on("data", (d) => {
       buf += d;
@@ -229,7 +282,10 @@ function askClaudeCli(model: string, prompt: string, tick: (piece?: string, thou
           if (delta?.type === "text_delta") tick(delta.text || "");
           else if (delta?.type === "thinking_delta") tick("", delta.thinking || "");
           if (ev.type === "rate_limit_event") noteClaudeLimit(ev.rate_limit_info);
-          if (ev.type === "result") { if (ev.is_error) failed = ev.result || "error"; else result = String(ev.result || ""); }
+          if (ev.type === "result") {
+            if (ev.is_error) failed = ev.result || "error";
+            else result = ev.structured_output != null ? JSON.stringify(ev.structured_output) : String(ev.result || "");
+          }
         } catch { /* not JSON */ }
       }
     });

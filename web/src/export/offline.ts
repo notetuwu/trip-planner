@@ -74,6 +74,16 @@ ${EXTRAS_CSS}
 </head>
 <body>
 <header class="ph-top"><b>${esc(title)}</b><nav class="ph-tabs"><button type="button" data-view="today">Today</button><button type="button" data-view="plan">Plan</button><button type="button" data-view="money">Expenses</button></nav></header>
+<noscript><style>.ph-tabs { display: none; }</style><p class="ph-nojs"><b>This is only a preview of the file.</b> Today, Expenses and the Journal don't work in a preview (an iPhone only previews a downloaded file). Open <b>notetuwu.github.io/trip-planner/phone</b> in Safari, add it to the Home Screen, and pick this file there: it then works fully, also offline. The planner shows the steps under Export → For iPhone.</p></noscript>
+<script>
+  // Something in the file failed to start: said on the page (a phone has no console to look at).
+  window.addEventListener("error", function (e) {
+    if (document.getElementById("phErr")) return;
+    var p = document.createElement("p"); p.id = "phErr"; p.className = "ph-nojs";
+    p.textContent = "Part of this file didn't start (" + (e.message || "unknown error") + (e.lineno ? ", line " + e.lineno : "") + "). The plan below still works; please report this line.";
+    document.body.insertBefore(p, document.body.children[1] || null);
+  });
+<\/script>
 <section id="vToday" class="ph-view" hidden></section>
 <div id="vPlan" class="ph-view">
 <nav class="daynav">${nav}</nav>
@@ -84,7 +94,11 @@ ${EXTRAS_CSS}
 <script>
   const DATA = ${data};
   const EXTRAS = ${extras};
+<\/script>
+<script>
 ${OFFLINE_SCRIPT}
+<\/script>
+<script>
 ${EXTRAS_SCRIPT}
 <\/script>
 </body>

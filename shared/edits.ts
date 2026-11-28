@@ -20,13 +20,13 @@ export type Edits = Record<string, Edit>;
  *  chat may do by itself, and how plans are made. Kept out of the file shared through a folder, and never taken from it. */
 export const PERSONAL = ["chat", "chatSummary", "chatSummarized", "model", "chatModel", "routeModel", "routePlan", "research", "autoFix", "hoursOnline", "chatMode"] as const;
 
-const DETAILS = ["travelers", "people", "dailyBudget", "budgetPer", "currency", "pace", "fitness", "dayStart", "breakfast", "getAround", "interests", "wishes", "notes", "car", "lastRouteWhat"];
+const DETAILS = ["travelers", "people", "dailyBudget", "budgetPer", "currency", "pace", "fitness", "dayStart", "breakfast", "getAround", "placeMix", "interests", "wishes", "notes", "car", "lastRouteWhat"];
 const PLACES = ["marks", "who", "how", "customPlaces", "kept", "lists", "list", "listSuggest", "listChosen"];
 const PACKING = ["packed", "packingExtra"];
 /** Parts that are a few of the trip's own fields together. */
 const GROUPS: Record<string, string[]> = { details: DETAILS, places: PLACES, packing: PACKING };
 /** Parts that are one field of the trip. */
-const FIELDS: Record<string, string> = { stays: "stays", bookings: "bookings", bookahead: "booked", ideas: "ideas", expenses: "expenses" };
+const FIELDS: Record<string, string> = { stays: "stays", bookings: "bookings", bookahead: "booked", ideas: "ideas", expenses: "expenses", journal: "journal", actual: "actual" };
 
 type Trip = Record<string, any>;
 const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -99,6 +99,10 @@ export interface Change {
   /** A photo's spot before and after (unset: none). */
   from?: unknown;
   to?: unknown;
+  /** Names what the part held before this change, which the computer that saved it keeps (saves/.history/<trip>/parts),
+   *  so the change can be put back from the history. Changes joined into one keep the first's. Not on photos (they
+   *  carry `from`) or on changes recorded before this was kept. */
+  was?: string;
 }
 /** How many changes the trip keeps (the oldest go first). */
 export const LOG_MAX = 400;
@@ -131,19 +135,38 @@ export function logChanges(before: Trip, after: Trip, who: { by: string; id?: st
       log.splice(log.indexOf(last), 1);
       c = c.key.startsWith("photo:")
         ? { ...c, from: last.from, what: describePart(c.key, last.from, c.to) }
-        : { ...c, what: joinWords(last.what, c.what) };
+        : { ...c, what: joinWords(last.what, c.what), ...(last.was ? { was: last.was } : {}) };
       if (c.key.startsWith("photo:") && same(c.from, c.to)) return; // moved back where it was
     }
     log.push(c);
   };
   const me = { by: who.by, ...(who.id ? { id: who.id } : {}), at };
-  if (days.length > MANY_DAYS) add({ key: "plan", ...me, what: `${days.length} days changed` });
+  const was = String(at);
+  if (days.length > MANY_DAYS) add({ key: "plan", ...me, what: `${days.length} days changed`, was });
   for (const k of keys) {
     if (days.length > MANY_DAYS && (k.startsWith("day:") || k === "plan")) continue;
     const what = describePart(k, a[k], b[k]) || "changed";
-    add(k.startsWith("photo:") ? { key: k, ...me, what, ...(a[k] !== undefined ? { from: a[k] } : {}), ...(b[k] !== undefined ? { to: b[k] } : {}) } : { key: k, ...me, what });
+    add(k.startsWith("photo:") ? { key: k, ...me, what, ...(a[k] !== undefined ? { from: a[k] } : {}), ...(b[k] !== undefined ? { to: b[k] } : {}) } : { key: k, ...me, what, was });
   }
   return log.slice(-LOG_MAX);
+}
+
+/** A change to many days at once, noted on the plan as a whole (see logChanges). */
+export const manyDays = (c: Pick<Change, "key" | "what">) => c.key === "plan" && /\d+ days changed/.test(c.what);
+
+/** What a part held, to put it back later (see putBack). `whole`: the whole plan with its days (for a change to many
+ *  days at once), not just the plan's own fields. */
+export interface Before { value?: unknown; whole?: boolean }
+export function partBefore(trip: Trip | null | undefined, key: string, whole = false): Before {
+  if (whole) return { value: isObj(trip) ? trip.itinerary : undefined, whole: true };
+  return { value: partsOf(trip)[key] };
+}
+/** Puts a part back as partBefore found it. False when that can't be done (see setPart). */
+export function putBack(trip: Trip, key: string, before: Before): boolean {
+  if (!before.whole) return setPart(trip, key, before.value);
+  if (!isObj(before.value) || !Array.isArray(before.value.days)) return false;
+  trip.itinerary = before.value;
+  return true;
 }
 
 /** Two sides' changes to a trip joined against what both had (shared/merge.ts), with the stamps joined newest-wins
@@ -204,7 +227,7 @@ export function setPart(trip: Trip, key: string, value: unknown): boolean {
  *  are noted on the plan as a whole. */
 export function changesTo(log: Change[], keys: string[]): Change[] {
   const day = keys.some((k) => k.startsWith("day:"));
-  return log.filter((c) => keys.includes(c.key) || (day && c.key === "plan" && /\d+ days changed/.test(c.what)));
+  return log.filter((c) => keys.includes(c.key) || (day && manyDays(c)));
 }
 
 /** The stops the history says were taken off a day and that aren't on it now, newest first. */
@@ -229,12 +252,12 @@ export function partLabel(key: string, trip?: Trip | null): string {
     return i >= 0 ? `Day ${i + 1}${d?.city ? ` · ${short(d.city)}` : d?.title ? ` · ${d.title}` : ""}` : key.startsWith("day:#") ? "A day of the plan" : `The day of ${key.slice(4)}`;
   }
   if (key.startsWith("photo:")) return "Photo on the map";
-  return ({ stays: "Stays", details: "Travelers & style", places: "Places", bookings: "Bookings", bookahead: "Book ahead", packing: "Packing list", ideas: "Ideas & notes", expenses: "Expenses", photoFolders: "Photo folders", plan: "The plan" } as Record<string, string>)[key] || key;
+  return ({ stays: "Stays", details: "Travelers & style", places: "Places", bookings: "Bookings", bookahead: "Book ahead", packing: "Packing list", ideas: "Ideas & notes", expenses: "Expenses", journal: "Journal", actual: "What you really did", photoFolders: "Photo folders", plan: "The plan" } as Record<string, string>)[key] || key;
 }
 
-const FIELD_WORDS: Record<string, string> = {
+export const FIELD_WORDS: Record<string, string> = {
   travelers: "travelers", people: "names", dailyBudget: "budget", currency: "currency", pace: "pace", fitness: "fitness", dayStart: "start of the day", breakfast: "breakfast",
-  getAround: "getting around", interests: "interests", wishes: "what you want to see", notes: "notes for the plan", car: "car", lastRouteWhat: "route description",
+  getAround: "getting around", placeMix: "which places to pick", interests: "interests", wishes: "what you want to see", notes: "notes for the plan", car: "car", lastRouteWhat: "route description",
   marks: "must-sees", who: "who wants what", how: "on the way or from a stay", customPlaces: "places picked on the map", kept: "must-sees kept", lists: "place lists", listSuggest: "suggested lists",
   packed: "ticked items", packingExtra: "own items",
 };
@@ -276,7 +299,7 @@ function photoWords(before: any, after: any) {
   return "moved";
 }
 
-function dayWords(before: any, after: any) {
+export function dayWords(before: any, after: any) {
   const names = (d: any) => (Array.isArray(d?.items) ? d.items : []).map((x: any) => short(x?.place)).filter(Boolean) as string[];
   const was = names(before), now = names(after);
   const added = now.filter((n) => !was.includes(n)), removed = was.filter((n) => !now.includes(n));

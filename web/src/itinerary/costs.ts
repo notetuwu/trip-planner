@@ -58,7 +58,7 @@ function overviewHtml() {
       </div>
     </div>
     <p class="hint">Estimates are the planner's, for the whole group${it?.localCurrency && it.localCurrency !== cur ? `, in ${esc(cur)} (prices there are in ${esc(it.localCurrency)})` : ""}; hotels aren't in them. Change them in the Plan tab.</p>
-    ${days.length ? `<button class="btn" type="button" data-cb-csv>${icon("download")} Download the plan's costs as CSV</button>` : ""}`;
+    ${days.length ? `<div class="cx-tools"><button class="btn" type="button" data-cb-csv>${icon("download")} Download the plan's costs as CSV</button></div>` : ""}`;
 }
 
 /** Every stop with a cost, for a spreadsheet. */

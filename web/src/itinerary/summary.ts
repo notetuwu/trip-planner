@@ -8,6 +8,7 @@ import type { ByTitle } from "../geo/item-loc";
 import { bookAheadCount } from "./book-ahead";
 import { packingCount } from "./packing";
 import { promptSummary } from "./panels";
+import { journalCount } from "./journal";
 import { icon } from "../core/icons";
 import { balances, settleUp, spending } from "../../../shared/expenses";
 import { displayPicker, fx, shown } from "./costs-data";
@@ -86,7 +87,9 @@ export function summaryHtml(it: Itinerary, byTitle: ByTitle, cur: string, budget
       <div class="tb-group tb-sections">
         ${events ? sectionBtn("events", "party", "Holidays", String(events), `Holidays & events: ${it.holidaysAndEvents!.map((h) => h.name.replace(/\s*\(.*$/, "")).join(", ").slice(0, 200)}`) : ""}
         ${ahead.total ? sectionBtn("ahead", "ticket", "Book ahead", ahead.left ? `${ahead.left} left` : "done", `Book ahead: ${ahead.left ? `${ahead.left} of ${ahead.total} still to book` : `all ${ahead.total} booked`} (stays, transport and tickets)`) : ""}
+        ${sectionBtn("balance", "sliders", "Balance", "", "How full each day is: stops, walking, time getting around and cost, side by side")}
         ${sectionBtn("packing", "luggage", "Packing", `${pack.done}/${pack.all}`, `Packing list: ${pack.done} of ${pack.all} packed`)}
+        <button type="button" data-journal title="Journal: what you really did each day, in your own words; worked out into the trip as it went">${icon("pencil")}<span class="tb-label">Journal</span>${journalCount() ? `<span class="tb-count">${journalCount()}</span>` : ""}</button>
         <button type="button" data-preview title="The trip in pictures: highlights, day by day, and a slideshow">${icon("play")}<span class="tb-label">Preview</span></button>
         <button type="button" data-photos title="The photos and videos of this trip: choose the folders, see them by day">${icon("images")}<span class="tb-label">Photos</span></button>
       </div>

@@ -11,8 +11,8 @@ import { byTitleMap } from "../geo/item-loc";
 import { type Leg, dayLegs, legRoute, requestRoutes } from "../map/routes";
 import type { LatLng } from "../../../shared/types";
 
-export type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept" | "customPlaces" | "travelers" | "dailyBudget" | "currency" | "pace" | "fitness" | "getAround" | "dayStart" | "breakfast" | "interests" | "wishes" | "notes" | "ideas" | "bookings" | "booked" | "packed" | "packingExtra" | "car" | "meta">;
-export const SNAP_KEYS: (keyof Snapshot)[] = ["itinerary", "stays", "marks", "how", "kept", "customPlaces", "travelers", "dailyBudget", "currency", "pace", "fitness", "getAround", "dayStart", "breakfast", "interests", "wishes", "notes", "ideas", "bookings", "booked", "packed", "packingExtra", "car", "meta"];
+export type Snapshot = Pick<AppState, "itinerary" | "stays" | "marks" | "how" | "kept" | "customPlaces" | "travelers" | "dailyBudget" | "currency" | "pace" | "fitness" | "getAround" | "placeMix" | "dayStart" | "breakfast" | "interests" | "wishes" | "notes" | "ideas" | "bookings" | "booked" | "packed" | "packingExtra" | "car" | "meta">;
+export const SNAP_KEYS: (keyof Snapshot)[] = ["itinerary", "stays", "marks", "how", "kept", "customPlaces", "travelers", "dailyBudget", "currency", "pace", "fitness", "getAround", "placeMix", "dayStart", "breakfast", "interests", "wishes", "notes", "ideas", "bookings", "booked", "packed", "packingExtra", "car", "meta"];
 export const snapshot = (): Snapshot => structuredClone(Object.fromEntries(SNAP_KEYS.map((k) => [k, state[k]]))) as Snapshot;
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -67,7 +67,7 @@ function costsTab(a: Snapshot, b: Snapshot) {
     <tr><td>Budget</td><td class="num">${money(bud(a), cur)}</td><td class="num">${money(bud(b), cur)}</td><td></td></tr></tfoot></table>`;
 }
 
-const FIELDS: [keyof Snapshot, string][] = [["travelers", "Travelers"], ["dailyBudget", "Budget per person a day"], ["currency", "Currency"], ["pace", "Pace"], ["fitness", "Fitness"], ["getAround", "Getting around"], ["dayStart", "Days start"], ["breakfast", "Breakfast"], ["interests", "Interests"], ["wishes", "What they want to see"], ["notes", "Notes for the plan"], ["ideas", "Ideas & notes"]];
+const FIELDS: [keyof Snapshot, string][] = [["travelers", "Travelers"], ["dailyBudget", "Budget per person a day"], ["currency", "Currency"], ["pace", "Pace"], ["fitness", "Fitness"], ["getAround", "Getting around"], ["placeMix", "Places"], ["dayStart", "Days start"], ["breakfast", "Breakfast"], ["interests", "Interests"], ["wishes", "What they want to see"], ["notes", "Notes for the plan"], ["ideas", "Ideas & notes"]];
 function setupTab(a: Snapshot, b: Snapshot) {
   const rows: string[] = [];
   const row = (label: string, x: string, y: string) => rows.push(`<tr><td>${esc(label)}</td><td class="rv-old">${esc(x || "—")}</td><td class="rv-new">${esc(y || "—")}</td></tr>`);

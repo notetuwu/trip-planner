@@ -823,6 +823,12 @@ h2.mbx-subject { display: block; margin: 0 0 16px; font-size: 20px; font-weight:
 }
 .bk-docs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .cp-docs { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; display: grid; gap: 8px; }
+.cp-search-ask b { display: flex; align-items: center; gap: 6px; }
+/* What the chat's searches found: documents and emails, to open. */
+.cp-found { display: grid; gap: 8px; margin-top: 8px; }
+.cp-found-item { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-width: 0; }
+.cp-found-item .hint { font-size: 11.5px; }
+.cp-found-item img { flex-basis: 100%; max-width: 220px; max-height: 160px; border-radius: 8px; border: 1px solid var(--line); cursor: zoom-in; }
 .cp-docs .cp-docs-act { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .lightbox { position: fixed; inset: 0; z-index: 5000; display: grid; place-items: center; background: rgba(0, 0, 0, .78); opacity: 0; transition: opacity .18s; cursor: zoom-out; }
 .lightbox.show { opacity: 1; }
@@ -1538,5 +1544,39 @@ button.edit-chip:hover { color: var(--text); }
 .cx-share-act .link-btn { display: inline-flex; align-items: center; gap: 4px; padding: 0; font-size: 12px; }
 .cx-share-act .link-btn svg { width: 12px; height: 12px; }
 /* The Expenses tab's buttons: a bar fixed to the bottom of the window while its list scrolls. */
-.cx-tools { position: sticky; bottom: -22px; z-index: 3; display: flex; gap: 8px; flex-wrap: wrap; margin: 16px -22px -22px; padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--line); }
+/* Pinned to the bottom of the window. Browsers disagree on whether the window's own padding is below it, so it sits on the
+   padding's edge and paints over the strip beneath itself: nothing shows through under it either way. */
+.cx-tools { position: sticky; bottom: 0; z-index: 12; display: flex; gap: 8px; flex-wrap: wrap; margin: 16px -22px 0; padding: 12px 22px; background: var(--panel); border-top: 1px solid var(--line); box-shadow: 0 24px 0 var(--panel); }
 .costs-body .cx-tools .btn { margin-top: 0; }
+
+/* Changes (saves/collab.ts openHistory): each change with what exactly it did, line by line. */
+.collab-history { width: min(680px, calc(100vw - 24px)); }
+.cr-list li.ch-row { display: block; padding: 9px 11px; }
+.ch-top { display: flex; align-items: center; gap: 10px; }
+.ch-top .btn { gap: 5px; }
+.ch-detail { margin: 7px 0 0 36px; display: grid; gap: 3px; font-size: 13px; }
+.ch-detail:empty { display: none; }
+.chd { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 7px; min-width: 0; overflow-wrap: anywhere; }
+.chd-what { color: var(--muted); font-size: 12px; flex: none; }
+.chd-what::after { content: ":"; }
+.chd-old { color: var(--muted); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--danger, #e5484d) 70%, transparent); }
+.chd-new { color: var(--ink); background: color-mix(in srgb, var(--ok) 16%, transparent); border-radius: 4px; padding: 0 4px; }
+.chd-arrow { color: var(--muted); }
+.chd.add .chd-what, .chd.del .chd-what { font-weight: 600; }
+.chd.add .chd-what { color: var(--ok); }
+.chd.words { color: var(--ink); }
+.chd.text { display: grid; gap: 2px; }
+.chd-words { white-space: pre-wrap; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); max-height: 9.5em; overflow: auto; line-height: 1.45; }
+.chd-words del { color: var(--muted); text-decoration-color: color-mix(in srgb, var(--danger, #e5484d) 70%, transparent); }
+.chd-words ins { text-decoration: none; background: color-mix(in srgb, var(--ok) 20%, transparent); border-radius: 3px; }
+.chd-more { justify-self: start; font-size: 12px; margin-top: 2px; }
+
+/* Export → For iPhone (export/iphone.ts). */
+.iphone-dialog { width: min(600px, calc(100vw - 24px)); }
+.ip-steps { display: flex; gap: 16px; align-items: flex-start; margin: 4px 0 10px; }
+.ip-steps .qr { flex: none; width: 150px; height: 150px; background: #fff; border-radius: 10px; padding: 6px; }
+.ip-steps .qr svg { width: 100%; height: 100%; display: block; }
+.ip-steps ol { margin: 0; padding-left: 20px; display: grid; gap: 9px; font-size: 13.5px; }
+.ip-steps a { color: var(--accent); overflow-wrap: anywhere; }
+.iphone-dialog .ask-acts .btn { gap: 6px; }
+@media (max-width: 560px) { .ip-steps { flex-direction: column; align-items: center; } }

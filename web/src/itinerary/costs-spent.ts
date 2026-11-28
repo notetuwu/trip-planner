@@ -13,6 +13,7 @@ import { showNames } from "../trip/fields";
 import { type Row, amountText, defaultDate, defaultPayer, dropExpense, fx, kindOf, last, linked, needNames, people, putExpense, ro, rows, step, stopLink, touched, tripDates, readStands, standPicker, noteUndo, shown } from "./costs-data";
 import { PHONE_EXPENSES } from "../export/offline-extras";
 import { tell } from "../core/ask";
+import { takePhoneNames } from "./journal";
 
 const KIND_ICON: Record<ExpenseKind, IconName> = { food: "utensils", sights: "ticket", transport: "train", stay: "bed", shopping: "shoppingBag", other: "pin", settle: "check" };
 /** "Paid by" for everyone paying their own share. */
@@ -132,10 +133,12 @@ export function spentHtml() {
 
 /** Expenses sent from the phone file: the new ones added (by id, so the same file twice adds nothing twice). */
 async function importFromPhone(file: File) {
-  let data: { kind?: string; expenses?: unknown; base?: Expenses };
+  let data: { kind?: string; expenses?: unknown; base?: Expenses; people?: unknown };
   try { data = JSON.parse(await file.text()); } catch { data = {}; }
   if (data?.kind !== PHONE_EXPENSES || !data.expenses) { await tell({ title: "Not expenses from the phone", text: "Choose the file the phone file saves with “Send to the app”." }); return; }
   const before = state.expenses;
+  // (Names given on the phone, for a trip that had none: its expenses say who paid by them.)
+  takePhoneNames(data.people);
   // What was added, changed or removed on the phone since its file was made; the app's own later changes stay.
   const m = mergeFromPhone(data.base && typeof data.base === "object" ? data.base : undefined, state.expenses, data.expenses);
   const words = [m.added ? `${m.added} added` : "", m.changed ? `${m.changed} changed` : "", m.removed ? `${m.removed} removed` : ""].filter(Boolean);

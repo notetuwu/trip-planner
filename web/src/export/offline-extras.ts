@@ -24,6 +24,9 @@ export function phoneExtrasData() {
     name: state.saveName || it.destination || "trip",
     at: Date.now(),
     people: state.people || [],
+    // How many travel (the phone asks for their names when the trip has none), and the journal so far.
+    travelers: Number(state.travelers) || 1,
+    journal: state.journal || {},
     currency: state.currency,
     currencies: [...new Set([it.localCurrency || "", state.currency, ...CURRENCIES].filter(Boolean))],
     local: it.localCurrency || state.currency,
@@ -137,12 +140,19 @@ export const EXTRAS_CSS = `
   .ph-seg label:has(input[value=own]:checked), .ph-seg label:has(input[value=back]:checked) { background: var(--ok-soft); color: var(--ok); }
   .ph-err { margin: 0; color: var(--warn); font-size: 13.5px; }
   .ph-form-foot { display: grid; gap: 8px; margin-top: 6px; }
+  .ph-nojs { margin: 10px 14px; padding: 10px 12px; border: 1px solid var(--warn); border-radius: 12px; font-size: 13.5px; line-height: 1.45; }
+  .ph-journal, .ph-names { display: grid; gap: 8px; }
+  .ph-journal textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); color: var(--ink); font: inherit; font-size: 15px; line-height: 1.45; resize: vertical; }
+  .ph-share { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; font-size: 12.5px; color: var(--muted); }
+  .ph-share[hidden] { display: none; }
+  .ph-share { white-space: nowrap; }
+  .ph-form .ph-share input[data-share] { flex: none; width: 130px; height: 38px; font-size: 14.5px; }
   @media print { .ph-top, .ph-fab, #vToday, #vMoney { display: none !important; } #vPlan { display: block !important; } }`;
 
 /** Plain JavaScript inside the phone file (EXTRAS is its data). */
 export const EXTRAS_SCRIPT = `
 (function () {
-  const X = EXTRAS, P = X.people, many = P.length > 1;
+  const X = EXTRAS; let P = X.people, many = P.length > 1;
   const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => [...(r || document).querySelectorAll(s)];
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   const today = () => new Date().toLocaleDateString("sv");
@@ -158,7 +168,7 @@ export const EXTRAS_SCRIPT = `
   // ---- What's kept in this browser, per trip: ticks, the expenses, and what the file they came from had. ----
   const store = (() => { try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); return localStorage; } catch (e) { return null; } })();
   const KEY = "trip-phone:" + X.id;
-  let S = { done: {}, expenses: null, base: null, fileAt: 0, view: "" };
+  let S = { done: {}, expenses: null, base: null, fileAt: 0, view: "", journal: {}, sent: {}, people: null };
   try { S = Object.assign(S, JSON.parse((store && store.getItem(KEY)) || "{}")); } catch (e) {}
   // A newer file from the app: its expenses joined with what was changed here since (per expense; the phone's wins).
   if (!S.expenses || S.fileAt < X.at) {
@@ -171,6 +181,13 @@ export const EXTRAS_SCRIPT = `
     S.expenses = out; S.base = JSON.parse(JSON.stringify(app)); S.fileAt = X.at;
   }
   const persist = () => { try { store && store.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+  // The travelers named here, for a trip whose file came without names.
+  if (!X.people.length && S.people && S.people.length > 1) { P = S.people; many = true; }
+  // The journal: the app's entries, and the ones written here (of each day, the one written last). "sent": the entry's
+  // time as the app has it.
+  S.journal = S.journal || {}; S.sent = S.sent || {};
+  Object.keys(X.journal || {}).forEach((d) => { const a = X.journal[d], m = S.journal[d]; if (a && (!m || (a.at || 0) >= (m.at || 0))) { S.journal[d] = { text: a.text || "", at: a.at || 0 }; S.sent[d] = a.at || 0; } });
+  const unsentJournal = () => Object.keys(S.journal).filter((d) => (S.journal[d].text || "").trim() && S.sent[d] !== S.journal[d].at).length;
   persist();
 
   // ---- Money: the same rules as the app (shared/expenses.ts). ----
@@ -285,6 +302,9 @@ export const EXTRAS_SCRIPT = `
           + '<div class="ph-acts">' + paid + (s.dir ? '<a class="ph-btn" href="' + esc(s.dir) + '" target="_blank" rel="noopener">Route ↗</a>' : "") + "</div></li>";
       }).join("") + "</ul>"
       + '<button class="ph-btn wide" data-other>+ Another expense this day</button>'
+      + '<div class="ph-card ph-journal"><b>Journal</b><span class="ph-note">What did you really do? Write it loosely: where you went, what you skipped and why, how you got around, who paid what. At home the app works it out into the day as it went.</span>'
+      + '<textarea data-journal rows="5" placeholder="e.g. Skipped the castle, went to the market instead. Lunch at a small cafe, I paid 24 for both of us…">' + esc((S.journal[d.date] || {}).text || "") + "</textarea>"
+      + '<div class="ph-row" data-journal-send' + (unsentJournal() ? "" : " hidden") + '><span class="ph-note" style="flex:1">Not in the app yet</span><button type="button" class="ph-btn" data-send>Send</button></div></div>'
       + (store ? "" : '<p class="ph-note">This viewer can\\'t keep anything: open the file in your browser (Chrome, Safari) to keep ticks and expenses.</p>')
       + "</div>";
     $$("[data-day]", views.today).forEach((b) => b.onclick = () => { dayIdx = Math.min(X.days.length - 1, Math.max(0, dayIdx + +b.dataset.day)); drawToday(); });
@@ -293,6 +313,10 @@ export const EXTRAS_SCRIPT = `
     $$("[data-stop]", views.today).forEach((b) => b.onclick = () => openSheet(null, { stop: [dayIdx, +b.dataset.stop] }));
     $$("[data-edit]", views.today).forEach((b) => b.onclick = () => openSheet(b.dataset.edit));
     $("[data-other]", views.today).onclick = () => openSheet(null, { date: d.date });
+    const jt = $("[data-journal]", views.today);
+    // Kept as they type (the view isn't drawn again meanwhile: the box keeps its place).
+    jt.oninput = () => { if (jt.value.trim()) S.journal[d.date] = { text: jt.value, at: Date.now() }; else delete S.journal[d.date]; persist(); $("[data-journal-send]", views.today).hidden = !unsentJournal(); };
+    $("[data-send]", views.today).onclick = sendAll;
   }
   function markPlan() {
     $$(".item.done").forEach((el) => el.classList.remove("done"));
@@ -301,13 +325,13 @@ export const EXTRAS_SCRIPT = `
 
   // ---- Expenses ----
   function drawMoney() {
-    const items = list(), bal = balances(), pay = settle(bal), n = changes();
+    const items = list(), bal = balances(), pay = settle(bal), n = changes() + unsentJournal();
     const groups = {}; items.forEach((e) => (groups[e.date] = groups[e.date] || []).push(e));
     views.money.innerHTML = '<div class="ph-page">'
       + '<div class="ph-stats"><div class="ph-stat"><b>' + esc(money(spent(), X.currency)) + "</b><span>spent in all</span></div>"
       + '<div class="ph-stat' + (pay.length ? " warn" : "") + '"><b>' + (pay.length ? esc(money(pay.reduce((t, p) => t + p.amount, 0), X.currency)) : "Even") + "</b><span>" + (pay.length ? "still to pay back" : "nobody owes anybody") + "</span></div></div>"
       // What's changed here and not in the app yet: a card at the top, with Send.
-      + (n ? '<div class="ph-send"><div><b>' + n + " change" + (n === 1 ? "" : "s") + " not in the app yet</b><span>Send a small file and open it in the planner: Costs → Expenses → Import from phone.</span></div>"
+      + (n ? '<div class="ph-send"><div><b>' + n + " change" + (n === 1 ? "" : "s") + " not in the app yet</b><span>Send a small file and open it in the planner: Costs → Expenses → Import from phone (journal entries: Journal → Import from phone).</span></div>"
         + '<button class="ph-btn solid" data-send>Send</button></div>' : "")
       + (many && pay.length ? '<div class="ph-h">Settle up</div>' + pay.map((p, i) => '<div class="ph-pay"><b>' + esc(p.from) + "</b> → <b>" + esc(p.to) + '</b><span class="amt">' + esc(money(p.amount, X.currency)) + '</span><button class="ph-btn" data-settle="' + i + '">✓ Paid</button></div>').join("") : "")
       + '<div class="ph-h"><span>Expenses</span><span>' + items.filter((e) => e.kind !== "settle").length + "</span></div>"
@@ -321,11 +345,20 @@ export const EXTRAS_SCRIPT = `
     const send = $("[data-send]", views.money); if (send) send.onclick = sendAll;
   }
   async function sendAll() {
-    const body = JSON.stringify({ kind: "${PHONE_EXPENSES}", trip: X.id, at: Date.now(), base: S.base, expenses: S.expenses });
-    const name = (X.name + "-expenses-" + today()).replace(/[^\\p{L}\\p{N}-]+/gu, "-") + ".json";
+    // The journal, each day with the stops ticked as done.
+    const journal = {};
+    new Set(Object.keys(S.journal).concat(Object.keys(S.done))).forEach((date) => {
+      const e = S.journal[date] || {}, day = X.days.find((x) => x.date === date);
+      const ticks = day ? Object.keys(S.done[date] || {}).map((i) => day.stops[i] && day.stops[i].p).filter(Boolean) : [];
+      if ((e.text || "").trim() || ticks.length) journal[date] = { text: e.text || "", at: e.at || 1, done: ticks };
+    });
+    const body = JSON.stringify({ kind: "${PHONE_EXPENSES}", trip: X.id, at: Date.now(), base: S.base, expenses: S.expenses, journal: journal, people: X.people.length ? undefined : P });
+    const name = (X.name + "-from-phone-" + today()).replace(/[^\\p{L}\\p{N}-]+/gu, "-") + ".json";
     const file = new File([body], name, { type: "application/json" });
-    try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Trip expenses" }); return; } } catch (e) { if (e && e.name === "AbortError") return; }
+    const sent = () => { Object.keys(S.journal).forEach((d) => (S.sent[d] = S.journal[d].at)); persist(); redraw(); };
+    try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Trip journal and expenses" }); sent(); return; } } catch (e) { if (e && e.name === "AbortError") return; }
     const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; a.click();
+    sent();
   }
 
   // ---- The expense sheet ----
@@ -343,6 +376,9 @@ export const EXTRAS_SCRIPT = `
     const payer = e.each ? "__each" : e.paidBy || "";
     sheet.innerHTML = '<form class="ph-form">'
       + '<div class="ph-form-head"><button type="button" class="ph-round" data-close aria-label="Close">×</button><h2>' + (was ? "Change expense" : "Add an expense") + "</h2></div>"
+      + (!many && X.travelers > 1 ? '<div class="ph-card ph-names"><b>Who is travelling?</b><span class="ph-note">Name the travelers to say who paid, who it was for and how each stands.</span>'
+        + Array.from({ length: Math.min(12, X.travelers) }).map((_, i) => '<input data-name placeholder="Traveler ' + (i + 1) + '" maxlength="40" autocomplete="off">').join("")
+        + '<button type="button" class="ph-btn" data-names>Use these names</button></div>' : "")
       + '<label class="f">From the plan<select name="link"><option value="">— Something else —</option>' + linkOpts + "</select></label>"
       + '<label class="f">What<input name="what" value="' + esc(e.what) + '" placeholder="e.g. Ramen for everyone" maxlength="120" autocomplete="off"></label>'
       + '<div class="ph-money"><label class="f">Full amount<input name="amount" type="number" inputmode="decimal" min="0" step="any" value="' + esc(e.amount) + '" required></label>'
@@ -353,7 +389,8 @@ export const EXTRAS_SCRIPT = `
         + '<div class="ph-split"><div class="ph-split-head"><b>Split between</b><span data-sum></span></div>'
         + P.map((n) => { const st = was ? stand(e, n) : (whoOf(e).includes(n) ? "owes" : "out"); const pick = st === "payer" || st === "out" ? "owes" : st;
           return '<div class="ph-person" data-person="' + esc(n) + '"><div class="ph-person-top"><label><input type="checkbox" data-for="' + esc(n) + '"' + (whoOf(e).includes(n) ? " checked" : "") + ">" + esc(n) + ' <span class="ph-badge" hidden>paid</span></label><span class="amt" data-amt></span></div>'
-            + '<div class="ph-seg">' + [["owes", "Owes"], ["covered", "Covered"], ["own", "Paid own"], ["back", "Paid back"]].map((o) => '<label><input type="radio" name="st-' + esc(n) + '" value="' + o[0] + '"' + (pick === o[0] ? " checked" : "") + ">" + o[1] + "</label>").join("") + "</div></div>"; }).join("") + "</div>" : "")
+            + '<div class="ph-seg">' + [["owes", "Owes"], ["covered", "Covered"], ["own", "Paid own"], ["back", "Paid back"]].map((o) => '<label><input type="radio" name="st-' + esc(n) + '" value="' + o[0] + '"' + (pick === o[0] ? " checked" : "") + ">" + o[1] + "</label>").join("") + "</div>"
+            + '<label class="ph-share">Their part<input type="number" inputmode="decimal" min="0" step="any" data-share="' + esc(n) + '" value="' + (was && was.shares && was.shares[n] != null ? esc(was.shares[n]) : "") + '" placeholder="even share"></label></div>'; }).join("") + "</div>" : "")
       + '<p class="ph-err" hidden></p>'
       + '<div class="ph-form-foot"><button class="ph-btn solid wide">' + (was ? "Save" : "Add") + "</button>"
       + (was ? '<button type="button" class="ph-btn wide danger" data-del>Remove</button>' : "") + "</div></form>";
@@ -364,12 +401,14 @@ export const EXTRAS_SCRIPT = `
       if (c !== X.currency && !f.rate.value) { const a = c === "EUR" ? 1 : X.rates[c], b = X.currency === "EUR" ? 1 : X.rates[X.currency]; if (e.rate && e.rateTo === X.currency && c === e.currency) f.rate.value = e.rate; else if (a && b) f.rate.value = +(b / a).toPrecision(5); }
       const amt = +f.amount.value, r = +f.rate.value; $("[data-conv]", sheet).textContent = c !== X.currency && amt > 0 && r > 0 ? "≈ " + money(amt * r, X.currency) : "";
     };
+    const sharesNow = (forWho) => { const o = {}; $$("[data-share]", f).forEach((b) => { if (b.value !== "" && +b.value >= 0 && forWho.includes(b.dataset.share)) o[b.dataset.share] = +b.value; }); return o; };
     const parts = () => {
       if (!many) return;
       const pay = f.paidBy.value, each = pay === "__each", amt = +f.amount.value || 0, c = f.cur.value;
       const forWho = $$("[data-for]", f).filter((b) => b.checked).map((b) => b.dataset.for), sh = forWho.length ? amt / forWho.length : 0;
       // (Amounts set per person in the app are kept, and shown.)
-      const pt = partsOf({ amount: amt, shares: (was && was.shares) || {} }, forWho), custom = Object.keys((was && was.shares) || {}).some((n) => forWho.includes(n));
+      // Each one's part: as typed here ("Their part"), else an even share of the rest.
+      const shares = sharesNow(forWho), pt = partsOf({ amount: amt, shares: shares }, forWho), custom = Object.keys(shares).length > 0;
       const stOf = (n) => (($("input[name='st-" + n + "']:checked", f) || {}).value) || "owes";
       const covered = each ? [] : forWho.filter((n) => n !== pay && stOf(n) === "covered");
       $$("[data-person]", f).forEach((el) => {
@@ -377,6 +416,7 @@ export const EXTRAS_SCRIPT = `
         el.classList.toggle("out", !isFor && !isPayer);
         $(".ph-badge", el).hidden = !isPayer;
         $(".ph-seg", el).hidden = isPayer || !isFor || each;
+        $(".ph-share", el).hidden = !isFor;
         $("[data-amt]", el).innerHTML = !amt ? "" : isPayer ? "<b>" + esc(money((isFor ? pt[n] : 0) + covered.reduce((t, m) => t + pt[m], 0), c)) + "</b>own part" : !isFor ? "not in it"
           : "<b>" + esc(money(pt[n], c)) + "</b>" + ({ owes: "owes " + esc(pay), covered: "covered", own: "paid own", back: "paid back" })[st];
       });
@@ -394,6 +434,14 @@ export const EXTRAS_SCRIPT = `
     f.amount.oninput = () => { rate(); parts(); };
     f.rate.oninput = rate;
     $$("input, select", f).forEach((el) => { if (el.name === "paidBy" || el.dataset.for != null || el.type === "radio") el.addEventListener("change", parts); });
+    $$("[data-share]", f).forEach((el) => el.addEventListener("input", parts));
+    const useNames = $("[data-names]", sheet);
+    if (useNames) useNames.onclick = () => {
+      const names = $$("[data-name]", sheet).map((b) => b.value.trim()), err = $(".ph-err", f);
+      if (names.some((n) => !n) || new Set(names.map((n) => n.toLowerCase())).size < names.length) { err.textContent = "Give each traveler a name of their own."; err.hidden = false; return; }
+      S.people = names; P = names; many = true; last.paidBy = P[0]; persist();
+      sheet.close(); openSheet(id, preset);
+    };
     rate(); parts();
     $("[data-close]", sheet).onclick = () => sheet.close();
     const del = $("[data-del]", sheet); if (del) del.onclick = () => { delete S.expenses[id]; persist(); sheet.close(); redraw(); };
@@ -411,7 +459,8 @@ export const EXTRAS_SCRIPT = `
         if (!forWho.length) return say("Tick at least one person it was for.");
         if (pay === "__each") out.each = true; else out.paidBy = pay;
         if (forWho.length < P.length) out.split = forWho;
-        const kept = {}; Object.keys((was && was.shares) || {}).forEach((n) => { if (forWho.includes(n)) kept[n] = was.shares[n]; });
+        const kept = sharesNow(forWho);
+        if (Object.keys(kept).reduce((t, n) => t + kept[n], 0) > amt + 0.005) return say("The parts add up to more than the amount.");
         if (Object.keys(kept).length) out.shares = kept;
         if (pay !== "__each") ["covered", "own", "back"].forEach((st) => { const l = forWho.filter((n) => n !== pay && (($("input[name='st-" + n + "']:checked", f) || {}).value) === st); if (l.length) out[st] = l; });
         last.paidBy = pay === "__each" ? last.paidBy : pay;
@@ -429,5 +478,5 @@ export const EXTRAS_SCRIPT = `
   markPlan();
   // During the trip it opens on today; otherwise where it was left (else the plan).
   show(tripDay() ? "today" : S.view && views[S.view] ? S.view : "plan");
-  setInterval(() => { if (shown === "today") drawToday(); }, 60000);
+  setInterval(() => { if (shown === "today" && !(document.activeElement && document.activeElement.matches("[data-journal]"))) drawToday(); }, 60000);
 })();`;

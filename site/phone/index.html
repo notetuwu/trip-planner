@@ -1,0 +1,187 @@
+<!doctype html>
+<!--
+  The trip viewer for phones that can't run a downloaded file (an iPhone only previews it: no Today, Expenses or Journal).
+  Opened once in the phone's browser and added to the home screen, it then works without a connection: the trip file
+  exported from the planner ("For phone") is picked here and kept on the phone. Nothing is sent anywhere: this page has
+  no trip in it and talks to no server; the file is read and kept by the browser on the phone (IndexedDB), and what is
+  ticked, paid and written in it stays there too (the file's own storage), until "Send" hands it back to the planner.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Trip Planner · phone</title>
+<meta name="theme-color" content="#151516">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Trips">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
+<style>
+  :root { --bg: #f5f4f1; --panel: #fff; --field: #fafaf9; --ink: #1c1b1a; --muted: #6b6864; --line: #e3e1dd; --accent: #c8102e; --warn: #b45309; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #151516; --panel: #1b1b1c; --field: #232325; --ink: #ececea; --muted: #a09d98; --line: #2e2e30; --accent: #ff5c74; --warn: #f59f00; } }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; -webkit-text-size-adjust: 100%; }
+  [hidden] { display: none !important; }
+  #home { max-width: 560px; margin: 0 auto; padding: calc(22px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom)); display: grid; gap: 16px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -.01em; }
+  p { margin: 0; }
+  .muted { color: var(--muted); font-size: 13.5px; }
+  .card { padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); display: grid; gap: 10px; }
+  .card.warn { border-color: var(--warn); }
+  .card ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 50px; padding: 0 16px; border: 0; border-radius: 14px; background: var(--accent); color: #fff; font: inherit; font-size: 16px; font-weight: 700; }
+  .btn.plain { background: var(--field); color: var(--ink); border: 1px solid var(--line); font-weight: 600; min-height: 44px; font-size: 14.5px; }
+  .trips { display: grid; gap: 8px; }
+  .trip { display: flex; align-items: center; gap: 10px; }
+  .trip button.open { flex: 1; min-width: 0; text-align: left; padding: 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--ink); font: inherit; }
+  .trip b { display: block; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trip small { color: var(--muted); font-size: 12.5px; }
+  .trip button.drop { flex: none; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--muted); font-size: 18px; }
+  .err { color: var(--warn); font-size: 14px; }
+  #view { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+  #bar { flex: none; display: flex; align-items: center; gap: 8px; padding: calc(4px + env(safe-area-inset-top)) 8px 4px; border-bottom: 1px solid var(--line); background: var(--bg); }
+  #bar button { height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink); font: inherit; font-size: 13.5px; font-weight: 600; }
+  #bar span { flex: 1; min-width: 0; color: var(--muted); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+  #frame { flex: 1; width: 100%; border: 0; background: var(--bg); }
+</style>
+</head>
+<body>
+<div id="home">
+  <h1>Your trips, on this phone</h1>
+  <p class="muted">Open the trip file from the planner (Export → For phone) here. It is kept on this phone and works without a connection: today's stops, the plan, expenses and the journal. Nothing is uploaded.</p>
+  <div class="card warn" id="install" hidden>
+    <b>First, add this page to your Home Screen</b>
+    <ol>
+      <li>Tap the Share button <span aria-hidden="true">(the square with an arrow)</span>.</li>
+      <li>Choose <b>Add to Home Screen</b>.</li>
+      <li>Open <b>Trips</b> from the Home Screen and pick your trip file there.</li>
+    </ol>
+    <p class="muted">From the Home Screen it works offline and keeps what you enter. In the browser itself, an iPhone may clear it after a week.</p>
+    <button type="button" class="btn plain" id="anyway">Use it here in the browser anyway</button>
+  </div>
+  <div id="main">
+    <div class="trips" id="trips"></div>
+    <p class="err" id="err" hidden></p>
+    <button type="button" class="btn" id="pick" style="margin-top:12px">Open a trip file</button>
+    <input type="file" id="file" accept=".html,text/html" hidden>
+    <p class="muted" style="margin-top:12px">Get the file onto the phone however you like (AirDrop, iCloud Drive, a message to yourself), then pick it from Files. A newer file of the same trip replaces the old one; what you entered here stays.</p>
+  </div>
+  <p class="muted" id="offline"></p>
+</div>
+<div id="view" hidden>
+  <div id="bar"><button type="button" id="back">‹ Trips</button><span id="tripName"></span></div>
+  <iframe id="frame" title="Trip" allow="web-share; clipboard-write"></iframe>
+</div>
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+
+  // ---- The trips kept on this phone (IndexedDB: a trip file is too big for the browser's small storage) ----
+  var dbp = null;
+  function db() {
+    return dbp || (dbp = new Promise(function (ok, no) {
+      var r = indexedDB.open("trip-phone-viewer", 1);
+      r.onupgradeneeded = function () { r.result.createObjectStore("trips", { keyPath: "id" }); };
+      r.onsuccess = function () { ok(r.result); };
+      r.onerror = function () { no(r.error); };
+    }));
+  }
+  function tx(mode, run) {
+    return db().then(function (d) {
+      return new Promise(function (ok, no) {
+        var t = d.transaction("trips", mode), out = run(t.objectStore("trips"));
+        t.oncomplete = function () { ok(out && out.result); };
+        t.onerror = t.onabort = function () { no(t.error); };
+      });
+    });
+  }
+  var all = function () { return tx("readonly", function (s) { return s.getAll(); }); };
+  var put = function (t) { return tx("readwrite", function (s) { return s.put(t); }); };
+  var drop = function (id) { return tx("readwrite", function (s) { return s.delete(id); }); };
+
+  /** What a trip file says about itself (the planner writes it into the file as EXTRAS): which trip, its name, when made. */
+  function about(html) {
+    var m = /const EXTRAS = (\{.*\});\s*$/m.exec(html);
+    if (!m) return null;
+    try { var x = JSON.parse(m[1]); return x && x.id && Array.isArray(x.days) ? { id: String(x.id), name: String(x.name || "Trip"), at: Number(x.at) || 0, days: x.days.length, from: x.days[0] && x.days[0].date, to: x.days[x.days.length - 1] && x.days[x.days.length - 1].date } : null; }
+    catch (e) { return null; }
+  }
+  var day = function (iso) { try { return new Date(iso + "T12:00").toLocaleDateString(undefined, { day: "numeric", month: "short" }); } catch (e) { return iso || ""; } };
+
+  var LAST = "trip-phone-viewer:last";
+  function say(text) { $("err").textContent = text || ""; $("err").hidden = !text; }
+
+  function list() {
+    return all().then(function (trips) {
+      trips.sort(function (a, b) { return (b.opened || 0) - (a.opened || 0); });
+      $("trips").innerHTML = trips.map(function (t) {
+        return '<div class="trip"><button type="button" class="open" data-open="' + esc(t.id) + '"><b>' + esc(t.name) + "</b><small>" + esc(t.days + " day" + (t.days === 1 ? "" : "s") + (t.from ? " · " + day(t.from) + " – " + day(t.to) : "") + " · file from " + new Date(t.at).toLocaleDateString()) + "</small></button>"
+          + '<button type="button" class="drop" data-drop="' + esc(t.id) + '" aria-label="Remove this trip from the phone">×</button></div>';
+      }).join("");
+      $("pick").textContent = trips.length ? "Open another trip file" : "Open a trip file";
+      return trips;
+    });
+  }
+
+  function show(t) {
+    t.opened = Date.now();
+    put(t).catch(function () {});
+    try { localStorage.setItem(LAST, t.id); } catch (e) {}
+    $("tripName").textContent = t.name;
+    $("frame").srcdoc = t.html;
+    $("home").hidden = true; $("view").hidden = false;
+  }
+  function home() {
+    $("view").hidden = true; $("home").hidden = false; $("frame").srcdoc = "";
+    try { localStorage.removeItem(LAST); } catch (e) {}
+    list();
+  }
+
+  $("trips").addEventListener("click", function (e) {
+    var open = e.target.closest("[data-open]"), del = e.target.closest("[data-drop]");
+    if (open) all().then(function (ts) { var t = ts.find(function (x) { return x.id === open.dataset.open; }); if (t) show(t); });
+    if (del && confirm("Remove this trip from the phone? What you entered in it and haven't sent to the planner is lost.")) {
+      // (With what was ticked, paid and written in it: the trip file keeps that under its own name.)
+      try { localStorage.removeItem("trip-phone:" + del.dataset.drop); } catch (e) {}
+      drop(del.dataset.drop).then(list);
+    }
+  });
+  $("back").onclick = home;
+  $("pick").onclick = function () { say(""); $("file").click(); };
+  $("file").onchange = function () {
+    var f = $("file").files[0]; $("file").value = "";
+    if (!f) return;
+    f.text().then(function (html) {
+      var a = about(html);
+      if (!a) { say("That isn't a trip file from the planner. In the planner: Export → For phone."); return; }
+      var t = { id: a.id, name: a.name, at: a.at, days: a.days, from: a.from, to: a.to, html: html };
+      return put(t).then(function () { show(t); });
+    }).catch(function (e) { say("Couldn't keep that file on the phone: " + (e && e.message || e)); });
+  };
+
+  // ---- Offline, and staying ----
+  var standalone = navigator.standalone === true || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  var ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  if (ios && !standalone) { $("install").hidden = false; $("main").hidden = true; }
+  $("anyway").onclick = function () { $("install").hidden = true; $("main").hidden = false; };
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    navigator.serviceWorker.register("sw.js").then(function () { $("offline").textContent = "Ready to use without a connection."; }).catch(function () {});
+  }
+
+  // Straight back into the trip that was open.
+  list().then(function (trips) {
+    var last = null;
+    try { last = localStorage.getItem(LAST); } catch (e) {}
+    var t = last && trips.find(function (x) { return x.id === last; });
+    if (t && $("install").hidden) show(t);
+  }).catch(function (e) { say("This browser can't keep files (private browsing?): " + (e && e.message || e)); });
+})();
+</script>
+</body>
+</html>
