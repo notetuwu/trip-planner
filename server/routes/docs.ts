@@ -13,9 +13,11 @@ import { type Req, type Res, readJson, sendJson } from "../util/http";
 
 export const DOCS = "docs";
 const LOCAL_PLACE = "save";
+// (No .json: in a sync folder, sync would take a .json in a folder for a trip file.)
 const TYPES: Record<string, string> = {
   pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif",
   heic: "image/heic", eml: "message/rfc822", txt: "text/plain", html: "text/html", htm: "text/html",
+  ics: "text/calendar", csv: "text/csv", md: "text/markdown",
 };
 /** Shown in the browser; everything else (an email, a web page saved from one) is downloaded, never run here. */
 const SHOWN = /^(application\/pdf|image\/(jpeg|png|webp|gif))$/;

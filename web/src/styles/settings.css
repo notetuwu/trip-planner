@@ -667,7 +667,16 @@ button.refine:hover { border-color: var(--accent); }
 .cp-thumb img, .cp-pics img { cursor: zoom-in; }
 /* Attached files (a booking confirmation): by name, in the message box, in the chat and on the booking. */
 .cp-file { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--field); color: var(--ink); font-size: 12px; text-decoration: none; }
-a.cp-file:hover { border-color: var(--accent); }
+a.cp-file:hover, .cp-file.open:hover { border-color: var(--accent); }
+.cp-file.open { cursor: pointer; }
+.cp-file.open:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* An attached email opened to read (trip/email-view.ts). */
+dialog.mail-view { width: min(900px, calc(100vw - 24px)); height: calc(100vh - 48px); max-width: none; max-height: none; padding: 0; overflow: hidden; }
+dialog.mail-view[open] { display: flex; flex-direction: column; }
+.mail-view .mbx-read-bar { gap: 10px; }
+.mail-view .mbx-read-bar b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; color: var(--muted); font-weight: 600; }
+.mail-view .mbx-read-bar .i { flex: none; }
+.mail-view .mbx-read-bar form { margin: 0; }
 .cp-file > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
 .cp-file .i { width: 14px; height: 14px; flex: none; color: var(--muted); }
 .cp-file button { border: 0; padding: 0; background: none; color: var(--muted); display: grid; place-items: center; cursor: pointer; }
@@ -1062,6 +1071,19 @@ h2.mbx-subject { display: block; margin: 0 0 16px; font-size: 20px; font-weight:
 .cx-name { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-part { grid-area: part; min-width: 84px; display: grid; justify-items: end; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .cx-part b { font-size: 14px; }
+/* Each one's amount (the split by default, typed over when it wasn't the same for everyone). */
+.cx-share, .cx-pop-in { width: 96px; border-color: var(--line); background: var(--panel); }
+.cx-share input, .cx-pop-in input { width: 100%; height: 100%; border: 0 !important; background: transparent !important; box-shadow: none !important; outline: 0; padding: 0 8px 0 22px; text-align: right; font: inherit; font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); -moz-appearance: textfield; }
+.cx-share input::placeholder, .cx-pop-in input::placeholder { color: var(--muted); opacity: 1; font-weight: 500; }
+.cx-share .cx-sym, .cx-pop-in .cx-sym { opacity: 1 !important; }
+.cx-share[hidden] { display: none; }
+.cx-person.covered .cx-share input, .cx-pop-row.covered .cx-pop-in input { text-decoration: line-through; color: var(--muted); }
+.cx-split-tip { margin: -2px 0 8px; }
+.cx-split-warn, .cx-pop-warn { display: flex; gap: 6px; align-items: flex-start; margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--warn); font-size: 12px; }
+.cx-split-warn[hidden] { display: none; }
+.cx-pop-warn .i { flex: none; width: 14px; height: 14px; margin-top: 1px; }
+.cx-pop-head .link-btn { margin-left: auto; font-size: 12px; }
+.cx-pop-covers { font-size: 11.5px; white-space: nowrap; }
 .cx-part small { font-size: 11px; color: var(--muted); }
 .cx-person.covered .cx-part b { color: var(--muted); text-decoration: line-through; }
 .cx-paid-badge { display: none; flex: none; padding: 1px 7px; border-radius: 6px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: var(--ok-soft); color: var(--ok); }
@@ -1480,7 +1502,7 @@ button.edit-chip:hover { color: var(--text); }
 .cx-person.own { background: color-mix(in srgb, var(--ok) 6%, var(--panel)); }
 .cx-person.own .cx-part b { color: var(--muted); }
 .cx-pop { width: 380px; }
-.cx-pop-row { grid-template-columns: minmax(0, 1fr) auto 64px; }
+.cx-pop-row { grid-template-columns: minmax(0, 1fr) auto 100px; }
 .cx-pop-row .cx-seg label { padding: 0 8px; }
 /* Room for four choices, and air between the rows. */
 .cx-pop { width: 470px; max-width: calc(100vw - 24px); padding: 12px 12px 10px; }

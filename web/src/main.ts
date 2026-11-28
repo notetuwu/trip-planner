@@ -1,7 +1,8 @@
 // Entry point: wires up every part of the page and loads the current trip.
 import "./styles";
 import { goToStop } from "./map/days";
-import { initLayout } from "./core/layout";
+import { initLayout, showPane } from "./core/layout";
+import { startEmptyPlan } from "./itinerary/manual";
 import { initBookings, renderBookings } from "./trip/bookings";
 import { $, api, closeDialogsOnBackdrop } from "./core/dom";
 import { initUpdates } from "./core/update";
@@ -69,6 +70,7 @@ initSettings(); initQuickstart(); initSync();
 onAppPrefs(() => { renderBookings(); renderStays(); renderTripTitle(); renderItinerary(); drawMap(); });
 initFields(); initBookings(); initStays(); initRoutePlanner(); initCompanion(); initPrint(); initLists(); initChips(); initModels(); initSaves(); initDays(); initMapSearch(); initDirectionLinks();
 $("#generate").onclick = () => runGeneration();
+$("#emptyPlan").onclick = () => { showPane("output"); startEmptyPlan(); };
 
 // For debugging in the browser console and for end-to-end tests.
 Object.assign(window, {

@@ -8,7 +8,7 @@ export interface PdfFile { name: string; data: string }
 export interface Attachments { texts: { name: string; text: string }[]; pdfs: PdfFile[] }
 
 const MAX_FILES = 4, MAX_DATA = 14_000_000, MAX_TEXT = 20_000;
-export const READABLE = /\.(pdf|eml|txt|html?)$/i;
+export const READABLE = /\.(pdf|eml|txt|html?|ics|csv|md|json)$/i;
 
 /** At most 4 files of the kinds that can be read, each up to about 10 MB. */
 export function cleanFiles(files: unknown): ChatFile[] {

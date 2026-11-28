@@ -682,6 +682,8 @@ textarea.ask-input { resize: vertical; min-height: 70px; font: inherit; }
 /* The yellow of Claude Code's limit warning. */
 :root[data-theme="dark"] .cp-usage { --usage-bg: #574939; --usage-ink: #e6c28d; }
 .cp-usage[hidden] { display: none; }
+/* Under the usage warning, the one about attachments joins it. */
+.cp-usage:not([hidden]) + .cp-privacy { margin-top: -4px; border-radius: 0; }
 .cp-usage:not([hidden]) ~ .cp-ask { margin-top: -4px; }
 .cp-usage > svg.i { flex: none; margin-top: 2px; font-size: 15px; }
 .cp-usage > span { flex: 1; min-width: 0; }

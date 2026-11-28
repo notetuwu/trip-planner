@@ -193,13 +193,21 @@ export const EXTRAS_SCRIPT = `
     return "owes";
   }
   const list = () => Object.entries(S.expenses).map(([id, e]) => Object.assign({ id: id }, e)).sort((a, b) => b.date.localeCompare(a.date) || (b.at || 0) - (a.at || 0));
+  // Each one's part, as in the app (shared/expenses.ts, partsOf): set by hand, else an even share of what's left.
+  function partsOf(e, who) {
+    const set = {}, out = {}; let fixed = 0;
+    Object.keys(e.shares || {}).forEach((n) => { const v = +e.shares[n]; if (who.includes(n) && isFinite(v) && v >= 0) { set[n] = v; fixed += v; } });
+    const free = who.filter((n) => !(n in set));
+    who.forEach((n) => { out[n] = n in set ? set[n] : Math.max(0, (+e.amount || 0) - fixed) / free.length; });
+    return out;
+  }
   function balances() {
     const out = {}; P.forEach((n) => (out[n] = 0));
     list().forEach((e) => {
       const v = inTrip(e), who = whoOf(e);
       if (v == null || e.each || !e.paidBy || !who.length) return;
-      const sh = v / who.length; let even = 0;
-      who.forEach((n) => { const st = stand(e, n); if (st === "own" || st === "back") { even += sh; return; } const to = st === "covered" ? e.paidBy : n; out[to] = (out[to] || 0) - sh; });
+      const pt = partsOf(e, who), tot = who.reduce((t, n) => t + pt[n], 0); let even = 0;
+      who.forEach((n) => { const sh = tot > 0 ? (pt[n] / tot) * v : v / who.length, st = stand(e, n); if (st === "own" || st === "back") { even += sh; return; } const to = st === "covered" ? e.paidBy : n; out[to] = (out[to] || 0) - sh; });
       out[e.paidBy] = (out[e.paidBy] || 0) + v - even;
     });
     return out;
@@ -360,6 +368,8 @@ export const EXTRAS_SCRIPT = `
       if (!many) return;
       const pay = f.paidBy.value, each = pay === "__each", amt = +f.amount.value || 0, c = f.cur.value;
       const forWho = $$("[data-for]", f).filter((b) => b.checked).map((b) => b.dataset.for), sh = forWho.length ? amt / forWho.length : 0;
+      // (Amounts set per person in the app are kept, and shown.)
+      const pt = partsOf({ amount: amt, shares: (was && was.shares) || {} }, forWho), custom = Object.keys((was && was.shares) || {}).some((n) => forWho.includes(n));
       const stOf = (n) => (($("input[name='st-" + n + "']:checked", f) || {}).value) || "owes";
       const covered = each ? [] : forWho.filter((n) => n !== pay && stOf(n) === "covered");
       $$("[data-person]", f).forEach((el) => {
@@ -367,10 +377,10 @@ export const EXTRAS_SCRIPT = `
         el.classList.toggle("out", !isFor && !isPayer);
         $(".ph-badge", el).hidden = !isPayer;
         $(".ph-seg", el).hidden = isPayer || !isFor || each;
-        $("[data-amt]", el).innerHTML = !amt ? "" : isPayer ? "<b>" + esc(money((isFor ? sh : 0) + sh * covered.length, c)) + "</b>own part" : !isFor ? "not in it"
-          : "<b>" + esc(money(sh, c)) + "</b>" + ({ owes: "owes " + esc(pay), covered: "covered", own: "paid own", back: "paid back" })[st];
+        $("[data-amt]", el).innerHTML = !amt ? "" : isPayer ? "<b>" + esc(money((isFor ? pt[n] : 0) + covered.reduce((t, m) => t + pt[m], 0), c)) + "</b>own part" : !isFor ? "not in it"
+          : "<b>" + esc(money(pt[n], c)) + "</b>" + ({ owes: "owes " + esc(pay), covered: "covered", own: "paid own", back: "paid back" })[st];
       });
-      $("[data-sum]", f).textContent = forWho.length ? (amt ? money(sh, c) + " each for " + forWho.length : forWho.length + " of " + P.length) : "nobody";
+      $("[data-sum]", f).textContent = forWho.length ? (amt ? (custom ? "set per person for " + forWho.length : money(sh, c) + " each for " + forWho.length) : forWho.length + " of " + P.length) : "nobody";
     };
     f.link.onchange = () => {
       const s = X.days.flatMap((d) => d.stops.map((x) => ({ x: x, d: d }))).find((y) => y.x.link === f.link.value);
@@ -401,6 +411,8 @@ export const EXTRAS_SCRIPT = `
         if (!forWho.length) return say("Tick at least one person it was for.");
         if (pay === "__each") out.each = true; else out.paidBy = pay;
         if (forWho.length < P.length) out.split = forWho;
+        const kept = {}; Object.keys((was && was.shares) || {}).forEach((n) => { if (forWho.includes(n)) kept[n] = was.shares[n]; });
+        if (Object.keys(kept).length) out.shares = kept;
         if (pay !== "__each") ["covered", "own", "back"].forEach((st) => { const l = forWho.filter((n) => n !== pay && (($("input[name='st-" + n + "']:checked", f) || {}).value) === st); if (l.length) out[st] = l; });
         last.paidBy = pay === "__each" ? last.paidBy : pay;
       }

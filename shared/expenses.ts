@@ -33,6 +33,9 @@ export interface Expense {
   kind?: ExpenseKind;
   /** When it was entered (ms), for the order of a day's expenses. */
   at?: number;
+  /** What some of those it was for had, set by hand (in `currency`): the rest of the amount is split evenly among the
+   *  others. Unset: everyone's part is the same. */
+  shares?: Record<string, number>;
   /** What in the trip it paid for, when entered next to it in the Costs window: "stop:<date>|<place>",
    *  "stay:<town>|<arrival>" or "booking:<name>|<date>". (Renamed or moved since: it stays an expense of its own.) */
   link?: string;
@@ -117,19 +120,37 @@ export function standOf(e: Expense, n: string, everyone: string[]): Stand {
   return ownBy(e, everyone).includes(n) ? "own" : backBy(e, everyone).includes(n) ? "back" : coveredBy(e, everyone).includes(n) ? "covered" : "owes";
 }
 
-/** What each person's part of an expense comes to (v: the expense in the trip's currency): an even share for each it was
- *  for, and the shares of those the payer covered on the payer. Names it was split among that aren't travelers anymore
+/** What each person's part of an expense comes to (v: the expense in the trip's currency): their part (partsOf: even,
+ *  or as set by hand; parts that don't add up to the amount are scaled to it), and the parts of those the payer covered
+ *  on the payer. Names it was split among that aren't travelers anymore
  *  (someone renamed) keep theirs, so nothing goes missing. */
 export function costShares(e: Expense, v: number, everyone: string[]): Record<string, number> {
   const who = e.split?.length ? e.split : everyone, out: Record<string, number> = {};
   if (!who.length) return out;
-  const covered = new Set(coveredBy(e, everyone));
+  const covered = new Set(coveredBy(e, everyone)), parts = partsOf(e, everyone);
+  const total = Object.values(parts).reduce((t, x) => t + x, 0);
   for (const n of who) {
     const to = covered.has(n) ? e.paidBy! : n;
-    out[to] = (out[to] || 0) + v / who.length;
+    out[to] = (out[to] || 0) + (total > 0 ? (parts[n] / total) * v : v / who.length);
     if (covered.has(n)) out[n] ??= 0;
   }
   return out;
+}
+
+/** Each one's part of an expense in its own currency: what was set for them by hand ("shares"), and what's left of the
+ *  amount split evenly among the others it was for. */
+export function partsOf(e: Pick<Expense, "amount" | "split" | "shares">, everyone: string[]): Record<string, number> {
+  const who = e.split?.length ? e.split : everyone, out: Record<string, number> = {};
+  const set = new Map(Object.entries(e.shares || {}).filter(([n, v]) => who.includes(n) && Number.isFinite(v) && v >= 0));
+  const fixed = [...set.values()].reduce((t, v) => t + v, 0), free = who.filter((n) => !set.has(n));
+  for (const n of who) out[n] = set.has(n) ? set.get(n)! : Math.max(0, (Number(e.amount) || 0) - fixed) / free.length;
+  return out;
+}
+
+/** What the parts leave of the amount (below 0: they come to more), in its currency; 0 when they add up. */
+export function unassigned(e: Pick<Expense, "amount" | "split" | "shares" | "currency">, everyone: string[]) {
+  const left = (Number(e.amount) || 0) - Object.values(partsOf(e, everyone)).reduce((t, v) => t + v, 0);
+  return Math.abs(left) < 0.5 / 10 ** decimals(e.currency || "EUR") ? 0 : left;
 }
 
 export interface Payment { from: string; to: string; amount: number }
@@ -223,6 +244,8 @@ export function cleanExpense(v: unknown): Expense | null {
   const kind = [...KINDS.map(([k]) => k), "settle"].includes(String(e.kind)) ? (e.kind as ExpenseKind) : undefined;
   const names = (x: unknown) => (Array.isArray(x) ? x.filter((n): n is string => typeof n === "string" && !!n.trim()).map((n) => n.trim().slice(0, 30)).slice(0, 30) : []);
   const split = names(e.split), covered = names(e.covered), own = names(e.own), back = names(e.back);
+  const shares = e.shares && typeof e.shares === "object" && !Array.isArray(e.shares)
+    ? Object.fromEntries(Object.entries(e.shares as Record<string, unknown>).map(([n, v]) => [n.trim().slice(0, 30), Number(v)] as const).filter(([n, v]) => n && Number.isFinite(v) && v >= 0).slice(0, 30)) : {};
   return {
     what: what || "Expense", amount, currency: cur, date,
     ...(Number(e.rate) > 0 && /^[A-Z]{3}$/.test(String(e.rateTo)) ? { rate: Number(e.rate), rateTo: String(e.rateTo) } : {}),
@@ -232,6 +255,7 @@ export function cleanExpense(v: unknown): Expense | null {
     ...(covered.length ? { covered } : {}),
     ...(own.length ? { own } : {}),
     ...(back.length ? { back } : {}),
+    ...(Object.keys(shares).length ? { shares } : {}),
     ...(kind ? { kind } : {}),
     ...(Number(e.at) > 0 ? { at: Number(e.at) } : {}),
     ...(typeof e.link === "string" && /^(stop|stay|booking):/.test(e.link) ? { link: e.link.slice(0, 300) } : {}),

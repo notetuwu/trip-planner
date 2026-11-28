@@ -31,6 +31,7 @@ import { handleSearxng, searxngInfo, startSearxngIfChosen } from "./routes/searx
 import { readSettings } from "./settings";
 import { handleCurrent } from "./routes/current";
 import { handleDocs } from "./routes/docs";
+import { mailView } from "./sync/gmail";
 import { handleSync } from "./routes/sync";
 import { startSyncTimer } from "./sync/sync";
 import { handleUpdate } from "./routes/update";
@@ -87,6 +88,12 @@ export async function handleApi(req: Req, res: Res): Promise<boolean> {
     if (path === "/api/lan" || path.startsWith("/api/lan/")) { await handleLan(req, res, path); return true; }
     if (path === "/api/ollama" || path.startsWith("/api/ollama/")) { await handleOllama(req, res, path); return true; }
     if (path === "/api/searxng" || path.startsWith("/api/searxng/")) { await handleSearxng(req, res, path); return true; }
+    // An email attached in the chat (or kept with the trip), made ready to show: { data } (base64 of the .eml).
+    if (method === "POST" && path === "/api/mail/view") {
+      const data = String((await readJson(req))?.data || "");
+      if (!data || data.length > 14_000_000) { sendJson(res, 400, { error: "That email can't be shown (10 MB at most)." }); return true; }
+      sendJson(res, 200, mailView(Buffer.from(data, "base64"))); return true;
+    }
     if (path === "/api/docs" || path === "/api/docs/file") { await handleDocs(req, res, url); return true; }
     if (path === "/api/current") { await handleCurrent(req, res); return true; }
     if (path === "/api/sync" || path.startsWith("/api/sync/")) { await handleSync(req, res, path); return true; }

@@ -113,3 +113,17 @@ describe("expenses", () => {
     expect(describePart("expenses", base.expenses, mine.expenses)).toBe("added Train");
   });
 });
+
+describe("amounts set per person", () => {
+  it("splits what's left evenly among the others, and balances follow", async () => {
+    const { partsOf, unassigned, balances } = await import("../shared/expenses");
+    const e = { what: "Burgers", amount: 30, currency: "EUR", date: "2027-09-14", paidBy: "Mia", shares: { Tom: 12 } };
+    expect(partsOf(e, ["Mia", "Tom", "Ann"])).toEqual({ Mia: 9, Tom: 12, Ann: 9 });
+    expect(unassigned(e, ["Mia", "Tom", "Ann"])).toBe(0);
+    expect(balances([e], ["Mia", "Tom", "Ann"], "EUR", {})).toEqual({ Mia: 21, Tom: -12, Ann: -9 });
+    // Everyone set, but not to the amount: scaled to it, and said.
+    const all = { ...e, split: ["Tom", "Ann"], shares: { Tom: 10, Ann: 10 } };
+    expect(unassigned(all, ["Mia", "Tom", "Ann"])).toBe(10);
+    expect(balances([all], ["Mia", "Tom", "Ann"], "EUR", {})).toEqual({ Mia: 30, Tom: -15, Ann: -15 });
+  });
+});

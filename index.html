@@ -137,7 +137,7 @@
       <textarea id="ideas" class="ideas" rows="3" placeholder="Brainstorm here: places someone recommended, links, things to decide, what to book…"></textarea>
     </details>
 
-    <div class="generate-bar"><button class="primary" id="generate">Generate itinerary</button></div>
+    <div class="generate-bar"><button class="primary" id="generate">Generate itinerary</button><button type="button" class="link-btn" id="emptyPlan" title="A day for every date of your stays, with nothing in it: add the stops yourself">or plan it yourself</button></div>
   </section>
 
   <section class="panel map-panel">
@@ -168,11 +168,12 @@
     <form id="cpForm" class="rc-input">
       <div class="cp-box" id="cpBox">
         <div class="cp-usage" id="cpUsage" role="status" hidden></div>
+        <div class="cp-usage cp-privacy" id="cpPrivacy" role="status" hidden></div>
         <div class="cp-ask" id="cpAsk" hidden></div>
         <div class="cp-attach" id="cpAttach" hidden></div>
         <textarea id="cpQ" rows="1" maxlength="2000" placeholder="Ask anything, or ask for a change…"></textarea>
         <div class="cp-tools">
-          <label class="cp-tool" title="Attach a booking confirmation (PDF, email, screenshot) or a picture of a place you saw (you can also paste or drop them)"><i data-icon="image"></i><input type="file" id="cpImage" accept="image/*,.pdf,.eml,.txt,.html,.htm" multiple hidden></label>
+          <label class="cp-tool" title="Attach files: a booking confirmation (PDF, email, calendar invite, screenshot), a text file, or a picture of a place you saw (you can also paste or drop them)"><i data-icon="paperclip"></i><input type="file" id="cpFile" accept="image/*,.pdf,.eml,.ics,.txt,.html,.htm,.csv,.md,.json" multiple hidden></label>
           <button class="cp-tool" id="cpGmail" type="button" title="Add a booking email from Gmail" aria-label="Add a booking email from Gmail"><i data-icon="mail"></i></button>
           <select id="cpModel" class="cp-model" title="The model that answers in the chat (changes are still applied with the planning model)"></select>
           <button class="cp-tool cp-ring" id="cpCompact" type="button" hidden></button>

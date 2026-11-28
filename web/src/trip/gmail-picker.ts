@@ -7,13 +7,13 @@
 // (pictures, styles, fonts) until "Load images" is pressed: remote pictures would tell the sender it was opened. Links
 // open outside the app.
 import { api, closeOnBackdrop, esc, toast } from "../core/dom";
-import { fmtShort, fmtTime } from "../core/format";
 import { type IconName, ext, icon } from "../core/icons";
 import { openOutside } from "../core/window-mode";
 import { loadSyncStatus } from "../saves/sync-client";
 import { addGmail, openConnect } from "../settings/connect-wizard";
 import { askText } from "../core/ask";
 import { togglePopup } from "../core/menu";
+import { avatar, emailHtml, when, wireEmail } from "./email-view";
 
 interface Mail { id: string; threadId: string; subject: string; from: string; fromEmail: string; date: string; snippet: string; unread: boolean; attachment: boolean }
 interface Opened { name: string; data: string; threadId: string; subject: string; from: string; fromEmail: string; to: string; date: string; html: string; remote: boolean; attachments: string[] }
@@ -30,27 +30,6 @@ const remembered = (): { account?: string; view?: string; sort?: string } => { t
 const FILTERS_KEY = "trip-planner-gmail-filters";
 const savedFilters = (): string[] => { try { const v = JSON.parse(localStorage.getItem(FILTERS_KEY) || "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x.trim()).slice(0, 30) : []; } catch { return []; } };
 const BOOKING = /\b(booking|booked|reservation|reserved|confirm(ation|ed)?|e-?ticket|ticket|itinerary|boarding|check-?in|buchung|reservierung|bestätigung|réservation|prenotazione|reserva)\b/i;
-
-const pad = (n: number) => String(n).padStart(2, "0");
-/** When an email came: the time today, the weekday this week, else the date (and the year when it isn't this year). */
-function when(iso: string, long = false) {
-  if (!iso) return "";
-  const d = new Date(iso), now = new Date(), time = fmtTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
-  if (long) return `${d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" })}, ${time}`;
-  if (d.toDateString() === now.toDateString()) return time;
-  const days = (now.getTime() - d.getTime()) / 864e5;
-  if (days > 0 && days < 6) return d.toLocaleDateString(undefined, { weekday: "short" });
-  return d.getFullYear() === now.getFullYear() ? fmtShort(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`) : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-}
-const hue = (s: string) => [...s.toLowerCase()].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 17);
-const avatar = (name: string, key: string, size = "") => `<span class="mbx-av ${size}" style="--h:${hue(key || name)}" aria-hidden="true">${esc((name.trim().match(/[\p{L}\p{N}]/u)?.[0] || "?").toUpperCase())}</span>`;
-
-/** The email as a document for the frame: the policy first, so nothing from the web loads before it applies. */
-const frameDoc = (html: string, images: boolean) => `<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'${images ? " https: http:" : ""}; img-src data:${images ? " https: http:" : ""}; font-src data:; form-action 'none'">
-<meta name="referrer" content="no-referrer"><base target="_blank">
-<style>html{color-scheme:light}body{margin:0;padding:20px 22px;font:14px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif;color:#1f1f1f;background:#fff;overflow-wrap:anywhere}img{max-width:100%}table{max-width:100%}pre.plain{margin:0;white-space:pre-wrap;font:inherit}a{color:#1a62d6}${images ? "" : "img:not([src^=\"data:\"]){visibility:hidden}"}</style>
-</head><body>${html}</body></html>`;
 
 const bytesOf = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
@@ -213,37 +192,8 @@ export async function openGmail(attach: (files: File[]) => void) {
         <button type="button" class="btn" data-mbx-gmail title="Open this email in Gmail">Open in Gmail${ext()}</button>
         <button type="button" class="btn solid" data-mbx-add>${icon("plus")} ${others ? `Add with ${others} ticked` : "Add to chat"}</button>
       </div>
-      <div class="mbx-read-scroll">
-        <h2 class="mbx-subject">${esc(m.subject)}</h2>
-        <div class="mbx-sender">${avatar(m.from, m.fromEmail || m.from, "lg")}
-          <div><b>${esc(m.from || m.fromEmail)}</b>${m.fromEmail && m.fromEmail !== m.from ? ` <span class="hint">&lt;${esc(m.fromEmail)}&gt;</span>` : ""}${m.to ? `<div class="hint">to ${esc(m.to)}</div>` : ""}</div>
-          <time>${esc(when(m.date, true))}</time></div>
-        ${m.attachments.length ? `<div class="mbx-files">${m.attachments.map((n) => `<span class="cp-file">${icon("file")}<span>${esc(n)}</span></span>`).join("")}</div>` : ""}
-        ${m.remote && !images ? `<div class="mbx-banner">${icon("eyeOff")}<span>Images from the web are hidden: loading them can tell the sender you opened this.</span><button type="button" class="btn" data-mbx-images>Load images</button></div>` : ""}
-        <div class="mbx-paper"><iframe title="The email" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer"></iframe></div>
-      </div>`;
-    const frame = reader.querySelector<HTMLIFrameElement>("iframe")!;
-    // Tall as the email (its body, not the frame's own height), so the whole pane scrolls as one; links go outside the app.
-    // (Pictures from the web that are blocked take their room but show no broken-picture sign.)
-    const fit = () => { try { const b = frame.contentDocument!.body; frame.style.height = `${Math.max(120, Math.ceil(b.getBoundingClientRect().height), b.scrollHeight)}px`; } catch { /* not ours */ } };
-    frame.onload = () => {
-      const doc = frame.contentDocument;
-      if (!doc) return;
-      fit();
-      const link = (e: MouseEvent) => {
-        const a = (e.target as Element | null)?.closest?.("a[href]");
-        if (!a) return;
-        e.preventDefault();
-        const href = a.getAttribute("href") || "";
-        if (/^(https?:|mailto:)/i.test(href)) openOutside(href);
-      };
-      doc.addEventListener("click", link, true);
-      doc.addEventListener("auxclick", link, true);
-      for (const img of Array.from(doc.images)) img.addEventListener("load", fit);
-      try { new ResizeObserver(fit).observe(doc.documentElement); } catch { /* older browsers: sized once */ }
-    };
-    frame.srcdoc = frameDoc(m.html, images);
-    reader.querySelector<HTMLButtonElement>("[data-mbx-images]")?.addEventListener("click", () => draw(m, id, true));
+      <div class="mbx-read-scroll">${emailHtml(m, images)}</div>`;
+    wireEmail(reader, m, images, () => draw(m, id, true));
     reader.querySelector<HTMLButtonElement>("[data-mbx-gmail]")!.onclick = () => openOutside(`https://mail.google.com/mail/?authuser=${encodeURIComponent(account)}#all/${m.threadId}`);
     reader.querySelector<HTMLButtonElement>("[data-mbx-add]")!.onclick = () => add([keyOf(id), ...picked.keys()]);
   };

@@ -1,12 +1,16 @@
 // Booking confirmations attached in the trip chat: the files are held while the page is open, and a card under the
 // answer asks whether to keep them in a "docs" folder next to the trip (server/routes/docs.ts). Kept ones are linked
 // from the bookings the chat made of them.
-import { api, apiUrl, esc } from "../core/dom";
+import { api, apiUrl, esc, toast } from "../core/dom";
+import { showEmail } from "./email-view";
 import { icon } from "../core/icons";
 import { state } from "../core/state";
 
 /** The files besides pictures that the chat can read. */
-export const ATTACHABLE = /\.(pdf|eml|txt|html?)$/i;
+export const ATTACHABLE = /\.(pdf|eml|txt|html?|ics|csv|md|json)$/i;
+
+/** The attached files that can be kept in the docs folder (a .json there would look like a trip to sync). */
+export const keepable = (name: string) => !/\.json$/i.test(name);
 
 /** The card under an answer: the files offered, where they went, or that they weren't wanted. */
 export interface ChatDocs { key: string; names: string[]; kept?: string[]; place?: string; declined?: boolean }
@@ -30,6 +34,18 @@ export const filesData = (files: File[]) => Promise.all(files.map((f) => new Pro
 })));
 
 export const docUrl = (name: string) => apiUrl(`/api/docs/file?${new URLSearchParams({ trip: state.saveName || "", file: name })}`);
+
+// A kept email (in the chat's card, or on a booking in the sidebar) opens to read, not as a download.
+document.addEventListener("click", async (e) => {
+  const a = (e.target as HTMLElement | null)?.closest?.<HTMLAnchorElement>("a.cp-file[href*='/api/docs/file']");
+  if (!a || !/\.eml$/i.test(new URL(a.href).searchParams.get("file") || "")) return;
+  e.preventDefault();
+  try {
+    const r = await fetch(a.href);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.statusText);
+    showEmail(new File([await r.blob()], new URL(a.href).searchParams.get("file")!));
+  } catch (err) { toast(`Couldn't open it: ${(err as Error).message}`); }
+});
 
 /** Links the kept files from the bookings that turn's change added (once it's applied). */
 export function linkDocs(turn: Turn | undefined) {
@@ -87,7 +103,7 @@ export function wireDocs(log: HTMLElement, turn: (k: number) => Turn | undefined
     const d = t.docs, place = b.dataset.place!, label = b.textContent!.trim();
     busy = d.key; errors.delete(d.key); redraw();
     try {
-      const { names } = await api<{ names: string[] }>("/api/docs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: state.saveName, place, files: await filesData(heldFiles(d.key)) }) });
+      const { names } = await api<{ names: string[] }>("/api/docs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ trip: state.saveName, place, files: await filesData(heldFiles(d.key).filter((f) => keepable(f.name))) }) });
       d.kept = names; d.place = label;
       linkDocs(t);
     } catch (e) { errors.set(d.key, `Couldn't keep ${d.names.length > 1 ? "them" : "it"}: ${(e as Error).message}`); places.delete(state.saveName || ""); }

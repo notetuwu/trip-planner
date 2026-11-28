@@ -1,7 +1,7 @@
 // The Costs window, in tabs. Overview: the plan's estimate, what was really spent and the budget, per day and per kind,
 // and the fuel estimate. Plan: every stop's estimate to change, and next to it what was really paid and who paid it
 // (the same for each stay's accommodation and the bookings). Expenses and Who owes: see costs-spent.ts.
-import { type Expense, backBy, coveredBy, inTrip, KINDS, ownBy, spending, standOf } from "../../../shared/expenses";
+import { type Expense, backBy, coveredBy, inTrip, KINDS, ownBy, partsOf, spending, standOf, unassigned } from "../../../shared/expenses";
 import { $, $$, downloadFile, esc } from "../core/dom";
 import { currencySymbol, fmtDate, fmtTime, money } from "../core/format";
 import { icon } from "../core/icons";
@@ -85,7 +85,8 @@ const moneyIn = (attrs: string, value: number | undefined, cur: string) =>
 export function splitWords(e: Expense, names: string[]) {
   if (e.each) return "each their own";
   const forN = e.split?.length && e.split.length < names.length ? `${e.split.length} of ${names.length}` : "everyone", cov = coveredBy(e, names), own = ownBy(e, names), back = backBy(e, names);
-  return [forN, cov.length ? `covers ${cov.join(", ")}` : "", own.length ? `${own.length} paid own` : "", back.length ? `${back.length} paid back` : ""].filter(Boolean).join(" · ");
+  const uneven = Object.keys(e.shares || {}).some((n) => (e.split?.length ? e.split : names).includes(n));
+  return [forN, uneven ? "uneven" : "", cov.length ? `covers ${cov.join(", ")}` : "", own.length ? `${own.length} paid own` : "", back.length ? `${back.length} paid back` : ""].filter(Boolean).join(" · ");
 }
 
 /** Really paid (in its currency), who paid it (or each their own), and who it was for. */
@@ -173,27 +174,40 @@ function openSplit(anchor: HTMLElement, id: string) {
     const e = state.expenses?.[id], names = people();
     if (!e) { pop.hidePopover(); return; }
     const who = e.split?.length ? e.split : names, v = Number(e.amount) || 0;
-    const share = who.length ? v / who.length : 0, own = ownBy(e, names), cov = coveredBy(e, names);
-    pop.innerHTML = `<div class="cx-pop-head"><b>Who it was for</b><span class="hint">${esc(money(v, e.currency))}${who.length ? ` · ${esc(money(share, e.currency))} each` : ""}</span></div>
+    const parts = partsOf(e, names), cov = coveredBy(e, names), own = ownBy(e, names), left = unassigned(e, names);
+    const set = (n: string) => e.shares?.[n] != null && who.includes(n);
+    const custom = who.some(set);
+    const field = (n: string) => `<span class="cx-in cx-pop-in${set(n) ? " set" : ""}"><span class="cx-sym">${esc(currencySymbol(e.currency))}</span><input type="number" min="0" step="${step(e.currency)}" inputmode="decimal" data-pop-share="${esc(n)}" value="${set(n) ? esc(amountText(e.shares![n], e.currency)) : ""}" placeholder="${esc(amountText(parts[n], e.currency))}" aria-label="${esc(`What ${n} had`)}" title="What ${esc(n)} had: type it when it wasn't the same for everyone"${ro() ? " disabled" : ""}></span>`;
+    pop.innerHTML = `<div class="cx-pop-head"><b>Who it was for</b><span class="hint">${esc(money(v, e.currency))} · ${custom ? "set per person" : "split evenly"}</span>${custom && !ro() ? `<button type="button" class="link-btn" data-pop-even>Split evenly</button>` : ""}</div>
+      ${left ? `<p class="cx-pop-warn">${icon("warn")} The amounts come to ${esc(money(v - left, e.currency))}, not ${esc(money(v, e.currency))}: ${left > 0 ? `${esc(money(left, e.currency))} is nobody's yet` : `${esc(money(-left, e.currency))} too much`}. Until they add up, everyone's part is scaled to the total.</p>` : ""}
       ${names.map((n) => {
         const st = standOf(e, n, names), isFor = st !== "out", isPayer = st === "payer";
-        const amt = !isFor && !isPayer ? "" : isPayer ? money(share * (who.includes(n) ? 1 : 0) + share * cov.length, e.currency) : money(share, e.currency);
+        const covers = isPayer ? cov.reduce((t, m) => t + (parts[m] || 0), 0) : 0;
         return `<div class="cx-pop-row${isFor ? " on" : ""} st-${st}">
           <label class="cx-pop-who"><input type="checkbox" data-pop-for="${esc(n)}"${who.includes(n) ? " checked" : ""}> <span>${esc(n)}</span>${isPayer ? ` <span class="cx-paid-badge">paid</span>` : ""}</label>
-          ${isFor && !isPayer && !e.each && e.paidBy ? standPicker(n, st, `pop-${id}`) : "<span></span>"}
-          <span class="cx-pop-amt">${esc(amt)}</span>
+          ${isFor && !isPayer && !e.each && e.paidBy ? standPicker(n, st, `pop-${id}`) : isPayer && covers ? `<span class="hint cx-pop-covers">+ ${esc(money(covers, e.currency))} covered</span>` : "<span></span>"}
+          <span class="cx-pop-amt">${who.includes(n) ? field(n) : ""}</span>
         </div>`;
       }).join("")}
-      <p class="hint cx-pop-foot">${e.each ? "Each paid their own share: nobody owes anybody for this." : e.paidBy ? `${esc(e.paidBy)} paid ${esc(money(v - share * own.length, e.currency))}. <b>Covered</b>: ${esc(e.paidBy)} takes their share. <b>Paid own</b>: they paid it themselves. <b>Paid back</b>: they already gave ${esc(e.paidBy)} their share.` : "Say who paid it first."}</p>`;
+      <p class="hint cx-pop-foot">${e.each ? "Each paid their own share: nobody owes anybody for this." : e.paidBy ? `${esc(e.paidBy)} paid ${esc(money(v - own.reduce((t, m) => t + (parts[m] || 0), 0), e.currency))}. Type someone's amount when it wasn't the same for everyone; the rest is split among the others. <b>Covered</b>: ${esc(e.paidBy)} takes their share. <b>Paid own</b>: they paid it themselves. <b>Paid back</b>: they already gave ${esc(e.paidBy)} their share.` : "Say who paid it first."}</p>`;
+    const keepShares = (forWho: string[], shares: Record<string, number> | undefined) => {
+      const kept = Object.fromEntries(Object.entries(shares || {}).filter(([n]) => forWho.includes(n)));
+      return Object.keys(kept).length ? { shares: kept } : {};
+    };
     const save = () => {
       const forWho = $$<HTMLInputElement>("[data-pop-for]", pop).filter((b) => b.checked).map((b) => b.dataset.popFor!);
       if (!forWho.length) { render(); return; }
       const { covered, own: ownNow, back } = readStands(pop, forWho, e.paidBy || "");
-      const { split: _s, covered: _c, own: _o, back: _b, ...rest } = e;
-      putExpense(id, { ...rest, ...(forWho.length < names.length ? { split: forWho } : {}), ...(covered.length ? { covered } : {}), ...(ownNow.length ? { own: ownNow } : {}), ...(back.length ? { back } : {}) });
+      const shares: Record<string, number> = { ...(e.shares || {}) };
+      for (const i of $$<HTMLInputElement>("[data-pop-share]", pop)) { const n = i.dataset.popShare!; if (i.value === "") delete shares[n]; else shares[n] = Math.max(0, Number(i.value) || 0); }
+      const { split: _s, covered: _c, own: _o, back: _b, shares: _sh, ...rest } = e;
+      putExpense(id, { ...rest, ...(forWho.length < names.length ? { split: forWho } : {}), ...(covered.length ? { covered } : {}), ...(ownNow.length ? { own: ownNow } : {}), ...(back.length ? { back } : {}), ...keepShares(forWho, shares) });
       render();
     };
     for (const b of $$<HTMLInputElement>("input", pop)) b.onchange = save;
+    // (Enter in an amount saves it without closing the popup.)
+    for (const b of $$<HTMLInputElement>("[data-pop-share]", pop)) b.onkeydown = (ev) => { if (ev.key === "Enter") { ev.preventDefault(); b.blur(); } };
+    pop.querySelector<HTMLButtonElement>("[data-pop-even]")?.addEventListener("click", () => { const { shares: _sh, ...rest } = e; putExpense(id, rest); render(); });
   };
   render();
   pop.addEventListener("toggle", (ev) => { if ((ev as ToggleEvent).newState === "closed") { splitClosed = { id, at: Date.now() }; pop.remove(); } });

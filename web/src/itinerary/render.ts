@@ -1,5 +1,6 @@
 // Renders the itinerary column and wires up its buttons.
 import { initSplitTabs } from "./split-tabs";
+import { openAddStop, startEmptyPlan } from "./manual";
 import { openChat } from "../trip/companion";
 import { type CostsTab, openCosts } from "./costs";
 import { openPhotosView } from "./photos-view";
@@ -122,6 +123,7 @@ function wire(out: HTMLElement) {
   out.querySelector('[data-stale="clear"]')?.addEventListener("click", clearItinerary);
   out.querySelector('[data-stale="gen"]')?.addEventListener("click", () => runGeneration());
   $("#refineBtn").onclick = () => openChat("");
+  for (const el of $$<HTMLElement>("[data-add-open]", out)) el.onclick = () => openAddStop(out, +el.dataset.addOpen!);
   for (const el of $$("[data-redo]", out)) el.onclick = (e) => { e.stopPropagation(); redoDay(+el.dataset.redo!); };
   for (const el of $$("[data-replan-stay]", out)) el.onclick = (e) => { e.stopPropagation(); replanStay(+el.dataset.replanStay!); };
   // A stay's heading folds its days away (and back).
@@ -172,7 +174,9 @@ export function renderItinerary(error?: string) {
   if (it && (groupsFromText(it.days) || orderSplitRuns(it.days))) { orderSplitRuns(it.days); save(); }
   const errorHtml = error ? `<div class="error">${esc(error)}</div>` : "";
   if (!it) {
-    out.innerHTML = errorHtml + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.</div>`;
+    out.innerHTML = errorHtml + `<div class="empty"><div class="sun"></div>Add your stays, pick a place list, and generate.<br>Your itinerary will appear here.
+      <div class="empty-acts"><span class="hint">Or plan it yourself:</span><button type="button" class="btn" data-empty-plan>${icon("list")} Start an empty plan</button></div></div>`;
+    out.querySelector<HTMLButtonElement>("[data-empty-plan]")!.onclick = () => startEmptyPlan();
     renderDayChips();
     return;
   }

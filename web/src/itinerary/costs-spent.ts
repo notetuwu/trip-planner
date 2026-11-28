@@ -2,7 +2,7 @@
 // it was for (the ones entered next to the plan's stops in the Plan tab are here too). Who owes: each traveler's share
 // against what they paid, the fewest payments that even it out (each can be marked as paid), and per person what their
 // share is made of.
-import { type Expense, type ExpenseKind, KINDS, balances, costShares, coveredBy, type Expenses, decimals, inTrip, mergeFromPhone, ownBy, backBy, rateOf, settleUp, spending, standOf } from "../../../shared/expenses";
+import { type Expense, type ExpenseKind, KINDS, balances, costShares, coveredBy, type Expenses, decimals, inTrip, mergeFromPhone, ownBy, backBy, partsOf, rateOf, settleUp, spending, standOf, unassigned } from "../../../shared/expenses";
 import { cleanNames } from "../../../shared/people";
 import { $$, downloadFile, esc } from "../core/dom";
 import { CURRENCIES, currencySymbol, fmtDate, fmtTime, money, todayIso } from "../core/format";
@@ -81,10 +81,12 @@ function formHtml() {
       ${names.length > 1 ? `<label class="se-f"><span>Paid by</span><select data-x="paidBy">${names.map((n) => opt(n, n, e?.each ? "" : e?.paidBy || defaultPayer())).join("")}${opt(EACH, "Each paid their own", e?.each ? EACH : "")}</select></label>` : ""}
     </div>
     ${names.length > 1 ? `<div class="cx-split">
-      <div class="cx-split-head"><b>Split between</b><span class="hint" data-split-sum></span><span class="cx-split-links"><button type="button" class="link-btn" data-split-all>All</button><button type="button" class="link-btn" data-split-none>None</button></span></div>
+      <div class="cx-split-head"><b>Split between</b><span class="hint" data-split-sum></span><span class="cx-split-links"><button type="button" class="link-btn" data-split-even title="Clear the amounts typed per person">Split evenly</button><button type="button" class="link-btn" data-split-all>All</button><button type="button" class="link-btn" data-split-none>None</button></span></div>
+      <p class="hint cx-split-tip">Split evenly unless you type what someone had: the rest is shared among the others.</p>
+      <p class="cx-split-warn" data-split-warn hidden></p>
       <div class="cx-people">${names.map((n) => `<div class="cx-person" data-person="${esc(n)}" style="--h:${hue(n)}">
         <label class="cx-who" title="${esc(`Was it for ${n}? Click to include or leave out`)}"><input type="checkbox" data-for="${esc(n)}"${who.includes(n) ? " checked" : ""}><span class="cx-avatar">${esc(initials(n))}${icon("check")}</span><span class="cx-name">${esc(n)}</span><span class="cx-paid-badge">paid</span></label>
-        <span class="cx-part" data-part="${esc(n)}"></span>
+        <span class="cx-part"><span class="cx-in cx-share"><span class="cx-sym" data-share-sym>${esc(currencySymbol(curNow))}</span><input type="number" min="0" inputmode="decimal" step="any" data-share="${esc(n)}" value="${e?.shares?.[n] != null && who.includes(n) ? esc(amountText(e.shares[n], curNow)) : ""}" aria-label="${esc(`What ${n} had`)}" title="What ${esc(n)} had: type it when it wasn't the same for everyone"></span><small data-part="${esc(n)}"></small></span>
         <span class="cx-payer-note" data-payer-note="${esc(n)}"></span>
         ${standPicker(n, e ? (st => (st === "payer" || st === "out" ? "owes" : st))(standOf(e, n, names)) : "owes", "form")}
       </div>`).join("")}</div>
@@ -179,6 +181,8 @@ export function wireSpent(root: HTMLElement) {
   conv();
   // Who it was for: "covered" only for those it was for (not the payer), and each one's part as they type.
   const boxes = (sel: string) => $$<HTMLInputElement>(sel, form);
+  /** What's typed per person, among those it was for. */
+  const typedShares = (forWho: string[]) => Object.fromEntries(boxes("[data-share]").filter((i) => i.value !== "" && forWho.includes(i.dataset.share!)).map((i) => [i.dataset.share!, Math.max(0, Number(i.value) || 0)]));
   const parts = () => {
     if (people().length < 2) return;
     const payer = f<HTMLSelectElement>("paidBy").value, amount = Number(f("amount").value) || 0, c = f<HTMLSelectElement>("currency").value;
@@ -186,31 +190,38 @@ export function wireSpent(root: HTMLElement) {
     const each = payer === EACH;
     form.classList.toggle("each", each);
     const { covered, own, back } = each ? { covered: [], own: [], back: [] } : readStands(form, forWho, payer);
-    const share = forWho.length ? amount / forWho.length : 0;
+    // Each one's part: as typed, or an even share of what's left.
+    const typed = typedShares(forWho), part = partsOf({ amount, split: forWho, shares: typed }, forWho);
+    const sumOf = (list: string[]) => list.reduce((t, n) => t + (part[n] || 0), 0);
+    for (const s of $$<HTMLElement>("[data-share-sym]", form)) s.textContent = currencySymbol(c);
     for (const el of $$<HTMLElement>("[data-person]", form)) {
       const n = el.dataset.person!, isFor = forWho.includes(n), cov = covered.includes(n), paid = n === payer;
       const mineOwn = own.includes(n), mineBack = back.includes(n);
       el.classList.toggle("on", isFor); el.classList.toggle("payer", paid); el.classList.toggle("covered", cov); el.classList.toggle("own", mineOwn || mineBack);
       for (const l of $$<HTMLElement>(".cx-seg label", el)) l.classList.toggle("on", !!l.querySelector<HTMLInputElement>("input")?.checked);
-      // The payer's own part: their share, and the shares they cover.
-      const mine = (isFor ? share : 0) + share * covered.length;
-      const part = el.querySelector<HTMLElement>("[data-part]")!;
-      // What the payer really paid: the full amount, less the shares others paid themselves.
-      const paidSum = amount - share * own.length;
-      const backNote = back.length && amount ? ` · ${money(share * back.length, c)} paid back` : "";
+      const input = el.querySelector<HTMLInputElement>("[data-share]")!, box = input.parentElement!;
+      box.hidden = !isFor;
+      box.classList.toggle("set", input.value !== "");
+      input.placeholder = amount ? amountText(part[n] || 0, c) : "0";
+      // What the payer really paid: the full amount, less what others paid themselves.
+      const paidSum = amount - sumOf(own);
+      const backNote = back.length && amount ? ` · ${money(sumOf(back), c)} paid back` : "";
       el.querySelector<HTMLElement>("[data-payer-note]")!.textContent = paid ? (amount ? (own.length ? `Paid ${money(paidSum, c)} of ${money(amount, c)}` : `Paid the full ${money(amount, c)}`) + backNote : "Pays the full amount") : "";
-      part.innerHTML = !isFor && !paid ? `<span class="hint">not in it</span>`
-        : each ? (amount ? `<b>${esc(money(share, c))}</b><small>paid their own</small>` : `<small>pays their own</small>`)
-        : paid ? (amount ? `<b>${esc(money(mine, c))}</b><small>own part${covered.length ? `, covers ${covered.length}` : ""}</small>` : "")
-          : cov ? (amount ? `<b>${esc(money(share, c))}</b><small>covered</small>` : `<small>covered</small>`)
-            : mineOwn ? (amount ? `<b>${esc(money(share, c))}</b><small>paid their own</small>` : `<small>pays their own</small>`)
-            : mineBack ? (amount ? `<b>${esc(money(share, c))}</b><small>paid ${esc(payer)} back</small>` : `<small>paid back</small>`)
-            : amount ? `<b>${esc(money(share, c))}</b><small>owes ${esc(payer)}</small>` : "";
+      el.querySelector<HTMLElement>("[data-part]")!.textContent = !isFor && !paid ? "not in it"
+        : each ? "paid their own"
+        : paid ? (isFor ? `own part${covered.length ? `, covers ${money(sumOf(covered), c)}` : ""}` : covered.length ? `covers ${money(sumOf(covered), c)}` : "not in it")
+          : cov ? "covered" : mineOwn ? "paid their own" : mineBack ? `paid ${payer} back` : `owes ${payer}`;
     }
+    const left = amount ? amount - sumOf(forWho) : 0, off = Math.abs(left) >= 0.5 / 10 ** decimals(c);
+    form.querySelector<HTMLElement>("[data-split-warn]")!.hidden = !off;
+    form.querySelector<HTMLElement>("[data-split-warn]")!.textContent = off ? `The amounts come to ${money(amount - left, c)}, not ${money(amount, c)}: ${left > 0 ? `${money(left, c)} is nobody's yet` : `${money(-left, c)} too much`}.` : "";
+    const custom = Object.keys(typed).length, share = forWho.length ? amount / forWho.length : 0;
     const sum = form.querySelector<HTMLElement>("[data-split-sum]");
-    if (sum) sum.textContent = !forWho.length ? "nobody yet" : each ? `each pays their own${amount ? ` · ${money(share, c)} each` : ""}` : amount ? `${money(share, c)} each for ${forWho.length}${covered.length ? ` · ${payer} covers ${covered.length}` : ""}${own.length ? ` · ${own.length} paid their own` : ""}${back.length ? ` · ${back.length} paid back` : ""}` : `${forWho.length} of ${people().length}`;
+    if (sum) sum.textContent = !forWho.length ? "nobody yet" : custom ? `set per person for ${forWho.length}${covered.length ? ` · ${payer} covers ${covered.length}` : ""}` : each ? `each pays their own${amount ? ` · ${money(share, c)} each` : ""}` : amount ? `${money(share, c)} each for ${forWho.length}${covered.length ? ` · ${payer} covers ${covered.length}` : ""}${own.length ? ` · ${own.length} paid their own` : ""}${back.length ? ` · ${back.length} paid back` : ""}` : `${forWho.length} of ${people().length}`;
   };
   const setAll = (on: boolean) => { for (const b of boxes("[data-for]")) b.checked = on; parts(); };
+  form.querySelector("[data-split-even]")?.addEventListener("click", () => { for (const i of boxes("[data-share]")) i.value = ""; parts(); });
+  for (const i of boxes("[data-share]")) i.addEventListener("input", parts);
   form.querySelector("[data-split-all]")?.addEventListener("click", () => setAll(true));
   form.querySelector("[data-split-none]")?.addEventListener("click", () => setAll(false));
   for (const b of boxes("[data-for], [data-stand]")) b.addEventListener("change", parts);
@@ -259,6 +270,8 @@ export function wireSpent(root: HTMLElement) {
     if (people().length > 1 && !ticked.length) return say("Tick at least one person it was for.");
     const picked = people().length > 1 ? f<HTMLSelectElement>("paidBy").value : "", each = picked === EACH, payer = each ? "" : picked;
     const { covered, own, back } = each ? { covered: [], own: [], back: [] } : readStands(form, ticked, payer);
+    const shares = people().length > 1 ? typedShares(ticked) : {};
+    if (Object.keys(shares).length && unassigned({ amount, split: ticked, shares, currency: c }, ticked)) return say("The amounts per person don't add up to the full amount: change one, or clear one so it takes the rest.");
     const was = editing ? state.expenses?.[editing] : undefined;
     // Picked from the plan: it's that stop's payment (shown next to it in the Plan tab), unless the stop has one already.
     // Nothing picked: a stay's or booking's link stays, a stop's goes.
@@ -273,6 +286,7 @@ export function wireSpent(root: HTMLElement) {
       ...(covered.length ? { covered } : {}),
       ...(own.length ? { own } : {}),
       ...(back.length ? { back } : {}),
+      ...(Object.keys(shares).length ? { shares } : {}),
       ...(link ? { link } : {}), ...(was?.at ? { at: was.at } : {}),
     };
     putExpense(editing, e);

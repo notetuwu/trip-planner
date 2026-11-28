@@ -16,6 +16,8 @@ import type { AgreedStop, GeoHit, ItineraryItem, LegChoice, MustSeeHow } from ".
 import { stayLoc, stayOn } from "../geo/locate";
 import { $, api, esc, toast } from "../core/dom";
 import { addDays, fmtDate, todayIso } from "../core/format";
+import { type ExpenseKind, expenseId } from "../../../shared/expenses";
+import { bookingLink, stayLink } from "../itinerary/costs-data";
 import { icon } from "../core/icons";
 import { mapsName, pointUrl, routeUrl } from "../core/maps-links";
 import { showPicture } from "../core/lightbox";
@@ -43,7 +45,8 @@ import { cleanNames, company } from "../../../shared/people";
 import { dayKey, removedStops } from "../../../shared/edits";
 import { showNames } from "./fields";
 import { openGmail } from "./gmail-picker";
-import { type ChatDocs, ATTACHABLE, docsCard, filesData, holdFiles, heldFiles, linkDocs, wireDocs } from "./chat-docs";
+import { showEmail } from "./email-view";
+import { type ChatDocs, ATTACHABLE, keepable, docsCard, filesData, holdFiles, heldFiles, linkDocs, wireDocs } from "./chat-docs";
 
 /** "revised": sent back with an edit, for the chat to offer again with it made. */
 type ChangeState = "offered" | "applying" | "applied" | "failed" | "skipped" | "undone" | "revised";
@@ -118,6 +121,8 @@ function editLine(e: EditOp) {
     case "set": return `${SET_NAMES[v(e.field)] || v(e.field)}: ${v(e.value) || "(none)"}${e.field === "dailyBudget" ? ` ${state.currency} per person a day` : ""}`;
     case "stayNights": return `${v(e.stay)}: ${v(e.nights)} night${Number(e.nights) === 1 ? "" : "s"}`;
     case "stayHotel": return `${v(e.stay)}: staying at ${v(e.value)}`;
+    case "stayDates": return `${v(e.stay)}: ${v(e.checkIn)} to ${v(e.checkOut)} (${Math.round((Date.parse(v(e.checkOut)) - Date.parse(v(e.checkIn))) / 864e5) || "?"} nights)`;
+    case "paid": return `Paid: ${v(e.what) || "the booking"}, ${v(e.amount)} ${v(e.currency) || state.currency}${e.stay ? ` (the stay in ${v(e.stay)})` : e.booking ? ` (${v(e.booking)})` : ""}`;
     case "stayTravel": return `${v(e.stay)}: getting there by ${v(e.value)}`;
     case "transport": return `Day ${v(e.day)}, ${v(e.place)}: ${v(e.value) || `by ${v(e.mode)}`}`;
     case "addStay": return `New stay: ${v(e.city)}, ${v(e.nights) || 1} night(s)${e.after ? `, after ${v(e.after)}` : ""}`;
@@ -168,6 +173,33 @@ function applyEdits(edits: EditOp[]) {
       }
     } else if (e.op === "stayNights") { const st = stayOf(e.stay); if (st && Number(e.nights) >= 0) { st.nights = Math.round(Number(e.nights)); chainDates(); } }
     else if (e.op === "stayHotel") { const st = stayOf(e.stay); if (st) st.hotel = s; }
+    else if (e.op === "stayDates") {
+      // The nights from a hotel's dates. The first stay starts the trip there; a later one whose check-in isn't where the
+      // stay before it ends keeps its own date (a gap or an overlap, which the chat says).
+      const st = stayOf(e.stay), a = String(e.checkIn || ""), b = String(e.checkOut || ""), day = /^\d{4}-\d{2}-\d{2}$/;
+      if (st && day.test(a) && day.test(b) && b > a) {
+        st.nights = Math.round((Date.parse(b) - Date.parse(a)) / 864e5);
+        const i = state.stays.indexOf(st), prev = state.stays[i - 1];
+        if (!i || !prev?.start) st.start = a;
+        else if (addDays(prev.start, prev.nights) !== a) { st.start = a; st.manualStart = true; }
+        chainDates();
+      }
+    }
+    else if (e.op === "paid" && Number(e.amount) > 0) {
+      // What was really paid, as an expense for the stay or booking (the Costs window shows it there).
+      const st = e.stay ? stayOf(e.stay) : undefined, bk = e.booking ? (state.bookings || []).find((x) => samePlace(x.name, String(e.booking))) : undefined;
+      const link = st?.start ? stayLink(st.city, st.start) : bk ? bookingLink(bk.name, bk.date) : undefined;
+      const amount = Math.round(Number(e.amount) * 100) / 100, kind = String(e.kind || "");
+      if (!Object.values(state.expenses || {}).some((x) => link && x.link === link && x.amount === amount)) {
+        state.expenses = { ...(state.expenses || {}), [expenseId()]: {
+          what: (s || String(e.what || "") || st?.hotel || bk?.name || "Booking").slice(0, 140), amount,
+          currency: /^[A-Z]{3}$/i.test(String(e.currency || "")) ? String(e.currency).toUpperCase() : state.currency,
+          date: /^\d{4}-\d{2}-\d{2}$/.test(String(e.date)) ? String(e.date) : st?.start || bk?.date || todayIso(),
+          kind: (["stay", "transport", "sights", "food", "shopping", "other"].includes(kind) ? kind : st ? "stay" : "other") as ExpenseKind,
+          ...(link ? { link } : {}), at: Date.now(),
+        } };
+      }
+    }
     else if (e.op === "stayTravel") { const st = stayOf(e.stay); if (st && ["car", "train", "bus", "walk", "bike", "ferry", "flight"].includes(s)) st.travel = s as never; }
     else if (e.op === "addStay" && e.city) {
       const after = stayOf(e.after), at = after ? state.stays.indexOf(after) + 1 : state.stays.length;
@@ -196,11 +228,16 @@ function applyEdits(edits: EditOp[]) {
     } else if (e.op === "addBooking" && e.name && /^\d{4}-\d{2}-\d{2}$/.test(String(e.date))) {
       const time = (v: unknown) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
       const cost = e.cost === undefined || e.cost === "" ? NaN : Number(e.cost);
-      state.bookings = [...(state.bookings || []), { name: String(e.name), date: String(e.date),
+      const fields = {
         ...(/^\d{4}-\d{2}-\d{2}$/.test(String(e.until)) && String(e.until) > String(e.date) ? { until: String(e.until) } : {}),
         ...(time(e.from) ? { from: time(e.from) } : {}), ...(time(e.to) ? { to: time(e.to) } : {}),
         ...(e.where ? { where: String(e.where) } : {}), ...(typeof e.lat === "number" && typeof e.lng === "number" ? { lat: e.lat, lng: e.lng } : {}),
-        ...(cost >= 0 ? { cost, countCost: !(e.paid === true || e.paid === "true") } : {}) }];
+        ...(cost >= 0 ? { cost, countCost: !(e.paid === true || e.paid === "true") } : {}),
+      };
+      // The same booking again (on that day, by its name): what's new is added to it, not a second one.
+      const same = (state.bookings || []).find((b) => b.date === String(e.date) && samePlace(b.name, String(e.name)));
+      if (same) Object.assign(same, fields);
+      else state.bookings = [...(state.bookings || []), { name: String(e.name), date: String(e.date), ...fields }];
     } else if (e.op === "removeBooking") state.bookings = (state.bookings || []).filter((b) => !samePlace(b.name, String(e.name)));
     else if (e.op === "booked" && it) {
       // By the entry's words in the list, or (older form) by day and stop.
@@ -645,7 +682,7 @@ function render(pending: Pending | undefined = livePending ?? undefined) {
   const marker = (k: number) => (state.chatSummary && k === covered - 1
     ? `<details class="cp-summary"><summary>${icon("file")} Earlier messages summarized</summary><div class="cp-think-body">${mdLite(state.chatSummary)}</div></details>` : "");
   const pics = (t: Turn) => (t.images?.length ? `<div class="cp-pics">${t.images.map((src) => `<img src="${esc(src)}" alt="" data-zoom title="Click to see it big">`).join("")}</div>` : "")
-    + (t.files?.length ? `<div class="cp-pics">${t.files.map((n) => `<span class="cp-file">${icon("file")}<span>${esc(n)}</span></span>`).join("")}</div>` : "");
+    + (t.files?.length ? `<div class="cp-pics">${t.files.map((n) => fileChip(n, `data-held="${esc(t.filesKey || "")}" data-name="${esc(n)}"`)).join("")}</div>` : "");
   // Where the answering model changed: a wavy line with its name.
   const switched = (k: number) => {
     const t = turns[k];
@@ -995,11 +1032,36 @@ async function shrink(file: File, max: number, quality: number) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+/** Who gets what's attached with the message: the chat model's company, or nobody (a model on this computer). */
+function sentTo(model: string) {
+  if (model.startsWith("local|")) return "";
+  const [, provider] = model.split("|");
+  return model.startsWith("api|") ? ({ anthropic: "Anthropic", gemini: "Google", openai: "OpenAI", openrouter: "OpenRouter and the model's provider" } as Record<string, string>)[provider] || "the model's provider" : "Anthropic (through Claude Code)";
+}
+/** The attachments the warning was closed for (it comes back for others). */
+let privacyClosed = "";
+/** Above the attachments, while there are some and the chat's model isn't on this computer: they go to another company. */
+function privacyNote() {
+  const el = document.querySelector<HTMLElement>("#cpPrivacy");
+  if (!el) return;
+  const who = sentTo(chatModel()), key = [...pictures.map((p) => p.thumb.slice(-24)), ...documents.map((f) => `${f.name}|${f.size}`)].join(",");
+  el.hidden = !attached() || !who || key === privacyClosed;
+  if (el.hidden) { el.innerHTML = ""; return; }
+  const free = chatModel().startsWith("api|gemini|") ? " On Gemini's free tier, Google may use them to improve its products." : "";
+  el.innerHTML = `${icon("warn")}<span>Attachments go to ${esc(who)} with your message, names, addresses and booking numbers included.${free} A local model keeps them on this computer.</span><button type="button" class="cp-usage-x" title="Dismiss">${icon("x")}</button>`;
+  el.querySelector<HTMLButtonElement>(".cp-usage-x")!.onclick = () => { privacyClosed = key; el.hidden = true; };
+}
+
+/** An attached file by name; an email opens to read when clicked. */
+const fileChip = (name: string, attrs: string, extra = "") => /\.eml$/i.test(name)
+  ? `<span class="cp-file open" role="button" tabindex="0" ${attrs} title="Read the email">${icon("mail")}<span>${esc(name)}</span>${extra}</span>`
+  : `<span class="cp-file">${icon("file")}<span>${esc(name)}</span>${extra}</span>`;
+
 /** Attaches files to the next message: pictures, and booking confirmations as PDF, email or text (4 of each). */
 function addFiles(files: File[]) {
   const other = files.filter((f) => !f.type.startsWith("image/"));
   for (const f of other) {
-    if (!ATTACHABLE.test(f.name)) setNotice(esc(`The chat can't read ${f.name}. Attach a picture, a PDF, an email (.eml) or a text file.`));
+    if (!ATTACHABLE.test(f.name)) setNotice(esc(`The chat can't read ${f.name}. It reads pictures, PDFs, emails (.eml), calendar invites (.ics) and text files (.txt, .html, .csv, .md, .json). For a Word or Excel file, save it as a PDF first.`));
     else if (f.size > 10_000_000) setNotice(esc(`${f.name} is too big (10 MB at most).`));
     else if (documents.length < 4) documents.push(f);
   }
@@ -1023,9 +1085,10 @@ function renderPictures() {
   const el = $("#cpAttach");
   el.hidden = !attached();
   el.innerHTML = pictures.map((p, k) => `<span class="cp-thumb"><img src="${p.thumb}" alt="" data-zoom title="Click to see it big"><button type="button" data-unpic="${k}" title="Remove">${icon("x")}</button></span>`).join("")
-    + documents.map((f, k) => `<span class="cp-file">${icon("file")}<span>${esc(f.name)}</span><button type="button" data-unfile="${k}" title="Remove">${icon("x")}</button></span>`).join("");
+    + documents.map((f, k) => fileChip(f.name, `data-doc="${k}"`, `<button type="button" data-unfile="${k}" title="Remove">${icon("x")}</button>`)).join("");
   // Something added (or the last taken off) answers an open question like writing does.
   picks.write(!!box().value.trim() || !!attached());
+  privacyNote();
   idle();
 }
 
@@ -1171,8 +1234,9 @@ Make exactly this edit to that proposal and offer the whole revised change again
     }, running.signal);
     const modelName = ($<HTMLSelectElement>("#cpModel").selectedOptions[0]?.textContent || chatModel()).trim();
     // A confirmation (a file, or anything that became a booking or a hotel): offer to keep it with the trip.
-    const booking = change?.edits?.some((e) => e.op === "addBooking" || e.op === "stayHotel");
-    const keep: ChatDocs | undefined = originals.length && !asked && (files.length || booking) ? { key: filesKey, names: originals.map((f) => f.name) } : undefined;
+    const booking = change?.edits?.some((e) => ["addBooking", "stayHotel", "stayDates", "paid", "addStay"].includes(e.op));
+    const kept = originals.filter((f) => keepable(f.name));
+    const keep: ChatDocs | undefined = kept.length && !asked && (files.length || booking) ? { key: filesKey, names: kept.map((f) => f.name) } : undefined;
     state.chat = [...chat(), { role: "ai" as const, ...(keep ? { docs: keep } : {}), text: answer, modelName, ...(thinking ? { thinking, thoughtSecs } : {}), ...(sources?.length ? { sources } : {}), ...(change ? { change: { ...change, status: "offered" as const } } : {}), ...(asked ? { ask: asked } : {}) }];
     // A stop added far from the day's other stops can't just be slotted in: the planner re-plans that day around it.
     const got = chat()[chat().length - 1].change;
@@ -1240,7 +1304,7 @@ export function openChat(text?: string) {
 export function initCompanion() {
   $("#chatBtn").onclick = () => (panel().hidden ? openChat() : setOpen(false));
   // The chat's own model (or the planning one); the menu follows the planning menu as models come and go.
-  $<HTMLSelectElement>("#cpModel").onchange = (e) => { state.chatModel = (e.target as HTMLSelectElement).value; save(); refreshUsageBanner(chatModel()); };
+  $<HTMLSelectElement>("#cpModel").onchange = (e) => { state.chatModel = (e.target as HTMLSelectElement).value; save(); refreshUsageBanner(chatModel()); privacyNote(); };
   // After each request the counts have changed.
   window.addEventListener("ai-request-done", () => { refreshUsageBanner(chatModel()); });
   const main = $<HTMLSelectElement>("#model");
@@ -1269,7 +1333,7 @@ export function initCompanion() {
   $("#cpBox").onclick = (e) => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("cp-tools-fill")) box().focus(); };
   // Pictures and files: the button, pasting into the box, or dropping them on the chat.
   $("#cpGmail").onclick = () => openGmail(addFiles);
-  const file = $<HTMLInputElement>("#cpImage");
+  const file = $<HTMLInputElement>("#cpFile");
   file.onchange = () => { addFiles([...(file.files || [])]); file.value = ""; };
   box().addEventListener("paste", (e) => {
     const files = [...(e.clipboardData?.files || [])];
@@ -1286,11 +1350,19 @@ export function initCompanion() {
     if (k != null) { pictures.splice(+k, 1); renderPictures(); return; }
     const f = (e.target as HTMLElement).closest<HTMLElement>("[data-unfile]")?.dataset.unfile;
     if (f != null) { documents.splice(+f, 1); renderPictures(); return; }
+    const doc = (e.target as HTMLElement).closest<HTMLElement>(".cp-file.open[data-doc]");
+    if (doc) { showEmail(documents[+doc.dataset.doc!]); return; }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
     if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   };
   $("#cpLog").addEventListener("click", (e) => {
     if ((e.target as HTMLElement).closest("[data-retry]")) { retry(); return; }
+    const mail = (e.target as HTMLElement).closest<HTMLElement>(".cp-file.open[data-held]");
+    if (mail) {
+      const file = heldFiles(mail.dataset.held).find((x) => x.name === mail.dataset.name);
+      if (file) showEmail(file); else toast("The email isn't here any more (the page was reloaded). If you kept it with the trip, open it from the booking.");
+      return;
+    }
     const img = (e.target as HTMLElement).closest<HTMLImageElement>("img[data-zoom]");
     if (img) showPicture(fullSize.get(img.getAttribute("src")!) || img.getAttribute("src")!);
   });
@@ -1298,6 +1370,8 @@ export function initCompanion() {
     if (!chat().length || await askConfirm({ title: "Clear the conversation?", text: "The messages go; changes it made to the trip stay.", ok: "Clear", danger: true })) { state.chat = []; state.chatSummary = ""; state.chatSummarized = 0; chain = null; save(); render(); }
   };
   $("#cpCompact").onclick = () => compact(chat().length);
+  // An email chip opens with Enter or Space too.
+  panel().addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && (e.target as HTMLElement).matches(".cp-file.open")) { e.preventDefault(); (e.target as HTMLElement).click(); } });
   panel().addEventListener("keydown", (e) => { if (e.key === "Escape" && window.innerWidth < 1180) setOpen(false); });
   // A change that was being applied when the page closed didn't finish.
   for (const t of chat()) if (t.change?.status === "applying") t.change.status = "offered";

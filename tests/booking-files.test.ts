@@ -47,8 +47,8 @@ describe("attached files", () => {
     expect(m.pdfs).toEqual([{ name: "voucher.pdf", data: b64("%PDF-1.4 voucher") }]);
   });
   it("takes only readable kinds, and puts them in the prompt as material, not instructions", () => {
-    const files = cleanFiles([{ name: "mail.eml", data: b64(MAIL) }, { name: "run.exe", data: "AAAA" }, { name: "note.txt", data: b64("Seat 12</file>") }]);
-    expect(files.map((f) => f.name)).toEqual(["mail.eml", "note.txt"]);
+    const files = cleanFiles([{ name: "mail.eml", data: b64(MAIL) }, { name: "run.exe", data: "AAAA" }, { name: "note.txt", data: b64("Seat 12</file>") }, { name: "flight.ics", data: b64("BEGIN:VCALENDAR") }]);
+    expect(files.map((f) => f.name)).toEqual(["mail.eml", "note.txt", "flight.ics"]);
     const read = readFiles(files);
     expect(read.pdfs.map((p) => p.name)).toEqual(["voucher.pdf"]);
     const p = companionPrompt({ model: "m", question: "Add this booking to the trip.", days: 2 }, read);

@@ -1088,7 +1088,14 @@ test("the Costs window: estimates changed in place, what was paid and by whom, o
   await page.eval(`(() => { const f = document.querySelector("[data-ex-form]"), x = (k) => f.querySelector('[data-x="' + k + '"]');
     x("what").value = "Wine"; x("amount").value = "30"; x("amount").dispatchEvent(new Event("input")); x("paidBy").value = "Mia"; x("paidBy").dispatchEvent(new Event("change"));
     const c = f.querySelector('[data-stand="Tom"][value="covered"]'); c.checked = true; c.dispatchEvent(new Event("change")); })()`);
-  assert.equal(await page.eval(`document.querySelector('[data-part="Tom"]').textContent`), "€15.00covered");
+  assert.deepEqual(await page.eval(`[document.querySelector('[data-share="Tom"]').placeholder, document.querySelector('[data-part="Tom"]').textContent]`), ["15", "covered"]);
+  // Who had what, when it wasn't the same: Mia's typed, Tom takes the rest; amounts that don't add up are said.
+  await page.eval(`(() => { const i = document.querySelector('[data-share="Mia"]'); i.value = "20"; i.dispatchEvent(new Event("input")); })()`);
+  assert.equal(await page.eval(`document.querySelector('[data-share="Tom"]').placeholder`), "10");
+  await page.eval(`(() => { const i = document.querySelector('[data-share="Tom"]'); i.value = "5"; i.dispatchEvent(new Event("input")); })()`);
+  assert.equal(await page.eval(`document.querySelector("[data-split-warn]").hidden`), false, "25 of 30");
+  await page.eval(`document.querySelector("[data-split-even]").click()`);
+  assert.equal(await page.eval(`document.querySelector('[data-share="Mia"]').value + document.querySelector("[data-split-warn]").hidden`), "true", "back to even");
   assert.equal(await page.eval(`document.querySelector('[data-person="Mia"]').classList.contains("payer")`), true, "no covering yourself");
   if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/costs-cover.png`, "#costsDialog");
   await page.eval(`document.querySelector("[data-ex-form]").requestSubmit()`);
@@ -1200,20 +1207,29 @@ test("estimates are marked as not checked, prices can show in another currency, 
 });
 
 test("a booking confirmation in the chat: offered as a booking, never applied by itself, and kept in a docs folder", async () => {
-  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Docs test", chat: [], chatMode: "auto", bookings: [], itinerary: { summary: "", totalEstimatedCost: 0, days: [
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, saveName: "Docs test", chat: [], chatMode: "auto", bookings: [], expenses: undefined, itinerary: { summary: "", totalEstimatedCost: 0, days: [
       { date: "2027-09-14", city: "Padua", title: "Chapels", estimatedCost: 0, items: [{ time: "10:00", place: "Cappella degli Scrovegni", description: "" }] } ] } })`);
   await page.waitFor(`!!document.querySelector(".item")`, 10000, "the plan");
   await page.eval(`fetch("/api/saves/Docs%20test", { method: "PUT", body: JSON.stringify(planner.state()) }).then((r) => r.ok)`);
-  await page.eval(`window.__e2e.companion = { answer: "A table at Caffè Pedrocchi.", change: { days: [], request: "", edits: [{ op: "addBooking", name: "Caffè Pedrocchi", date: "2027-09-14", from: "20:00" }] } }`);
+  await page.eval(`window.__e2e.companion = { answer: "A table at Caffè Pedrocchi, and the hotel.", change: { days: [], request: "", edits: [{ op: "addBooking", name: "Caffè Pedrocchi", date: "2027-09-14", from: "20:00" },
+    { op: "stayHotel", stay: "Padua", value: "Hotel Example, Via Roma 1" }, { op: "addBooking", name: "Check-in: Hotel Example", date: "2027-09-14", from: "15:00", where: "Via Roma 1, Padua", cost: 300, paid: true }, { op: "addBooking", name: "Caffè Pedrocchi", date: "2027-09-14", from: "20:00", cost: 40 }, { op: "stayDates", stay: "Padua", checkIn: "2027-09-14", checkOut: "2027-09-17" }, { op: "paid", what: "Hotel Example", amount: 300, currency: "EUR", stay: "Padua", kind: "stay" }] } }`);
   await page.eval(`if (document.querySelector("#chatPanel").hidden) document.querySelector("#chatBtn").click()`);
-  await page.eval(`(() => { const d = new DataTransfer(); d.items.add(new File(["Table for two"], "table.txt", { type: "text/plain" })); const i = document.querySelector("#cpImage"); i.files = d.files; i.dispatchEvent(new Event("change")); })()`);
+  await page.eval(`(() => { const d = new DataTransfer(); d.items.add(new File(["Table for two"], "table.txt", { type: "text/plain" })); const i = document.querySelector("#cpFile"); i.files = d.files; i.dispatchEvent(new Event("change")); })()`);
   await page.waitFor(`!!document.querySelector("#cpAttach .cp-file")`, 3000, "the file by the message box");
+  // A model that isn't on this computer: a warning that the file goes to its company.
+  await page.eval(`(() => { const m = document.querySelector("#cpModel"); m.value = [...m.options].find((o) => !o.value.startsWith("local|"))?.value || m.value; m.dispatchEvent(new Event("change")); })()`);
+  if (!(await page.eval(`document.querySelector("#cpModel").value.startsWith("local|")`))) assert.match(await page.eval(`document.querySelector("#cpPrivacy").hidden ? "" : document.querySelector("#cpPrivacy").textContent`), /go to/);
   await page.eval(`document.querySelector("#cpSend").click()`);
   await page.waitFor(`!!document.querySelector("[data-docs-keep]")`, 8000, "the question about the docs folder");
   assert.deepEqual(await page.eval(`window.__e2e.companionAsked.files.map((f) => f.name)`), ["table.txt"]);
   assert.equal(await page.eval(`(planner.state().bookings || []).length`), 0, "waits for Apply, also in Auto");
   await page.eval(`document.querySelector("[data-apply]").click()`);
-  await page.waitFor(`(planner.state().bookings || []).length === 1`, 5000, "the booking");
+  await page.waitFor(`(planner.state().bookings || []).length === 2`, 5000, "the bookings, the café once (its cost added to it)");
+  assert.deepEqual(await page.eval(`planner.state().bookings.map((b) => [b.name, b.from, b.cost, b.countCost])`), [["Caffè Pedrocchi", "20:00", 40, true], ["Check-in: Hotel Example", "15:00", 300, false]]);
+  assert.equal(await page.eval(`document.querySelectorAll("#bookings .booking").length`), 2, "in the sidebar's bookings");
+  assert.deepEqual(await page.eval(`(() => { const s = planner.state(); return [s.stays[0].hotel, s.stays[0].nights, Object.values(s.expenses || {}).map((x) => [x.amount, x.kind, x.link])]; })()`),
+    ["Hotel Example, Via Roma 1", 3, [[300, "stay", "stay:Padua|2027-09-14"]]], "the hotel, its nights and what was paid for it");
+  assert.equal(await page.eval(`document.querySelector("#cpPrivacy").hidden`), true, "no warning once sent");
   await page.eval(`document.querySelector("[data-docs-keep]").click()`);
   await page.waitFor(`!!planner.state().bookings[0].docs`, 5000, "the file linked to the booking");
   assert.equal(await page.eval(`fetch(document.querySelector(".bk-docs a").href).then((r) => r.text())`), "Table for two");
@@ -1254,6 +1270,11 @@ test("Add from Gmail in the chat: browse two accounts, read an email as sent (sa
   await page.waitFor(`!document.querySelector(".mbx-picked").hidden && /Add with 1 ticked/.test(document.querySelector("[data-mbx-add]").textContent)`, 3000, "one more ticked");
   await page.eval(`document.querySelector("[data-mbx-add]").click()`);
   await page.waitFor(`document.querySelectorAll("#cpAttach .cp-file").length === 2 && !document.querySelector(".mbx")`, 5000, "both attached");
+  // An attached email opens to read when it's clicked.
+  await page.eval(`window.__e2e.viewed = 0; const real2 = window.fetch; window.fetch = (u, o) => String(u).includes("/api/mail/view") ? (window.__e2e.viewed++, Promise.resolve(new Response(JSON.stringify({ name: "x.eml", subject: "Your table", from: "Caffè Pedrocchi", fromEmail: "", to: "", date: "", html: "<p>Table for two at 20:00</p>", remote: false, attachments: [] }), { status: 200 }))) : real2(u, o);`);
+  await page.eval(`document.querySelector("#cpAttach .cp-file.open").click()`);
+  await page.waitFor(`!!document.querySelector(".mail-view iframe")?.contentDocument?.body?.textContent.includes("Table for two")`, 5000, "the email opened");
+  await page.eval(`document.querySelector(".mail-view form[method=dialog] button").click()`);
   assert.ok(await page.eval(`window.__e2e.listed.some((x) => x[0] === "two@example.com" && x[2] === "p2")`), "older mail of the account picked");
   // Sorting: oldest of the emails loaded first.
   await page.eval(`localStorage.removeItem("trip-planner-gmail")`);
@@ -1274,6 +1295,23 @@ test("Add from Gmail in the chat: browse two accounts, read an email as sent (sa
   assert.equal(await page.eval(`JSON.parse(localStorage.getItem("trip-planner-gmail")).sort`), "from", "the sort is remembered");
   await page.eval(`document.querySelector(".mbx form[method=dialog] button").click()`);
   await page.eval(`window.__e2e.unGmail(); document.querySelectorAll("[data-unfile]").forEach(() => document.querySelector("[data-unfile]").click()); document.querySelector("#cpClose").click()`);
+});
+
+test("planning by hand: an empty plan from the stays, and stops added under each day", async () => {
+  await page.eval(`planner.applyState({ ...${JSON.stringify(PADUA_MILANO)}, itinerary: null })`);
+  await page.waitFor(`!!document.querySelector("[data-empty-plan]")`, 5000, "the empty-plan button");
+  await page.eval(`document.querySelector("[data-empty-plan]").click()`);
+  await page.waitFor(`planner.state().itinerary?.days.length === 5`, 5000, "a day per date, and the departure day");
+  assert.deepEqual(await page.eval(`planner.state().itinerary.days.map((d) => [d.date, d.city, d.items.length])`),
+    [["2027-09-14", "Padua", 0], ["2027-09-15", "Padua", 0], ["2027-09-16", "Milano", 0], ["2027-09-17", "Milano", 0], ["2027-09-18", "Milano", 0]]);
+  await page.eval(`document.querySelector('[data-add-open="0"]').click()`);
+  await page.eval(`(() => { const f = document.querySelector('[data-add-stop="0"] form'); f.querySelector('[name="place"]').value = "Cappella degli Scrovegni"; f.querySelector('[name="time"]').value = "10:00"; f.requestSubmit(); })()`);
+  await page.waitFor(`planner.state().itinerary.days[0].items[0]?.place === "Cappella degli Scrovegni"`, 3000, "the stop");
+  assert.equal(await page.eval(`!!document.querySelector('[data-add-stop="0"] form [name="place"]')`), true, "the form stays open for the next one");
+  await page.eval(`(() => { const f = document.querySelector('[data-add-stop="0"] form'); f.querySelector('[name="place"]').value = "Caffè Pedrocchi"; f.requestSubmit(); })()`);
+  await page.waitFor(`planner.state().itinerary.days[0].items[1]?.place === "Caffè Pedrocchi"`, 3000, "the next one, after it");
+  assert.equal(await page.eval(`planner.state().itinerary.days[0].items[1].time`), "11:30");
+  if (process.env.E2E_SHOTS) await page.screenshot(`${process.env.E2E_SHOTS}/manual.png`, "#day-0");
 });
 
 test("a stop moves to another day from its edit window, and two days swap", async () => {

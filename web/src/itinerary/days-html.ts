@@ -1,5 +1,6 @@
 // The days of the itinerary: city bands, stops (with split groups side by side), notes, and the extras at the end.
 import { dayKey } from "../../../shared/edits";
+import { addStopHtml } from "./manual";
 import { editChip } from "../saves/collab";
 import type { Day, Itinerary, ItineraryItem } from "../../../shared/types";
 import { esc } from "../core/dom";
@@ -222,6 +223,7 @@ function daysGroups(it: Itinerary, byTitle: ByTitle, cur: string, budget: number
         </span>
       </div>
       <ul class="items">${dayItemsHtml(d, i, byTitle, cur, trackColor)}</ul>
+      ${addStopHtml(i, !d.items.length)}
       ${d.notes ? `<div class="day-notes">${esc(d.notes)}</div>` : ""}
     </div>`;
   });

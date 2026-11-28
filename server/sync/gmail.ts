@@ -71,24 +71,28 @@ export function safeEmailHtml(html: string, images: Record<string, string> = {})
 /** A text-only email as HTML: its words, with its web addresses as links. */
 const textHtml = (text: string) => `<pre class="plain">${escHtml(text).replace(/https?:\/\/[^\s<>"]+/g, (u) => `<a href="${u}">${u}</a>`)}</pre>`;
 
-/** One email: to show (its safe HTML), its attachments' names, and whole as a .eml file named after its subject. */
+/** An email (.eml) to show: its sender, subject and date, its safe HTML, and its attachments' names. */
+export function mailView(buf: Buffer, fallback = { snippet: "", date: "" }) {
+  const mail = readEmail(buf);
+  // (The text starts with the headers it was read with: Subject, From, Date, then a blank line.)
+  const cut = mail.text.indexOf("\n\n"), head = cut < 0 ? mail.text : mail.text.slice(0, cut);
+  const header = (name: string) => new RegExp(`^${name}: (.*)$`, "m").exec(head)?.[1]?.trim() || "";
+  const to = /^to:[ \t]*(.*)$/im.exec(buf.toString("utf8", 0, Math.min(buf.length, 30_000)).split(/\r?\n\r?\n/)[0])?.[1] || "";
+  const subject = header("Subject"), from = person(header("From")), sent = new Date(header("Date"));
+  const shown = mail.html.trim() ? safeEmailHtml(mail.html, mail.images) : { html: textHtml(cut < 0 ? "" : mail.text.slice(cut + 2)), remote: false };
+  const name = (subject || plain(fallback.snippet)).replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Email";
+  return {
+    name: `${name}.eml`, subject: subject || "(no subject)", from: from.name || from.email, fromEmail: from.email, to: plain(to).slice(0, 200),
+    date: fallback.date || (isNaN(sent.getTime()) ? "" : sent.toISOString()), html: shown.html.slice(0, 2_000_000), remote: shown.remote, attachments: mail.files.slice(0, 20),
+  };
+}
+
+/** One email from Gmail: to show (mailView), and whole as a .eml file named after its subject. */
 export async function readMail(account: string, id: string) {
   if (!/^[\w-]{6,40}$/.test(id)) throw new Error("No such email.");
   const m = await get(account, `/messages/${id}?format=raw`);
   const buf = Buffer.from(String(m.raw || ""), "base64url");
   if (!buf.length) throw new Error("That email is empty.");
   if (buf.length > MAX_BYTES) throw new Error("That email is too big (10 MB at most). Attach its PDF or a screenshot instead.");
-  const mail = readEmail(buf);
-  // (The text starts with the headers it was read with: Subject, From, Date, then a blank line.)
-  const cut = mail.text.indexOf("\n\n"), head = cut < 0 ? mail.text : mail.text.slice(0, cut);
-  const header = (name: string) => new RegExp(`^${name}: (.*)$`, "m").exec(head)?.[1]?.trim() || "";
-  const to = /^to:[ \t]*(.*)$/im.exec(buf.toString("utf8", 0, Math.min(buf.length, 30_000)).split(/\r?\n\r?\n/)[0])?.[1] || "";
-  const subject = header("Subject"), from = person(header("From"));
-  const shown = mail.html.trim() ? safeEmailHtml(mail.html, mail.images) : { html: textHtml(cut < 0 ? "" : mail.text.slice(cut + 2)), remote: false };
-  const name = (subject || plain(m.snippet)).replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60).trim() || "Email";
-  return {
-    name: `${name}.eml`, data: buf.toString("base64"), threadId: /^[\w-]+$/.test(String(m.threadId || "")) ? String(m.threadId) : id,
-    subject: subject || "(no subject)", from: from.name || from.email, fromEmail: from.email, to: plain(to).slice(0, 200), date: when(m.internalDate),
-    html: shown.html.slice(0, 2_000_000), remote: shown.remote, attachments: mail.files.slice(0, 20),
-  };
+  return { ...mailView(buf, { snippet: String(m.snippet || ""), date: when(m.internalDate) }), data: buf.toString("base64"), threadId: /^[\w-]+$/.test(String(m.threadId || "")) ? String(m.threadId) : id };
 }
